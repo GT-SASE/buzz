@@ -3,6 +3,24 @@
 The chapter site, plus the member portal. Built on the [T3 Stack](https://create.t3.gg/):
 Next.js, NextAuth, Drizzle, Tailwind, tRPC.
 
+## Layout
+
+npm workspaces. Packages ship raw TypeScript and are compiled by whoever imports
+them, which is why `sites/web/next.config.js` lists them under `transpilePackages`.
+
+```
+packages/db     @buzz/db     drizzle schema, the client, drizzle-kit config
+packages/auth   @buzz/auth   NextAuth config and the auth() helper
+packages/api    @buzz/api    tRPC context, procedures, routers
+sites/web       @buzz/web    the Next.js app
+```
+
+Run everything from the repo root: `npm run dev`, `npm run build`, `npm run check`,
+`npm run db:push`. Each delegates to the workspace that owns it.
+
+Deploying on Vercel: set **Root Directory** to `sites/web`. Vercel installs from
+the repo root, so the workspace packages resolve normally.
+
 ## Two halves
 
 The public site (`/`, `/about`, `/programs`, `/events`, `/join`, `/board`, `/sponsors`,
@@ -16,8 +34,15 @@ indexing in two places (`robots.ts` and the portal layout's metadata).
 
 ## Setup
 
+The public site needs no environment at all — it builds and deploys with an
+empty environment, because none of its pages read the session or the database.
+Everything below is what turns the **portal** on.
+
 1. Start Postgres — `./start-database.sh` runs one in Docker.
-2. Copy `.env.example` to `.env` and fill in all four keys:
+2. Copy `sites/web/.env.example` to `sites/web/.env` and fill in all four keys.
+   That path is deliberate: it is where Next.js reads `.env` from without any
+   configuration, and `packages/db/drizzle.config.ts` is pointed at the same
+   file so the credentials exist in exactly one place.
    - `DATABASE_URL` — the connection string for the database above.
    - `AUTH_SECRET` — `npx auth secret`.
    - `AUTH_DISCORD_ID` / `AUTH_DISCORD_SECRET` — from a Discord OAuth app whose redirect

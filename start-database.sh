@@ -11,9 +11,10 @@
 
 # On Linux and macOS you can run this script directly - `./start-database.sh`
 
-# import env variables from .env
+# import env variables from the web app's .env, which is the one copy of them
+ENV_FILE="$(dirname "$0")/sites/web/.env"
 set -a
-source .env
+source "$ENV_FILE"
 
 DB_PASSWORD=$(echo "$DATABASE_URL" | awk -F':' '{print $3}' | awk -F'@' '{print $1}')
 DB_PORT=$(echo "$DATABASE_URL" | awk -F':' '{print $4}' | awk -F'\/' '{print $1}')
@@ -66,16 +67,16 @@ if [ "$DB_PASSWORD" = "password" ]; then
   echo "You are using the default database password"
   read -p "Should we generate a random password for you? [y/N]: " -r REPLY
   if ! [[ $REPLY =~ ^[Yy]$ ]]; then
-    echo "Please change the default password in the .env file and try again"
+    echo "Please change the default password in $ENV_FILE and try again"
     exit 1
   fi
   # Generate a random URL-safe password
   DB_PASSWORD=$(openssl rand -base64 12 | tr '+/' '-_')
   if [[ "$(uname)" == "Darwin" ]]; then
     # macOS requires an empty string to be passed with the `i` flag
-    sed -i '' "s#:password@#:$DB_PASSWORD@#" .env
+    sed -i '' "s#:password@#:$DB_PASSWORD@#" "$ENV_FILE"
   else
-    sed -i "s#:password@#:$DB_PASSWORD@#" .env
+    sed -i "s#:password@#:$DB_PASSWORD@#" "$ENV_FILE"
   fi
 fi
 
