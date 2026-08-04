@@ -1,0 +1,96 @@
+/**
+ * Site identity and navigation for SASE @ Georgia Tech.
+ *
+ * This module is imported by the client-side nav, so it must stay pure data —
+ * no formatters, no `Date.now()`, no array work at module scope. Page copy
+ * (events, board, programs, sponsors) lives in `~/data/content`.
+ *
+ * TODO: every value below is placeholder copy — replace with real chapter data
+ * (email, socials) before launch.
+ */
+
+export const site = {
+  name: "SASE at Georgia Tech",
+  shortName: "SASE GT",
+  tagline: "Society of Asian Scientists and Engineers",
+  /**
+   * The chapter theme. Rendered as a lockup in the hero, the footer, and the
+   * share card — not as the site title, which stays searchable.
+   * TODO: confirm which academic year this theme runs for.
+   */
+  theme: "Buzz by SASE",
+  description:
+    "The Georgia Tech chapter of the Society of Asian Scientists and Engineers — preparing Asian heritage students for success in the global business world.",
+  /**
+   * Canonical origin, no trailing slash. Every canonical URL, the sitemap,
+   * robots.txt, and the OG image URLs are built from this, so it has to be the
+   * real production origin before launch.
+   * TODO: replace with the chapter's actual domain.
+   */
+  url: "https://sasegt.org",
+  locality: "Atlanta",
+  region: "GA",
+  parentOrganization: "https://www.saseconnect.org/",
+  email: "sase@gatech.edu", // TODO: confirm
+  socials: [
+    {
+      id: "instagram",
+      label: "Instagram",
+      href: "https://instagram.com/gtsase",
+    }, // TODO
+    {
+      id: "linkedin",
+      label: "LinkedIn",
+      href: "https://linkedin.com/company/gtsase",
+    }, // TODO
+    { id: "discord", label: "Discord", href: "https://discord.gg/gtsase" }, // TODO
+    {
+      id: "national",
+      label: "National SASE",
+      href: "https://www.saseconnect.org/",
+    },
+  ],
+} as const;
+
+export type Social = (typeof site.socials)[number];
+
+/**
+ * Named handles for the two feeds pages link to directly. Keyed by `id` so a
+ * label rename cannot silently drop the link from /contact, /join, /events.
+ */
+const bySocialId = (id: Social["id"]) => site.socials.find((s) => s.id === id);
+
+export const instagram = bySocialId("instagram");
+export const discord = bySocialId("discord");
+
+export type NavGroup = {
+  label: string;
+  href: string;
+  /**
+   * Dropdown entries. The first item MUST be the group's own landing page —
+   * the desktop trigger is a disclosure button, not a link, so `href` above is
+   * only reachable from inside the panel.
+   */
+  items: { label: string; href: string }[];
+};
+
+/** Single source of truth for the header; the footer derives its list from it. */
+export const navGroups: NavGroup[] = [
+  { label: "About", href: "/about", items: [] },
+  { label: "Programs", href: "/programs", items: [] },
+  { label: "Board", href: "/board", items: [] },
+  {
+    label: "Events",
+    href: "/events",
+    items: [
+      { label: "Upcoming", href: "/events" },
+      { label: "Past highlights", href: "/events#past" },
+    ],
+  },
+  { label: "Sponsors", href: "/sponsors", items: [] },
+  { label: "Contact", href: "/contact", items: [] },
+  { label: "Join", href: "/join", items: [] },
+];
+
+/** The one high-emphasis call to action in the site chrome. */
+export const navCta = { label: "Join SASE", href: "/join" } as const;

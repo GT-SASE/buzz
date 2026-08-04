@@ -1,30 +1,62 @@
-# Create T3 App
+# SASE at Georgia Tech
 
-This is a [T3 Stack](https://create.t3.gg/) project bootstrapped with `create-t3-app`.
+The chapter site, plus the member portal. Built on the [T3 Stack](https://create.t3.gg/):
+Next.js, NextAuth, Drizzle, Tailwind, tRPC.
 
-## What's next? How do I make an app with this?
+## Two halves
 
-We try to keep this project as simple as possible, so you can start with just the scaffolding we set up for you, and add additional things later when they become necessary.
+The public site (`/`, `/about`, `/programs`, `/events`, `/join`, `/board`, `/sponsors`,
+`/contact`) is fully prerendered and touches neither the database nor the session. It stays
+that way on purpose — the root layout mounts no client providers, so those pages ship no
+React Query and no tRPC client.
 
-If you are not familiar with the different technologies used in this project, please refer to the respective docs. If you still are in the wind, please join our [Discord](https://t3.gg/discord) and ask for help.
+The member portal (`/portal/**`) is the dynamic half. It reads the session and the database
+on every request, mounts the tRPC client in its own layout, and is excluded from search
+indexing in two places (`robots.ts` and the portal layout's metadata).
 
-- [Next.js](https://nextjs.org)
-- [NextAuth.js](https://next-auth.js.org)
-- [Prisma](https://prisma.io)
-- [Drizzle](https://orm.drizzle.team)
-- [Tailwind CSS](https://tailwindcss.com)
-- [tRPC](https://trpc.io)
+## Setup
 
-## Learn More
+1. Start Postgres — `./start-database.sh` runs one in Docker.
+2. Copy `.env.example` to `.env` and fill in all four keys:
+   - `DATABASE_URL` — the connection string for the database above.
+   - `AUTH_SECRET` — `npx auth secret`.
+   - `AUTH_DISCORD_ID` / `AUTH_DISCORD_SECRET` — from a Discord OAuth app whose redirect
+     URI is `<origin>/api/auth/callback/discord`.
+3. `npm run db:push` to create the tables.
+4. `npm run dev`.
 
-To learn more about the [T3 Stack](https://create.t3.gg/), take a look at the following resources:
+## Promoting the first officer
 
-- [Documentation](https://create.t3.gg/)
-- [Learn the T3 Stack](https://create.t3.gg/en/faq#what-learning-resources-are-currently-available) — Check out these awesome tutorials
+There is no in-app way to make someone an admin — that would be a privilege-escalation
+surface with no benefit, since it happens roughly once a year.
 
-You can check out the [create-t3-app GitHub repository](https://github.com/t3-oss/create-t3-app) — your feedback and contributions are welcome!
+1. Have the officer sign in once at `/portal`, which creates their user row.
+2. `npm run db:studio`, open `buzz_user`, find them by email, set `role` to `ADMIN`.
 
-## How do I deploy this?
+The role rides on the database session, so it takes effect on their next request. The same
+step in reverse revokes it.
 
-Follow our deployment guides for [Vercel](https://create.t3.gg/en/deployment/vercel), [Netlify](https://create.t3.gg/en/deployment/netlify) and [Docker](https://create.t3.gg/en/deployment/docker) for more information.
-# website
+## How points work
+
+An event carries a `pointsValue`. Checking in copies that number onto the attendance row as
+`pointsEarned` and never reads it back. Re-pricing an event later therefore changes what
+future attendance is worth and leaves everybody's existing total exactly where it was.
+
+A member's total is one aggregate query over their own check-ins. Tiers are derived from
+that total at render time — they live in `src/data/portal.ts` and changing them needs no
+migration.
+
+## Check-in codes
+
+Each event gets an eight-character code drawn from an alphabet with no `I`, `L`, `O`, `U`,
+`0` or `1`, because members read it off a projector and type it on a phone. The code is a
+bearer credential: anyone holding it can check in, so no member-facing query selects it, and
+rotating it (officer tools, per event) revokes a photographed slide immediately.
+
+## Still needed before launch
+
+- `site.url` in `src/data/site.ts` is a placeholder. Every canonical URL, the sitemap,
+  `robots.txt`, and the share card derive from it.
+- Board roster, real event dates, meeting cadence, dues, and socials — all marked `TODO` in
+  `src/data/site.ts` and `src/data/content.ts`.
+- Board headshots and sponsor logos.
