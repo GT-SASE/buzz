@@ -5,7 +5,9 @@ import drizzle from "eslint-plugin-drizzle";
 
 export default tseslint.config(
   {
-    ignores: [".next"],
+    // Globbed rather than bare: build output and dependencies now live under
+    // each workspace, not just at the repo root.
+    ignores: ["**/.next/**", "**/node_modules/**"],
   },
   ...nextCoreWebVitals,
   {
@@ -19,6 +21,10 @@ export default tseslint.config(
       ...tseslint.configs.stylisticTypeChecked,
     ],
     rules: {
+      // App Router only, and eslint now runs from the workspace root, so this
+      // rule spends every run hunting for a `pages/` directory that will never
+      // exist and printing a warning about not finding it.
+      "@next/next/no-html-link-for-pages": "off",
       "@typescript-eslint/array-type": "off",
       "@typescript-eslint/consistent-type-definitions": "off",
       "@typescript-eslint/consistent-type-imports": [
