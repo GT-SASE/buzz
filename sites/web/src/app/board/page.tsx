@@ -53,7 +53,7 @@ export default function BoardPage() {
 
       <Section size="sm" className="bg-cream border-hairline border-y">
         <div className="max-w-measure mx-auto text-center">
-          <h2 className="font-display text-navy text-h2 font-bold text-balance">
+          <h2 className="font-display text-navy text-h2 text-balance font-bold">
             Not sure who to ask?
           </h2>
           <p className="text-lead text-ink-muted mt-4">

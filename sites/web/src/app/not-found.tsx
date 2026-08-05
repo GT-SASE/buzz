@@ -7,7 +7,7 @@ export default function NotFound() {
         {/* gold-ink, not gold: #b3a369 on cream is 2.2:1, and this is real
             text at display size, not decoration. */}
         <p className="font-display text-gold-ink text-hero font-bold">404</p>
-        <h1 className="font-display text-navy text-h2 mt-6 font-bold text-balance">
+        <h1 className="font-display text-navy text-h2 mt-6 text-balance font-bold">
           This page took the Tech Trolley somewhere else.
         </h1>
         <p className="text-lead text-ink-muted mt-4">

@@ -13,8 +13,8 @@ function safePath(value: FormDataEntryValue | null) {
   return value;
 }
 
-export async function signInWithDiscord(formData: FormData) {
-  await signIn("discord", { redirectTo: safePath(formData.get("from")) });
+export async function signInWithGoogle(formData: FormData) {
+  await signIn("google", { redirectTo: safePath(formData.get("from")) });
 }
 
 export async function signOutOfPortal() {

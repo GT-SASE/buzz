@@ -36,7 +36,7 @@ export function PortalTabs({ isOfficer }: { isOfficer: boolean }) {
               <Link
                 href={tab.href}
                 aria-current={active ? "page" : undefined}
-                className={`text-body-sm relative block px-4 py-4 font-medium whitespace-nowrap transition ${
+                className={`text-body-sm relative block whitespace-nowrap px-4 py-4 font-medium transition ${
                   active
                     ? "text-navy after:bg-gold-bright after:absolute after:inset-x-3 after:bottom-0 after:h-0.5"
                     : "text-ink-muted hover:text-navy"

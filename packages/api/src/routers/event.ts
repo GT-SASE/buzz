@@ -7,7 +7,7 @@ import { eventCheckIns, events, users } from "@buzz/db";
 
 /**
  * How long after an event starts the door stays open. The member-facing list
- * stops advertising an event past this point, and check-in has to agree â€” or a
+ * stops advertising an event past this point, and check-in has to agree — or a
  * photographed code keeps admitting people weeks later.
  */
 const CHECK_IN_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -37,7 +37,7 @@ function normalizeCode(input: string) {
 
 /**
  * Postgres unique_violation. Drizzle wraps every driver error, and the pg error
- * carrying the SQLSTATE sits on `.cause`, so the chain has to be walked â€”
+ * carrying the SQLSTATE sits on `.cause`, so the chain has to be walked —
  * checking only the top-level object silently never matches in production.
  */
 function isUniqueViolation(error: unknown) {
@@ -51,7 +51,7 @@ function isUniqueViolation(error: unknown) {
 
 /**
  * Columns safe to hand a member. `checkInCode` is a bearer credential and is
- * absent on purpose â€” spreading the whole row anywhere member-facing is how it
+ * absent on purpose — spreading the whole row anywhere member-facing is how it
  * would leak.
  */
 const publicEventColumns = {
@@ -67,6 +67,11 @@ const publicEventColumns = {
 const totalsColumns = {
   totalEvents: sql<number>`count(*)::int`,
   totalPoints: sql<number>`coalesce(sum(${eventCheckIns.pointsEarned}), 0)::int`,
+  /**
+   * Dated from the first event they turned up to, not from account creation.
+   * Signing in is a formality; showing up is the thing the card commemorates.
+   */
+  memberSince: sql<Date | null>`min(${eventCheckIns.checkedInAt})`,
 } as const;
 
 const eventInput = z.object({
@@ -145,7 +150,7 @@ export const eventRouter = createTRPCRouter({
     }));
   }),
 
-  /** One event plus its attendance roster â€” the officer's door list. */
+  /** One event plus its attendance roster — the officer's door list. */
   getById: adminProcedure
     .input(z.object({ id: z.string() }))
     .query(async ({ ctx, input }) => {
@@ -468,6 +473,7 @@ export const eventRouter = createTRPCRouter({
     return {
       totalEvents: totals?.totalEvents ?? 0,
       totalPoints: totals?.totalPoints ?? 0,
+      memberSince: totals?.memberSince ?? null,
     };
   }),
 

@@ -137,7 +137,7 @@ export const protectedProcedure = t.procedure
  *
  * This is the real gate on everything under /portal/admin. The route layout
  * also redirects non-officers, but that is a courtesy so nobody sees a flash of
- * an admin screen â€” it is not what keeps a member out of these procedures.
+ * an admin screen — it is not what keeps a member out of these procedures.
  *
  * The role rides on the database session, so no extra round trip is needed and
  * a demotion takes effect on the caller's very next request.

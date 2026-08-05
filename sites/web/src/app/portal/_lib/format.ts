@@ -32,6 +32,17 @@ export function formatDate(value: Date) {
   return dateOnly.format(value);
 }
 
+const monthAndYear = new Intl.DateTimeFormat("en-US", {
+  month: "long",
+  year: "numeric",
+  timeZone: ZONE,
+});
+
+/** "August 2026", for the membership card. */
+export function formatMonth(value: Date) {
+  return monthAndYear.format(value);
+}
+
 /** For a datetime-local input, which wants "YYYY-MM-DDTHH:mm" in Atlanta time. */
 export function toLocalInputValue(value: Date) {
   const parts = new Intl.DateTimeFormat("en-CA", {
