@@ -1,16 +1,16 @@
 import { Button, Section } from "~/app/_components/ui";
+import { MemberCard } from "~/app/portal/_components/member-card";
 import {
   EmptyState,
   PointsPill,
-  PointsSummary,
   PortalHeader,
 } from "~/app/portal/_components/portal-ui";
-import { formatEventTime } from "~/app/portal/_lib/format";
+import { formatEventTime, formatMonth } from "~/app/portal/_lib/format";
 import { requireSession } from "~/app/portal/_lib/session";
 import { api } from "~/trpc/server";
 
 export default async function MyEventsPage() {
-  await requireSession("/portal/events");
+  const session = await requireSession("/portal/events");
 
   const [attended, stats] = await Promise.all([
     api.event.myEvents(),
@@ -24,7 +24,11 @@ export default async function MyEventsPage() {
         title="Events you have been to."
         body="Every check-in the chapter has on record for you, newest first, with what each one was worth at the time."
         aside={
-          <PointsSummary
+          <MemberCard
+            name={session.user.name ?? session.user.email ?? "Member"}
+            memberSince={
+              stats.memberSince ? formatMonth(stats.memberSince) : null
+            }
             totalPoints={stats.totalPoints}
             totalEvents={stats.totalEvents}
           />

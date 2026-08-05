@@ -3,25 +3,21 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "workspaces": [
-    "packages/*",
-    "sites/*"
-  ],
   "scripts": {
-    "dev": "npm run dev --workspace @buzz/web",
-    "build": "npm run build --workspace @buzz/web",
-    "start": "npm run start --workspace @buzz/web",
-    "preview": "npm run preview --workspace @buzz/web",
-    "check": "npm run lint && npm run typecheck",
+    "dev": "pnpm --filter @buzz/web dev",
+    "build": "pnpm --filter @buzz/web build",
+    "start": "pnpm --filter @buzz/web start",
+    "preview": "pnpm --filter @buzz/web preview",
+    "check": "pnpm run lint && pnpm run typecheck",
     "lint": "eslint",
     "lint:fix": "eslint --fix",
-    "typecheck": "npm run typecheck --workspaces --if-present",
+    "typecheck": "pnpm -r --if-present run typecheck",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,mdx}\" --cache",
     "format:write": "prettier --write \"**/*.{ts,tsx,js,jsx,mdx}\" --cache",
-    "db:generate": "npm run db:generate --workspace @buzz/db",
-    "db:migrate": "npm run db:migrate --workspace @buzz/db",
-    "db:push": "npm run db:push --workspace @buzz/db",
-    "db:studio": "npm run db:studio --workspace @buzz/db"
+    "db:generate": "pnpm --filter @buzz/db db:generate",
+    "db:migrate": "pnpm --filter @buzz/db db:migrate",
+    "db:push": "pnpm --filter @buzz/db db:push",
+    "db:studio": "pnpm --filter @buzz/db db:studio"
   },
   "devDependencies": {
     "eslint": "^9.23.0",
@@ -35,5 +31,5 @@
   "ct3aMetadata": {
     "initVersion": "7.40.0"
   },
-  "packageManager": "npm@11.6.2"
+  "packageManager": "pnpm@10.33.2"
 }

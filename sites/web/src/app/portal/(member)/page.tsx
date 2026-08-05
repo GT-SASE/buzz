@@ -1,14 +1,18 @@
 import Link from "next/link";
 
 import { Button, Card, Eyebrow, Section, TextLink } from "~/app/_components/ui";
+import { MemberCard } from "~/app/portal/_components/member-card";
 import {
   EmptyState,
   PointsPill,
-  PointsSummary,
   PortalHeader,
   SignOutButton,
 } from "~/app/portal/_components/portal-ui";
-import { formatDate, formatEventTime } from "~/app/portal/_lib/format";
+import {
+  formatDate,
+  formatEventTime,
+  formatMonth,
+} from "~/app/portal/_lib/format";
 import { requireSession } from "~/app/portal/_lib/session";
 import { api } from "~/trpc/server";
 
@@ -32,7 +36,11 @@ export default async function PortalDashboard() {
         title={firstName ? `Welcome back, ${firstName}.` : "Welcome back."}
         body="Every event you attend is worth points. Check in at the door with the code the officers put on the screen."
         aside={
-          <PointsSummary
+          <MemberCard
+            name={session.user.name ?? session.user.email ?? "Member"}
+            memberSince={
+              stats.memberSince ? formatMonth(stats.memberSince) : null
+            }
             totalPoints={stats.totalPoints}
             totalEvents={stats.totalEvents}
           />

@@ -79,7 +79,7 @@ export default function EventsPage() {
                 <h3 className="font-display text-navy text-h3 font-bold">
                   {event.title}
                 </h3>
-                <p className="text-ink-muted text-body mt-2 leading-relaxed break-words">
+                <p className="text-ink-muted text-body mt-2 break-words leading-relaxed">
                   {event.body}
                 </p>
               </div>

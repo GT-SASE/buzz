@@ -1,11 +1,12 @@
 import { Eyebrow } from "~/app/_components/ui";
-import { tierFor } from "~/data/portal";
 import { signOutOfPortal } from "./auth-actions";
 
 /**
- * Portal masthead. Mirrors `PageHeader` on the marketing side rather than
- * inventing a second visual language for signed-in pages — same cream ground,
- * same eyebrow, same display face.
+ * Portal masthead.
+ *
+ * Deliberately quieter than the marketing site's `PageHeader`: on a signed-in
+ * page the membership card is the thing worth looking at, so the heading gets
+ * out of its way rather than competing for the same attention.
  */
 export function PortalHeader({
   eyebrow,
@@ -20,10 +21,10 @@ export function PortalHeader({
 }) {
   return (
     <section className="bg-cream paper-wash border-hairline relative border-b">
-      <div className="max-w-content relative mx-auto flex flex-wrap items-end justify-between gap-x-10 gap-y-8 px-5 py-12 sm:px-6 sm:py-16">
-        <div className="max-w-2xl">
+      <div className="max-w-content relative mx-auto grid gap-10 px-5 py-12 sm:px-6 sm:py-16 lg:grid-cols-[1fr_auto] lg:items-center lg:gap-16">
+        <div className="max-w-xl">
           <Eyebrow tone="gold">{eyebrow}</Eyebrow>
-          <h1 className="font-display text-navy text-h1 mt-5 font-bold tracking-tight text-balance">
+          <h1 className="font-display text-navy text-h1 mt-5 text-balance font-bold tracking-tight">
             {title}
           </h1>
           {body && (
@@ -38,63 +39,10 @@ export function PortalHeader({
   );
 }
 
-/**
- * The points figure. Deliberately the largest thing on the dashboard — it is
- * the one number the whole feature exists to move.
- */
-export function PointsSummary({
-  totalPoints,
-  totalEvents,
-}: {
-  totalPoints: number;
-  totalEvents: number;
-}) {
-  const tier = tierFor(totalPoints);
-
-  return (
-    <div className="rounded-panel ring-hairline bg-paper shadow-soft w-full max-w-sm p-6 ring-1 sm:p-7">
-      <div className="flex items-baseline justify-between gap-4">
-        <Eyebrow tone="muted" rule={false} as="p">
-          Chapter points
-        </Eyebrow>
-        <span className="bg-parchment text-navy text-eyebrow tracking-caps rounded-full px-3 py-1 font-semibold uppercase">
-          {tier.name}
-        </span>
-      </div>
-
-      <p className="font-display text-gold-ink text-stat mt-3 font-bold">
-        {totalPoints}
-      </p>
-      <p className="text-ink-muted text-body-sm mt-1">
-        from {totalEvents} {totalEvents === 1 ? "event" : "events"}
-      </p>
-
-      {tier.pointsToNext !== null && (
-        <div className="mt-5">
-          {/* Presentational only — the sentence below carries the same fact,
-              so the bar itself stays out of the accessibility tree. */}
-          <div
-            aria-hidden="true"
-            className="bg-sand h-1.5 w-full overflow-hidden rounded-full"
-          >
-            <div
-              className="bg-gold-bright h-full rounded-full"
-              style={{ width: `${Math.round(tier.progress * 100)}%` }}
-            />
-          </div>
-          <p className="text-ink-muted text-body-sm mt-2.5">
-            {tier.pointsToNext} more to reach {tier.next}.
-          </p>
-        </div>
-      )}
-    </div>
-  );
-}
-
 /** "+15 pts", beside an event a member attended. */
 export function PointsPill({ points }: { points: number }) {
   return (
-    <span className="bg-gold-bright/20 text-gold-ink text-body-sm ring-gold/40 inline-flex shrink-0 items-center rounded-full px-3 py-1 font-semibold ring-1">
+    <span className="bg-gold-bright/20 text-gold-ink text-body-sm ring-gold/40 inline-flex shrink-0 items-center rounded-full px-3 py-1 font-semibold tabular-nums ring-1">
       +{points} pts
     </span>
   );
@@ -116,7 +64,7 @@ export function EmptyState({
 }) {
   return (
     <div className="rounded-panel border-hairline bg-cream border border-dashed px-6 py-14 text-center">
-      <h3 className="font-display text-navy text-h3 font-bold text-balance">
+      <h3 className="font-display text-navy text-h3 text-balance font-bold">
         {title}
       </h3>
       <p className="text-ink-muted text-body max-w-measure mx-auto mt-3">

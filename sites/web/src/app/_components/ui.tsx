@@ -61,7 +61,7 @@ export function Eyebrow({
 export function ThemeBadge({ tone = "dark" }: { tone?: "dark" | "light" }) {
   return (
     <span
-      className={`inline-flex items-center gap-2.5 rounded-full py-1.5 pr-5 pl-4 ring-1 ${
+      className={`inline-flex items-center gap-2.5 rounded-full py-1.5 pl-4 pr-5 ring-1 ${
         tone === "dark"
           ? "bg-paper/70 text-navy ring-gold/45"
           : "text-white ring-white/20"
@@ -208,7 +208,7 @@ export function PageHeader({
       <div className="max-w-content relative mx-auto px-5 py-16 sm:px-6 sm:py-20 lg:py-24">
         <div className="rise max-w-3xl">
           <Eyebrow tone="gold">{eyebrow}</Eyebrow>
-          <h1 className="font-display text-navy text-h1 mt-6 font-bold tracking-tight text-balance">
+          <h1 className="font-display text-navy text-h1 mt-6 text-balance font-bold tracking-tight">
             {title}
           </h1>
           <p className="text-lead text-ink-muted max-w-measure mt-6">{body}</p>
@@ -274,7 +274,7 @@ export function Section({
     >
       {eyebrow && <Eyebrow>{eyebrow}</Eyebrow>}
       {title && (
-        <h2 className="font-display text-navy text-h2 mt-5 font-bold tracking-tight text-balance">
+        <h2 className="font-display text-navy text-h2 mt-5 text-balance font-bold tracking-tight">
           {title}
         </h2>
       )}
@@ -353,7 +353,7 @@ export function CtaPanel({
           </Eyebrow>
         )}
         <h2
-          className={`font-display text-h2 font-bold text-balance text-white ${
+          className={`font-display text-h2 text-balance font-bold text-white ${
             eyebrow ? "mt-5" : ""
           }`}
         >
@@ -612,7 +612,7 @@ export function Marquee({ items }: { items: readonly string[] }) {
       {items.map((item) => (
         <li
           key={item}
-          className="font-display text-navy/90 flex items-center text-lg font-bold whitespace-nowrap sm:text-xl"
+          className="font-display text-navy/90 flex items-center whitespace-nowrap text-lg font-bold sm:text-xl"
         >
           {item}
           <span

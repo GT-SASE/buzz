@@ -54,7 +54,7 @@ export default function ProgramsPage() {
                 </h2>
               </div>
               <div className="mt-5 lg:mt-0">
-                <p className="text-navy text-lead leading-relaxed font-medium">
+                <p className="text-navy text-lead font-medium leading-relaxed">
                   {program.body}
                 </p>
                 <p className="text-ink-muted text-body mt-4 leading-relaxed">

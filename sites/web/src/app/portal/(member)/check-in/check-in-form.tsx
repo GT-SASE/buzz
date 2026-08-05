@@ -55,7 +55,7 @@ export function CheckInForm({ initialCode }: { initialCode: string }) {
           maxLength={16}
           placeholder="ABCD2345"
           aria-describedby={checkIn.error ? "check-in-error" : undefined}
-          className="border-hairline bg-paper text-navy font-display placeholder:text-ink-muted/40 mt-3 w-full rounded-2xl border px-5 py-4 text-2xl font-bold tracking-[0.25em] uppercase"
+          className="border-hairline bg-paper text-navy font-display placeholder:text-ink-muted/40 mt-3 w-full rounded-2xl border px-5 py-4 text-2xl font-bold uppercase tracking-[0.25em]"
         />
 
         <button

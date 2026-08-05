@@ -74,7 +74,7 @@ export function EventAttendance({ eventId }: { eventId: string }) {
 
   return (
     <div>
-      <h1 className="font-display text-navy text-h1 font-bold tracking-tight text-balance">
+      <h1 className="font-display text-navy text-h1 text-balance font-bold tracking-tight">
         {event.title}
       </h1>
       <p className="text-ink-muted text-lead mt-3">

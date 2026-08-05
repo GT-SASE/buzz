@@ -207,7 +207,7 @@ export function SiteNav() {
                 <ul
                   id={menuId}
                   hidden={!expanded}
-                  className="rounded-card ring-hairline bg-paper absolute top-full left-0 mt-2 w-56 p-2 shadow-[0_20px_45px_-22px_rgb(66_48_20/0.5)] ring-1"
+                  className="rounded-card ring-hairline bg-paper absolute left-0 top-full mt-2 w-56 p-2 shadow-[0_20px_45px_-22px_rgb(66_48_20/0.5)] ring-1"
                 >
                   {group.items.map((item) => (
                     <li key={item.href}>

@@ -69,7 +69,7 @@ export default function Home() {
       {/* Hero. No photo frame: the second column carries the answer to the
           question a prospective member actually arrives with. */}
       <section className="bg-cream paper-wash aurora relative overflow-hidden">
-        <div className="max-w-content relative mx-auto grid gap-14 px-5 pt-20 pb-24 sm:px-6 lg:grid-cols-[1.15fr_0.85fr] lg:items-center lg:pt-28 lg:pb-32">
+        <div className="max-w-content relative mx-auto grid gap-14 px-5 pb-24 pt-20 sm:px-6 lg:grid-cols-[1.15fr_0.85fr] lg:items-center lg:pb-32 lg:pt-28">
           <div className="rise">
             <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
               <ThemeBadge />
@@ -169,7 +169,7 @@ export default function Home() {
               key={stat.label}
               className="flex flex-col-reverse sm:border-l sm:border-white/15 sm:pl-6 sm:first:border-l-0 sm:first:pl-0"
             >
-              <dt className="text-eyebrow tracking-caps mt-3 font-semibold text-white/70 uppercase">
+              <dt className="text-eyebrow tracking-caps mt-3 font-semibold uppercase text-white/70">
                 {stat.label}
               </dt>
               <dd className="font-display text-gold-bright text-stat font-bold">
@@ -318,7 +318,7 @@ export default function Home() {
         <Card tone="navy" className="lg:p-12">
           <div className="grid gap-10 lg:grid-cols-[1.2fr_0.8fr] lg:items-center">
             <div>
-              <h3 className="font-display text-h2 font-bold text-balance text-white">
+              <h3 className="font-display text-h2 text-balance font-bold text-white">
                 Partner slots are open for 2026&ndash;2027.
               </h3>
               <p className="mt-5 text-white/75">
@@ -356,7 +356,7 @@ export default function Home() {
 
       <section className="px-5 pb-20 sm:px-6 sm:pb-28">
         <div className="bg-parchment rounded-panel max-w-content reveal mx-auto px-8 py-16 text-center sm:px-16">
-          <h2 className="font-display text-navy text-h2 font-bold text-balance">
+          <h2 className="font-display text-navy text-h2 text-balance font-bold">
             Every major. Every year. Everyone welcome.
           </h2>
           <p className="text-ink-muted max-w-measure mx-auto mt-5">
