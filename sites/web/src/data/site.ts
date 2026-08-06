@@ -23,11 +23,10 @@ export const site = {
     "The Georgia Tech chapter of the Society of Asian Scientists and Engineers — preparing Asian heritage students for success in the global business world.",
   /**
    * Canonical origin, no trailing slash. Every canonical URL, the sitemap,
-   * robots.txt, and the OG image URLs are built from this, so it has to be the
-   * real production origin before launch.
-   * TODO: replace with the chapter's actual domain.
+   * robots.txt, and the OG image URLs are built from this.
+   * TODO: swap for the chapter's own domain if one is ever registered.
    */
-  url: "https://sasegt.org",
+  url: "https://buzzsase.vercel.app",
   locality: "Atlanta",
   region: "GA",
   parentOrganization: "https://www.saseconnect.org/",

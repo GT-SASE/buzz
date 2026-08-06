@@ -3,23 +3,17 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+import { Button } from "~/components/ui/button";
 import { adminNav, portalNav } from "~/data/portal";
+import { cn } from "~/lib/utils";
 
-/**
- * The portal's own tab rail, under the site header.
- *
- * The site nav is left alone on purpose: a member who lands here should still
- * be one click from /events and /join, and duplicating the whole header would
- * mean two competing navigations on the same page.
- */
+/** Route links, not panel switchers — real anchors keep prefetch and open-in-tab. */
 export function PortalTabs({ isOfficer }: { isOfficer: boolean }) {
   const pathname = usePathname();
   const tabs = isOfficer ? [...portalNav, ...adminNav] : portalNav;
 
   return (
-    // Not sticky: the site header already owns `top-0`, so a second sticky bar
-    // would slide underneath it and disappear on scroll.
-    <nav aria-label="Portal" className="border-hairline bg-paper border-b">
+    <nav aria-label="Portal" className="border-hairline border-t">
       <ul
         role="list"
         className="max-w-content mx-auto flex items-center gap-1 overflow-x-auto px-5 sm:px-6"
@@ -33,17 +27,23 @@ export function PortalTabs({ isOfficer }: { isOfficer: boolean }) {
 
           return (
             <li key={tab.href}>
-              <Link
-                href={tab.href}
-                aria-current={active ? "page" : undefined}
-                className={`text-body-sm relative block whitespace-nowrap px-4 py-4 font-medium transition ${
+              <Button
+                asChild
+                variant="ghost"
+                className={cn(
+                  "text-body-sm hover:bg-cream relative h-auto rounded-none px-4 py-3.5 font-medium",
                   active
-                    ? "text-navy after:bg-gold-bright after:absolute after:inset-x-3 after:bottom-0 after:h-0.5"
-                    : "text-ink-muted hover:text-navy"
-                }`}
+                    ? "text-navy hover:text-navy after:bg-gold-bright after:absolute after:inset-x-3 after:bottom-0 after:h-0.5"
+                    : "text-ink-muted hover:text-navy",
+                )}
               >
-                {tab.label}
-              </Link>
+                <Link
+                  href={tab.href}
+                  aria-current={active ? "page" : undefined}
+                >
+                  {tab.label}
+                </Link>
+              </Button>
             </li>
           );
         })}

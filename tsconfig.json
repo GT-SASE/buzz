@@ -1,0 +1,27 @@
+{
+  // Covers the test suite and the root config files, which otherwise belong to
+  // no workspace: eslint reported "was not found by the project service" for
+  // everything under tests/, and tsc never looked at them at all — so the tests
+  // guarding the app were themselves unchecked.
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "rootDir": ".",
+    "paths": {
+      "~/*": ["./sites/web/src/*"],
+      "@buzz/db": ["./packages/db/src/index.ts"],
+      "@buzz/api": ["./packages/api/src/index.ts"],
+      "@buzz/auth": ["./packages/auth/src/index.ts"]
+    }
+  },
+  // The root-level config files are TypeScript now, so they belong to a
+  // program too — otherwise eslint's type-aware rules report them as "not
+  // found by the project service" and tsc never checks them at all.
+  "include": [
+    "tests/**/*.ts",
+    "vitest.config.ts",
+    "eslint.config.ts",
+    "prettier.config.ts"
+  ],
+  "exclude": ["node_modules"]
+}

@@ -1,77 +1,155 @@
 @import "tailwindcss";
+@import "tw-animate-css";
 
-@theme {
+/* Pins `dark:` to an explicit class. Without this Tailwind v4 maps it to
+   prefers-color-scheme, and the dark: utilities baked into every Watermelon
+   component would fire on a dark-OS visitor against a light-only palette. */
+@custom-variant dark (&:is(.dark *));
+
+/* ---------------------------------------------------------------------------
+   GT palette. Georgia Tech navy and gold on a warm paper ground.
+   Every neutral is warm — the ink is brown-black, not blue-black.
+--------------------------------------------------------------------------- */
+:root {
+  --navy: #003057;
+  --navy-deep: #002240;
+  --gold: #b3a369;
+  --gold-bright: #eaaa00;
+
+  --paper: #fdfaf4;
+  --cream: #f7f1e5;
+  --sand: #efe5d2;
+  --parchment: #e5d8bf;
+
+  --ink: #241f1a;
+  --ink-muted: #5b5348;
+  --gold-ink: #6b5a24;
+
+  --hairline: rgb(36 31 26 / 0.12);
+  --rule: rgb(36 31 26 / 0.9);
+
+  /* shadcn contract, mapped onto the palette above. */
+  --radius: 0.375rem;
+
+  --background: var(--paper);
+  --foreground: var(--ink);
+  --card: var(--paper);
+  --card-foreground: var(--ink);
+  --popover: var(--paper);
+  --popover-foreground: var(--ink);
+  --primary: var(--navy);
+  --primary-foreground: #ffffff;
+  --secondary: var(--cream);
+  --secondary-foreground: var(--navy);
+  --muted: var(--sand);
+  --muted-foreground: var(--ink-muted);
+  --accent: var(--gold-bright);
+  --accent-foreground: var(--navy);
+  --destructive: #9a2f22;
+  --destructive-foreground: #ffffff;
+  --border: var(--hairline);
+  --input: rgb(36 31 26 / 0.2);
+  --ring: var(--navy);
+
+  --chart-1: #003057;
+  --chart-2: #eaaa00;
+  --chart-3: #6b5a24;
+  --chart-4: #7a8fa6;
+  --chart-5: #b3a369;
+
+  --sidebar: var(--cream);
+  --sidebar-foreground: var(--ink);
+  --sidebar-primary: var(--navy);
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: var(--sand);
+  --sidebar-accent-foreground: var(--navy);
+  --sidebar-border: var(--hairline);
+  --sidebar-ring: var(--navy);
+}
+
+@theme inline {
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
   --font-display: var(--font-display), Georgia, "Times New Roman", serif;
 
-  /* Georgia Tech navy and gold, on a warm paper ground rather than white.
-     Every neutral is warm — the ink is brown-black, not blue-black — so the
-     palette reads collegiate instead of corporate. */
-  --color-navy: #003057;
-  --color-navy-deep: #002240;
-  --color-gold: #b3a369;
-  --color-gold-bright: #eaaa00;
+  --color-navy: var(--navy);
+  --color-navy-deep: var(--navy-deep);
+  --color-gold: var(--gold);
+  --color-gold-bright: var(--gold-bright);
+  --color-paper: var(--paper);
+  --color-cream: var(--cream);
+  --color-sand: var(--sand);
+  --color-parchment: var(--parchment);
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-gold-ink: var(--gold-ink);
+  --color-hairline: var(--hairline);
+  --color-rule: var(--rule);
 
-  /* Warm grounds, lightest first. paper is the page; cream and sand are the
-     alternating bands; parchment is the deepest tint, for inset panels. */
-  --color-paper: #fdfaf4;
-  --color-cream: #f7f1e5;
-  --color-sand: #efe5d2;
-  --color-parchment: #e5d8bf;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
 
-  /* Warm ink. ink-muted is the default body colour (6.6:1 on paper);
-     gold-ink is the gold hue made legible as text on light grounds (5.4:1). */
-  --color-ink: #241f1a;
-  --color-ink-muted: #5b5348;
-  --color-gold-ink: #6b5a24;
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
 
-  /* The one border tint. border-hairline / ring-hairline / divide-hairline. */
-  --color-hairline: rgb(36 31 26 / 0.12);
-
-  /* Type scale. These are the ONLY font-size utilities for headings, body copy
-     and display numerals — the clamps handle scaling, so never add sm:/lg:
-     size variants. Heading tokens carry their own line-height, so pair them
-     with a leading-* utility only to deviate on purpose. */
+  /* Editorial type scale. The clamps handle scaling, so never add sm:/lg:
+     size variants. Heading tokens carry their own line-height. */
   --text-eyebrow: 0.75rem;
   --text-body-sm: 0.9375rem;
   --text-body: 1.0625rem;
   --text-lead: clamp(1.125rem, 0.4vw + 1rem, 1.3125rem);
   --text-lead--line-height: 1.6;
   --text-h3: clamp(1.375rem, 0.6vw + 1.15rem, 1.625rem);
-  --text-h3--line-height: 1.3;
-  --text-h2: clamp(1.875rem, 1.8vw + 1.25rem, 2.75rem);
-  --text-h2--line-height: 1.15;
-  --text-h1: clamp(2.5rem, 3.4vw + 1.4rem, 4rem);
-  --text-h1--line-height: 1.08;
-  --text-hero: clamp(2.875rem, 5.2vw + 1rem, 5rem);
-  --text-hero--line-height: 1.02;
-
-  /* Display sizes for non-prose figures: stat values and 01/02/03 numerals. */
-  --text-stat: clamp(2.25rem, 1.6vw + 1.7rem, 3.25rem);
-  --text-stat--line-height: 1;
-  --text-numeral: clamp(2.25rem, 1.5vw + 1.8rem, 3rem);
+  --text-h3--line-height: 1.25;
+  --text-h2: clamp(2rem, 3.2vw, 3.5rem);
+  --text-h2--line-height: 1.05;
+  --text-h1: clamp(2.75rem, 6vw, 5.5rem);
+  --text-h1--line-height: 0.98;
+  --text-hero: clamp(3.25rem, 9vw, 8rem);
+  --text-hero--line-height: 0.92;
+  --text-stat: clamp(2.75rem, 4vw, 4.5rem);
+  --text-stat--line-height: 0.95;
+  --text-numeral: clamp(0.75rem, 0.3vw + 0.6rem, 0.8125rem);
   --text-numeral--line-height: 1;
 
-  /* Geometry. tracking-caps is the single uppercase tracking value.
-     Radii are named so Tailwind's built-in rounded-md/lg/full keep their
-     meanings (rounded-full = pills and discs only). */
   --tracking-caps: 0.16em;
-  --radius-card: 1.25rem;
-  --radius-panel: 2rem;
+  --tracking-masthead: 0.28em;
 
-  /* Measure widths: max-w-measure (prose), max-w-narrow, max-w-content
-     (the standard page container), max-w-wide (full-bleed bands). */
   --container-measure: 40rem;
   --container-narrow: 46rem;
   --container-content: 72rem;
   --container-wide: 88rem;
-
-  /* Warm shadows — brown-tinted, never the default blue-grey, which reads
-     cold against cream. soft is the resting state, lift is the hover state. */
-  --shadow-soft: 0 1px 2px rgb(66 48 20 / 0.05), 0 10px 30px -18px
-    rgb(66 48 20 / 0.28);
-  --shadow-lift: 0 2px 4px rgb(66 48 20 / 0.06), 0 30px 60px -30px
-    rgb(66 48 20 / 0.4);
 }
 
 @keyframes rise {
@@ -103,15 +181,6 @@
   }
 }
 
-@keyframes drift {
-  from {
-    transform: translate3d(0, 0, 0) scale(1);
-  }
-  to {
-    transform: translate3d(6%, -4%, 0) scale(1.18);
-  }
-}
-
 @keyframes marquee {
   from {
     transform: translateX(0);
@@ -121,8 +190,7 @@
   }
 }
 
-/* Registering the type is what makes a custom property animatable at all —
-   an unregistered --count would jump from 0 to the target in one step. */
+/* Registering the type is what makes a custom property animatable at all. */
 @property --count {
   syntax: "<integer>";
   initial-value: 0;
@@ -139,13 +207,38 @@
 }
 
 @layer utilities {
-  /* Above-the-fold entrance. Stagger with an inline animation-delay. */
   .rise {
     animation: rise 0.8s cubic-bezier(0.22, 1, 0.36, 1) both;
   }
 
-  /* Each child <span> is clipped by this element, so it can slide in from
-     under its own baseline. Static (finished) until motion is allowed. */
+  /* The section divider. A page is divided by these rather than by alternating
+     background bands, which is what stops every section reading as a card. */
+  .rule-heavy {
+    border-top: 2px solid var(--rule);
+  }
+
+  /* Fraunces carries noticeable left side bearing at hero sizes, so a headline
+     set flush to a rule sits visibly inboard of it until it is pulled back. */
+  .optical-left {
+    margin-left: -0.055em;
+  }
+
+  .hang {
+    position: relative;
+  }
+
+  /* 1400px, not 1024px: max-w-content only gains 4.5rem of margin to hang into
+     once the viewport clears ~1344px, and left overflow does not scroll. */
+  @media (min-width: 1400px) {
+    .hang > .hang-number {
+      position: absolute;
+      left: -4.5rem;
+      top: 0.35em;
+      width: 3rem;
+      text-align: right;
+    }
+  }
+
   .line-mask {
     display: block;
     overflow: hidden;
@@ -158,46 +251,9 @@
     display: block;
   }
 
-  /* Two soft colour fields behind the hero. Sized in vw so they scale with
-     the viewport rather than pinning to a breakpoint. */
-  .aurora::before,
-  .aurora::after {
-    content: "";
-    position: absolute;
-    border-radius: 50%;
-    filter: blur(70px);
-    pointer-events: none;
-    will-change: transform;
-  }
-
-  .aurora::before {
-    inset: -18% auto auto -12%;
-    width: 55vw;
-    height: 42vw;
-    background: radial-gradient(
-      circle,
-      rgb(234 170 0 / 0.34),
-      rgb(234 170 0 / 0) 68%
-    );
-  }
-
-  .aurora::after {
-    inset: auto -14% -28% auto;
-    width: 48vw;
-    height: 40vw;
-    background: radial-gradient(
-      circle,
-      rgb(0 48 87 / 0.24),
-      rgb(0 48 87 / 0) 68%
-    );
-  }
-
-  /*
-   * Renders its number through a counter so the value can be animated. The
-   * resting value is the real one, so with no animation support the figure is
-   * simply correct. Always pair with a visually-hidden real number for
-   * assistive tech — generated content is not reliably announced.
-   */
+  /* Renders its number through a counter so the value can be animated. The
+     resting value is the real one. Always pair with a visually-hidden real
+     number — generated content is not reliably announced. */
   .count-up {
     --count: var(--to);
     counter-reset: num var(--count);
@@ -212,26 +268,14 @@
     width: max-content;
   }
 
-  .text-gradient {
-    background-image: linear-gradient(
-      100deg,
-      var(--color-navy) 16%,
-      var(--color-gold-ink) 50%,
-      var(--color-navy) 88%
-    );
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
+  .marquee-viewport:hover .marquee-track,
+  .marquee-viewport:focus-within .marquee-track {
+    animation-play-state: paused;
   }
 
-  /*
-   * Scroll-triggered entrance, with no JavaScript and no hydration cost.
-   * The old IntersectionObserver version rendered its children at opacity 0
-   * server-side, so the whole page stayed blank until React booted. Here the
-   * markup is visible by default and the animation is layered on only where
-   * scroll-driven timelines exist, so a browser without support (or a reader
-   * with reduced motion) simply gets the finished page immediately.
-   */
+  /* Scroll-triggered entrance with no JavaScript and no hydration cost. The
+     markup is visible by default; the animation layers on only where
+     scroll-driven timelines exist. */
   @media (prefers-reduced-motion: no-preference) {
     @supports (animation-timeline: view()) {
       .reveal {
@@ -240,15 +284,8 @@
         animation-range: entry 0% cover 24%;
       }
 
-      /*
-       * Children resolve one after another. Scroll-driven animations ignore
-       * animation-delay, so the offset goes into animation-range instead —
-       * each item starts a little further into the scroll than the last.
-       *
-       * Opacity only, deliberately: these grids sit inside a `.reveal` block
-       * that already carries the 20px rise, and two nested transforms compound
-       * into a 40px lurch.
-       */
+      /* Opacity only: these grids sit inside a `.reveal` block that already
+         carries the rise, and two nested transforms compound. */
       .stagger > * {
         animation: fade-in linear both;
         animation-timeline: view();
@@ -270,7 +307,6 @@
         animation-range: entry 19% cover 39%;
       }
 
-      /* Headline lines wipe up from behind their own edge, one after another. */
       .line-mask > span {
         animation: line-rise 0.95s cubic-bezier(0.22, 1, 0.36, 1) both;
       }
@@ -281,17 +317,6 @@
         animation-delay: 0.22s;
       }
 
-      /* Slow drift behind the hero. Transform only — never paints on scroll. */
-      .aurora::before,
-      .aurora::after {
-        animation: drift 26s ease-in-out infinite alternate;
-      }
-      .aurora::after {
-        animation-duration: 34s;
-        animation-direction: alternate-reverse;
-      }
-
-      /* Counts from 0 to --to as the figure scrolls into view. */
       .count-up {
         animation: count-up linear both;
         animation-timeline: view();
@@ -319,7 +344,6 @@
       );
   }
 
-  /* The same idea on navy grounds: a gold sunrise instead of a grey lattice. */
   .navy-wash {
     background-image:
       radial-gradient(
@@ -340,9 +364,16 @@
 }
 
 @layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+
   html {
-    /* Sticky header clearance for #anchor jumps, with room to spare at the
-       taller mobile header height. */
+    /* Sticky header clearance for #anchor jumps. */
     scroll-padding-top: 6rem;
   }
 
@@ -353,17 +384,16 @@
   }
 
   ::selection {
-    background-color: var(--color-gold-bright);
-    color: var(--color-navy);
+    background-color: var(--gold-bright);
+    color: var(--navy);
   }
 
-  /* Two-tone ring: navy core reads on paper (13.2:1) and on gold CTAs
-     (5.4:1); the gold halo keeps it visible on navy sections. */
+  /* Two-tone ring: navy core reads on paper (13.2:1) and on gold CTAs (5.4:1);
+     the gold halo keeps it visible on navy sections. */
   :focus-visible {
-    outline: 2px solid var(--color-navy);
+    outline: 2px solid var(--navy);
     outline-offset: 2px;
-    box-shadow: 0 0 0 4px var(--color-gold-bright);
-    border-radius: 6px;
+    box-shadow: 0 0 0 4px var(--gold-bright);
   }
 }
 

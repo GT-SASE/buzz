@@ -1,5 +1,11 @@
 {
   "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    // next-auth's types reach into React's, so @types/react has to be in the
+    // global set here even though nothing in this package renders anything.
+    "types": ["node", "react"]
+  },
   "include": ["src/**/*.ts"],
   "exclude": ["node_modules"]
 }

@@ -2,10 +2,15 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "plugins": [{ "name": "next" }],
-    "baseUrl": ".",
+    // No `baseUrl`: TypeScript 7 dropped it. The mapping below is resolved
+    // relative to this file instead, which is where it always pointed anyway.
     "paths": {
       "~/*": ["./src/*"]
-    }
+    },
+    "rootDir": ".",
+    // Explicit, because TypeScript 7 no longer sweeps every @types package it
+    // can reach into the global scope. These are the four this app installs.
+    "types": ["node", "react", "react-dom", "qrcode"]
   },
   "include": [
     "next-env.d.ts",

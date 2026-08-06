@@ -1,13 +1,9 @@
-import { Eyebrow } from "~/app/_components/ui";
+import { Eyebrow } from "~/components/site";
+import { Button } from "~/components/ui/button";
+import { Card, CardContent } from "~/components/ui/card";
 import { signOutOfPortal } from "./auth-actions";
 
-/**
- * Portal masthead.
- *
- * Deliberately quieter than the marketing site's `PageHeader`: on a signed-in
- * page the membership card is the thing worth looking at, so the heading gets
- * out of its way rather than competing for the same attention.
- */
+/** Portal masthead. Quieter than the marketing `PageHeader` on purpose. */
 export function PortalHeader({
   eyebrow,
   title,
@@ -24,7 +20,7 @@ export function PortalHeader({
       <div className="max-w-content relative mx-auto grid gap-10 px-5 py-12 sm:px-6 sm:py-16 lg:grid-cols-[1fr_auto] lg:items-center lg:gap-16">
         <div className="max-w-xl">
           <Eyebrow tone="gold">{eyebrow}</Eyebrow>
-          <h1 className="font-display text-navy text-h1 mt-5 text-balance font-bold tracking-tight">
+          <h1 className="font-display text-navy text-h1 mt-5 font-bold tracking-tight text-balance">
             {title}
           </h1>
           {body && (
@@ -39,20 +35,7 @@ export function PortalHeader({
   );
 }
 
-/** "+15 pts", beside an event a member attended. */
-export function PointsPill({ points }: { points: number }) {
-  return (
-    <span className="bg-gold-bright/20 text-gold-ink text-body-sm ring-gold/40 inline-flex shrink-0 items-center rounded-full px-3 py-1 font-semibold tabular-nums ring-1">
-      +{points} pts
-    </span>
-  );
-}
-
-/**
- * What a portal page shows when there is nothing yet. Always carries the action
- * that fills it — an empty panel with no next step is the placeholder problem
- * in another costume.
- */
+/** Nothing here yet — always carrying the action that fills it. */
 export function EmptyState({
   title,
   body,
@@ -63,19 +46,21 @@ export function EmptyState({
   children?: React.ReactNode;
 }) {
   return (
-    <div className="rounded-panel border-hairline bg-cream border border-dashed px-6 py-14 text-center">
-      <h3 className="font-display text-navy text-h3 text-balance font-bold">
-        {title}
-      </h3>
-      <p className="text-ink-muted text-body max-w-measure mx-auto mt-3">
-        {body}
-      </p>
-      {children && (
-        <div className="mt-7 flex flex-wrap justify-center gap-4">
-          {children}
-        </div>
-      )}
-    </div>
+    <Card className="border-hairline bg-cream rounded-lg border-dashed py-14 text-center shadow-none">
+      <CardContent>
+        <h3 className="font-display text-navy text-h3 font-bold text-balance">
+          {title}
+        </h3>
+        <p className="text-ink-muted text-body max-w-measure mx-auto mt-3">
+          {body}
+        </p>
+        {children && (
+          <div className="mt-7 flex flex-wrap justify-center gap-4">
+            {children}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -83,12 +68,14 @@ export function EmptyState({
 export function SignOutButton() {
   return (
     <form action={signOutOfPortal}>
-      <button
+      <Button
         type="submit"
-        className="text-ink-muted hover:text-navy text-body-sm font-semibold transition"
+        variant="ghost"
+        size="sm"
+        className="text-ink-muted hover:text-navy hover:bg-cream text-body-sm rounded-none font-semibold"
       >
         Sign out
-      </button>
+      </Button>
     </form>
   );
 }

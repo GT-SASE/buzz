@@ -17,13 +17,13 @@
     "@auth/core": "^0.41.3",
     "@auth/drizzle-adapter": "^1.11.3",
     "@buzz/db": "workspace:*",
-    "drizzle-orm": "^0.41.0",
+    "drizzle-orm": "^0.45.2",
     "next-auth": "5.0.0-beta.32"
   },
   "devDependencies": {
-    "@types/node": "^20.14.10",
-    "@types/react": "^19.0.0",
-    "react": "^19.0.0",
-    "typescript": "^5.8.2"
+    "@types/node": "^25.6.2",
+    "@types/react": "^19.2.18",
+    "react": "^19.2.8",
+    "typescript-7": "npm:typescript@^7.0.0"
   }
 }

@@ -1,4 +1,4 @@
-﻿import { eventRouter } from "./routers/event";
+import { eventRouter } from "./routers/event";
 import { createCallerFactory, createTRPCRouter } from "./trpc";
 
 /**

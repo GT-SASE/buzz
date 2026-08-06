@@ -7,7 +7,10 @@ import { type Config } from "drizzle-kit";
  * from without configuration. drizzle-kit never loads Next, so it is pointed at
  * the same file rather than given a second copy of the credentials.
  */
-const envFile = resolve(import.meta.dirname, "../../sites/web/.env");
+// `process.cwd()`, not `import.meta.dirname`: drizzle-kit bundles this config
+// to CJS before running it, which leaves import.meta empty. The scripts that
+// use this file all run with the package directory as the working directory.
+const envFile = resolve(process.cwd(), "../../sites/web/.env");
 if (existsSync(envFile)) process.loadEnvFile(envFile);
 
 const url = process.env.DATABASE_URL;

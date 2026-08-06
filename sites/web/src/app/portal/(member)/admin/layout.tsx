@@ -1,4 +1,5 @@
 import { requireOfficer } from "~/app/portal/_lib/session";
+import { Toaster } from "~/components/ui/sonner";
 
 /**
  * Officer-only subtree.
@@ -13,5 +14,10 @@ export default async function AdminLayout({
   children: React.ReactNode;
 }) {
   await requireOfficer("/portal/admin");
-  return children;
+  return (
+    <>
+      {children}
+      <Toaster position="bottom-right" />
+    </>
+  );
 }
