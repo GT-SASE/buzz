@@ -1,21 +1,20 @@
+import { ArrowRight } from "lucide-react";
 import Link from "next/link";
 
-import { Button, Card, Eyebrow, Section, TextLink } from "~/app/_components/ui";
+import { EventRows } from "~/app/portal/_components/event-rows";
 import { MemberCard } from "~/app/portal/_components/member-card";
-import {
-  EmptyState,
-  PointsPill,
-  PortalHeader,
-  SignOutButton,
-} from "~/app/portal/_components/portal-ui";
-import {
-  formatDate,
-  formatEventTime,
-  formatMonth,
-} from "~/app/portal/_lib/format";
+import { SignOutButton } from "~/app/portal/_components/portal-ui";
+import { formatMonth } from "~/app/portal/_lib/format";
 import { requireSession } from "~/app/portal/_lib/session";
+import { Button } from "~/components/site";
+import { Card } from "~/components/ui/card";
+import { Separator } from "~/components/ui/separator";
 import { api } from "~/trpc/server";
 
+/**
+ * The whole member portal, on one screen: the card is the heading, the check-in
+ * is the one loud control, everything else is rows.
+ */
 export default async function PortalDashboard() {
   const session = await requireSession("/portal");
 
@@ -25,148 +24,112 @@ export default async function PortalDashboard() {
     api.event.upcoming(),
   ]);
 
-  const firstName = session.user.name?.split(/\s+/)[0];
-  const recent = attended.slice(0, 3);
   const open = upcoming.filter((event) => event.checkInEnabled);
 
   return (
-    <>
-      <PortalHeader
-        eyebrow="Member portal"
-        title={firstName ? `Welcome back, ${firstName}.` : "Welcome back."}
-        body="Every event you attend is worth points. Check in at the door with the code the officers put on the screen."
-        aside={
-          <MemberCard
-            name={session.user.name ?? session.user.email ?? "Member"}
-            memberSince={
-              stats.memberSince ? formatMonth(stats.memberSince) : null
-            }
-            totalPoints={stats.totalPoints}
-            totalEvents={stats.totalEvents}
-          />
-        }
-      />
+    <div className="max-w-content mx-auto px-5 py-10 sm:px-6 sm:py-14">
+      <div className="grid gap-10 lg:grid-cols-[26rem_minmax(0,1fr)] lg:items-start lg:gap-14">
+        <MemberCard
+          name={session.user.name ?? session.user.email ?? "Member"}
+          memberSince={
+            stats.memberSince ? formatMonth(stats.memberSince) : null
+          }
+          totalPoints={stats.totalPoints}
+          totalEvents={stats.totalEvents}
+        />
 
-      <Section
-        size="sm"
-        eyebrow="Next up"
-        title="What is open right now."
-        lead="Events still accepting check-ins. Anything you have already been to is marked."
-      >
-        {open.length > 0 ? (
-          <ul role="list" className="stagger grid gap-6 md:grid-cols-2">
-            {open.map((event) => (
-              <li key={event.id}>
-                <Card className="flex h-full flex-col">
-                  <div className="flex items-start justify-between gap-4">
-                    <p className="bg-parchment text-navy text-eyebrow tracking-caps inline-flex w-fit rounded-full px-3.5 py-1.5 font-semibold uppercase">
-                      {formatEventTime(event.startsAt)}
-                    </p>
-                    {event.attendedAt ? (
-                      <span className="text-gold-ink text-body-sm font-semibold">
-                        Checked in
-                      </span>
-                    ) : (
-                      <PointsPill points={event.pointsValue} />
-                    )}
-                  </div>
-                  <h3 className="font-display text-navy text-h3 mt-5 font-bold">
-                    {event.title}
-                  </h3>
-                  {event.location && (
-                    <p className="text-gold-ink text-body-sm mt-2 font-semibold">
-                      {event.location}
-                    </p>
-                  )}
-                  {event.description && (
-                    <p className="text-ink-muted text-body-sm mt-4">
-                      {event.description}
-                    </p>
-                  )}
-                </Card>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <EmptyState
-            title="Nothing open at the moment."
-            body="Check-in opens when an officer starts an event. The public calendar has what is coming this semester."
-          >
-            <Button href="/events" variant="outline">
-              See the calendar
-            </Button>
-          </EmptyState>
-        )}
-
-        <div className="mt-10">
-          <Button href="/portal/check-in">I have a check-in code</Button>
-        </div>
-      </Section>
-
-      <Section
-        size="sm"
-        className="bg-cream border-hairline border-y"
-        eyebrow="Your history"
-        title="Where you have been."
-      >
-        {recent.length > 0 ? (
-          <>
-            <ul role="list" className="border-hairline border-t">
-              {recent.map((event) => (
-                <li
-                  key={event.id}
-                  className="border-hairline flex flex-wrap items-center gap-x-5 gap-y-2 border-b px-1 py-5"
-                >
-                  <div className="min-w-0 flex-1">
-                    <h3 className="font-display text-navy text-h3 font-bold">
-                      {event.title}
-                    </h3>
-                    <p className="text-ink-muted text-body-sm mt-1">
-                      {formatDate(event.startsAt)}
-                      {event.location ? ` · ${event.location}` : ""}
-                    </p>
-                  </div>
-                  <PointsPill points={event.pointsEarned} />
-                </li>
-              ))}
-            </ul>
-            <div className="mt-8">
-              <TextLink href="/portal/events">
-                All {stats.totalEvents} events you have attended
-              </TextLink>
-            </div>
-          </>
-        ) : (
-          <EmptyState
-            title="No check-ins yet."
-            body="Your first one takes about ten seconds — an officer reads out a code at the start of the meeting."
-          >
-            <Button href="/events" variant="outline">
-              Find a meeting
-            </Button>
-          </EmptyState>
-        )}
-      </Section>
-
-      <section className="max-w-content mx-auto flex flex-wrap items-center justify-between gap-4 px-5 py-10 sm:px-6">
         <div>
-          <Eyebrow tone="muted" rule={false}>
-            Signed in as
-          </Eyebrow>
-          <p className="text-ink-muted text-body-sm mt-2">
-            {session.user.email}
-            {session.user.role === "ADMIN" && (
-              <>
-                {" · "}
-                <Link href="/portal/admin" className="text-navy font-semibold">
-                  Officer tools
-                </Link>
-              </>
-            )}
-          </p>
+          <Card className="bg-navy hover:bg-navy-deep group gap-0 rounded-lg border-0 py-0 transition-colors duration-300">
+            <Link
+              href="/portal/check-in"
+              className="flex items-center justify-between gap-6 px-7 py-6"
+            >
+              <span>
+                <span className="font-display block text-xl font-bold text-white">
+                  Check in
+                </span>
+                <span className="mt-1 block text-white/70">
+                  Scan the QR code on the screen
+                </span>
+              </span>
+              <ArrowRight
+                aria-hidden="true"
+                className="text-gold-bright size-6 shrink-0 transition-transform duration-300 group-hover:translate-x-1"
+              />
+            </Link>
+          </Card>
+
+          <EventRows
+            title="Open now"
+            empty={
+              <p className="text-ink-muted text-body-sm text-center">
+                Nothing is open at the moment. Check-in opens when an officer
+                starts an event.
+              </p>
+            }
+            rows={open.map((event) => ({
+              key: event.id,
+              title: event.title,
+              at: event.startsAt,
+              location: event.location,
+              points: event.pointsValue,
+              done: event.attendedAt !== null,
+            }))}
+          />
+
+          <EventRows
+            title="Where you have been"
+            count={
+              stats.totalEvents > 0
+                ? `${stats.totalEvents} · ${stats.totalPoints} pts`
+                : undefined
+            }
+            empty={
+              <div className="text-center">
+                <p className="font-display text-navy text-h3 font-bold">
+                  No check-ins yet.
+                </p>
+                <p className="text-ink-muted text-body max-w-measure mx-auto mt-3">
+                  Your first one takes about ten seconds.{" "}
+                  {open.length > 0
+                    ? `${open.length} ${open.length === 1 ? "event is" : "events are"} open right now — check into one and it lands here.`
+                    : "Check-in opens when an officer starts an event."}
+                </p>
+                <div className="mt-7 flex justify-center">
+                  <Button href="/portal/check-in">Check in</Button>
+                </div>
+              </div>
+            }
+            rows={attended.map((event) => ({
+              key: event.id,
+              title: event.title,
+              at: event.startsAt,
+              location: event.location,
+              points: event.pointsEarned,
+              note: event.method === "manual" ? "Added by an officer" : null,
+            }))}
+          />
+
+          <Separator className="mt-12" />
+          <div className="flex flex-wrap items-center justify-between gap-4 pt-6">
+            <p className="text-ink-muted text-body-sm">
+              {session.user.email}
+              {session.user.role === "ADMIN" && (
+                <>
+                  {" · "}
+                  <Link
+                    href="/portal/admin"
+                    className="text-navy font-semibold"
+                  >
+                    Officer tools
+                  </Link>
+                </>
+              )}
+            </p>
+            <SignOutButton />
+          </div>
         </div>
-        <SignOutButton />
-      </section>
-    </>
+      </div>
+    </div>
   );
 }

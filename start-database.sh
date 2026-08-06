@@ -13,12 +13,36 @@
 
 # import env variables from the web app's .env, which is the one copy of them
 ENV_FILE="$(dirname "$0")/sites/web/.env"
+
+# Guarded: without this, a missing .env only prints a `source` error and the
+# script carries on with DATABASE_URL unset, deriving an empty port and a
+# container literally named "-postgres" — which docker then rejects with a
+# message that says nothing about the real cause.
+if [ ! -f "$ENV_FILE" ]; then
+  echo "Missing $ENV_FILE"
+  echo "Copy sites/web/.env.example to sites/web/.env and fill it in first."
+  exit 1
+fi
+
 set -a
 source "$ENV_FILE"
+set +a
+
+if [ -z "$DATABASE_URL" ]; then
+  echo "DATABASE_URL is not set in $ENV_FILE"
+  exit 1
+fi
 
 DB_PASSWORD=$(echo "$DATABASE_URL" | awk -F':' '{print $3}' | awk -F'@' '{print $1}')
 DB_PORT=$(echo "$DATABASE_URL" | awk -F':' '{print $4}' | awk -F'\/' '{print $1}')
 DB_NAME=$(echo "$DATABASE_URL" | awk -F'/' '{print $4}')
+
+if [ -z "$DB_NAME" ] || [ -z "$DB_PORT" ]; then
+  echo "Could not parse a database name and port out of DATABASE_URL."
+  echo "Expected the form postgresql://user:password@host:port/database"
+  exit 1
+fi
+
 DB_CONTAINER_NAME="$DB_NAME-postgres"
 
 if ! [ -x "$(command -v docker)" ] && ! [ -x "$(command -v podman)" ]; then

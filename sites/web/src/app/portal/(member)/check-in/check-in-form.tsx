@@ -1,23 +1,52 @@
 "use client";
 
+import { CameraOffIcon, OctagonXIcon } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { toast } from "sonner";
 
-import { PointsPill } from "~/app/portal/_components/portal-ui";
+import { Honeycomb } from "~/app/portal/_components/honeycomb";
+import { Eyebrow } from "~/components/site";
+import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert";
+import { Button } from "~/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "~/components/ui/card";
+import { Spinner } from "~/components/ui/spinner";
+import { site } from "~/data/site";
 import { api } from "~/trpc/react";
+import { Scanner } from "./scanner";
+
+function CodePlate({ code }: { code: string }) {
+  return (
+    <p className="font-display text-navy font-mono text-3xl font-bold tracking-[0.2em] tabular-nums">
+      {code}
+    </p>
+  );
+}
 
 export function CheckInForm({ initialCode }: { initialCode: string }) {
-  // Prefilled from `?code=` but never auto-submitted: the mutation fires only
-  // on an explicit tap, so a link preview or a prefetch cannot check anyone in.
-  const [code, setCode] = useState(initialCode.toUpperCase());
   const router = useRouter();
   const utils = api.useUtils();
 
+  /** Set when a code arrives in the URL, which needs a tap before it fires. */
+  const [confirm, setConfirm] = useState(initialCode.toUpperCase());
+  const [submitted, setSubmitted] = useState("");
+  /** Why the camera is not on screen, when it could not be started. */
+  const [cameraNote, setCameraNote] = useState<string | null>(null);
+
   const checkIn = api.event.checkIn.useMutation({
-    onSuccess: async () => {
-      setCode("");
-      // The dashboard and history are server-rendered, so both the cache and
-      // the RSC payload have to be told the totals moved.
+    onSuccess: async (result) => {
+      toast.success("Checked in", {
+        description: `${result.eventTitle} — +${result.pointsEarned} points`,
+      });
+      // The dashboard is server-rendered, so both the query cache and the RSC
+      // payload have to be told the totals moved.
       await Promise.all([
         utils.event.myStats.invalidate(),
         utils.event.myEvents.invalidate(),
@@ -25,79 +54,195 @@ export function CheckInForm({ initialCode }: { initialCode: string }) {
       ]);
       router.refresh();
     },
+    onError: (error) => {
+      toast.error("Not checked in", { description: error.message });
+    },
   });
 
-  return (
-    <div>
-      <form
-        onSubmit={(submitEvent) => {
-          submitEvent.preventDefault();
-          if (!code.trim()) return;
-          checkIn.mutate({ code });
-        }}
-      >
-        <label
-          htmlFor="check-in-code"
-          className="text-eyebrow tracking-caps text-ink-muted font-semibold uppercase"
-        >
-          Check-in code
-        </label>
-        <input
-          id="check-in-code"
-          name="code"
-          value={code}
-          onChange={(changeEvent) =>
-            setCode(changeEvent.target.value.toUpperCase())
-          }
-          autoComplete="off"
-          autoCapitalize="characters"
-          spellCheck={false}
-          maxLength={16}
-          placeholder="ABCD2345"
-          aria-describedby={checkIn.error ? "check-in-error" : undefined}
-          className="border-hairline bg-paper text-navy font-display placeholder:text-ink-muted/40 mt-3 w-full rounded-2xl border px-5 py-4 text-2xl font-bold uppercase tracking-[0.25em]"
-        />
+  const submit = (code: string) => {
+    if (checkIn.isPending) return;
+    setSubmitted(code);
+    checkIn.mutate({ code });
+  };
 
-        <button
-          type="submit"
-          disabled={checkIn.isPending || code.trim().length === 0}
-          className="bg-gold-bright text-navy hover:bg-gold shadow-soft mt-5 w-full rounded-full px-7 py-3.5 font-semibold transition duration-300 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {checkIn.isPending ? "Checking in..." : "Check in"}
-        </button>
-      </form>
+  if (checkIn.data) {
+    const { eventTitle, pointsEarned, totalPoints, totalEvents } = checkIn.data;
 
-      {/* Both states are announced: the member is usually looking at the
-          officer, not the screen, when this resolves. */}
-      <div aria-live="polite" className="mt-6">
-        {checkIn.error && (
-          <p
-            id="check-in-error"
-            className="rounded-card border border-red-800/25 bg-red-50 px-5 py-4 text-sm font-medium text-red-900"
+    return (
+      <div>
+        <Alert
+          role="status"
+          className="border-navy-deep bg-navy relative overflow-hidden rounded-lg px-6 py-12 text-center text-white"
+        >
+          <Honeycomb className="absolute inset-0 h-full w-full text-white/[0.07]" />
+          <AlertTitle className="text-eyebrow tracking-masthead text-gold-bright relative font-semibold uppercase">
+            Checked in
+          </AlertTitle>
+          <AlertDescription className="relative justify-items-center text-white">
+            <p className="font-display text-gold-bright mt-5 text-6xl leading-none font-bold tabular-nums">
+              +{pointsEarned}
+            </p>
+            <p className="font-display mt-6 text-xl font-bold text-white">
+              {eventTitle}
+            </p>
+            <p className="mt-3 text-white/70">
+              {totalPoints} points across {totalEvents}{" "}
+              {totalEvents === 1 ? "event" : "events"}.
+            </p>
+          </AlertDescription>
+        </Alert>
+
+        <div className="mt-6 flex justify-center">
+          <Button
+            asChild
+            size="lg"
+            className="bg-gold-bright text-navy hover:bg-gold text-eyebrow tracking-caps rounded-none px-6 font-semibold uppercase"
           >
-            {checkIn.error.message}
-          </p>
-        )}
-
-        {checkIn.data && (
-          <div className="rounded-card ring-gold/45 bg-cream px-5 py-5 ring-1">
-            <div className="flex items-center justify-between gap-4">
-              <p className="font-display text-navy text-h3 font-bold">
-                You are in.
-              </p>
-              <PointsPill points={checkIn.data.pointsEarned} />
-            </div>
-            <p className="text-ink-muted text-body-sm mt-2">
-              {checkIn.data.eventTitle}
-            </p>
-            <p className="text-gold-ink text-body mt-4 font-semibold">
-              {checkIn.data.totalPoints} points across{" "}
-              {checkIn.data.totalEvents}{" "}
-              {checkIn.data.totalEvents === 1 ? "event" : "events"}.
-            </p>
-          </div>
-        )}
+            <Link href="/portal">See your card</Link>
+          </Button>
+        </div>
       </div>
-    </div>
+    );
+  }
+
+  // The camera is released the moment a code is read, so this replaces the
+  // viewfinder rather than sitting under it.
+  if (checkIn.isPending) {
+    return (
+      <Card className="border-hairline bg-paper rounded-lg">
+        <CardContent
+          role="status"
+          className="grid justify-items-center gap-4 py-14 text-center"
+        >
+          <Spinner className="text-gold-bright size-8" />
+          <CodePlate code={submitted} />
+          <p className="text-ink-muted text-body-sm">Checking you in...</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (checkIn.error) {
+    return (
+      <div>
+        <Alert
+          variant="destructive"
+          className="border-destructive/30 bg-paper rounded-lg"
+        >
+          <OctagonXIcon />
+          <AlertTitle>Not checked in</AlertTitle>
+          <AlertDescription>
+            <p>{checkIn.error.message}</p>
+          </AlertDescription>
+        </Alert>
+
+        <Button
+          size="lg"
+          onClick={() => {
+            setConfirm("");
+            checkIn.reset();
+          }}
+          className="bg-gold-bright text-navy hover:bg-gold mt-5 w-full rounded-none py-6 text-base font-semibold"
+        >
+          Scan again
+        </Button>
+
+        <p className="text-ink-muted text-body-sm mt-6 text-center">
+          Ask an officer to add you if it will not go through.
+        </p>
+      </div>
+    );
+  }
+
+  // Arrived from the phone's own camera. One tap rather than an automatic
+  // submit, because a link preview or a prefetch must never check anyone in.
+  if (confirm) {
+    return (
+      <Card className="border-hairline bg-paper rounded-lg">
+        <CardHeader>
+          <Eyebrow tone="muted">Code scanned</Eyebrow>
+          <CardTitle className="mt-2">
+            <CodePlate code={confirm} />
+          </CardTitle>
+        </CardHeader>
+
+        <CardContent>
+          <Button
+            size="lg"
+            onClick={() => submit(confirm)}
+            className="bg-gold-bright text-navy hover:bg-gold w-full rounded-none py-6 text-base font-semibold"
+          >
+            Check in
+          </Button>
+
+          <div className="mt-6 flex justify-center">
+            <Button
+              variant="ghost"
+              onClick={() => setConfirm("")}
+              className="text-ink-muted hover:text-navy hover:bg-cream text-body-sm rounded-none font-semibold"
+            >
+              Scan a different code
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // Scanning is the only way in, so a camera that will not start is a dead end
+  // rather than a degraded state. Say who can fix it.
+  if (cameraNote) {
+    return (
+      <Card className="border-hairline bg-paper rounded-lg">
+        <CardContent className="py-10">
+          <Alert
+            variant="destructive"
+            className="border-destructive/30 bg-paper rounded-lg"
+          >
+            <CameraOffIcon />
+            <AlertTitle>The scanner cannot start</AlertTitle>
+            <AlertDescription>
+              <p>{cameraNote}</p>
+            </AlertDescription>
+          </Alert>
+
+          <p className="text-ink-muted text-body-sm mt-6">
+            Point your phone&rsquo;s own camera at the QR code instead — it
+            opens this page with the code already in it. Otherwise ask an
+            officer to add you, or email{" "}
+            <a href={`mailto:${site.email}`} className="text-navy underline">
+              {site.email}
+            </a>
+            .
+          </p>
+
+          <Button
+            variant="outline"
+            onClick={() => setCameraNote(null)}
+            className="border-hairline text-navy hover:bg-cream mt-6 w-full rounded-none"
+          >
+            Try again
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="border-hairline bg-paper rounded-lg">
+      <CardHeader>
+        <Eyebrow tone="gold">Check in</Eyebrow>
+        <CardTitle className="font-display text-navy text-h3 mt-2 font-bold">
+          Scan the QR code.
+        </CardTitle>
+        <CardDescription className="text-ink-muted text-body-sm">
+          It is on the screen at the front of the room.
+        </CardDescription>
+      </CardHeader>
+
+      <CardContent>
+        <Scanner onDetect={submit} onUnavailable={setCameraNote} />
+      </CardContent>
+    </Card>
   );
 }

@@ -1,5 +1,5 @@
-import { Section } from "~/app/_components/ui";
 import { PortalHeader } from "~/app/portal/_components/portal-ui";
+import { Section } from "~/components/site";
 import { AdminEvents } from "./admin-events";
 
 export default function AdminEventsPage() {

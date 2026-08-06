@@ -1,14 +1,13 @@
 /**
  * Page content for SASE @ Georgia Tech.
  *
- * Kept apart from `~/data/site` on purpose: this module has module-scope work
- * the bundler cannot prove pure (Intl formatters, `Date.now()`, the event
- * filters below), so anything importing it is pulled into that graph whole.
- * Nothing under "use client" may import this file — the site chrome reads
- * `~/data/site` instead.
+ * Static copy only. The calendar used to live here as a hardcoded array with
+ * Intl formatters and a module-scope `Date.now()`; it now comes from the
+ * database the officer tools write to, via `~/data/chapter-events`, so this
+ * module is pure data again.
  *
  * TODO: every value below is placeholder copy — replace with real chapter data
- * (board roster, event dates, sponsors) before launch.
+ * (board roster, sponsors) before launch.
  */
 
 // TODO: confirm every figure with the board. The corporate-partner count is
@@ -139,104 +138,6 @@ export const firstMonth = [
     body: "Line-by-line edits from recruiters and alumni at the workshop. Nothing here assumes you already have an internship.",
   },
 ] as const;
-
-export type ChapterEvent = {
-  title: string;
-  /**
-   * Wall-clock start in Atlanta, `YYYY-MM-DDTHH:mm`. Sorts the calendar and
-   * decides upcoming vs. past — never hand-flip a flag again.
-   */
-  start: string;
-  /** Overrides the formatted date when only the month is known ("Oct 2025"). */
-  dateLabel?: string;
-  location: string;
-  body: string;
-};
-
-/** A ChapterEvent with its rendered date string resolved. */
-export type DatedEvent = ChapterEvent & { displayDate: string };
-
-// TODO: replace with the real calendar, or move to the database + tRPC.
-export const events: ChapterEvent[] = [
-  {
-    title: "Fall Kickoff & General Body Meeting",
-    start: "2026-08-28T18:00",
-    location: "Klaus 1443",
-    body: "Meet the board, learn what SASE GT does this year, and grab free food.",
-  },
-  {
-    title: "Resume Workshop with Corporate Partners",
-    start: "2026-09-11T18:30",
-    location: "Scheller College of Business",
-    body: "Bring a draft resume and get line-by-line feedback from recruiters and alumni.",
-  },
-  {
-    title: "Mentor/Mentee Kickoff",
-    start: "2026-09-25T19:00",
-    location: "Student Center Ballroom",
-    body: "Meet your SASE family and start the semester-long mentorship program.",
-  },
-  {
-    title: "SASE National Convention",
-    start: "2025-10-01T09:00",
-    dateLabel: "Oct 2025",
-    location: "Chicago, IL",
-    body: "Our largest delegation yet attended career fair, workshops, and the Night of Culture.",
-  },
-  {
-    title: "Taste of SASE",
-    start: "2026-04-01T12:00",
-    dateLabel: "Apr 2026",
-    location: "Tech Green",
-    body: "A cultural food festival celebrating the cuisines of our members' heritages.",
-  },
-];
-
-/**
- * `start` is authored as Atlanta wall-clock time and parsed as UTC so the
- * rendered string is byte-identical on the server and in the browser.
- */
-function startedAt(event: ChapterEvent) {
-  return Date.parse(`${event.start}:00Z`);
-}
-
-const dayFormat = new Intl.DateTimeFormat("en-US", {
-  month: "short",
-  day: "numeric",
-  year: "numeric",
-  timeZone: "UTC",
-});
-
-const timeFormat = new Intl.DateTimeFormat("en-US", {
-  hour: "numeric",
-  minute: "2-digit",
-  timeZone: "UTC",
-});
-
-function withDisplayDate(event: ChapterEvent): DatedEvent {
-  const at = new Date(startedAt(event));
-  return {
-    ...event,
-    displayDate:
-      event.dateLabel ?? `${dayFormat.format(at)} · ${timeFormat.format(at)}`,
-  };
-}
-
-// Evaluated once per process — on a static build this is build time, which is
-// the right granularity for a semester calendar.
-const now = Date.now();
-
-/** Soonest first. Render `displayDate`, never `start`. May be empty. */
-export const upcomingEvents: DatedEvent[] = events
-  .filter((event) => startedAt(event) >= now)
-  .sort((a, b) => startedAt(a) - startedAt(b))
-  .map(withDisplayDate);
-
-/** Most recent first. Render `displayDate`, never `start`. */
-export const pastEvents: DatedEvent[] = events
-  .filter((event) => startedAt(event) < now)
-  .sort((a, b) => startedAt(b) - startedAt(a))
-  .map(withDisplayDate);
 
 export type BoardMember = {
   /** Omitted while the seat is unannounced — render the role on its own. */

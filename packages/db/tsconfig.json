@@ -1,5 +1,17 @@
 {
   "extends": "../../tsconfig.base.json",
-  "include": ["src/**/*.ts", "drizzle.config.ts"],
+  "compilerOptions": {
+    // The seed script is run directly by node, which strips types rather than
+    // compiling, so its relative imports have to carry the real .ts extension.
+    "allowImportingTsExtensions": true,
+    // `.` rather than `src`: drizzle.config.ts and scripts/ sit beside it and
+    // belong to the same program.
+    "rootDir": ".",
+    // Explicit, because TypeScript 7 no longer sweeps every reachable @types
+    // package into the global scope. Without this, `process` and `node:fs` are
+    // unresolved here — which is exactly what the 6.x baseline reported.
+    "types": ["node"]
+  },
+  "include": ["src/**/*.ts", "scripts/**/*.ts", "drizzle.config.ts"],
   "exclude": ["node_modules"]
 }

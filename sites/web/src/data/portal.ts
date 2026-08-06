@@ -31,22 +31,38 @@ export function tierFor(points: number) {
     }
   }
 
+  // Clamped at BOTH ends, and the zero-width band guarded. A total below the
+  // lowest floor makes `current` and `next` the same band, so the divisor is
+  // zero and the ratio comes back -Infinity — which the card then renders as
+  // `width: -Infinity%`, an invalid declaration the browser silently drops.
+  // Only a hand-edited negative row reaches this, but the field's contract
+  // says 0-1 and it should hold whatever it is handed.
+  const band = next ? next.min - current.min : 0;
+  const progress =
+    next && band > 0 ? (points - current.min) / band : next ? 0 : 1;
+
   return {
     name: current.name,
     next: next?.name,
     pointsToNext: next ? next.min - points : null,
     /** 0-1 through the current band; 1 once the top tier is reached. */
-    progress: next
-      ? Math.min(1, (points - current.min) / (next.min - current.min))
-      : 1,
+    progress: Number.isFinite(progress)
+      ? Math.max(0, Math.min(1, progress))
+      : 0,
   };
 }
 
-/** Where members go to see the calendar the portal does not duplicate. */
+/**
+ * Two entries, not three.
+ *
+ * "My events" used to be its own page showing the same card and the same list
+ * the dashboard already had. A member has one screen worth of things — their
+ * card, what is open, where they have been — and splitting that across tabs
+ * made the portal feel bigger than it is without adding anything.
+ */
 export const portalNav = [
-  { href: "/portal", label: "Dashboard" },
+  { href: "/portal", label: "My card" },
   { href: "/portal/check-in", label: "Check in" },
-  { href: "/portal/events", label: "My events" },
 ] as const;
 
 export const adminNav = [{ href: "/portal/admin", label: "Events" }] as const;

@@ -3,8 +3,6 @@ import "~/styles/globals.css";
 import type { Metadata, Viewport } from "next";
 import { Fraunces, Inter } from "next/font/google";
 
-import { SiteFooter } from "~/app/_components/site-footer";
-import { SiteNav } from "~/app/_components/site-nav";
 import { site } from "~/data/site";
 import { jsonLd, organizationSchema } from "~/lib/seo";
 
@@ -78,43 +76,26 @@ const display = Fraunces({
   display: "swap",
 });
 
+/**
+ * Document shell only. Chrome lives in the route groups — (marketing) mounts
+ * the public nav and footer, the portal mounts its own — so a signed-in member
+ * no longer gets the marketing footer stapled under their check-in screen.
+ *
+ * No client providers here: every marketing page is a static server component,
+ * and mounting the tRPC/React Query client globally shipped ~500 kB of client
+ * JS that nothing on the public site ever called.
+ */
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    // No client providers here on purpose: every page is a static server
-    // component, so wrapping the tree in the tRPC/React Query provider shipped
-    // ~500 kB of client JS that nothing on the site ever called.
     <html lang="en" className={`${inter.variable} ${display.variable}`}>
       <body className="text-ink bg-paper flex min-h-screen flex-col antialiased">
-        {/* One organization record for the whole site; interior pages add their
-            own breadcrumb, event, and FAQ graphs on top of it. */}
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={jsonLd(organizationSchema())}
         />
-        {/* The id is SiteNav's handle on this link: it marks the link inert
-            alongside <main> and <footer> while the mobile panel is open, so
-            skipping to content the overlay covers cannot strand focus. */}
-        <a
-          id="skip-to-content"
-          href="#content"
-          className="focus:bg-navy sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[60] focus:rounded-full focus:px-5 focus:py-2 focus:text-sm focus:font-semibold focus:text-white"
-        >
-          Skip to content
-        </a>
-        <SiteNav />
-        {/* tabIndex makes the skip link actually move focus in Safari. The
-            global :focus-visible ring is two properties, so both have to go
-            or the whole page picks up a gold halo on skip. */}
-        <main
-          id="content"
-          tabIndex={-1}
-          className="flex-1 focus:shadow-none focus:outline-none"
-        >
-          {children}
-        </main>
-        <SiteFooter />
+        {children}
       </body>
     </html>
   );

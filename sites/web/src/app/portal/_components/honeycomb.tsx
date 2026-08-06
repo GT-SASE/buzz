@@ -1,11 +1,3 @@
-/**
- * The chapter honeycomb, drawn rather than loaded.
- *
- * `public/brand/honeycomb.png` is a 56 kB opaque tile: it cannot sit behind
- * text at low opacity and cannot be tinted to whatever ground it lands on.
- * Geometry costs nothing, stays sharp at any card size, and inherits its colour
- * from the caller.
- */
 const RADIUS = 26;
 const COLUMN_STEP = RADIUS * 1.5;
 const ROW_STEP = RADIUS * Math.sqrt(3);
@@ -21,8 +13,7 @@ function hexagon(centerX: number, centerY: number) {
   }).join(" ");
 }
 
-// Overdrawn past every edge so the grid never shows a cut cell once the SVG is
-// sliced to fill whatever box it is given.
+// Overdrawn past every edge so the grid never shows a cut cell once sliced.
 const cells: string[] = [];
 for (let column = -1; column * COLUMN_STEP < WIDTH + RADIUS; column++) {
   for (let row = -1; row * ROW_STEP < HEIGHT + RADIUS; row++) {
@@ -31,6 +22,7 @@ for (let column = -1; column * COLUMN_STEP < WIDTH + RADIUS; column++) {
   }
 }
 
+/** Decorative chapter watermark. Drawn, so it tints to whatever ground it lands on. */
 export function Honeycomb({ className = "" }: { className?: string }) {
   return (
     <svg

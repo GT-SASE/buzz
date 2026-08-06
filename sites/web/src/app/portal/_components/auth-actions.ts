@@ -1,6 +1,7 @@
-﻿"use server";
+"use server";
 
 import { signIn, signOut } from "@buzz/auth";
+import { safeRedirectPath } from "~/app/portal/_lib/paths";
 
 /**
  * `redirectTo` is validated as a same-origin path before it is handed to
@@ -8,9 +9,7 @@ import { signIn, signOut } from "@buzz/auth";
  * link would bounce a member to another site immediately after they sign in.
  */
 function safePath(value: FormDataEntryValue | null) {
-  if (typeof value !== "string") return "/portal";
-  if (!value.startsWith("/") || value.startsWith("//")) return "/portal";
-  return value;
+  return safeRedirectPath(typeof value === "string" ? value : undefined);
 }
 
 export async function signInWithGoogle(formData: FormData) {

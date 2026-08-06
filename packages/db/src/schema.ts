@@ -1,5 +1,6 @@
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import {
+  check,
   index,
   pgTableCreator,
   primaryKey,
@@ -16,35 +17,65 @@ import type { AdapterAccount } from "next-auth/adapters";
  */
 export const createTable = pgTableCreator((name) => `buzz_${name}`);
 
+/**
+ * Index and constraint names have to carry the prefix too.
+ *
+ * `pgTableCreator` only renames tables, but Postgres keeps indexes and
+ * constraints in one namespace per schema, not per table. This database is
+ * shared with a sibling project whose own `account` table already owns
+ * `account_user_id_idx`, so an unprefixed name here fails the push outright
+ * with 42P07 rather than quietly coexisting.
+ */
+const idx = (name: string) => `buzz_${name}`;
+
 /** Portal roles. Membership is free, so `MEMBER` is simply "has signed in". */
 export type UserRole = "MEMBER" | "ADMIN";
 
-export const users = createTable("user", (d) => ({
-  id: d
-    .varchar({ length: 255 })
-    .notNull()
-    .primaryKey()
-    .$defaultFn(() => crypto.randomUUID()),
-  name: d.varchar({ length: 255 }),
-  email: d.varchar({ length: 255 }).notNull(),
-  emailVerified: d
-    .timestamp({
-      mode: "date",
-      withTimezone: true,
-    })
-    .$defaultFn(() => /* @__PURE__ */ new Date()),
-  image: d.varchar({ length: 255 }),
-  /**
-   * The whole role model — no separate admins table. The SQL default is
-   * load-bearing: the Auth.js adapter inserts new users without knowing this
-   * column exists, so anything `notNull` here needs a default at the database
-   * level, not just in the builder.
-   *
-   * Officers are promoted by hand for now: `npm run db:studio`, find the row,
-   * set role to ADMIN. There is no in-app promotion UI.
-   */
-  role: d.varchar({ length: 16 }).$type<UserRole>().notNull().default("MEMBER"),
-}));
+export const users = createTable(
+  "user",
+  (d) => ({
+    id: d
+      .varchar({ length: 255 })
+      .notNull()
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    name: d.varchar({ length: 255 }),
+    email: d.varchar({ length: 255 }).notNull(),
+    emailVerified: d
+      .timestamp({
+        mode: "date",
+        withTimezone: true,
+      })
+      .$defaultFn(() => /* @__PURE__ */ new Date()),
+    image: d.varchar({ length: 255 }),
+    /**
+     * The whole role model — no separate admins table. The SQL default is
+     * load-bearing: the Auth.js adapter inserts new users without knowing this
+     * column exists, so anything `notNull` here needs a default at the database
+     * level, not just in the builder.
+     *
+     * Officers are promoted by hand for now: `pnpm db:studio`, find the row,
+     * set role to ADMIN. There is no in-app promotion UI.
+     */
+    role: d
+      .varchar({ length: 16 })
+      .$type<UserRole>()
+      .notNull()
+      .default("MEMBER"),
+  }),
+  (t) => [
+    /**
+     * Three paths look a user up by email and take the first row with no
+     * ORDER BY — the Auth.js adapter's getUserByEmail, `manualCheckIn`, and
+     * `createDevSession`. Two rows for one person would split their identity
+     * across two ids, and the (eventId, userId) constraint on check-ins cannot
+     * see across them, so one-check-in-per-member silently stops holding.
+     */
+    uniqueIndex(idx("user_email_idx")).on(t.email),
+    /** `$type` is a compile-time cast only; this is what the database enforces. */
+    check(idx("user_role_check"), sql`${t.role} in ('MEMBER', 'ADMIN')`),
+  ],
+);
 
 export const usersRelations = relations(users, ({ many }) => ({
   accounts: many(accounts),
@@ -71,7 +102,7 @@ export const accounts = createTable(
   }),
   (t) => [
     primaryKey({ columns: [t.provider, t.providerAccountId] }),
-    index("account_user_id_idx").on(t.userId),
+    index(idx("account_user_id_idx")).on(t.userId),
   ],
 );
 
@@ -89,7 +120,7 @@ export const sessions = createTable(
       .references(() => users.id),
     expires: d.timestamp({ mode: "date", withTimezone: true }).notNull(),
   }),
-  (t) => [index("t_user_id_idx").on(t.userId)],
+  (t) => [index(idx("session_user_id_idx")).on(t.userId)],
 );
 
 export const sessionsRelations = relations(sessions, ({ one }) => ({
@@ -149,9 +180,9 @@ export const events = createTable(
     updatedAt: d.timestamp({ withTimezone: true }).$onUpdate(() => new Date()),
   }),
   (t) => [
-    uniqueIndex("event_check_in_code_idx").on(t.checkInCode),
-    index("event_starts_at_idx").on(t.startsAt),
-    index("event_created_by_idx").on(t.createdById),
+    uniqueIndex(idx("event_check_in_code_idx")).on(t.checkInCode),
+    index(idx("event_starts_at_idx")).on(t.startsAt),
+    index(idx("event_created_by_idx")).on(t.createdById),
   ],
 );
 
@@ -192,9 +223,10 @@ export const eventCheckIns = createTable(
       .notNull(),
   }),
   (t) => [
-    unique("event_check_in_unique").on(t.eventId, t.userId),
-    index("event_check_in_user_idx").on(t.userId),
-    index("event_check_in_event_idx").on(t.eventId),
+    unique(idx("event_check_in_unique")).on(t.eventId, t.userId),
+    index(idx("event_check_in_user_idx")).on(t.userId),
+    index(idx("event_check_in_event_idx")).on(t.eventId),
+    check(idx("check_in_method_check"), sql`${t.method} in ('code', 'manual')`),
   ],
 );
 

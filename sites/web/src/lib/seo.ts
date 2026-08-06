@@ -84,35 +84,46 @@ export function organizationSchema() {
 }
 
 /**
- * One chapter event. `start` is authored as Atlanta wall-clock time, so it is
- * emitted without an offset — ISO 8601 local time, which is what it is. Adding
- * a fabricated -04:00/-05:00 would be wrong half the year.
+ * One chapter event.
+ *
+ * `startsAt` is a real instant, so it is emitted as a fully qualified ISO 8601
+ * string with its offset.
+ *
+ * Location and description are omitted rather than defaulted when the officer
+ * left them blank. A placeholder like "Location announced on Instagram" is fine
+ * on a card, but asserting it as a venue name in structured data would have
+ * search engines index it as the event's actual place — alongside a postal
+ * address that is real.
  */
 export function eventSchema(event: {
   title: string;
-  start: string;
-  location: string;
-  body: string;
+  startsAt: Date;
+  location: string | null;
+  description: string | null;
 }) {
   return {
     "@context": "https://schema.org",
     "@type": "Event",
     name: event.title,
-    startDate: event.start,
-    description: event.body,
+    startDate: event.startsAt.toISOString(),
+    ...(event.description ? { description: event.description } : {}),
     eventAttendanceMode: "https://schema.org/OfflineEventAttendanceMode",
     eventStatus: "https://schema.org/EventScheduled",
     organizer: { "@id": `${site.url}/#organization` },
-    location: {
-      "@type": "Place",
-      name: event.location,
-      address: {
-        "@type": "PostalAddress",
-        addressLocality: site.locality,
-        addressRegion: site.region,
-        addressCountry: "US",
-      },
-    },
+    ...(event.location
+      ? {
+          location: {
+            "@type": "Place",
+            name: event.location,
+            address: {
+              "@type": "PostalAddress",
+              addressLocality: site.locality,
+              addressRegion: site.region,
+              addressCountry: "US",
+            },
+          },
+        }
+      : {}),
     isAccessibleForFree: true,
   };
 }
