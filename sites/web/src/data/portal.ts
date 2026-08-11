@@ -4,9 +4,6 @@
  * Tiers are DERIVED from a member's point total at render time — there is no
  * tier column and no migration to run when the board wants to retune them.
  * Editing the thresholds below is the whole change.
- *
- * TODO: confirm the tier names and thresholds with the board before they get
- * printed on anything.
  */
 export const tiers = [
   { name: "Member", min: 0 },
@@ -65,4 +62,7 @@ export const portalNav = [
   { href: "/portal/check-in", label: "Check in" },
 ] as const;
 
-export const adminNav = [{ href: "/portal/admin", label: "Events" }] as const;
+export const adminNav = [
+  { href: "/portal/admin", label: "Events" },
+  { href: "/portal/admin/members", label: "Members" },
+] as const;

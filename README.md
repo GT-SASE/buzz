@@ -26,7 +26,8 @@ data/              chapter copy and constants
 ```
 
 Run everything from the repo root: `pnpm dev`, `pnpm build`, `pnpm check`,
-`pnpm db:push`. Each delegates to the workspace that owns it.
+`pnpm db:migrate`. Each delegates to the workspace that owns it. Schema changes
+go through Drizzle Kit (`pnpm db:generate` → commit SQL → `pnpm db:migrate`).
 
 Deploying on Vercel: set **Root Directory** to `sites/web`. Vercel installs from
 the repo root, so the workspace packages resolve normally.
@@ -70,7 +71,9 @@ Everything below is what turns the **portal** on.
    - `ADMIN_EMAILS` — who gets the officer role. Optional; see `.env.example`.
 2. Start Postgres — `./start-database.sh` runs one in Docker. It reads the file
    from step 1, so that order matters.
-3. `pnpm db:push` to create the tables.
+3. `pnpm db:migrate` to apply the committed SQL under `packages/db/drizzle`.
+   Use `pnpm db:push` only for throwaway local experiments — production and CI
+   run migrations.
 4. `pnpm dev`.
 
 ### Google OAuth redirect URIs
@@ -131,6 +134,32 @@ A member's total is one aggregate query over their own check-ins. Tiers are deri
 that total at render time — they live in `src/data/portal.ts` and changing them needs no
 migration.
 
+The dashboard leaderboard ranks members by that same total, with SQL `rank()`, so ties
+share a place. It shows names and totals only — never an email, an id, or a photo — and
+there is no opt-out column, so if the board wants members to be able to hide, that needs a
+migration.
+
+## The roster
+
+`/portal/admin/members` is the officers' view of everyone who has ever signed in, searchable
+by name or email, sortable by points, name or last check-in, and paged 25 at a time.
+`/portal/admin/members/<id>` is one member: their totals, their tier, and every check-in with
+the points it earned and whether it was scanned or added by hand. Both are `adminProcedure` —
+a member holding another member's id gets `FORBIDDEN`, and there is a test that fails if that
+gate is ever downgraded.
+
+The roster exports to CSV. It exports every matching member, not the 25 on screen, which is
+why it is a separate procedure rather than a loop over the paged one. Both exports — this one
+and the per-event attendance — go through `src/app/portal/_lib/csv.ts`, which neutralises
+leading `=`, `+`, `-`, `@`, tab and CR so a member's own display name cannot execute as a
+formula when an officer opens the file. That guard is the reason the module exists; do not
+inline a second CSV writer.
+
+`/portal/admin` opens with the chapter's figures: members and how many have ever checked in,
+check-ins in total and over the last 30 days, past and upcoming event counts, average
+attendance per past event, and what is on next. Every figure is counted in SQL against one
+clock reading, so no two can disagree about where "now" is.
+
 ## Check-in codes
 
 Each event gets an eight-character code drawn from an alphabet with no `I`, `L`, `O`, `U`,
@@ -146,8 +175,9 @@ A member whose camera is blocked has two ways through that do not involve typing
 phone's own camera at the QR, which opens the page with the code already in the URL, or ask
 an officer to add them by hand.
 
-## Still needed before launch
+## Still needed after launch
 
-- Board roster, real event dates, meeting cadence, dues, and socials — all marked `TODO` in
-  `src/data/site.ts` and `src/data/content.ts`.
-- Board headshots and sponsor logos.
+- Board headshots under `sites/web/public/` once the chapter shoots them (the roster is named).
+- Sponsor logos when partners sign — `/sponsors` stays an invitation until then.
+- A chapter domain, if one is registered — swap `site.url` and the Google OAuth origins.
+- Real events created in `/portal/admin` so the public calendar and check-in have something to run.

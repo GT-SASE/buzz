@@ -40,13 +40,16 @@ export const users = createTable(
       .primaryKey()
       .$defaultFn(() => crypto.randomUUID()),
     name: d.varchar({ length: 255 }),
+    /** Stored lowercase. Lookups and the unique index assume that. */
     email: d.varchar({ length: 255 }).notNull(),
-    emailVerified: d
-      .timestamp({
-        mode: "date",
-        withTimezone: true,
-      })
-      .$defaultFn(() => /* @__PURE__ */ new Date()),
+    /**
+     * No default: Auth.js writes the provider claim. Defaulting to `now()`
+     * would mark every account verified even when the provider did not.
+     */
+    emailVerified: d.timestamp({
+      mode: "date",
+      withTimezone: true,
+    }),
     image: d.varchar({ length: 255 }),
     /**
      * The whole role model — no separate admins table. The SQL default is
@@ -54,8 +57,8 @@ export const users = createTable(
      * column exists, so anything `notNull` here needs a default at the database
      * level, not just in the builder.
      *
-     * Officers are promoted by hand for now: `pnpm db:studio`, find the row,
-     * set role to ADMIN. There is no in-app promotion UI.
+     * Officers are promoted via ADMIN_EMAILS on sign-in, or by hand in
+     * `pnpm db:studio`. There is no in-app promotion UI.
      */
     role: d
       .varchar({ length: 16 })
@@ -65,13 +68,10 @@ export const users = createTable(
   }),
   (t) => [
     /**
-     * Three paths look a user up by email and take the first row with no
-     * ORDER BY — the Auth.js adapter's getUserByEmail, `manualCheckIn`, and
-     * `createDevSession`. Two rows for one person would split their identity
-     * across two ids, and the (eventId, userId) constraint on check-ins cannot
-     * see across them, so one-check-in-per-member silently stops holding.
+     * Unique on lower(email) so mixed-case duplicates cannot coexist. Writers
+     * must store lowercase; see auth createUser and manualCheckIn.
      */
-    uniqueIndex(idx("user_email_idx")).on(t.email),
+    uniqueIndex(idx("user_email_lower_idx")).on(sql`lower(${t.email})`),
     /** `$type` is a compile-time cast only; this is what the database enforces. */
     check(idx("user_role_check"), sql`${t.role} in ('MEMBER', 'ADMIN')`),
   ],
@@ -88,7 +88,7 @@ export const accounts = createTable(
     userId: d
       .varchar({ length: 255 })
       .notNull()
-      .references(() => users.id),
+      .references(() => users.id, { onDelete: "cascade" }),
     type: d.varchar({ length: 255 }).$type<AdapterAccount["type"]>().notNull(),
     provider: d.varchar({ length: 255 }).notNull(),
     providerAccountId: d.varchar({ length: 255 }).notNull(),
@@ -117,7 +117,7 @@ export const sessions = createTable(
     userId: d
       .varchar({ length: 255 })
       .notNull()
-      .references(() => users.id),
+      .references(() => users.id, { onDelete: "cascade" }),
     expires: d.timestamp({ mode: "date", withTimezone: true }).notNull(),
   }),
   (t) => [index(idx("session_user_id_idx")).on(t.userId)],
@@ -217,6 +217,13 @@ export const eventCheckIns = createTable(
      * rewrite anybody's history. A default here would let a writer forget.
      */
     pointsEarned: d.integer().notNull(),
+    /**
+     * Officer who added or last removed via the manual path. Null for a
+     * member's own code check-in.
+     */
+    actedByUserId: d.varchar({ length: 255 }).references(() => users.id, {
+      onDelete: "set null",
+    }),
     checkedInAt: d
       .timestamp({ withTimezone: true })
       .$defaultFn(() => /* @__PURE__ */ new Date())
@@ -224,8 +231,14 @@ export const eventCheckIns = createTable(
   }),
   (t) => [
     unique(idx("event_check_in_unique")).on(t.eventId, t.userId),
-    index(idx("event_check_in_user_idx")).on(t.userId),
-    index(idx("event_check_in_event_idx")).on(t.eventId),
+    index(idx("event_check_in_event_checked_in_idx")).on(
+      t.eventId,
+      t.checkedInAt.desc(),
+    ),
+    index(idx("event_check_in_user_checked_in_idx")).on(
+      t.userId,
+      t.checkedInAt.desc(),
+    ),
     check(idx("check_in_method_check"), sql`${t.method} in ('code', 'manual')`),
   ],
 );

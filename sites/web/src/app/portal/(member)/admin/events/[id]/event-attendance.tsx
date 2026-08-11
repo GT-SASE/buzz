@@ -6,6 +6,7 @@ import { toast } from "sonner";
 
 import { Honeycomb } from "~/app/portal/_components/honeycomb";
 import { EmptyState } from "~/app/portal/_components/portal-ui";
+import { downloadCsv, toCsv } from "~/app/portal/_lib/csv";
 import { formatEventTime } from "~/app/portal/_lib/format";
 import { Eyebrow } from "~/components/site";
 import {
@@ -44,21 +45,6 @@ type DoorState = "open" | "closed" | "archived";
 
 /** What officers read out. Bare host, because it goes on a slide. */
 const checkInHost = site.url.replace(/^https?:\/\//, "");
-
-/**
- * RFC 4180 quoting, plus formula neutralisation.
- *
- * Member names come from Google profiles, so a member controls this string. A
- * name beginning `=`, `+`, `-`, `@`, tab or CR is executed as a formula by
- * Excel and Sheets when the officer opens the export — `=HYPERLINK(...)` and
- * friends. Quoting alone does not stop it; the leading apostrophe does, and
- * spreadsheets strip it from the displayed value.
- */
-function csvCell(value: string | number | null) {
-  const text = String(value ?? "");
-  const neutralised = /^[=+\-@\t\r]/.test(text) ? `'${text}` : text;
-  return `"${neutralised.replace(/"/g, '""')}"`;
-}
 
 const columnHeading =
   "text-eyebrow tracking-caps text-ink-muted h-auto py-3 font-semibold uppercase";
@@ -256,6 +242,10 @@ export function EventAttendance({ eventId }: { eventId: string }) {
     await Promise.all([
       utils.event.getById.invalidate({ id: eventId }),
       utils.event.listAll.invalidate(),
+      utils.chapter.overview.invalidate(),
+      utils.member.list.invalidate(),
+      utils.member.byId.invalidate(),
+      utils.member.leaderboard.invalidate(),
     ]);
   };
 
@@ -294,13 +284,14 @@ export function EventAttendance({ eventId }: { eventId: string }) {
     );
   }
 
-  const { event, roster, isPast } = detail.data;
+  const { event, roster, rosterTotal, isPast } = detail.data;
 
   // Built from the live origin rather than site.url: on a laptop at the event
   // that is localhost or a LAN address, and a QR pointing at the production
   // domain would send everyone in the room somewhere the event does not exist.
+  // Fragment keeps the bearer out of server logs and Referer headers.
   const checkInUrl = origin
-    ? `${origin}/portal/check-in?code=${event.checkInCode}`
+    ? `${origin}/portal/check-in#code=${event.checkInCode}`
     : null;
 
   // The same three facts the check-in procedure tests before it lets anyone in,
@@ -311,26 +302,38 @@ export function EventAttendance({ eventId }: { eventId: string }) {
       ? "open"
       : "closed";
 
-  const downloadCsv = () => {
-    const rows = [
-      ["Name", "Email", "Method", "Points", "Checked in"],
-      ...roster.map((row) => [
-        row.name ?? "",
-        row.email,
-        row.method,
-        row.pointsEarned,
-        row.checkedInAt.toISOString(),
-      ]),
-    ];
-    const csv = rows.map((row) => row.map(csvCell).join(",")).join("\r\n");
-    const url = URL.createObjectURL(
-      new Blob([csv], { type: "text/csv;charset=utf-8" }),
-    );
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `${event.title.replace(/[^\w-]+/g, "-")}-attendance.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
+  const overCapacity =
+    event.maxCheckIns != null && event.currentCheckIns > event.maxCheckIns;
+
+  const exportAttendance = async () => {
+    try {
+      const { rows, truncated } = await utils.event.exportAttendance.fetch({
+        id: eventId,
+      });
+      const csv = toCsv([
+        ["Name", "Email", "Method", "Points", "Checked in"],
+        ...rows.map((row) => [
+          row.name ?? "",
+          row.email,
+          row.method,
+          row.pointsEarned,
+          row.checkedInAt.toISOString(),
+        ]),
+      ]);
+      downloadCsv(
+        `${event.title.replace(/[^\w-]+/g, "-")}-attendance.csv`,
+        csv,
+      );
+      toast.success(
+        truncated
+          ? `Exported the first ${rows.length} check-ins.`
+          : `Exported ${rows.length} check-in${rows.length === 1 ? "" : "s"}.`,
+      );
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Could not export attendance.",
+      );
+    }
   };
 
   return (
@@ -455,14 +458,19 @@ export function EventAttendance({ eventId }: { eventId: string }) {
         <div>
           <Eyebrow tone="gold">Attendance</Eyebrow>
           <h2 className="font-display text-navy text-h3 mt-4 font-bold tabular-nums">
-            {roster.length} checked in
+            {rosterTotal} checked in
             {event.maxCheckIns !== null ? ` of ${event.maxCheckIns}` : ""}
           </h2>
+          {overCapacity && (
+            <p className="text-destructive text-body-sm mt-2">
+              Over capacity — officers added check-ins past the listed limit.
+            </p>
+          )}
         </div>
-        {roster.length > 0 && (
+        {rosterTotal > 0 && (
           <Button
             variant="outline"
-            onClick={downloadCsv}
+            onClick={() => void exportAttendance()}
             className="border-hairline text-navy hover:bg-cream rounded-full font-semibold"
           >
             Export CSV

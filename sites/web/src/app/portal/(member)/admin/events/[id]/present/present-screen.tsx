@@ -33,9 +33,10 @@ export function PresentScreen({ eventId }: { eventId: string }) {
     event.checkInEnabled &&
     detail.data?.isPast === false;
 
+  // Fragment, not query: the bearer must not land in server logs or Referer.
   const url =
     origin && event && open
-      ? `${origin}/portal/check-in?code=${event.checkInCode}`
+      ? `${origin}/portal/check-in#code=${event.checkInCode}`
       : null;
 
   useEffect(() => {

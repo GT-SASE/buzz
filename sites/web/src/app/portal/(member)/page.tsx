@@ -1,7 +1,9 @@
 import { ArrowRight } from "lucide-react";
+import type { Metadata } from "next";
 import Link from "next/link";
 
 import { EventRows } from "~/app/portal/_components/event-rows";
+import { Leaderboard } from "~/app/portal/_components/leaderboard";
 import { MemberCard } from "~/app/portal/_components/member-card";
 import { SignOutButton } from "~/app/portal/_components/portal-ui";
 import { formatMonth } from "~/app/portal/_lib/format";
@@ -10,6 +12,10 @@ import { Button } from "~/components/site";
 import { Card } from "~/components/ui/card";
 import { Separator } from "~/components/ui/separator";
 import { api } from "~/trpc/server";
+
+export const metadata: Metadata = {
+  title: "My card",
+};
 
 /**
  * The whole member portal, on one screen: the card is the heading, the check-in
@@ -100,6 +106,7 @@ export default async function PortalDashboard() {
                 </div>
               </div>
             }
+            totalCount={stats.totalEvents}
             rows={attended.map((event) => ({
               key: event.id,
               title: event.title,
@@ -109,6 +116,8 @@ export default async function PortalDashboard() {
               note: event.method === "manual" ? "Added by an officer" : null,
             }))}
           />
+
+          <Leaderboard />
 
           <Separator className="mt-12" />
           <div className="flex flex-wrap items-center justify-between gap-4 pt-6">

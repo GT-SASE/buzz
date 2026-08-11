@@ -22,9 +22,6 @@ next-env.d.ts
 # production
 build/
 
-# drizzle-kit output
-drizzle/
-
 # throughput measurement written by the check-in load test
 .bench-check-in.json
 

@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
 import { signInWithGoogle } from "~/app/portal/_components/auth-actions";
@@ -6,6 +7,10 @@ import { Eyebrow } from "~/components/site";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader } from "~/components/ui/card";
 import { auth } from "@buzz/auth";
+
+export const metadata: Metadata = {
+  title: "Sign in",
+};
 
 export default async function SignInPage({
   searchParams,

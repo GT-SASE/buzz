@@ -10,7 +10,7 @@ import {
 } from "~/components/ui/accordion";
 import { Badge } from "~/components/ui/badge";
 import { meeting } from "~/data/content";
-import { discord, instagram, site } from "~/data/site";
+import { discord, engage, instagram, site } from "~/data/site";
 import { breadcrumbSchema, pageMetadata } from "~/lib/seo";
 
 export const metadata = pageMetadata({
@@ -30,13 +30,13 @@ const steps: { title: string; body: string; links: StepLink[] }[] = [
   },
   {
     title: "Check in at the door",
-    body: "Officers read out a code at the start of each event. Entering it in the member portal is free, takes a few seconds, and is what earns you chapter points toward the year's tiers.",
+    body: "Scan the QR code on the present screen with the member portal. It is free, takes a few seconds, and is what earns you chapter points toward the year's tiers.",
     links: [{ label: "Open the member portal", href: "/portal" }],
   },
   {
     title: "Follow the chapter feeds",
     body: "Room changes, corporate info sessions, and internship postings go out on our feeds first — that is where the week-to-week detail lives.",
-    links: [instagram, discord]
+    links: [instagram, discord, engage]
       .filter((social) => social !== undefined)
       .map((social) => ({
         label: social.label,

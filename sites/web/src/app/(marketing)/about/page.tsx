@@ -20,10 +20,11 @@ export const metadata = pageMetadata({
   path: "/about",
 });
 
-/** "President, Internal Vice President, ... and Web Development Chair" */
+/** "President, Internal Vice President, ... and Marketing Director" */
 function roleSentence(roles: string[]) {
-  if (roles.length < 2) return roles.join("");
-  return `${roles.slice(0, -1).join(", ")}, and ${roles[roles.length - 1]}`;
+  const unique = [...new Set(roles)];
+  if (unique.length < 2) return unique.join("");
+  return `${unique.slice(0, -1).join(", ")}, and ${unique[unique.length - 1]}`;
 }
 
 export default function AboutPage() {
@@ -74,19 +75,21 @@ export default function AboutPage() {
               NSBE, SHPE, and SWE in advancing diversity across STEM.
             </p>
             <p>
-              {/* TODO: replace with the real chapter history and founding year. */}
-              The Georgia Tech chapter followed. It is run by an elected
+              Founded in 2007, the Georgia Tech chapter is one of the oldest
+              SASE collegiate chapters in the nation. It is run by an elected
               executive board — {roles} — with committees forming around each of
               those portfolios. Elections are held every spring, and any member
               can run.
             </p>
             <p>
               A year here follows the same spine: a fall kickoff general body
-              meeting, a resume workshop with our corporate partners,
-              mentor/mentee pairing for the semester, a chapter delegation to
-              the SASE National Convention, and Taste of SASE in the spring.
-              Between those are weekly meetings, technical projects, service
-              with Atlanta-area students, and socials.
+              meeting, professional development workshops with industry
+              partners, mentor/mentee pairing for the semester, a chapter
+              delegation to the SASE National Convention, and Taste of SASE in
+              the spring. Between those are general body meetings, technical
+              projects, service with Atlanta-area students, and socials. The
+              chapter hosted the SASE Southeast Regional Conference in 2017 and
+              2019.
             </p>
             <p>
               Membership is open to all Georgia Tech students regardless of

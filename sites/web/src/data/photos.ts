@@ -4,9 +4,8 @@
  * so Next knows each file's real dimensions at build time — that is what makes
  * `placeholder="blur"` and zero layout shift possible.
  *
- * Alt text describes what is actually in each frame. No one is named, because
- * the roster behind these photos is not confirmed.
- * TODO: swap in current-year photography as the chapter shoots it.
+ * Alt text describes what is actually in each frame. No one is named. Drop in
+ * newer shoots under /public/photos and update the imports here when they land.
  */
 
 import boardPortrait from "../../public/photos/board-portrait.jpg";

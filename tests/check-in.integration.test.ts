@@ -561,7 +561,7 @@ describe.skipIf(!process.env.DATABASE_URL)("check-in", () => {
       "refuses a MEMBER session with FORBIDDEN",
       async () => {
         const member = callerFor(gateMember);
-        expect(await errorCode(member.event.listAll())).toBe("FORBIDDEN");
+        expect(await errorCode(member.event.listAll({}))).toBe("FORBIDDEN");
         expect(await errorCode(member.event.getById({ id: id.snapshot }))).toBe(
           "FORBIDDEN",
         );
@@ -575,9 +575,10 @@ describe.skipIf(!process.env.DATABASE_URL)("check-in", () => {
     it(
       "admits an ADMIN session",
       async () => {
-        const rows = await callerFor(admin).event.listAll();
-        expect(Array.isArray(rows)).toBe(true);
-        expect(rows.some((row) => row.id === id.snapshot)).toBe(true);
+        const listing = await callerFor(admin).event.listAll({});
+        expect(Array.isArray(listing.events)).toBe(true);
+        expect(typeof listing.total).toBe("number");
+        expect(listing.events.some((row) => row.id === id.snapshot)).toBe(true);
       },
       SLOW,
     );
@@ -587,7 +588,9 @@ describe.skipIf(!process.env.DATABASE_URL)("check-in", () => {
       async () => {
         const anonymous = makeCaller(null);
         expect(await errorCode(anonymous.event.myStats())).toBe("UNAUTHORIZED");
-        expect(await errorCode(anonymous.event.listAll())).toBe("UNAUTHORIZED");
+        expect(await errorCode(anonymous.event.listAll({}))).toBe(
+          "UNAUTHORIZED",
+        );
       },
       SLOW,
     );

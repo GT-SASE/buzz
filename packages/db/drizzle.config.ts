@@ -26,6 +26,7 @@ if (!url) {
 
 export default {
   schema: "./src/schema.ts",
+  out: "./drizzle",
   dialect: "postgresql",
   dbCredentials: { url },
   tablesFilter: ["buzz_*"],

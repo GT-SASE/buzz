@@ -12,6 +12,15 @@ export function PortalTabs({ isOfficer }: { isOfficer: boolean }) {
   const pathname = usePathname();
   const tabs = isOfficer ? [...portalNav, ...adminNav] : portalNav;
 
+  // Longest matching href wins, so a nested route lights one tab rather than
+  // putting aria-current="page" on itself and on its parent.
+  let activeHref = "";
+  for (const tab of tabs) {
+    const matches =
+      pathname === tab.href || pathname.startsWith(`${tab.href}/`);
+    if (matches && tab.href.length > activeHref.length) activeHref = tab.href;
+  }
+
   return (
     <nav aria-label="Portal" className="border-hairline border-t">
       <ul
@@ -19,11 +28,7 @@ export function PortalTabs({ isOfficer }: { isOfficer: boolean }) {
         className="max-w-content mx-auto flex items-center gap-1 overflow-x-auto px-5 sm:px-6"
       >
         {tabs.map((tab) => {
-          // /portal must match exactly or it stays lit on every child route.
-          const active =
-            tab.href === "/portal"
-              ? pathname === tab.href
-              : pathname.startsWith(tab.href);
+          const active = tab.href === activeHref;
 
           return (
             <li key={tab.href}>
@@ -37,9 +42,17 @@ export function PortalTabs({ isOfficer }: { isOfficer: boolean }) {
                     : "text-ink-muted hover:text-navy",
                 )}
               >
+                {/* "page" only on an exact match: on a detail route the
+                    breadcrumb is the current page, and this link is not. */}
                 <Link
                   href={tab.href}
-                  aria-current={active ? "page" : undefined}
+                  aria-current={
+                    !active
+                      ? undefined
+                      : pathname === tab.href
+                        ? "page"
+                        : "true"
+                  }
                 >
                   {tab.label}
                 </Link>

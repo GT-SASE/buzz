@@ -177,42 +177,20 @@ describe("isOfficerEmail", () => {
   });
 
   /**
-   * A domain entry has to mean the whole domain and only the whole domain.
-   * Matching with `endsWith`, or comparing without the leading `@`, hands
-   * officer rights to anyone who can register a lookalike domain or point a
-   * subdomain at it — the cheapest privilege escalation available here.
+   * Domain wildcards used to promote every account on a domain to ADMIN. Exact
+   * addresses only — an `@domain` entry is ignored, not expanded.
    */
-  it("matches a whole domain, not a lookalike or a subdomain", () => {
+  it("ignores domain wildcard entries", () => {
     process.env.ADMIN_EMAILS = "@saseconnect.org";
-    expect(isOfficerEmail("anyone@saseconnect.org")).toBe(true);
-    expect(isOfficerEmail("a.b+c@saseconnect.org")).toBe(true);
+    expect(isOfficerEmail("anyone@saseconnect.org")).toBe(false);
 
-    expect(isOfficerEmail("x@evil-saseconnect.org")).toBe(false);
-    expect(isOfficerEmail("x@sub.saseconnect.org")).toBe(false);
-    expect(isOfficerEmail("x@saseconnect.org.evil.com")).toBe(false);
-    expect(isOfficerEmail("x@saseconnect.orgy")).toBe(false);
-    expect(isOfficerEmail("evil-saseconnect.org")).toBe(false);
-    expect(isOfficerEmail("saseconnect.org")).toBe(false);
-    expect(isOfficerEmail("x@example.com?@saseconnect.org")).toBe(false);
-  });
-
-  /**
-   * Domain entries are compared against the CANONICAL domain, and canonical
-   * rewrites googlemail to gmail. So `@gmail.com` covers both spellings and
-   * `@googlemail.com` covers nobody at all — an entry that silently matches
-   * zero accounts rather than erroring.
-   */
-  it("compares domain entries against the canonical domain", () => {
-    process.env.ADMIN_EMAILS = "@gmail.com";
-    expect(isOfficerEmail("x@googlemail.com")).toBe(true);
-
-    process.env.ADMIN_EMAILS = "@googlemail.com";
-    expect(isOfficerEmail("x@googlemail.com")).toBe(false);
-    expect(isOfficerEmail("x@gmail.com")).toBe(false);
+    process.env.ADMIN_EMAILS = "@saseconnect.org,officer@saseconnect.org";
+    expect(isOfficerEmail("anyone@saseconnect.org")).toBe(false);
+    expect(isOfficerEmail("officer@saseconnect.org")).toBe(true);
   });
 
   it("takes a missing or empty address as not an officer", () => {
-    process.env.ADMIN_EMAILS = "@saseconnect.org,officer@saseconnect.org";
+    process.env.ADMIN_EMAILS = "officer@saseconnect.org";
     expect(isOfficerEmail(null)).toBe(false);
     expect(isOfficerEmail(undefined)).toBe(false);
     expect(isOfficerEmail("")).toBe(false);
@@ -221,8 +199,7 @@ describe("isOfficerEmail", () => {
   });
 
   it("reads several comma-separated entries and skips blank ones", () => {
-    process.env.ADMIN_EMAILS = "@saseconnect.org, , president@gmail.com,";
-    expect(isOfficerEmail("officer@saseconnect.org")).toBe(true);
+    process.env.ADMIN_EMAILS = " , president@gmail.com,";
     expect(isOfficerEmail("pre.sident+gt@googlemail.com")).toBe(true);
     expect(isOfficerEmail("someone@example.com")).toBe(false);
   });
@@ -244,25 +221,22 @@ describe("isOfficerEmail", () => {
   });
 
   /**
-   * ADMIN_EMAILS replaces the built-in list rather than extending it, so a
-   * deployment that sets it does not silently keep a personal address as an
-   * officer. Note the shape of the two empty cases: an EMPTY variable is
-   * falsy, so it restores the built-in default, while a comma-only one
-   * produces a genuinely empty allowlist. "Set it blank to remove all admins"
-   * does the opposite of what it looks like.
+   * Fail closed: unset or empty ADMIN_EMAILS promotes nobody. The first
+   * officer is set via env or a deliberate database edit.
    */
-  it("replaces the built-in defaults rather than adding to them", () => {
+  it("promotes nobody when ADMIN_EMAILS is unset or empty", () => {
     delete process.env.ADMIN_EMAILS;
-    expect(isOfficerEmail("aamoghsawantt@gmail.com")).toBe(true);
-
-    process.env.ADMIN_EMAILS = "officer@saseconnect.org";
     expect(isOfficerEmail("aamoghsawantt@gmail.com")).toBe(false);
+    expect(isOfficerEmail("officer@saseconnect.org")).toBe(false);
 
     process.env.ADMIN_EMAILS = "";
-    expect(isOfficerEmail("aamoghsawantt@gmail.com")).toBe(true);
+    expect(isOfficerEmail("officer@saseconnect.org")).toBe(false);
 
     process.env.ADMIN_EMAILS = ",";
-    expect(isOfficerEmail("aamoghsawantt@gmail.com")).toBe(false);
+    expect(isOfficerEmail("officer@saseconnect.org")).toBe(false);
+
+    process.env.ADMIN_EMAILS = "officer@saseconnect.org";
+    expect(isOfficerEmail("officer@saseconnect.org")).toBe(true);
   });
 });
 
@@ -278,6 +252,12 @@ describe("codeFromScan", () => {
       codeFromScan(
         "https://sasegt.org/portal/check-in?from=qr&code=abcd2345#x",
       ),
+    ).toBe("ABCD2345");
+    expect(
+      codeFromScan("https://sasegt.org/portal/check-in#code=ABCD2345"),
+    ).toBe("ABCD2345");
+    expect(
+      codeFromScan("https://sasegt.org/portal/check-in#ABCD2345"),
     ).toBe("ABCD2345");
   });
 

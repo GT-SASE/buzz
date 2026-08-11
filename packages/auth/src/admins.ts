@@ -7,18 +7,33 @@
  * address here does not silently demote someone mid-semester — that is a
  * deliberate database edit.
  *
- * Entries are either an exact address or `@domain`, which matches everyone on
- * that domain. Override the defaults with the ADMIN_EMAILS environment
- * variable, comma-separated.
+ * Exact addresses only. Fail closed: with no ADMIN_EMAILS set, nobody is
+ * promoted on sign-in — use `pnpm db:studio` or set the env for the first
+ * officer.
+ *
+ * Prefer wiring through the app's `@t3-oss/env-nextjs` schema via
+ * `configureAdminEmails` so empty strings are treated as unset. Falls back to
+ * `process.env.ADMIN_EMAILS` for tests and scripts.
  */
-const DEFAULT_ADMINS = ["aamoghsawantt@gmail.com"];
+
+type AdminEmailsReader = () => string | undefined;
+
+let adminEmailsReader: AdminEmailsReader | undefined;
+
+/** Called once from the Next app after `env` is validated. */
+export function configureAdminEmails(reader: AdminEmailsReader) {
+  adminEmailsReader = reader;
+}
 
 function allowlist() {
-  const configured = process.env.ADMIN_EMAILS;
-  const entries = configured ? configured.split(",") : DEFAULT_ADMINS;
-  return entries
+  const configured = adminEmailsReader
+    ? adminEmailsReader()
+    : process.env.ADMIN_EMAILS;
+  if (!configured) return [];
+  return configured
+    .split(",")
     .map((entry) => entry.trim().toLowerCase())
-    .filter((entry) => entry.length > 0);
+    .filter((entry) => entry.length > 0 && !entry.startsWith("@"));
 }
 
 /** Gmail ignores dots and anything after a `+`; two spellings, one inbox. */
@@ -34,9 +49,6 @@ function canonical(email: string) {
 export function isOfficerEmail(email: string | null | undefined) {
   if (!email) return false;
   const address = canonical(email);
-  const domain = address.slice(address.indexOf("@"));
 
-  return allowlist().some((entry) =>
-    entry.startsWith("@") ? entry === domain : canonical(entry) === address,
-  );
+  return allowlist().some((entry) => canonical(entry) === address);
 }

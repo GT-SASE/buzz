@@ -3,7 +3,7 @@
 import { CameraOffIcon, OctagonXIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { Honeycomb } from "~/app/portal/_components/honeycomb";
@@ -20,7 +20,7 @@ import {
 import { Spinner } from "~/components/ui/spinner";
 import { site } from "~/data/site";
 import { api } from "~/trpc/react";
-import { Scanner } from "./scanner";
+import { Scanner, codeFromScan } from "./scanner";
 
 function CodePlate({ code }: { code: string }) {
   return (
@@ -30,15 +30,33 @@ function CodePlate({ code }: { code: string }) {
   );
 }
 
+function codeFromHash() {
+  if (typeof window === "undefined") return "";
+  return (
+    codeFromScan(
+      `${window.location.origin}${window.location.pathname}${window.location.hash}`,
+    ) ?? ""
+  );
+}
+
 export function CheckInForm({ initialCode }: { initialCode: string }) {
   const router = useRouter();
   const utils = api.useUtils();
 
   /** Set when a code arrives in the URL, which needs a tap before it fires. */
-  const [confirm, setConfirm] = useState(initialCode.toUpperCase());
+  const [confirm, setConfirm] = useState(
+    () => (codeFromHash() || initialCode).toUpperCase(),
+  );
   const [submitted, setSubmitted] = useState("");
   /** Why the camera is not on screen, when it could not be started. */
   const [cameraNote, setCameraNote] = useState<string | null>(null);
+
+  // Prefer the fragment (`#code=`) so the bearer never hits the server as a
+  // query string. Strip it after the initial read so a refresh cannot re-share.
+  useEffect(() => {
+    if (!window.location.hash.includes("code=")) return;
+    window.history.replaceState(null, "", window.location.pathname);
+  }, []);
 
   const checkIn = api.event.checkIn.useMutation({
     onSuccess: async (result) => {
@@ -51,6 +69,7 @@ export function CheckInForm({ initialCode }: { initialCode: string }) {
         utils.event.myStats.invalidate(),
         utils.event.myEvents.invalidate(),
         utils.event.upcoming.invalidate(),
+        utils.member.leaderboard.invalidate(),
       ]);
       router.refresh();
     },

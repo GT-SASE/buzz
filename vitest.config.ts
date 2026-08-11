@@ -12,11 +12,28 @@ if (existsSync(envFile)) process.loadEnvFile(envFile);
 
 export default defineConfig({
   resolve: {
-    alias: {
+    alias: [
       // Mirrors sites/web/tsconfig.json so tests can import the web app's
       // modules by the same specifier the app uses.
-      "~": resolve(import.meta.dirname, "sites/web/src"),
-    },
+      { find: "~", replacement: resolve(import.meta.dirname, "sites/web/src") },
+      // The workspace packages, mirroring tsconfig.json's `paths`. Anchored
+      // because a bare string alias also captures subpaths, which would rewrite
+      // `@buzz/api/trpc` onto `index.ts/trpc` instead of letting the package's
+      // own exports map resolve it — the tsconfig paths only map the bare
+      // specifier too.
+      {
+        find: /^@buzz\/db$/,
+        replacement: resolve(import.meta.dirname, "packages/db/src/index.ts"),
+      },
+      {
+        find: /^@buzz\/api$/,
+        replacement: resolve(import.meta.dirname, "packages/api/src/index.ts"),
+      },
+      {
+        find: /^@buzz\/auth$/,
+        replacement: resolve(import.meta.dirname, "packages/auth/src/index.ts"),
+      },
+    ],
   },
   test: {
     environment: "node",

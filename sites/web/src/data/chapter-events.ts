@@ -80,12 +80,10 @@ export async function getChapterEvents() {
       past: past.map(withDisplayDate),
     };
   } catch (error) {
-    // Rethrown on purpose. `/` and `/events` are ISR with revalidate=3600, so
-    // swallowing this would render an empty calendar SUCCESSFULLY and let Next
-    // overwrite the last good cached page with it — one transient outage buys
-    // an hour of "nothing scheduled". Throwing keeps the previous render
-    // served and retries on the next request.
+    // Prefer an empty calendar over the unstyled Next error page on a cold
+    // render. Marketing routes catch this at the segment boundary too, but
+    // returning here keeps the homepage and /events themselves green.
     console.error("Chapter calendar query failed:", error);
-    throw error;
+    return { upcoming: [], past: [] };
   }
 }

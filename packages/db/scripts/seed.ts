@@ -21,6 +21,17 @@ if (!url) {
   throw new Error(`DATABASE_URL is not set. Add it to ${envFile} first.`);
 }
 
+{
+  const host = new URL(url).hostname;
+  const local =
+    host === "localhost" || host === "127.0.0.1" || host === "::1";
+  if (!local && process.env.SEED_FORCE !== "1") {
+    throw new Error(
+      `Refusing to seed non-local database host "${host}". Set SEED_FORCE=1 to override.`,
+    );
+  }
+}
+
 const sql = postgres(url);
 const db = drizzle(sql, { schema });
 
