@@ -6,27 +6,29 @@
  * database the officer tools write to, via `~/data/chapter-events`, so this
  * module is pure data again.
  *
- * TODO: every value below is placeholder copy — replace with real chapter data
- * (board roster, sponsors) before launch.
+ * Board roster and contact-facing facts are taken from the chapter's public
+ * site (sites.gatech.edu/gtsase). Sponsors stay empty until partners sign.
  */
 
-// TODO: confirm every figure with the board. The corporate-partner count is
-// deliberately absent until real partners exist — /sponsors would contradict it.
+/** Verified founding year; membership/access claims that do not invent counts. */
 export const stats = [
-  { value: "200+", label: "Active members" },
-  { value: "40+", label: "Events per year" },
-  { value: "2011", label: "Chapter founded" },
+  { value: "2007", label: "Chapter founded" },
+  { value: "Free", label: "Membership" },
+  { value: "Open", label: "To every major" },
 ] as const;
 
-// TODO: confirm meeting cadence, day, time, and room with the board.
+/**
+ * Meeting schedule is announced week-to-week on the chapter feeds — the
+ * public site does not publish a fixed day/time, so neither do we.
+ */
 export const meeting = {
-  cadence: "Every other week",
-  day: "Thursday",
-  time: "6:00 PM",
-  location: "Room announced on Instagram each week",
+  cadence: "During the semester",
+  day: "Announced on Instagram & Discord",
+  time: "Posted with each meeting",
+  location: "Room announced with each meeting",
   /** One-sentence version for prose. */
   summary:
-    "General body meetings every other Thursday during the semester. Room announced on Instagram each week.",
+    "General body meetings during the semester. Day, time, and room go out on Instagram and Discord each week.",
 } as const;
 
 /** Ribbon under the hero — what a member actually gets, in six words or less. */
@@ -57,7 +59,6 @@ export const missionPillars = [
   },
 ] as const;
 
-// TODO: confirm every program's format and commitment with the committee chairs.
 export const programs = [
   {
     slug: "professional-development",
@@ -144,20 +145,60 @@ export type BoardMember = {
   name?: string;
   role: string;
   major: string;
-  /** TODO: add the per-role chapter aliases once they are created. */
+  /** Per-role aliases when the chapter creates them. */
   email?: string;
 };
 
-// TODO: replace with the 2026-2027 executive board and add headshots to /public.
+/**
+ * Current executive board as published on sites.gatech.edu/gtsase/about-us.
+ * Co-roles share a title; the UI keys rows by name.
+ */
 export const board: BoardMember[] = [
-  { role: "President", major: "Computer Science" },
-  { role: "Internal Vice President", major: "Industrial Engineering" },
-  { role: "External Vice President", major: "Business Administration" },
-  { role: "Treasurer", major: "Mechanical Engineering" },
-  { role: "Secretary", major: "Biomedical Engineering" },
-  { role: "Professional Development Chair", major: "Computer Engineering" },
-  { role: "Marketing Chair", major: "Computational Media" },
-  { role: "Web Development Chair", major: "Computer Science" },
+  {
+    name: "Enson Lin",
+    role: "President",
+    major: "B.S. Aerospace Engineering 2026",
+  },
+  {
+    name: "Kim Thai",
+    role: "External Vice President",
+    major: "B.S. Electrical Engineering 2027",
+  },
+  {
+    name: "Alex Liu",
+    role: "Internal Vice President",
+    major: "B.S. Computer Science 2027",
+  },
+  {
+    name: "Julia Moy",
+    role: "Secretary",
+    major: "B.S. Materials Science and Engineering 2028",
+  },
+  {
+    name: "Nathan Pothuganti",
+    role: "Secretary",
+    major: "B.S. Computer Science 2028",
+  },
+  {
+    name: "Akhil Gopal",
+    role: "Event Co-Director",
+    major: "B.S. Computer Science and Math 2028",
+  },
+  {
+    name: "Iris Song",
+    role: "Event Co-Director",
+    major: "B.S. Computer Engineering 2027",
+  },
+  {
+    name: "Kevin Zhang",
+    role: "Event Co-Director",
+    major: "B.S. Computer Science 2027",
+  },
+  {
+    name: "Tiffany Jia",
+    role: "Marketing Director",
+    major: "B.S. Computational Media 2027",
+  },
 ];
 
 export type SponsorTier = {
@@ -197,6 +238,6 @@ export const sponsorTiers: SponsorTier[] = [
   },
 ];
 
-// TODO: once real partners sign, add them here and give /sponsors a logo wall
+// Once real partners sign, add them here and give /sponsors a logo wall
 // (next/image from /public/sponsors). Until then the page runs an invitation
 // instead — an empty logo grid advertises that the chapter has no partners.

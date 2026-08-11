@@ -5,8 +5,8 @@
  * no formatters, no `Date.now()`, no array work at module scope. Page copy
  * (events, board, programs, sponsors) lives in `~/data/content`.
  *
- * TODO: every value below is placeholder copy — replace with real chapter data
- * (email, socials) before launch.
+ * Contact and socials are taken from the chapter's public site
+ * (sites.gatech.edu/gtsase). Swap `url` if the chapter registers its own domain.
  */
 
 export const site = {
@@ -16,7 +16,6 @@ export const site = {
   /**
    * The chapter theme. Rendered as a lockup in the hero, the footer, and the
    * share card — not as the site title, which stays searchable.
-   * TODO: confirm which academic year this theme runs for.
    */
   theme: "Buzz by SASE",
   description:
@@ -24,25 +23,33 @@ export const site = {
   /**
    * Canonical origin, no trailing slash. Every canonical URL, the sitemap,
    * robots.txt, and the OG image URLs are built from this.
-   * TODO: swap for the chapter's own domain if one is ever registered.
    */
   url: "https://buzzsase.vercel.app",
   locality: "Atlanta",
   region: "GA",
   parentOrganization: "https://www.saseconnect.org/",
-  email: "sase@gatech.edu", // TODO: confirm
+  email: "gt@saseconnect.org",
   socials: [
     {
       id: "instagram",
       label: "Instagram",
-      href: "https://instagram.com/gtsase",
-    }, // TODO
+      href: "https://www.instagram.com/gtsase/",
+    },
     {
       id: "linkedin",
       label: "LinkedIn",
-      href: "https://linkedin.com/company/gtsase",
-    }, // TODO
-    { id: "discord", label: "Discord", href: "https://discord.gg/gtsase" }, // TODO
+      href: "https://www.linkedin.com/company/society-of-asian-scientists-and-engineers-sase-georgia-tech-chapter/",
+    },
+    {
+      id: "discord",
+      label: "Discord",
+      href: "https://discord.gg/vTBgABKf8J",
+    },
+    {
+      id: "engage",
+      label: "Engage",
+      href: "https://gatech.campuslabs.com/engage/organization/society-of-asian-scientists-and-engineers",
+    },
     {
       id: "national",
       label: "National SASE",
@@ -54,13 +61,14 @@ export const site = {
 export type Social = (typeof site.socials)[number];
 
 /**
- * Named handles for the two feeds pages link to directly. Keyed by `id` so a
+ * Named handles for the feeds pages link to directly. Keyed by `id` so a
  * label rename cannot silently drop the link from /contact, /join, /events.
  */
 const bySocialId = (id: Social["id"]) => site.socials.find((s) => s.id === id);
 
 export const instagram = bySocialId("instagram");
 export const discord = bySocialId("discord");
+export const engage = bySocialId("engage");
 
 export type NavGroup = {
   label: string;

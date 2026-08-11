@@ -1,18 +1,26 @@
+import type { Metadata } from "next";
+
 import { firstParam } from "~/app/portal/_lib/paths";
 import { requireSession } from "~/app/portal/_lib/session";
 import { Toaster } from "~/components/ui/sonner";
 import { CheckInForm } from "./check-in-form";
 
+export const metadata: Metadata = {
+  title: "Check in",
+};
+
 export default async function CheckInPage({
   searchParams,
 }: {
-  // `?code=A&code=B` really does arrive as `["A","B"]`.
+  // Legacy `?code=` still accepted for signed-out OAuth round-trips. New QR
+  // links use `#code=` and are read client-side.
   searchParams: Promise<{ code?: string | string[] }>;
 }) {
   const code = firstParam((await searchParams).code);
 
   // Carried through sign-in so a member who scanned a poster while signed out
-  // lands back here with the code intact.
+  // lands back here with the code intact (query only — fragments are stripped
+  // by the OAuth redirect).
   await requireSession(
     code
       ? `/portal/check-in?code=${encodeURIComponent(code)}`

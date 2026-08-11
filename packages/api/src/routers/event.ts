@@ -1,9 +1,16 @@
 import { TRPCError } from "@trpc/server";
-import { and, asc, count, desc, eq, gte, isNull, lt, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, isNull } from "drizzle-orm";
 import { z } from "zod";
 
-import { adminProcedure, createTRPCRouter, protectedProcedure } from "../trpc";
+import { asDate, asInt, totalsColumns } from "../aggregates";
 import { isUniqueViolation } from "../pg-errors";
+import {
+  CHECK_IN_LIMIT,
+  MANUAL_CHECK_IN_LIMIT,
+  REGENERATE_CODE_LIMIT,
+  takeToken,
+} from "../rate-limit";
+import { adminProcedure, createTRPCRouter, protectedProcedure } from "../trpc";
 import { eventCheckIns, events, users } from "@buzz/db";
 
 /**
@@ -12,6 +19,11 @@ import { eventCheckIns, events, users } from "@buzz/db";
  * photographed code keeps admitting people weeks later.
  */
 const CHECK_IN_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/** How early before start members may check in. */
+const CHECK_IN_GRACE_MS = 2 * 60 * 60 * 1000;
+
+const TWO_YEARS_MS = 2 * 365.25 * 24 * 60 * 60 * 1000;
 
 /**
  * Crockford-style base32: no I, L, O, U, 0 or 1. Members read these codes off a
@@ -22,11 +34,18 @@ const CODE_ALPHABET = "23456789ABCDEFGHJKMNPQRSTVWXYZ";
 const CODE_LENGTH = 8;
 
 function newCheckInCode() {
-  const bytes = new Uint8Array(CODE_LENGTH);
-  crypto.getRandomValues(bytes);
+  const alphabetLen = CODE_ALPHABET.length;
+  const rejectAbove = 256 - (256 % alphabetLen);
   let code = "";
-  for (const byte of bytes) {
-    code += CODE_ALPHABET[byte % CODE_ALPHABET.length];
+  while (code.length < CODE_LENGTH) {
+    const bytes = new Uint8Array(CODE_LENGTH - code.length);
+    crypto.getRandomValues(bytes);
+    for (const byte of bytes) {
+      // Rejection sampling: `byte % length` alone biases the shorter alphabet.
+      if (byte >= rejectAbove) continue;
+      code += CODE_ALPHABET[byte % alphabetLen];
+      if (code.length >= CODE_LENGTH) break;
+    }
   }
   return code;
 }
@@ -34,6 +53,31 @@ function newCheckInCode() {
 /** "  ab-cd ef " -> "ABCDEF". Members retype these, so be forgiving. */
 function normalizeCode(input: string) {
   return input.toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
+function assertCheckInWindow(startsAt: Date) {
+  const now = Date.now();
+  if (startsAt.getTime() - CHECK_IN_GRACE_MS > now) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "Check-in has not opened yet.",
+    });
+  }
+  if (startsAt.getTime() < now - CHECK_IN_WINDOW_MS) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "Check-in for this event has closed.",
+    });
+  }
+}
+
+function assertRateLimit(key: string, options: Parameters<typeof takeToken>[1]) {
+  if (!takeToken(key, options)) {
+    throw new TRPCError({
+      code: "TOO_MANY_REQUESTS",
+      message: "Too many requests. Try again shortly.",
+    });
+  }
 }
 
 /**
@@ -51,34 +95,16 @@ const publicEventColumns = {
   checkInEnabled: events.checkInEnabled,
 } as const;
 
-const totalsColumns = {
-  totalEvents: sql<number>`count(*)::int`,
-  totalPoints: sql<number>`coalesce(sum(${eventCheckIns.pointsEarned}), 0)::int`,
-  /**
-   * Dated from the first event they turned up to, not from account creation.
-   * Signing in is a formality; showing up is the thing the card commemorates.
-   *
-   * Rendered to an explicit ISO string rather than left as a raw aggregate:
-   * a bare `min()` is an expression, not a column, so the driver hands it back
-   * unparsed and the Date the type claimed never materialises.
-   */
-  memberSince: sql<
-    string | null
-  >`to_char(min(${eventCheckIns.checkedInAt}) at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')`,
-} as const;
-
-/** Never lets an unparseable value reach a formatter and take a page down. */
-function toDate(value: string | null | undefined) {
-  if (!value) return null;
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
-}
-
 const eventInput = z.object({
   title: z.string().trim().min(1).max(200),
   description: z.string().trim().max(1000).optional(),
   location: z.string().trim().max(200).optional(),
-  startsAt: z.coerce.date(),
+  startsAt: z.coerce.date().refine((date) => {
+    const t = date.getTime();
+    if (Number.isNaN(t)) return false;
+    const now = Date.now();
+    return t >= now - TWO_YEARS_MS && t <= now + TWO_YEARS_MS;
+  }, "Event start must be within two years of today."),
   pointsValue: z.number().int().min(0).max(100),
   maxCheckIns: z.number().int().positive().max(10000).nullable().optional(),
 });
@@ -87,27 +113,46 @@ export const eventRouter = createTRPCRouter({
   // ---------------------------------------------------------------- officers
 
   create: adminProcedure.input(eventInput).mutation(async ({ ctx, input }) => {
-    const [created] = await ctx.db
-      .insert(events)
-      .values({
-        ...input,
-        maxCheckIns: input.maxCheckIns ?? null,
-        checkInCode: newCheckInCode(),
-        createdById: ctx.session.user.id,
-      })
-      .returning();
+    for (let attempt = 0; attempt < 5; attempt++) {
+      try {
+        const [created] = await ctx.db
+          .insert(events)
+          .values({
+            ...input,
+            maxCheckIns: input.maxCheckIns ?? null,
+            checkInCode: newCheckInCode(),
+            createdById: ctx.session.user.id,
+          })
+          .returning();
 
-    if (!created) {
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message: "Could not create that event.",
-      });
+        if (!created) {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Could not create that event.",
+          });
+        }
+        return created;
+      } catch (error) {
+        if (!isUniqueViolation(error) || attempt === 4) {
+          if (isUniqueViolation(error)) {
+            throw new TRPCError({
+              code: "INTERNAL_SERVER_ERROR",
+              message: "Could not create that event.",
+            });
+          }
+          throw error;
+        }
+      }
     }
-    return created;
+
+    throw new TRPCError({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "Could not create that event.",
+    });
   }),
 
   update: adminProcedure
-    .input(eventInput.extend({ id: z.string() }))
+    .input(eventInput.extend({ id: z.string().min(1) }))
     .mutation(async ({ ctx, input }) => {
       const { id, ...fields } = input;
       // Editing pointsValue changes what FUTURE attendance is worth. Rows
@@ -131,19 +176,43 @@ export const eventRouter = createTRPCRouter({
       // between them is counted by neither, and since this counter IS the
       // capacity gate, a count low by k inflates the cap by k for the life of
       // the event.
-      const recount = sql<number>`(select count(*)::int from ${eventCheckIns} where ${eventCheckIns.eventId} = ${id})`;
+      // Lock + recount in one transaction so a check-in between SELECT and
+      // UPDATE cannot leave the counter low of the real attendance.
+      const updated = await ctx.db.transaction(async (tx) => {
+        const [locked] = await tx
+          .select({ id: events.id })
+          .from(events)
+          .where(eq(events.id, id))
+          .for("update");
 
-      const [updated] = await ctx.db
-        .update(events)
-        .set({
-          ...fields,
-          description: fields.description ?? null,
-          location: fields.location ?? null,
-          maxCheckIns: capacity,
-          ...(capacity === null ? {} : { currentCheckIns: recount }),
-        })
-        .where(eq(events.id, id))
-        .returning();
+        if (!locked) return null;
+
+        const [attendance] = await tx
+          .select({ total: count() })
+          .from(eventCheckIns)
+          .where(eq(eventCheckIns.eventId, id));
+
+        const [row] = await tx
+          .update(events)
+          .set({
+            ...fields,
+            description: fields.description ?? null,
+            location: fields.location ?? null,
+            maxCheckIns: capacity,
+            ...(capacity === null
+              ? {}
+              : {
+                  currentCheckIns:
+                    typeof attendance?.total === "number"
+                      ? attendance.total
+                      : Number(attendance?.total ?? 0),
+                }),
+          })
+          .where(eq(events.id, id))
+          .returning();
+
+        return row ?? null;
+      });
 
       if (!updated) {
         throw new TRPCError({ code: "NOT_FOUND", message: "Event not found." });
@@ -152,34 +221,57 @@ export const eventRouter = createTRPCRouter({
     }),
 
   /** Every event with its attendance count, in one query rather than N+1. */
-  listAll: adminProcedure.query(async ({ ctx }) => {
-    const rows = await ctx.db
-      .select({
-        ...publicEventColumns,
-        checkInCode: events.checkInCode,
-        maxCheckIns: events.maxCheckIns,
-        archivedAt: events.archivedAt,
-        attendees: count(eventCheckIns.id),
-      })
-      .from(events)
-      .leftJoin(eventCheckIns, eq(eventCheckIns.eventId, events.id))
-      .groupBy(events.id)
-      .orderBy(desc(events.startsAt))
-      .limit(200);
+  listAll: adminProcedure
+    .input(
+      z.object({
+        limit: z.number().int().min(1).max(200).default(50),
+        offset: z.number().int().min(0).default(0),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const [rows, [totals]] = await Promise.all([
+        ctx.db
+          .select({
+            ...publicEventColumns,
+            checkInCode: events.checkInCode,
+            maxCheckIns: events.maxCheckIns,
+            archivedAt: events.archivedAt,
+            attendees: count(eventCheckIns.id),
+          })
+          .from(events)
+          .leftJoin(eventCheckIns, eq(eventCheckIns.eventId, events.id))
+          .groupBy(events.id)
+          .orderBy(desc(events.startsAt))
+          .limit(input.limit)
+          .offset(input.offset),
+        ctx.db.select({ total: count() }).from(events),
+      ]);
 
-    // Decided here rather than in the component: reading the clock during
-    // render makes the list re-sort itself on an unrelated re-render, and this
-    // is the same cutoff the check-in door uses.
-    const cutoff = Date.now() - CHECK_IN_WINDOW_MS;
-    return rows.map((row) => ({
-      ...row,
-      isPast: row.startsAt.getTime() < cutoff,
-    }));
-  }),
+      // Decided here rather than in the component: reading the clock during
+      // render makes the list re-sort itself on an unrelated re-render, and this
+      // is the same cutoff the check-in door uses.
+      const cutoff = Date.now() - CHECK_IN_WINDOW_MS;
+      return {
+        events: rows.map((row) => ({
+          ...row,
+          isPast: row.startsAt.getTime() < cutoff,
+        })),
+        total:
+          typeof totals?.total === "number"
+            ? totals.total
+            : Number(totals?.total ?? 0),
+      };
+    }),
 
   /** One event plus its attendance roster — the officer's door list. */
   getById: adminProcedure
-    .input(z.object({ id: z.string() }))
+    .input(
+      z.object({
+        id: z.string().min(1),
+        limit: z.number().int().min(1).max(500).default(100),
+        offset: z.number().int().min(0).default(0),
+      }),
+    )
     .query(async ({ ctx, input }) => {
       const event = await ctx.db.query.events.findFirst({
         where: eq(events.id, input.id),
@@ -189,7 +281,58 @@ export const eventRouter = createTRPCRouter({
         throw new TRPCError({ code: "NOT_FOUND", message: "Event not found." });
       }
 
-      const roster = await ctx.db
+      const [roster, [rosterCount]] = await Promise.all([
+        ctx.db
+          .select({
+            userId: eventCheckIns.userId,
+            name: users.name,
+            email: users.email,
+            method: eventCheckIns.method,
+            pointsEarned: eventCheckIns.pointsEarned,
+            checkedInAt: eventCheckIns.checkedInAt,
+          })
+          .from(eventCheckIns)
+          .innerJoin(users, eq(users.id, eventCheckIns.userId))
+          .where(eq(eventCheckIns.eventId, event.id))
+          .orderBy(desc(eventCheckIns.checkedInAt))
+          .limit(input.limit)
+          .offset(input.offset),
+        ctx.db
+          .select({ total: count() })
+          .from(eventCheckIns)
+          .where(eq(eventCheckIns.eventId, event.id)),
+      ]);
+
+      // The officer screen shows whether the door is open. Without this it can
+      // only see `checkInEnabled` and would keep advertising a code that
+      // `checkIn` has already started refusing on the 24-hour window alone.
+      const isPast = event.startsAt.getTime() < Date.now() - CHECK_IN_WINDOW_MS;
+
+      return {
+        event,
+        roster,
+        rosterTotal:
+          typeof rosterCount?.total === "number"
+            ? rosterCount.total
+            : Number(rosterCount?.total ?? 0),
+        isPast,
+      };
+    }),
+
+  /** Full attendance for CSV. Capped so an uncapped event cannot OOM the handler. */
+  exportAttendance: adminProcedure
+    .input(z.object({ id: z.string().min(1) }))
+    .query(async ({ ctx, input }) => {
+      const event = await ctx.db.query.events.findFirst({
+        where: eq(events.id, input.id),
+        columns: { id: true },
+      });
+
+      if (!event) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Event not found." });
+      }
+
+      const rows = await ctx.db
         .select({
           userId: eventCheckIns.userId,
           name: users.name,
@@ -201,18 +344,14 @@ export const eventRouter = createTRPCRouter({
         .from(eventCheckIns)
         .innerJoin(users, eq(users.id, eventCheckIns.userId))
         .where(eq(eventCheckIns.eventId, event.id))
-        .orderBy(desc(eventCheckIns.checkedInAt));
+        .orderBy(desc(eventCheckIns.checkedInAt))
+        .limit(5000);
 
-      // The officer screen shows whether the door is open. Without this it can
-      // only see `checkInEnabled` and would keep advertising a code that
-      // `checkIn` has already started refusing on the 24-hour window alone.
-      const isPast = event.startsAt.getTime() < Date.now() - CHECK_IN_WINDOW_MS;
-
-      return { event, roster, isPast };
+      return { rows, truncated: rows.length >= 5000 };
     }),
 
   setCheckInEnabled: adminProcedure
-    .input(z.object({ id: z.string(), enabled: z.boolean() }))
+    .input(z.object({ id: z.string().min(1), enabled: z.boolean() }))
     .mutation(async ({ ctx, input }) => {
       const [updated] = await ctx.db
         .update(events)
@@ -227,7 +366,7 @@ export const eventRouter = createTRPCRouter({
     }),
 
   setArchived: adminProcedure
-    .input(z.object({ id: z.string(), archived: z.boolean() }))
+    .input(z.object({ id: z.string().min(1), archived: z.boolean() }))
     .mutation(async ({ ctx, input }) => {
       const [updated] = await ctx.db
         .update(events)
@@ -243,24 +382,59 @@ export const eventRouter = createTRPCRouter({
 
   /** Revocation: rotating the code kills a photographed poster immediately. */
   regenerateCode: adminProcedure
-    .input(z.object({ id: z.string() }))
+    .input(z.object({ id: z.string().min(1) }))
     .mutation(async ({ ctx, input }) => {
-      const [updated] = await ctx.db
-        .update(events)
-        .set({ checkInCode: newCheckInCode() })
-        .where(eq(events.id, input.id))
-        .returning({ id: events.id, checkInCode: events.checkInCode });
+      assertRateLimit(
+        `regenerate-code:${ctx.session.user.id}`,
+        REGENERATE_CODE_LIMIT,
+      );
 
-      if (!updated) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Event not found." });
+      for (let attempt = 0; attempt < 5; attempt++) {
+        try {
+          const [updated] = await ctx.db
+            .update(events)
+            .set({ checkInCode: newCheckInCode() })
+            .where(eq(events.id, input.id))
+            .returning({ id: events.id, checkInCode: events.checkInCode });
+
+          if (!updated) {
+            throw new TRPCError({
+              code: "NOT_FOUND",
+              message: "Event not found.",
+            });
+          }
+          return updated;
+        } catch (error) {
+          if (error instanceof TRPCError) throw error;
+          if (!isUniqueViolation(error) || attempt === 4) {
+            if (isUniqueViolation(error)) {
+              throw new TRPCError({
+                code: "INTERNAL_SERVER_ERROR",
+                message: "Could not regenerate that code.",
+              });
+            }
+            throw error;
+          }
+        }
       }
-      return updated;
+
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Could not regenerate that code.",
+      });
     }),
 
   /** For the member whose phone died. Same snapshot rule as the code path. */
   manualCheckIn: adminProcedure
-    .input(z.object({ eventId: z.string(), email: z.string().email() }))
+    .input(
+      z.object({ eventId: z.string().min(1), email: z.string().email() }),
+    )
     .mutation(async ({ ctx, input }) => {
+      assertRateLimit(
+        `manual-check-in:${ctx.session.user.id}`,
+        MANUAL_CHECK_IN_LIMIT,
+      );
+
       const email = input.email.trim().toLowerCase();
 
       const member = await ctx.db.query.users.findFirst({
@@ -275,28 +449,39 @@ export const eventRouter = createTRPCRouter({
         });
       }
 
-      const event = await ctx.db.query.events.findFirst({
-        where: eq(events.id, input.eventId),
-      });
-
-      if (!event) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Event not found." });
-      }
-
       try {
         await ctx.db.transaction(async (tx) => {
+          // Re-read under the same lock the capacity path uses so a concurrent
+          // archive / re-price cannot race the insert.
+          const [locked] = await tx
+            .select()
+            .from(events)
+            .where(eq(events.id, input.eventId))
+            .for("update");
+
+          if (!locked) {
+            throw new TRPCError({
+              code: "NOT_FOUND",
+              message: "Event not found.",
+            });
+          }
+
           await tx.insert(eventCheckIns).values({
-            eventId: event.id,
+            eventId: locked.id,
             userId: member.id,
             method: "manual",
-            pointsEarned: event.pointsValue,
+            pointsEarned: locked.pointsValue,
+            actedByUserId: ctx.session.user.id,
           });
+          // Honest override: officers may exceed capacity, and the counter
+          // still tracks every body in the room.
           await tx
             .update(events)
-            .set({ currentCheckIns: sql`${events.currentCheckIns} + 1` })
-            .where(eq(events.id, event.id));
+            .set({ currentCheckIns: locked.currentCheckIns + 1 })
+            .where(eq(events.id, locked.id));
         });
       } catch (error) {
+        if (error instanceof TRPCError) throw error;
         if (isUniqueViolation(error)) {
           throw new TRPCError({
             code: "CONFLICT",
@@ -311,9 +496,29 @@ export const eventRouter = createTRPCRouter({
 
   /** Mis-scans happen; without this an officer cannot undo one. */
   removeCheckIn: adminProcedure
-    .input(z.object({ eventId: z.string(), userId: z.string() }))
+    .input(
+      z.object({
+        eventId: z.string().min(1),
+        userId: z.string().min(1),
+      }),
+    )
     .mutation(async ({ ctx, input }) => {
       await ctx.db.transaction(async (tx) => {
+        // Same lock order as the capped check-in path: event row first, then
+        // the attendance row. Taking them the other way deadlocks under load.
+        const [locked] = await tx
+          .select({ id: events.id, currentCheckIns: events.currentCheckIns })
+          .from(events)
+          .where(eq(events.id, input.eventId))
+          .for("update");
+
+        if (!locked) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Event not found.",
+          });
+        }
+
         const removed = await tx
           .delete(eventCheckIns)
           .where(
@@ -326,12 +531,10 @@ export const eventRouter = createTRPCRouter({
 
         if (removed.length === 0) return;
 
-        // greatest(): the counter is repaired by the same statement that
-        // consumes it, so a hand-edited row can never drive it negative.
         await tx
           .update(events)
           .set({
-            currentCheckIns: sql`greatest(${events.currentCheckIns} - 1, 0)`,
+            currentCheckIns: Math.max(locked.currentCheckIns - 1, 0),
           })
           .where(eq(events.id, input.eventId));
       });
@@ -353,8 +556,11 @@ export const eventRouter = createTRPCRouter({
       const code = normalizeCode(input.code);
       const userId = ctx.session.user.id;
 
-      // Read outside any transaction. Nothing here is mutated, and holding a
-      // transaction open across the lookup was pure contention.
+      assertRateLimit(`check-in:${userId}`, CHECK_IN_LIMIT);
+
+      // Lookup outside the transaction — the code index settles "no such
+      // event" without taking a row lock. Everything mutable is re-checked
+      // inside once the event row is locked.
       const event = await ctx.db.query.events.findFirst({
         where: eq(events.checkInCode, code),
       });
@@ -366,64 +572,61 @@ export const eventRouter = createTRPCRouter({
         });
       }
 
-      if (event.archivedAt !== null || !event.checkInEnabled) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Check-in is closed for this event.",
-        });
-      }
-
-      if (event.startsAt.getTime() < Date.now() - CHECK_IN_WINDOW_MS) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Check-in for this event has closed.",
-        });
-      }
-
-      const admit = async () => {
-        try {
-          // pointsEarned is snapshotted here and never recomputed. Re-pricing
-          // the event later moves nobody's existing total.
-          await ctx.db.insert(eventCheckIns).values({
-            eventId: event.id,
-            userId,
-            method: "code",
-            pointsEarned: event.pointsValue,
-          });
-        } catch (error) {
-          // The unique constraint is the arbiter of a double tap, not a read
-          // that preceded it, and the loser has to read as the same conflict a
-          // sequential retry gets rather than an unexplained failure.
-          if (isUniqueViolation(error)) {
-            throw new TRPCError({
-              code: "CONFLICT",
-              message: "You are already checked in to this event.",
-            });
-          }
-          throw error;
-        }
-      };
+      let eventTitle = event.title;
+      let pointsEarned = event.pointsValue;
 
       if (event.maxCheckIns === null) {
         /*
-         * The fast path, and the one a full room actually takes.
-         *
-         * An uncapped event has nothing to serialise: the unique index on
-         * (event, user) settles duplicates by itself, and no decision depends
-         * on a count. The previous version took `SELECT ... FOR UPDATE` on the
-         * event row and held it until commit, so thirty phones scanning at
-         * once queued single file behind one lock — measured at 11.7 seconds
-         * for a room of thirty. Without the lock the same burst is limited
-         * only by the pool.
+         * Uncapped: no capacity counter to serialise on, but archive / disable /
+         * window still have to be re-validated under a lock so a concurrent
+         * officer close cannot race the insert.
          *
          * `currentCheckIns` is deliberately NOT incremented here. It exists to
          * settle capacity, this event has none, and a shared counter is a row
-         * every writer must serialise on — reintroducing the exact contention
-         * this path removes. `listAll` already reports attendance with
-         * `count(*)`, and `update` recomputes the counter if a capacity is
-         * ever added, so nothing reads a stale value.
+         * every writer must serialise on. `listAll` already reports attendance
+         * with `count(*)`, and `update` recomputes the counter if a capacity is
+         * ever added.
          */
-        await admit();
+        await ctx.db.transaction(async (tx) => {
+          const [locked] = await tx
+            .select()
+            .from(events)
+            .where(eq(events.id, event.id))
+            .for("update");
+
+          if (locked?.archivedAt != null || !locked?.checkInEnabled) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: "Check-in is closed for this event.",
+            });
+          }
+          assertCheckInWindow(locked.startsAt);
+
+          eventTitle = locked.title;
+          pointsEarned = locked.pointsValue;
+
+          try {
+            // pointsEarned is snapshotted here and never recomputed. Re-pricing
+            // the event later moves nobody's existing total.
+            await tx.insert(eventCheckIns).values({
+              eventId: locked.id,
+              userId,
+              method: "code",
+              pointsEarned: locked.pointsValue,
+            });
+          } catch (error) {
+            // The unique constraint is the arbiter of a double tap, not a read
+            // that preceded it, and the loser has to read as the same conflict a
+            // sequential retry gets rather than an unexplained failure.
+            if (isUniqueViolation(error)) {
+              throw new TRPCError({
+                code: "CONFLICT",
+                message: "You are already checked in to this event.",
+              });
+            }
+            throw error;
+          }
+        });
       } else {
         await ctx.db.transaction(async (tx) => {
           // Capacity is a shared decision, so here the lock is the point: two
@@ -431,14 +634,25 @@ export const eventRouter = createTRPCRouter({
           // throughput on the events that have a limit, which are the small
           // ones where a queue costs least.
           const [locked] = await tx
-            .select({ currentCheckIns: events.currentCheckIns })
+            .select()
             .from(events)
             .where(eq(events.id, event.id))
             .for("update");
 
+          if (locked?.archivedAt != null || !locked?.checkInEnabled) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: "Check-in is closed for this event.",
+            });
+          }
+          assertCheckInWindow(locked.startsAt);
+
+          eventTitle = locked.title;
+          pointsEarned = locked.pointsValue;
+
           const existing = await tx.query.eventCheckIns.findFirst({
             where: and(
-              eq(eventCheckIns.eventId, event.id),
+              eq(eventCheckIns.eventId, locked.id),
               eq(eventCheckIns.userId, userId),
             ),
           });
@@ -453,7 +667,10 @@ export const eventRouter = createTRPCRouter({
             });
           }
 
-          if ((locked?.currentCheckIns ?? 0) >= event.maxCheckIns!) {
+          if (
+            locked.maxCheckIns !== null &&
+            locked.currentCheckIns >= locked.maxCheckIns
+          ) {
             throw new TRPCError({
               code: "BAD_REQUEST",
               message: "This event is full.",
@@ -462,10 +679,10 @@ export const eventRouter = createTRPCRouter({
 
           try {
             await tx.insert(eventCheckIns).values({
-              eventId: event.id,
+              eventId: locked.id,
               userId,
               method: "code",
-              pointsEarned: event.pointsValue,
+              pointsEarned: locked.pointsValue,
             });
           } catch (error) {
             if (isUniqueViolation(error)) {
@@ -477,27 +694,11 @@ export const eventRouter = createTRPCRouter({
             throw error;
           }
 
-          // The counter is the capacity, so the increment re-tests it in the
-          // same statement. A phone that got past the gate on a stale count
-          // finds no row left to claim, and throwing takes its attendance row
-          // down with the transaction.
-          const claimed = await tx
+          // Row is already locked FOR UPDATE; capacity was checked above.
+          await tx
             .update(events)
-            .set({ currentCheckIns: sql`${events.currentCheckIns} + 1` })
-            .where(
-              and(
-                eq(events.id, event.id),
-                lt(events.currentCheckIns, event.maxCheckIns!),
-              ),
-            )
-            .returning({ id: events.id });
-
-          if (claimed.length === 0) {
-            throw new TRPCError({
-              code: "BAD_REQUEST",
-              message: "This event is full.",
-            });
-          }
+            .set({ currentCheckIns: locked.currentCheckIns + 1 })
+            .where(eq(events.id, locked.id));
         });
       }
 
@@ -507,13 +708,16 @@ export const eventRouter = createTRPCRouter({
       const [totals] = await ctx.db
         .select(totalsColumns)
         .from(eventCheckIns)
-        .where(eq(eventCheckIns.userId, userId));
+        .innerJoin(events, eq(events.id, eventCheckIns.eventId))
+        .where(
+          and(eq(eventCheckIns.userId, userId), isNull(events.archivedAt)),
+        );
 
       return {
-        eventTitle: event.title,
-        pointsEarned: event.pointsValue,
-        totalPoints: totals?.totalPoints ?? 0,
-        totalEvents: totals?.totalEvents ?? 0,
+        eventTitle,
+        pointsEarned,
+        totalPoints: asInt(totals?.totalPoints),
+        totalEvents: asInt(totals?.totalEvents),
       };
     }),
 
@@ -531,7 +735,12 @@ export const eventRouter = createTRPCRouter({
       })
       .from(eventCheckIns)
       .innerJoin(events, eq(events.id, eventCheckIns.eventId))
-      .where(eq(eventCheckIns.userId, ctx.session.user.id))
+      .where(
+        and(
+          eq(eventCheckIns.userId, ctx.session.user.id),
+          isNull(events.archivedAt),
+        ),
+      )
       .orderBy(desc(eventCheckIns.checkedInAt))
       .limit(100);
   }),
@@ -541,12 +750,18 @@ export const eventRouter = createTRPCRouter({
     const [totals] = await ctx.db
       .select(totalsColumns)
       .from(eventCheckIns)
-      .where(eq(eventCheckIns.userId, ctx.session.user.id));
+      .innerJoin(events, eq(events.id, eventCheckIns.eventId))
+      .where(
+        and(
+          eq(eventCheckIns.userId, ctx.session.user.id),
+          isNull(events.archivedAt),
+        ),
+      );
 
     return {
-      totalEvents: totals?.totalEvents ?? 0,
-      totalPoints: totals?.totalPoints ?? 0,
-      memberSince: toDate(totals?.memberSince),
+      totalEvents: asInt(totals?.totalEvents),
+      totalPoints: asInt(totals?.totalPoints),
+      memberSince: asDate(totals?.memberSince),
     };
   }),
 

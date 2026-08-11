@@ -116,10 +116,10 @@ export default async function Home() {
                   Come to a meeting
                 </Eyebrow>
                 <p className="font-display text-navy text-h2 mt-4 font-bold">
-                  {meeting.cadence}
+                  General body meetings
                 </p>
                 <p className="text-ink-muted text-body mt-3">
-                  {meeting.day}s at {meeting.time} during the semester.
+                  {meeting.summary}
                 </p>
                 <p className="text-ink-muted text-body-sm mt-1">
                   {meeting.location}
@@ -289,7 +289,10 @@ export default async function Home() {
       >
         <ul role="list" className="stagger border-hairline border-t">
           {board.slice(0, 4).map((member) => (
-            <BoardRow key={member.role} member={member} />
+            <BoardRow
+              key={member.name ?? member.role}
+              member={member}
+            />
           ))}
         </ul>
         <div className="mt-10">

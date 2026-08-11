@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 
 import { Section } from "~/components/site";
@@ -10,6 +11,10 @@ import {
   BreadcrumbSeparator,
 } from "~/components/ui/breadcrumb";
 import { EventAttendance } from "./event-attendance";
+
+export const metadata: Metadata = {
+  title: "Event",
+};
 
 export default async function AdminEventPage({
   params,

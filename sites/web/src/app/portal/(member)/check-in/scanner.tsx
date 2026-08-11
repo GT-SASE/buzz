@@ -14,11 +14,23 @@ const ISSUED_CODE = /^[2-9A-HJKM-NP-TV-Z]{6,12}$/i;
  * A full check-in URL or a bare code, held to the same alphabet either way.
  * Anything else is a miss rather than a guess fired at the server.
  */
+function codeFromHash(hash: string): string | null {
+  const body = hash.startsWith("#") ? hash.slice(1) : hash;
+  if (!body) return null;
+  const params = new URLSearchParams(
+    body.includes("=") ? body : `code=${body}`,
+  );
+  const fromHash = params.get("code") ?? (ISSUED_CODE.test(body) ? body : null);
+  return fromHash && ISSUED_CODE.test(fromHash) ? fromHash.toUpperCase() : null;
+}
+
 export function codeFromScan(raw: string): string | null {
   const text = raw.trim();
 
   try {
     const url = new URL(text);
+    const fromHash = codeFromHash(url.hash);
+    if (fromHash) return fromHash;
     const fromQuery = url.searchParams.get("code");
     if (fromQuery && ISSUED_CODE.test(fromQuery))
       return fromQuery.toUpperCase();

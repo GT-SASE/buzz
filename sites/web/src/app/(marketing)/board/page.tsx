@@ -17,7 +17,7 @@ import { breadcrumbSchema, pageMetadata } from "~/lib/seo";
 export const metadata = pageMetadata({
   title: "Board",
   description:
-    "The elected executive board of SASE at Georgia Tech for 2026-2027, what each officer handles, and how to reach them.",
+    "The elected executive board of SASE at Georgia Tech, what each officer handles, and how to reach them.",
   path: "/board",
 });
 
@@ -43,7 +43,7 @@ export default function BoardPage() {
 
       <Section
         size="sm"
-        eyebrow="2026-2027"
+        eyebrow="Leadership"
         title="Executive board."
         lead="Elected each spring. Every role is open to any Georgia Tech student."
       >
@@ -71,7 +71,10 @@ export default function BoardPage() {
         {/* A roster, not a grid of empty headshot frames. */}
         <ul role="list" className="stagger border-hairline border-t">
           {board.map((member) => (
-            <BoardRow key={member.role} member={member} />
+            <BoardRow
+              key={member.name ?? member.role}
+              member={member}
+            />
           ))}
         </ul>
       </Section>

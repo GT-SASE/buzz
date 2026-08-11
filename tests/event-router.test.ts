@@ -1,4 +1,3 @@
-import { SQL } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 /**
@@ -28,6 +27,7 @@ vi.mock("../packages/auth/src/index.ts", () => ({
 
 vi.stubEnv("NODE_ENV", "production");
 const { createCaller } = await import("../packages/api/src/root");
+const { resetRateLimits } = await import("../packages/api/src/rate-limit");
 vi.unstubAllEnvs();
 
 type Ctx = Parameters<typeof createCaller>[0];
@@ -92,19 +92,38 @@ function insertCapturingDb() {
   return { db, inserted };
 }
 
-/** `db.update(events).set(...).where(...).returning()` — records the SET payload. */
+/**
+ * `db.transaction` + lock + count + update. The recount is a SELECT under
+ * `FOR UPDATE`, not a SQL subquery inside SET — same race safety, Drizzle ORM.
+ */
 function updateCapturingDb() {
   const sets: Record<string, unknown>[] = [];
-  const db = {
-    // Throws on purpose. The capacity recount has to ride inside the UPDATE as
-    // a subquery; a separate SELECT first leaves a window where a check-in
-    // inserted between the two statements is counted by neither, and this
-    // counter IS the capacity gate.
-    select: () => {
-      throw new Error(
-        "update must not issue a separate SELECT — the recount belongs inside the UPDATE",
-      );
-    },
+  const selectChain = () => {
+    const chain = {
+      from: () => chain,
+      where: () => chain,
+      for: () => Promise.resolve([{ id: "event-1" }]),
+      then: (
+        onFulfilled?: (value: { total: number }[]) => unknown,
+        onRejected?: (reason: unknown) => unknown,
+      ) => Promise.resolve([{ total: 7 }]).then(onFulfilled, onRejected),
+    };
+    return chain;
+  };
+  type StubDb = {
+    transaction: (fn: (tx: StubDb) => Promise<unknown>) => Promise<unknown>;
+    select: typeof selectChain;
+    update: () => {
+      set: (values: Record<string, unknown>) => {
+        where: () => {
+          returning: () => Promise<Record<string, unknown>[]>;
+        };
+      };
+    };
+  };
+  const db: StubDb = {
+    transaction: (fn) => fn(db),
+    select: selectChain,
     update: () => ({
       set: (values: Record<string, unknown>) => {
         sets.push(values);
@@ -180,6 +199,10 @@ function manualCheckInWith(thrown: unknown) {
 }
 
 describe("isUniqueViolation (through event.manualCheckIn)", () => {
+  beforeAll(() => {
+    resetRateLimits();
+  });
+
   it("matches a bare driver object carrying 23505", async () => {
     const error = await manualCheckInWith({ code: "23505" });
     expect(error.code).toBe("CONFLICT");
@@ -267,6 +290,7 @@ describe("check-in code generation (through event.regenerateCode)", () => {
 
   beforeAll(async () => {
     for (let index = 0; index < SAMPLES; index++) {
+      resetRateLimits();
       const { db, sets } = updateCapturingDb();
       await createCaller(adminCtx(db)).event.regenerateCode({ id: "event-1" });
       codes.push(sets[0]!.checkInCode as string);
@@ -523,9 +547,8 @@ describe("event.update", () => {
     });
 
     expect(sets[0]).toHaveProperty("currentCheckIns");
-    // A SQL expression, not a number: that is what proves the recount is one
-    // statement with the write rather than a read-then-write race.
-    expect(sets[0]!.currentCheckIns).toBeInstanceOf(SQL);
+    // Recounted under the event row lock, then written as a plain integer.
+    expect(sets[0]!.currentCheckIns).toBe(7);
   });
 
   it("leaves currentCheckIns alone when the event stays uncapped", async () => {

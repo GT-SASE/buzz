@@ -30,12 +30,18 @@ export function EventRows({
   count,
   rows,
   empty,
+  totalCount,
 }: {
   title: string;
   count?: string;
   rows: EventRow[];
   empty: React.ReactNode;
+  /** True total when the caller knows it; the rows may be a capped slice of it. */
+  totalCount?: number;
 }) {
+  const truncated =
+    totalCount !== undefined && rows.length > 0 && rows.length < totalCount;
+
   return (
     <section className="mt-12">
       <div className="border-hairline flex items-baseline justify-between gap-4 border-b pb-3">
@@ -107,6 +113,12 @@ export function EventRows({
             ))}
           </TableBody>
         </Table>
+      )}
+
+      {truncated && (
+        <p className="text-ink-muted text-body-sm mt-4">
+          Showing the {rows.length} most recent of {totalCount} events.
+        </p>
       )}
     </section>
   );

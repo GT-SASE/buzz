@@ -43,14 +43,15 @@ declare module "@auth/core/adapters" {
   }
 }
 
+const SESSION_MAX_AGE_SEC = 30 * 24 * 60 * 60;
+
 /**
  * Options for NextAuth.js used to configure adapters, providers, callbacks, etc.
  *
  * @see https://next-auth.js.org/configuration/options
  */
 export const authConfig = {
-  // Google only. Every member already has a Georgia Tech Google account, which
-  // makes it the one provider nobody has to go create something for.
+  // Google only. Any Google account may join; there is no school-domain gate.
   // Credentials are read from AUTH_GOOGLE_ID / AUTH_GOOGLE_SECRET.
   providers: [GoogleProvider],
   adapter: DrizzleAdapter(db, {
@@ -59,9 +60,28 @@ export const authConfig = {
     sessionsTable: sessions,
     verificationTokensTable: verificationTokens,
   }),
+  session: {
+    strategy: "database",
+    maxAge: SESSION_MAX_AGE_SEC,
+    updateAge: 24 * 60 * 60,
+  },
+  cookies: {
+    sessionToken: {
+      name:
+        process.env.NODE_ENV === "production"
+          ? "__Secure-authjs.session-token"
+          : "authjs.session-token",
+      options: {
+        httpOnly: true,
+        sameSite: "lax",
+        path: "/",
+        secure: process.env.NODE_ENV === "production",
+      },
+    },
+  },
   events: {
     /**
-     * Seed the role from the allowlist.
+     * Seed the role from the allowlist and normalize email to lowercase.
      *
      * `createUser` covers the first sign-in; `signIn` covers an account that
      * already existed when its address was added. Deliberately one-way: it
@@ -70,15 +90,25 @@ export const authConfig = {
      * time an environment variable changes.
      */
     createUser: async ({ user }) => {
-      if (!user.id || !isOfficerEmail(user.email)) return;
+      if (!user.id) return;
+      const email = user.email?.trim().toLowerCase();
+      if (email && email !== user.email) {
+        await db.update(users).set({ email }).where(eq(users.id, user.id));
+      }
+      if (!isOfficerEmail(email ?? user.email)) return;
       await db
         .update(users)
         .set({ role: "ADMIN" })
         .where(eq(users.id, user.id));
     },
     signIn: async ({ user }) => {
-      if (!user.id || user.role === "ADMIN") return;
-      if (!isOfficerEmail(user.email)) return;
+      if (!user.id) return;
+      const email = user.email?.trim().toLowerCase();
+      if (email && email !== user.email) {
+        await db.update(users).set({ email }).where(eq(users.id, user.id));
+      }
+      if (user.role === "ADMIN") return;
+      if (!isOfficerEmail(email ?? user.email)) return;
       await db
         .update(users)
         .set({ role: "ADMIN" })

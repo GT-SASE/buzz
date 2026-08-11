@@ -55,7 +55,7 @@ import { Textarea } from "~/components/ui/textarea";
 import { cn } from "~/lib/utils";
 import { api, type RouterOutputs } from "~/trpc/react";
 
-type AdminEvent = RouterOutputs["event"]["listAll"][number];
+type AdminEvent = RouterOutputs["event"]["listAll"]["events"][number];
 
 const filters = ["Open", "Past", "Archived", "All"] as const;
 type Filter = (typeof filters)[number];
@@ -74,12 +74,13 @@ function EventForm({
   const utils = api.useUtils();
   const [limited, setLimited] = useState(event?.maxCheckIns != null);
 
-  // Both, not just the list. The attendance and projector screens read
-  // `getById`, so invalidating only `listAll` leaves them stale.
+  // Not just the list. The attendance and projector screens read `getById`,
+  // and the overview strip on this same page counts events.
   const refresh = async () => {
     await Promise.all([
       utils.event.listAll.invalidate(),
       utils.event.getById.invalidate(),
+      utils.chapter.overview.invalidate(),
     ]);
     onDone();
   };
@@ -295,12 +296,14 @@ function StatusBadges({ event }: { event: AdminEvent }) {
 function EventRow({ event }: { event: AdminEvent }) {
   const utils = api.useUtils();
 
-  // Both, not just the list: the attendance screen reads `getById`, so it would
-  // otherwise keep serving a check-in code this mutation has just revoked.
+  // Not just the list: the attendance screen reads `getById`, so it would
+  // otherwise keep serving a check-in code this mutation has just revoked, and
+  // archiving moves the counts in the overview strip above the table.
   const invalidate = async () => {
     await Promise.all([
       utils.event.listAll.invalidate(),
       utils.event.getById.invalidate({ id: event.id }),
+      utils.chapter.overview.invalidate(),
     ]);
   };
 
@@ -466,9 +469,10 @@ function EventRow({ event }: { event: AdminEvent }) {
 
 export function AdminEvents() {
   const [filter, setFilter] = useState<Filter>("Open");
-  const listing = api.event.listAll.useQuery();
+  // Cap matches the procedure max so the filter still sees the chapter.
+  const listing = api.event.listAll.useQuery({ limit: 200, offset: 0 });
 
-  const allEvents = listing.data ?? [];
+  const allEvents = listing.data?.events ?? [];
 
   // `isPast` is decided server-side against the same cutoff the check-in door
   // uses, so this list never disagrees with what a member can actually enter.

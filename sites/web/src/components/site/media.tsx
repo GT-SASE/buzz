@@ -78,7 +78,7 @@ export function StatValue({
   value: string;
   className?: string;
 }) {
-  // "200+" counts; "2011" does not — a founding year ticking up from zero
+  // "200+" counts; "2007" does not — a founding year ticking up from zero
   // reads as a bug rather than a flourish.
   const parts = /^(\d{1,3})(\D*)$/.exec(value);
 
