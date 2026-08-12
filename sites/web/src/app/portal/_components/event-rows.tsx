@@ -58,7 +58,7 @@ export function EventRows({
           {empty}
         </div>
       ) : (
-        <Table>
+        <Table label={title}>
           <TableCaption className="sr-only">{title}</TableCaption>
           <TableHeader>
             <TableRow className="hover:bg-transparent">

@@ -121,7 +121,7 @@ function RosterRows({
                   variant="ghost"
                   size="sm"
                   disabled={removing}
-                  className="text-ink-muted text-body-sm font-semibold hover:text-red-900"
+                  className="text-ink-muted hover:text-destructive text-body-sm font-semibold"
                 >
                   Remove
                 </Button>
@@ -236,7 +236,13 @@ export function EventAttendance({ eventId }: { eventId: string }) {
     () => window.location.origin,
     () => "",
   );
-  const detail = api.event.getById.useQuery({ id: eventId });
+  const detail = api.event.getById.useQuery(
+    { id: eventId },
+    {
+      retry: (failureCount, error) =>
+        error.data?.code !== "NOT_FOUND" && failureCount < 2,
+    },
+  );
 
   const invalidate = async () => {
     await Promise.all([

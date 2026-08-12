@@ -289,10 +289,7 @@ export default async function Home() {
       >
         <ul role="list" className="stagger border-hairline border-t">
           {board.slice(0, 4).map((member) => (
-            <BoardRow
-              key={member.name ?? member.role}
-              member={member}
-            />
+            <BoardRow key={member.name ?? member.role} member={member} />
           ))}
         </ul>
         <div className="mt-10">

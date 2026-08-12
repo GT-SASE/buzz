@@ -12,9 +12,7 @@ const requirePortalSecrets =
     process.env.VERCEL_ENV !== "preview" &&
     process.env.VERCEL_ENV !== "development");
 
-const secret = requirePortalSecrets
-  ? z.string().min(1)
-  : z.string().optional();
+const secret = requirePortalSecrets ? z.string().min(1) : z.string().optional();
 
 export const env = createEnv({
   server: {

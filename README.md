@@ -104,10 +104,12 @@ AUTH_GOOGLE_SECRET
 ADMIN_EMAILS         optional
 ```
 
-`AUTH_URL` is not needed — Auth.js reads the deployment URL from Vercel's own
-`VERCEL_URL`. Preview deployments get a different hostname on every push, which
-Google will refuse unless that exact origin is in the OAuth client; sign in on
-the production domain, or add the preview origin when you need it.
+`AUTH_URL` is not required. Auth.js reads the deployment URL from Vercel's own
+`VERCEL_URL`, and `trustHost` is on so the forwarded host is accepted. Preview
+deployments get a different hostname on every push, which Google will refuse
+unless that exact origin is in the OAuth client. Sign in on the production
+domain, or set `AUTH_URL=https://buzzsase.vercel.app` on Vercel if you want
+every environment to callback against the canonical origin.
 
 The build itself needs none of these. It runs with an empty environment on
 purpose, so a missing variable shows up as a broken sign-in rather than a

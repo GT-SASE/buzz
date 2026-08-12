@@ -54,7 +54,7 @@ export default tseslint.config(
       // The Next app is a workspace, not the repo root. Without this the Next
       // plugin looks for `pages/` beside this config, fails, and prints
       // "Pages directory cannot be found" on every lint run.
-      next: { rootDir: "sites/web" },
+      next: { rootDir: ["sites/web/"] },
     },
   },
   {
@@ -69,5 +69,11 @@ export default tseslint.config(
       "@typescript-eslint/no-empty-object-type": "off",
       "@typescript-eslint/no-empty-function": "off",
     },
+  },
+  {
+    // React Vitest files are not in the root tsconfig (importing them would
+    // pull the Next app into root `tsc` without image-module decls).
+    files: ["tests/**/*.tsx"],
+    extends: [tseslint.configs.disableTypeChecked],
   },
 );

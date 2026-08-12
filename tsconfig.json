@@ -17,6 +17,8 @@
   // The root-level config files are TypeScript now, so they belong to a
   // program too — otherwise eslint's type-aware rules report them as "not
   // found by the project service" and tsc never checks them at all.
+  // React component tests (*.tsx) stay out: importing them would pull the
+  // Next app into this program without Next's image-module declarations.
   "include": [
     "tests/**/*.ts",
     "vitest.config.ts",

@@ -11,7 +11,7 @@ import { db, events } from "@buzz/db";
  * editing source and redeploying while the portal already held the real one.
  * This is the join between the two halves of the site.
  */
-export type PublicEvent = {
+type PublicEvent = {
   id: string;
   title: string;
   description: string | null;
