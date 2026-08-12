@@ -12,8 +12,6 @@ export const tiers = [
   { name: "Distinguished", min: 150 },
 ] as const;
 
-export type Tier = (typeof tiers)[number]["name"];
-
 /** The highest tier a total clears, plus how far the next one is. */
 export function tierFor(points: number) {
   type Band = (typeof tiers)[number];

@@ -119,8 +119,8 @@ export function CheckInForm({ initialCode }: { initialCode: string }) {
   const utils = api.useUtils();
 
   /** Set when a code arrives in the URL, which needs a tap before it fires. */
-  const [confirm, setConfirm] = useState(
-    () => (codeFromHash() || initialCode).toUpperCase(),
+  const [confirm, setConfirm] = useState(() =>
+    (codeFromHash() || initialCode).toUpperCase(),
   );
   const [submitted, setSubmitted] = useState("");
   /** Why the camera is not on screen, when it could not be started. */
@@ -149,6 +149,10 @@ export function CheckInForm({ initialCode }: { initialCode: string }) {
       router.refresh();
     },
     onError: (error) => {
+      if (error.data?.code === "UNAUTHORIZED") {
+        router.push("/portal/signin?from=/portal/check-in");
+        return;
+      }
       toast.error("Not checked in", { description: error.message });
     },
   });
@@ -211,6 +215,20 @@ export function CheckInForm({ initialCode }: { initialCode: string }) {
           <Spinner className="text-gold-bright size-8" />
           <CodePlate code={submitted} />
           <p className="text-ink-muted text-body-sm">Checking you in...</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (checkIn.error?.data?.code === "UNAUTHORIZED") {
+    return (
+      <Card className="border-hairline bg-paper rounded-lg">
+        <CardContent
+          role="status"
+          className="grid justify-items-center gap-4 py-14 text-center"
+        >
+          <Spinner className="text-gold-bright size-8" />
+          <p className="text-ink-muted text-body-sm">Signing you back in...</p>
         </CardContent>
       </Card>
     );

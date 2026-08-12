@@ -256,9 +256,9 @@ describe("codeFromScan", () => {
     expect(
       codeFromScan("https://sasegt.org/portal/check-in#code=ABCD2345"),
     ).toBe("ABCD2345");
-    expect(
-      codeFromScan("https://sasegt.org/portal/check-in#ABCD2345"),
-    ).toBe("ABCD2345");
+    expect(codeFromScan("https://sasegt.org/portal/check-in#ABCD2345")).toBe(
+      "ABCD2345",
+    );
   });
 
   it("accepts a bare code in either case, with the scanner's whitespace", () => {

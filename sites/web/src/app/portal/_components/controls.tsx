@@ -19,7 +19,8 @@ const actionTones = {
   /** Everything reversible. */
   quiet: "ring-hairline text-navy hover:bg-cream bg-transparent ring-1",
   /** Reserved for the confirm step of something destructive. */
-  danger: "text-red-900 ring-1 ring-red-900/30 hover:bg-red-50 bg-transparent",
+  danger:
+    "text-destructive ring-1 ring-destructive/30 hover:bg-destructive/10 bg-transparent",
 } as const;
 
 export function Action({
@@ -152,7 +153,7 @@ export function Notice({
       className={cn(
         "text-sm font-medium",
         tone === "error"
-          ? "border-red-900/25 bg-red-50 text-red-900"
+          ? "border-destructive/25 bg-destructive/5 text-destructive"
           : "ring-gold/45 bg-cream text-navy border-0 ring-1",
       )}
     >

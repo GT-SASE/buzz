@@ -552,7 +552,7 @@ export function AdminEvents() {
               </p>
             </div>
 
-            <Table className="border-hairline border-b">
+            <Table label="Events" className="border-hairline border-b">
               <TableHeader>
                 <TableRow>
                   <TableHead>Event</TableHead>

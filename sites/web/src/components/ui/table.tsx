@@ -22,7 +22,7 @@ function Table({
       data-slot="table-container"
       role={label ? "region" : undefined}
       aria-label={label}
-      tabIndex={0}
+      tabIndex={label ? 0 : undefined}
       className="relative w-full overflow-x-auto"
     >
       <table

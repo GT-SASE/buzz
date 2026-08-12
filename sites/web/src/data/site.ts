@@ -58,7 +58,7 @@ export const site = {
   ],
 } as const;
 
-export type Social = (typeof site.socials)[number];
+type Social = (typeof site.socials)[number];
 
 /**
  * Named handles for the feeds pages link to directly. Keyed by `id` so a
@@ -70,7 +70,7 @@ export const instagram = bySocialId("instagram");
 export const discord = bySocialId("discord");
 export const engage = bySocialId("engage");
 
-export type NavGroup = {
+type NavGroup = {
   label: string;
   href: string;
   /**

@@ -1,7 +1,12 @@
 import Link from "next/link";
 
 import { Button } from "~/components/ui/button";
-import { Card, CardContent, CardFooter, CardHeader } from "~/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardFooter,
+  CardHeader,
+} from "~/components/ui/card";
 
 /**
  * The portal's own 404. Without it a bad event or member id — a deleted event

@@ -14,7 +14,14 @@ import {
 } from "drizzle-orm";
 import { z } from "zod";
 
-import { asDate, asInt, checkInCount, memberSince, pointsSum } from "../aggregates";
+import {
+  asDate,
+  asInt,
+  checkInCount,
+  memberSince,
+  pointsSum,
+} from "../aggregates";
+import { notFound } from "../errors";
 import { EXPORT_ROSTER_LIMIT, takeToken } from "../rate-limit";
 import { adminProcedure, createTRPCRouter, protectedProcedure } from "../trpc";
 import type * as BuzzDbModule from "@buzz/db";
@@ -84,11 +91,7 @@ export const memberRouter = createTRPCRouter({
       const orderBy: SQL[] = (() => {
         switch (input.sort) {
           case "name":
-            return [
-              asc(isNull(users.name)),
-              asc(users.name),
-              asc(users.email),
-            ];
+            return [asc(isNull(users.name)), asc(users.name), asc(users.email)];
           case "recent":
             return [
               asc(isNull(lastCheckIn)),
@@ -210,10 +213,7 @@ export const memberRouter = createTRPCRouter({
           .from(eventCheckIns)
           .innerJoin(events, eq(events.id, eventCheckIns.eventId))
           .where(
-            and(
-              eq(eventCheckIns.userId, member.id),
-              isNull(events.archivedAt),
-            ),
+            and(eq(eventCheckIns.userId, member.id), isNull(events.archivedAt)),
           ),
         ctx.db
           .select({
@@ -228,10 +228,7 @@ export const memberRouter = createTRPCRouter({
           .from(eventCheckIns)
           .innerJoin(events, eq(events.id, eventCheckIns.eventId))
           .where(
-            and(
-              eq(eventCheckIns.userId, member.id),
-              isNull(events.archivedAt),
-            ),
+            and(eq(eventCheckIns.userId, member.id), isNull(events.archivedAt)),
           )
           .orderBy(desc(eventCheckIns.checkedInAt))
           .limit(200),

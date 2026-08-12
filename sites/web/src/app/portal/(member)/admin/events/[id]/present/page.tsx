@@ -1,6 +1,8 @@
 import { notFound } from "next/navigation";
 
+import { orNotFound } from "~/app/portal/_lib/missing";
 import { requireOfficer } from "~/app/portal/_lib/session";
+import { HydrateClient, api } from "~/trpc/server";
 import { PresentScreen } from "./present-screen";
 
 export default async function PresentPage({
@@ -11,6 +13,11 @@ export default async function PresentPage({
   const { id } = await params;
   await requireOfficer(`/portal/admin/events/${id}/present`);
   if (!id) notFound();
+  await orNotFound(api.event.getById({ id }));
 
-  return <PresentScreen eventId={id} />;
+  return (
+    <HydrateClient>
+      <PresentScreen eventId={id} />
+    </HydrateClient>
+  );
 }

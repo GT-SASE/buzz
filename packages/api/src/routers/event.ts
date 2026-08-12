@@ -3,6 +3,7 @@ import { and, asc, count, desc, eq, gte, isNull } from "drizzle-orm";
 import { z } from "zod";
 
 import { asDate, asInt, totalsColumns } from "../aggregates";
+import { notFound } from "../errors";
 import { isUniqueViolation } from "../pg-errors";
 import {
   CHECK_IN_LIMIT,
@@ -71,7 +72,10 @@ function assertCheckInWindow(startsAt: Date) {
   }
 }
 
-function assertRateLimit(key: string, options: Parameters<typeof takeToken>[1]) {
+function assertRateLimit(
+  key: string,
+  options: Parameters<typeof takeToken>[1],
+) {
   if (!takeToken(key, options)) {
     throw new TRPCError({
       code: "TOO_MANY_REQUESTS",
@@ -423,9 +427,7 @@ export const eventRouter = createTRPCRouter({
 
   /** For the member whose phone died. Same snapshot rule as the code path. */
   manualCheckIn: adminProcedure
-    .input(
-      z.object({ eventId: z.string().min(1), email: z.string().email() }),
-    )
+    .input(z.object({ eventId: z.string().min(1), email: z.string().email() }))
     .mutation(async ({ ctx, input }) => {
       assertRateLimit(
         `manual-check-in:${ctx.session.user.id}`,

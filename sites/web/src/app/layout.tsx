@@ -1,6 +1,8 @@
 import "~/styles/globals.css";
 
 import type { Metadata, Viewport } from "next";
+import { Analytics } from "@vercel/analytics/next";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 import { Fraunces, Inter } from "next/font/google";
 
 import { site } from "~/data/site";
@@ -96,6 +98,8 @@ export default function RootLayout({
           dangerouslySetInnerHTML={jsonLd(organizationSchema())}
         />
         {children}
+        <Analytics />
+        <SpeedInsights />
       </body>
     </html>
   );

@@ -23,8 +23,7 @@ if (!url) {
 
 {
   const host = new URL(url).hostname;
-  const local =
-    host === "localhost" || host === "127.0.0.1" || host === "::1";
+  const local = host === "localhost" || host === "127.0.0.1" || host === "::1";
   if (!local && process.env.SEED_FORCE !== "1") {
     throw new Error(
       `Refusing to seed non-local database host "${host}". Set SEED_FORCE=1 to override.`,
