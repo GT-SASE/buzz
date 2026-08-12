@@ -250,11 +250,16 @@ export function Scanner({
   return (
     <div>
       <div className="bg-navy relative aspect-square w-full overflow-hidden rounded-lg">
+        {/* Labelled rather than hidden: a screen reader user still has to know
+            the camera is live and what it is pointed at. The status line below
+            is the same element's description. */}
         <video
           ref={videoRef}
           playsInline
           muted
           autoPlay
+          aria-label="Camera viewfinder for scanning the check-in QR code"
+          aria-describedby="scanner-status"
           className="h-full w-full object-cover"
         />
 
@@ -275,7 +280,11 @@ export function Scanner({
         )}
       </div>
 
-      <p aria-live="polite" className="text-ink-muted text-body-sm mt-3">
+      <p
+        id="scanner-status"
+        aria-live="polite"
+        className="text-ink-muted text-body-sm mt-3"
+      >
         {live
           ? "Hold the code inside the frame. It checks you in on its own."
           : "Starting the camera..."}

@@ -215,7 +215,7 @@ export const eventRouter = createTRPCRouter({
       });
 
       if (!updated) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Event not found." });
+        notFound("Event");
       }
       return updated;
     }),
@@ -278,7 +278,7 @@ export const eventRouter = createTRPCRouter({
       });
 
       if (!event) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Event not found." });
+        notFound("Event");
       }
 
       const [roster, [rosterCount]] = await Promise.all([
@@ -329,7 +329,7 @@ export const eventRouter = createTRPCRouter({
       });
 
       if (!event) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Event not found." });
+        notFound("Event");
       }
 
       const rows = await ctx.db
@@ -360,7 +360,7 @@ export const eventRouter = createTRPCRouter({
         .returning({ id: events.id, checkInEnabled: events.checkInEnabled });
 
       if (!updated) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Event not found." });
+        notFound("Event");
       }
       return updated;
     }),
@@ -375,7 +375,7 @@ export const eventRouter = createTRPCRouter({
         .returning({ id: events.id, archivedAt: events.archivedAt });
 
       if (!updated) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Event not found." });
+        notFound("Event");
       }
       return updated;
     }),
@@ -398,10 +398,7 @@ export const eventRouter = createTRPCRouter({
             .returning({ id: events.id, checkInCode: events.checkInCode });
 
           if (!updated) {
-            throw new TRPCError({
-              code: "NOT_FOUND",
-              message: "Event not found.",
-            });
+            notFound("Event");
           }
           return updated;
         } catch (error) {
@@ -460,10 +457,7 @@ export const eventRouter = createTRPCRouter({
             .for("update");
 
           if (!locked) {
-            throw new TRPCError({
-              code: "NOT_FOUND",
-              message: "Event not found.",
-            });
+            notFound("Event");
           }
 
           await tx.insert(eventCheckIns).values({
@@ -513,10 +507,7 @@ export const eventRouter = createTRPCRouter({
           .for("update");
 
         if (!locked) {
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "Event not found.",
-          });
+          notFound("Event");
         }
 
         const removed = await tx
