@@ -71,10 +71,7 @@ export default function BoardPage() {
         {/* A roster, not a grid of empty headshot frames. */}
         <ul role="list" className="stagger border-hairline border-t">
           {board.map((member) => (
-            <BoardRow
-              key={member.name ?? member.role}
-              member={member}
-            />
+            <BoardRow key={member.name ?? member.role} member={member} />
           ))}
         </ul>
       </Section>

@@ -41,7 +41,7 @@ function Figure({ label, value }: { label: string; value: string }) {
 
 function HistoryTable({ children }: { children: React.ReactNode }) {
   return (
-    <Table className="min-w-[34rem] text-left">
+    <Table label="Check-in history" className="min-w-[34rem] text-left">
       <TableHeader>
         <TableRow className="border-hairline">
           <TableHead className={cn(columnHeading, "w-full pr-6")}>

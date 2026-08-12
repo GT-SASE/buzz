@@ -110,8 +110,6 @@ export const programs = [
   },
 ] as const;
 
-export type Program = (typeof programs)[number];
-
 /**
  * Answers the question a hesitant first-year actually has, which is not "what
  * is SASE" but "what happens if I show up". Every step below is drawn from a
@@ -201,7 +199,7 @@ export const board: BoardMember[] = [
   },
 ];
 
-export type SponsorTier = {
+type SponsorTier = {
   tier: string;
   amount: string;
   perks: string[];

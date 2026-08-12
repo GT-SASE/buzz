@@ -25,7 +25,9 @@ export function takeToken(
   const restored = Math.floor(elapsed / intervalMs);
   const tokens = Math.min(limit, current.tokens + restored);
   const updatedAt =
-    restored > 0 ? current.updatedAt + restored * intervalMs : current.updatedAt;
+    restored > 0
+      ? current.updatedAt + restored * intervalMs
+      : current.updatedAt;
 
   if (tokens <= 0) {
     buckets.set(key, { tokens: 0, updatedAt });

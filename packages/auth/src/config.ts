@@ -51,6 +51,9 @@ const SESSION_MAX_AGE_SEC = 30 * 24 * 60 * 60;
  * @see https://next-auth.js.org/configuration/options
  */
 export const authConfig = {
+  // Vercel (and any reverse proxy) sets the host header; Auth.js needs to
+  // trust it or every callback URL is built against localhost.
+  trustHost: true,
   // Google only. Any Google account may join; there is no school-domain gate.
   // Credentials are read from AUTH_GOOGLE_ID / AUTH_GOOGLE_SECRET.
   providers: [GoogleProvider],

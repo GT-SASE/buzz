@@ -112,7 +112,7 @@ export function Leaderboard() {
 
   return (
     <Board>
-      <Table>
+      <Table label="Chapter leaderboard">
         <TableCaption className="sr-only">
           Members ranked by the points they have earned.
         </TableCaption>
