@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState, useSyncExternalStore } from "react";
 
 import { Honeycomb } from "~/app/portal/_components/honeycomb";
@@ -9,7 +10,52 @@ import { Skeleton } from "~/components/ui/skeleton";
 import { api } from "~/trpc/react";
 
 export function PresentScreen({ eventId }: { eventId: string }) {
+  const router = useRouter();
   const [qr, setQr] = useState<string | null>(null);
+  const eventPath = `/portal/admin/events/${eventId}`;
+
+  // Nobody touches a projector for the length of a GBM, which is precisely what
+  // a screen blank waits for — and a slept screen takes the door down with it.
+  // Re-requested on `visibilitychange` because the browser drops the lock
+  // whenever the tab is hidden and does not hand it back on its own.
+  useEffect(() => {
+    if (!("wakeLock" in navigator)) return;
+
+    let sentinel: WakeLockSentinel | null = null;
+    let cancelled = false;
+
+    const acquire = async () => {
+      if (cancelled || document.visibilityState !== "visible") return;
+      try {
+        sentinel = await navigator.wakeLock.request("screen");
+      } catch {
+        // Refused by the platform or the battery state. The wall still shows
+        // the code; it just dims on the usual timer.
+      }
+    };
+
+    const reacquire = () => void acquire();
+
+    void acquire();
+    document.addEventListener("visibilitychange", reacquire);
+
+    return () => {
+      cancelled = true;
+      document.removeEventListener("visibilitychange", reacquire);
+      void sentinel?.release().catch(() => undefined);
+    };
+  }, []);
+
+  // Escape is the way out of every other full-screen thing on a computer, and
+  // the officer at the lectern is driving with a clicker, not a mouse.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") router.push(eventPath);
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [router, eventPath]);
 
   const origin = useSyncExternalStore(
     () => () => undefined,
@@ -132,10 +178,13 @@ export function PresentScreen({ eventId }: { eventId: string }) {
 
       <footer className="relative flex shrink-0 items-center justify-end">
         <Link
-          href={`/portal/admin/events/${eventId}`}
+          href={eventPath}
           className="text-body-sm font-semibold text-white/50 transition hover:text-white"
         >
           Leave the projector view
+          <span className="ml-2 hidden font-normal text-white/35 sm:inline">
+            (Esc)
+          </span>
         </Link>
       </footer>
     </div>

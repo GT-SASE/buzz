@@ -4,10 +4,25 @@ import * as React from "react";
 
 import { cn } from "~/lib/utils";
 
-function Table({ className, ...props }: React.ComponentProps<"table">) {
+function Table({
+  className,
+  label,
+  ...props
+}: React.ComponentProps<"table"> & {
+  /**
+   * Names the scroll container. Local addition to the vendored component: a
+   * box that scrolls has to be reachable by keyboard, and a focusable region
+   * has to say what it holds. Re-adding this component via `pnpm ui:add`
+   * drops this — see PLAN.md.
+   */
+  label?: string;
+}) {
   return (
     <div
       data-slot="table-container"
+      role={label ? "region" : undefined}
+      aria-label={label}
+      tabIndex={0}
       className="relative w-full overflow-x-auto"
     >
       <table

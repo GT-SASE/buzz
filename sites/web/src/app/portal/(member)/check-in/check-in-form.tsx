@@ -17,6 +17,8 @@ import {
   CardHeader,
   CardTitle,
 } from "~/components/ui/card";
+import { Input } from "~/components/ui/input";
+import { Label } from "~/components/ui/label";
 import { Spinner } from "~/components/ui/spinner";
 import { site } from "~/data/site";
 import { api } from "~/trpc/react";
@@ -27,6 +29,79 @@ function CodePlate({ code }: { code: string }) {
     <p className="font-display text-navy font-mono text-3xl font-bold tracking-[0.2em] tabular-nums">
       {code}
     </p>
+  );
+}
+
+/**
+ * The fallback for a camera that will not open — a blocked prompt, a laptop
+ * with no rear camera, a cracked lens. The code is printed under the QR on the
+ * projector for exactly this. Held to the issued alphabet before it is sent,
+ * so a typo is answered here rather than by the rate limiter.
+ */
+function ManualCodeEntry({ onSubmit }: { onSubmit: (code: string) => void }) {
+  const [value, setValue] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  return (
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        const code = codeFromScan(value);
+        if (!code) {
+          setError("That is not a code we issued. Check the screen again.");
+          return;
+        }
+        setError(null);
+        onSubmit(code);
+      }}
+    >
+      <Label
+        htmlFor="manual-code"
+        className="text-eyebrow tracking-masthead text-ink-muted font-semibold uppercase"
+      >
+        Enter the code instead
+      </Label>
+
+      <div className="mt-3 flex flex-wrap gap-3">
+        <Input
+          id="manual-code"
+          value={value}
+          onChange={(event) => {
+            setValue(event.target.value);
+            if (error) setError(null);
+          }}
+          // A code is drawn from an unambiguous alphabet, so the keyboard has
+          // no reason to autocorrect, capitalise or autocomplete it.
+          autoCapitalize="characters"
+          autoComplete="off"
+          autoCorrect="off"
+          spellCheck={false}
+          inputMode="text"
+          maxLength={12}
+          placeholder="ABCD12"
+          aria-describedby={error ? "manual-code-error" : undefined}
+          aria-invalid={error ? true : undefined}
+          className="border-hairline bg-paper min-w-40 flex-1 rounded-none font-mono tracking-[0.2em] uppercase"
+        />
+        <Button
+          type="submit"
+          variant="outline"
+          className="border-hairline text-navy hover:bg-cream rounded-none font-semibold"
+        >
+          Check in
+        </Button>
+      </div>
+
+      {error && (
+        <p
+          id="manual-code-error"
+          role="alert"
+          className="text-destructive text-body-sm mt-3"
+        >
+          {error}
+        </p>
+      )}
+    </form>
   );
 }
 
@@ -225,8 +300,13 @@ export function CheckInForm({ initialCode }: { initialCode: string }) {
             </AlertDescription>
           </Alert>
 
+          <div className="border-hairline mt-6 border-t pt-6">
+            <ManualCodeEntry onSubmit={submit} />
+          </div>
+
           <p className="text-ink-muted text-body-sm mt-6">
-            Point your phone&rsquo;s own camera at the QR code instead — it
+            The code is printed under the QR code at the front of the room. You
+            can also point your phone&rsquo;s own camera at the QR code — it
             opens this page with the code already in it. Otherwise ask an
             officer to add you, or email{" "}
             <a href={`mailto:${site.email}`} className="text-navy underline">
@@ -240,7 +320,7 @@ export function CheckInForm({ initialCode }: { initialCode: string }) {
             onClick={() => setCameraNote(null)}
             className="border-hairline text-navy hover:bg-cream mt-6 w-full rounded-none"
           >
-            Try again
+            Try the camera again
           </Button>
         </CardContent>
       </Card>
@@ -261,6 +341,10 @@ export function CheckInForm({ initialCode }: { initialCode: string }) {
 
       <CardContent>
         <Scanner onDetect={submit} onUnavailable={setCameraNote} />
+
+        <div className="border-hairline mt-6 border-t pt-6">
+          <ManualCodeEntry onSubmit={submit} />
+        </div>
       </CardContent>
     </Card>
   );

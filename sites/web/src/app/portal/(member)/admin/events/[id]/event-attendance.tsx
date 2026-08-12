@@ -183,7 +183,7 @@ function SkeletonRows() {
 
 function RosterTable({ children }: { children: React.ReactNode }) {
   return (
-    <Table className="min-w-[34rem] text-left">
+    <Table label="Attendance" className="min-w-[34rem] text-left">
       <TableHeader>
         <TableRow className="border-hairline">
           {/* w-full on the one elastic column; the rest hug their text. */}

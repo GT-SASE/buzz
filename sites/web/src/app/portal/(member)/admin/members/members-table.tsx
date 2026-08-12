@@ -97,7 +97,10 @@ function RosterTable({
   children: React.ReactNode;
 }) {
   return (
-    <Table className="border-hairline min-w-[46rem] border-b text-left">
+    <Table
+      label="Members"
+      className="border-hairline min-w-[46rem] border-b text-left"
+    >
       <TableHeader>
         <TableRow className="border-hairline">
           {/* w-full on the one elastic column; the rest hug their text. */}

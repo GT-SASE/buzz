@@ -197,10 +197,7 @@ export const memberRouter = createTRPCRouter({
       });
 
       if (!member) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Member not found.",
-        });
+        notFound("Member");
       }
 
       const [[totals], history] = await Promise.all([

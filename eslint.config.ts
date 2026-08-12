@@ -49,7 +49,13 @@ export default tseslint.config(
   {
     linterOptions: { reportUnusedDisableDirectives: true },
     languageOptions: { parserOptions: { projectService: true } },
-    settings: { react: { version: "19.2" } },
+    settings: {
+      react: { version: "19.2" },
+      // The Next app is a workspace, not the repo root. Without this the Next
+      // plugin looks for `pages/` beside this config, fails, and prints
+      // "Pages directory cannot be found" on every lint run.
+      next: { rootDir: "sites/web" },
+    },
   },
   {
     // Vendored from the Watermelon registry via `pnpm ui:add`. `tsc` still
