@@ -265,3 +265,57 @@ export const eventCheckInsRelations = relations(eventCheckIns, ({ one }) => ({
   }),
   user: one(users, { fields: [eventCheckIns.userId], references: [users.id] }),
 }));
+
+export type MentorshipRole = "mentor" | "mentee";
+export type MentorshipStatus = "interested" | "enrolled" | "withdrawn";
+
+/**
+ * Mentor-family signup. Points here are a separate ledger from event
+ * attendance — a coffee with your little does not count as a GBM, and a GBM
+ * does not count as a family meeting.
+ */
+export const mentorshipEnrollments = createTable(
+  "mentorship_enrollment",
+  (d) => ({
+    userId: d
+      .varchar({ length: 255 })
+      .primaryKey()
+      .references(() => users.id, { onDelete: "cascade" }),
+    role: d.varchar({ length: 16 }).$type<MentorshipRole>().notNull(),
+    status: d
+      .varchar({ length: 16 })
+      .$type<MentorshipStatus>()
+      .notNull()
+      .default("interested"),
+    note: d.varchar({ length: 400 }),
+    points: d.integer().notNull().default(0),
+    enrolledAt: d.timestamp({ withTimezone: true }),
+    createdAt: d
+      .timestamp({ withTimezone: true })
+      .$defaultFn(() => /* @__PURE__ */ new Date())
+      .notNull(),
+    updatedAt: d.timestamp({ withTimezone: true }).$onUpdate(() => new Date()),
+  }),
+  (t) => [
+    index(idx("mentorship_status_idx")).on(t.status),
+    check(
+      idx("mentorship_role_check"),
+      sql`${t.role} in ('mentor', 'mentee')`,
+    ),
+    check(
+      idx("mentorship_status_check"),
+      sql`${t.status} in ('interested', 'enrolled', 'withdrawn')`,
+    ),
+    check(idx("mentorship_points_check"), sql`${t.points} >= 0`),
+  ],
+);
+
+export const mentorshipEnrollmentsRelations = relations(
+  mentorshipEnrollments,
+  ({ one }) => ({
+    user: one(users, {
+      fields: [mentorshipEnrollments.userId],
+      references: [users.id],
+    }),
+  }),
+);

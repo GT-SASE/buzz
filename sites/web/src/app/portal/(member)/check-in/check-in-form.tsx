@@ -81,7 +81,7 @@ function ManualCodeEntry({ onSubmit }: { onSubmit: (code: string) => void }) {
           placeholder="ABCD12"
           aria-describedby={error ? "manual-code-error" : undefined}
           aria-invalid={error ? true : undefined}
-          className="border-hairline bg-paper min-w-40 flex-1 rounded-none font-mono tracking-[0.2em] uppercase"
+          className="border-hairline bg-paper min-w-40 flex-1 rounded-none font-mono text-base tracking-[0.2em] uppercase"
         />
         <Button
           type="submit"

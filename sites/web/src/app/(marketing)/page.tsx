@@ -72,15 +72,15 @@ export default async function Home() {
 
       <section className="px-5 sm:px-6">
         <div className="max-w-content mx-auto">
-          <div className="text-eyebrow tracking-masthead text-ink-muted border-rule flex flex-wrap items-baseline justify-between gap-x-8 gap-y-2 border-b-2 pt-8 pb-4 font-semibold uppercase">
+          <div className="text-eyebrow tracking-masthead text-ink-muted border-rule flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2 border-b-2 pt-6 pb-3 font-semibold uppercase sm:pt-8 sm:pb-4">
             <span className="text-navy">{site.name}</span>
-            <span className="flex flex-wrap items-baseline gap-x-8 gap-y-2">
-              <span>{site.theme}</span>
+            <span className="flex flex-wrap items-baseline gap-x-6 gap-y-2">
+              <span className="hidden sm:inline">{site.theme}</span>
               <span>2026&ndash;2027</span>
             </span>
           </div>
 
-          <div className="grid gap-x-16 gap-y-14 pt-12 pb-20 lg:grid-cols-[1.3fr_0.7fr] lg:pt-16 lg:pb-28">
+          <div className="grid gap-x-16 gap-y-10 pt-8 pb-14 lg:grid-cols-[1.3fr_0.7fr] lg:gap-y-14 lg:pt-16 lg:pb-28">
             <div className="rise">
               <h1 className="font-display text-navy text-hero optical-left font-bold tracking-tight">
                 <span className="line-mask">
@@ -90,15 +90,21 @@ export default async function Home() {
                   <span>in STEM.</span>
                 </span>
               </h1>
-              <p className="text-lead text-ink-muted max-w-measure mt-8">
+              <p className="text-lead text-ink-muted max-w-measure mt-6 sm:mt-8">
                 We are the Georgia Tech chapter of the Society of Asian
                 Scientists and Engineers. Mentor families, recruiter workshops,
                 semester-long build teams, and Taste of SASE — open to every
                 student on campus, any major, any background.
               </p>
-              <div className="mt-10 flex flex-wrap items-center gap-x-8 gap-y-5">
-                <Button href="/join">Become a member</Button>
-                <Button href="/programs" variant="outline">
+              <div className="mt-8 flex flex-col items-stretch gap-4 sm:mt-10 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-8 sm:gap-y-5">
+                <Button href="/join" className="w-full justify-center sm:w-auto">
+                  Become a member
+                </Button>
+                <Button
+                  href="/programs"
+                  variant="outline"
+                  className="w-full justify-center sm:w-auto"
+                >
                   What we do
                 </Button>
               </div>

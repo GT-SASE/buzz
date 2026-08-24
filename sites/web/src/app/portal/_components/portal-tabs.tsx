@@ -27,7 +27,7 @@ export function PortalTabs({ isOfficer }: { isOfficer: boolean }) {
     <nav aria-label="Portal" className="border-hairline border-t">
       <ul
         role="list"
-        className="max-w-content mx-auto flex items-center gap-1 overflow-x-auto px-5 sm:px-6"
+        className="max-w-content mx-auto flex min-w-0 items-center gap-1 overflow-x-auto px-3 sm:px-6"
       >
         {tabs.map((tab) => {
           const active = tab.href === activeHref;
@@ -38,7 +38,7 @@ export function PortalTabs({ isOfficer }: { isOfficer: boolean }) {
                 asChild
                 variant="ghost"
                 className={cn(
-                  "text-body-sm hover:bg-cream relative h-auto rounded-none px-4 py-3.5 font-medium",
+                  "text-body-sm hover:bg-cream relative h-auto min-h-11 shrink-0 rounded-none px-3 py-3.5 font-medium sm:px-4",
                   active
                     ? "text-navy hover:text-navy after:bg-gold-bright after:absolute after:inset-x-3 after:bottom-0 after:h-0.5"
                     : "text-ink-muted hover:text-navy",

@@ -66,7 +66,7 @@ export function SiteNav() {
     >
       <nav
         aria-label="Primary"
-        className="max-w-content mx-auto flex items-center justify-between gap-6 px-5 py-4 sm:px-6"
+        className="max-w-content mx-auto flex items-center justify-between gap-3 px-5 py-3 sm:gap-6 sm:px-6 sm:py-4"
       >
         <Link href="/" className="shrink-0">
           <Wordmark tone="dark" />

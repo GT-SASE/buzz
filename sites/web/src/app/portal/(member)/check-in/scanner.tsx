@@ -186,6 +186,8 @@ export function Scanner({
 
         streamRef.current = stream;
         video.srcObject = stream;
+        video.setAttribute("playsinline", "true");
+        video.setAttribute("webkit-playsinline", "true");
         await video.play();
         if (cancelled()) return;
         setLive(true);
@@ -249,7 +251,7 @@ export function Scanner({
 
   return (
     <div>
-      <div className="bg-navy relative aspect-square w-full overflow-hidden rounded-lg">
+      <div className="bg-navy relative mx-auto aspect-square w-full max-w-[22rem] overflow-hidden rounded-lg sm:max-w-none">
         {/* Labelled rather than hidden: a screen reader user still has to know
             the camera is live and what it is pointed at. The status line below
             is the same element's description. */}

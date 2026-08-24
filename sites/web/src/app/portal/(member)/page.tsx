@@ -48,7 +48,7 @@ export default async function PortalDashboard() {
           <Card className="bg-navy hover:bg-navy-deep group gap-0 rounded-lg border-0 py-0 transition-colors duration-300">
             <Link
               href={isOfficer ? "/portal/admin" : "/portal/check-in"}
-              className="flex items-center justify-between gap-6 px-7 py-6"
+              className="flex items-center justify-between gap-6 px-5 py-5 sm:px-7 sm:py-6"
             >
               <span>
                 <span className="font-display block text-xl font-bold text-white">
@@ -57,12 +57,35 @@ export default async function PortalDashboard() {
                 <span className="mt-1 block text-white/70">
                   {isOfficer
                     ? "Put the QR on a screen. Check yourself in from the event."
-                    : "Scan the QR code on the screen"}
+                    : "Scan the QR on the screen, or type the code"}
                 </span>
               </span>
               <ArrowRight
                 aria-hidden="true"
                 className="text-gold-bright size-6 shrink-0 transition-transform duration-300 group-hover:translate-x-1"
+              />
+            </Link>
+          </Card>
+
+          <Card className="border-hairline mt-3 gap-0 rounded-lg py-0 shadow-none">
+            <Link
+              href={
+                isOfficer ? "/portal/admin/mentorship" : "/portal/mentorship"
+              }
+              className="flex items-center justify-between gap-6 px-5 py-5 sm:px-7"
+            >
+              <span>
+                <span className="font-display text-navy block text-lg font-bold">
+                  Mentor families
+                </span>
+                <span className="text-ink-muted mt-1 block text-sm">
+                  Sign up as a mentor or mentee. Family points stay off your
+                  event card.
+                </span>
+              </span>
+              <ArrowRight
+                aria-hidden="true"
+                className="text-gold-ink size-5 shrink-0"
               />
             </Link>
           </Card>

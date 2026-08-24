@@ -100,3 +100,13 @@ export const EXPORT_ATTENDANCE_LIMIT = {
   limit: 5,
   intervalMs: 60_000,
 } as const;
+
+export const MENTORSHIP_ENROLL_LIMIT = {
+  limit: 10,
+  intervalMs: 60_000,
+} as const;
+
+export const MENTORSHIP_AWARD_LIMIT = {
+  limit: 30,
+  intervalMs: 60_000,
+} as const;
