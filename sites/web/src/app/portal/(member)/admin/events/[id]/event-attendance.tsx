@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useSyncExternalStore } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 
 import { Honeycomb } from "~/app/portal/_components/honeycomb";
@@ -38,7 +38,6 @@ import {
 import { site } from "~/data/site";
 import { cn } from "~/lib/utils";
 import { api, type RouterOutputs } from "~/trpc/react";
-import { EventQr } from "./event-qr";
 
 type RosterRow = RouterOutputs["event"]["getById"]["roster"][number];
 type DoorState = "open" | "closed" | "archived";
@@ -226,16 +225,16 @@ function EventSkeleton() {
   );
 }
 
-export function EventAttendance({ eventId }: { eventId: string }) {
+export function EventAttendance({
+  eventId,
+  officerUserId,
+}: {
+  eventId: string;
+  officerUserId: string;
+}) {
   const utils = api.useUtils();
   const [email, setEmail] = useState("");
 
-  /** The origin, without touching `window` during render. */
-  const origin = useSyncExternalStore(
-    () => () => undefined,
-    () => window.location.origin,
-    () => "",
-  );
   const detail = api.event.getById.useQuery(
     { id: eventId },
     {
@@ -278,6 +277,13 @@ export function EventAttendance({ eventId }: { eventId: string }) {
     },
     onError: (error) => toast.error(error.message),
   });
+  const self = api.event.selfCheckIn.useMutation({
+    onSuccess: async () => {
+      toast.success("You're checked in.");
+      await invalidate();
+    },
+    onError: (error) => toast.error(error.message),
+  });
 
   if (detail.isPending) {
     return <EventSkeleton />;
@@ -291,14 +297,7 @@ export function EventAttendance({ eventId }: { eventId: string }) {
   }
 
   const { event, roster, rosterTotal, isPast } = detail.data;
-
-  // Built from the live origin rather than site.url: on a laptop at the event
-  // that is localhost or a LAN address, and a QR pointing at the production
-  // domain would send everyone in the room somewhere the event does not exist.
-  // Fragment keeps the bearer out of server logs and Referer headers.
-  const checkInUrl = origin
-    ? `${origin}/portal/check-in#code=${event.checkInCode}`
-    : null;
+  const here = roster.some((row) => row.userId === officerUserId);
 
   // The same three facts the check-in procedure tests before it lets anyone in,
   // so the panel cannot advertise a door the server has already shut.
@@ -372,7 +371,7 @@ export function EventAttendance({ eventId }: { eventId: string }) {
 
           {/* A preview of what goes on the wall. Members scan; the code beneath
               is an officer's reference for adding somebody by hand. */}
-          <div className="mt-2 flex flex-wrap items-center justify-between gap-x-10 gap-y-8">
+          <div className="mt-2 min-w-0">
             <div className="min-w-0">
               <p className="text-lead font-semibold text-white">
                 {checkInHost}/portal
@@ -387,12 +386,6 @@ export function EventAttendance({ eventId }: { eventId: string }) {
                 {event.checkInCode}
               </p>
             </div>
-
-            {/* Only while the door is open: a scannable code on a dead event
-                sends people to an error, which is worse than no code at all. */}
-            {state === "open" && checkInUrl && (
-              <EventQr url={checkInUrl} code={event.checkInCode} />
-            )}
           </div>
 
           {state !== "open" && (
@@ -407,8 +400,7 @@ export function EventAttendance({ eventId }: { eventId: string }) {
         </div>
       </div>
 
-      {/* What an officer reaches for first at the start of an event. */}
-      <div className="mt-6">
+      <div className="mt-6 flex flex-wrap items-center gap-3">
         <Button
           asChild
           size="lg"
@@ -418,6 +410,22 @@ export function EventAttendance({ eventId }: { eventId: string }) {
             Open the projector view
           </Link>
         </Button>
+        {state === "open" &&
+          (here ? (
+            <p className="text-body-sm text-navy font-semibold">
+              You're checked in.
+            </p>
+          ) : (
+            <Button
+              size="lg"
+              variant="outline"
+              disabled={self.isPending}
+              onClick={() => self.mutate({ eventId: event.id })}
+              className="border-hairline text-navy hover:bg-cream rounded-full font-semibold"
+            >
+              {self.isPending ? "Checking you in..." : "I'm here"}
+            </Button>
+          ))}
       </div>
 
       <div className="mt-6 flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
@@ -498,17 +506,8 @@ export function EventAttendance({ eventId }: { eventId: string }) {
         ) : (
           <EmptyState
             title="Nobody has checked in yet."
-            body="Put the code on the screen and it will fill in as members enter it."
-          >
-            <Button
-              asChild
-              className="bg-navy hover:bg-navy-deep rounded-full font-semibold text-white"
-            >
-              <Link href={`/portal/admin/events/${event.id}/present`}>
-                Open the projector view
-              </Link>
-            </Button>
-          </EmptyState>
+            body="Open the projector for members to scan, or check yourself in above."
+          />
         )}
       </div>
 

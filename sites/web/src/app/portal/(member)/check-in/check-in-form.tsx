@@ -301,8 +301,7 @@ export function CheckInForm({ initialCode }: { initialCode: string }) {
     );
   }
 
-  // Scanning is the only way in, so a camera that will not start is a dead end
-  // rather than a degraded state. Say who can fix it.
+  // The scanner failed. Typing the wall code still works; say who else can help.
   if (cameraNote) {
     return (
       <Card className="border-hairline bg-paper rounded-lg">
@@ -359,6 +358,9 @@ export function CheckInForm({ initialCode }: { initialCode: string }) {
 
       <CardContent>
         <Scanner onDetect={submit} onUnavailable={setCameraNote} />
+        <div className="border-hairline mt-6 border-t pt-6">
+          <ManualCodeEntry onSubmit={submit} />
+        </div>
       </CardContent>
     </Card>
   );

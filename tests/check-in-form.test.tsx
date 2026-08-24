@@ -149,6 +149,12 @@ describe("CheckInForm", () => {
     expect(mutate).toHaveBeenCalledWith({ code: "ABCD2345" });
   });
 
+  it("keeps the typed-code field on screen while the camera is running", () => {
+    render(<CheckInForm initialCode="" />);
+
+    expect(screen.getByLabelText(/enter the code instead/i)).toBeTruthy();
+  });
+
   it("asks for a tap before checking in a code that arrived in the URL", () => {
     render(<CheckInForm initialCode="ABCD2345" />);
 

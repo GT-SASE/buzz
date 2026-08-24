@@ -484,6 +484,68 @@ export const eventRouter = createTRPCRouter({
       return { name: member.name, email: member.email };
     }),
 
+  /**
+   * Officers are in the room to run the event, not to scan the wall they
+   * just put up. Same snapshot and capacity override as the email path.
+   */
+  selfCheckIn: adminProcedure
+    .input(z.object({ eventId: z.string().min(1) }))
+    .mutation(async ({ ctx, input }) => {
+      assertRateLimit(
+        `self-check-in:${ctx.session.user.id}`,
+        MANUAL_CHECK_IN_LIMIT,
+      );
+
+      const officer = await ctx.db.query.users.findFirst({
+        where: eq(users.id, ctx.session.user.id),
+        columns: { id: true, name: true, email: true },
+      });
+
+      if (!officer) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Your account was not found.",
+        });
+      }
+
+      try {
+        await ctx.db.transaction(async (tx) => {
+          const [locked] = await tx
+            .select()
+            .from(events)
+            .where(eq(events.id, input.eventId))
+            .for("update");
+
+          if (!locked) {
+            notFound("Event");
+          }
+
+          await tx.insert(eventCheckIns).values({
+            eventId: locked.id,
+            userId: officer.id,
+            method: "manual",
+            pointsEarned: locked.pointsValue,
+            actedByUserId: ctx.session.user.id,
+          });
+          await tx
+            .update(events)
+            .set({ currentCheckIns: locked.currentCheckIns + 1 })
+            .where(eq(events.id, locked.id));
+        });
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        if (isUniqueViolation(error)) {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: "You are already checked in.",
+          });
+        }
+        throw error;
+      }
+
+      return { name: officer.name, email: officer.email };
+    }),
+
   /** Mis-scans happen; without this an officer cannot undo one. */
   removeCheckIn: adminProcedure
     .input(

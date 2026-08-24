@@ -12,9 +12,9 @@ export default function AdminMembersPage() {
   return (
     <>
       <PortalHeader
-        eyebrow="Officer tools"
-        title="Chapter roster."
-        body="Everyone who has signed in to the portal, what they have earned, and when they were last at an event. Open a member for their full attendance history."
+        eyebrow="Roster"
+        title="Roster"
+        body="Who has signed in, what they have earned, when they last came."
       />
 
       <Section size="sm">

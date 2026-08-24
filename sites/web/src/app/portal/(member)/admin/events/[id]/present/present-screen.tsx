@@ -99,7 +99,7 @@ export function PresentScreen({ eventId }: { eventId: string }) {
       const png = await toDataURL(url, {
         errorCorrectionLevel: "H",
         margin: 1,
-        width: 900,
+        width: 1024,
         color: { dark: "#003057ff", light: "#fdfaf4ff" },
       });
       if (!cancelled) setQr(png);
@@ -131,7 +131,7 @@ export function PresentScreen({ eventId }: { eventId: string }) {
         )}
       </header>
 
-      <div className="relative flex min-h-0 flex-1 items-center justify-center py-6">
+      <div className="relative flex min-h-0 flex-1 flex-col items-stretch justify-center py-6">
         {closed ? (
           <div className="text-center">
             <p className="font-display text-[clamp(2.5rem,6vw,6rem)] leading-none font-bold text-white">
@@ -146,29 +146,31 @@ export function PresentScreen({ eventId }: { eventId: string }) {
             </p>
           </div>
         ) : (
-          // The QR is the whole flow now, so it gets the whole wall. The code
-          // below it is the officer's handle on the event, not something a
-          // member is meant to read.
-          <div className="flex w-full flex-col items-center justify-center gap-6">
-            {qr ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={qr}
-                alt=""
-                className="bg-paper w-[min(62vh,40rem)] max-w-full p-4"
-              />
-            ) : (
-              <Skeleton className="aspect-square w-[min(62vh,40rem)] max-w-full rounded-none bg-white/10" />
-            )}
+          // QR fills leftover wall so a phone across the room can lock on
+          // without pinch-zoom. The code under it is the no-camera fallback,
+          // sized to read from the back row.
+          <div className="flex h-full min-h-0 w-full flex-col items-center justify-center gap-4 sm:gap-5">
+            <div className="flex min-h-0 w-full flex-1 items-center justify-center">
+              {qr ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={qr}
+                  alt=""
+                  className="bg-paper h-full max-h-full w-auto max-w-full object-contain p-3 sm:p-5"
+                />
+              ) : (
+                <Skeleton className="aspect-square h-full max-h-[min(70vh,40rem)] w-auto max-w-full rounded-none bg-white/10" />
+              )}
+            </div>
 
-            <p className="text-gold-bright tracking-masthead text-[clamp(1rem,2vw,2rem)] font-semibold uppercase">
+            <p className="text-gold-bright tracking-masthead shrink-0 text-[clamp(1rem,2vw,2rem)] font-semibold uppercase">
               {open
-                ? "Open the portal and point your camera here"
+                ? "Scan this, or type the code"
                 : "Ask an officer to add you"}
             </p>
 
             {code && (
-              <p className="font-mono text-[clamp(0.875rem,1.1vw,1.25rem)] font-semibold tracking-[0.3em] text-white/40 tabular-nums">
+              <p className="text-gold-bright shrink-0 font-mono text-[clamp(2.75rem,8vw,6rem)] font-bold tracking-[0.18em] tabular-nums">
                 {groups.join(" ")}
               </p>
             )}

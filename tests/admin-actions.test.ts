@@ -247,6 +247,18 @@ describe("event.setCheckInEnabled", () => {
   });
 });
 
+describe("event.selfCheckIn", () => {
+  it("refuses a MEMBER session before writing anything", async () => {
+    const error = await rejection(
+      createCaller(memberCtx(unreachableDb)).event.selfCheckIn({
+        eventId: "event-1",
+      }),
+    );
+
+    expect(error.code).toBe("FORBIDDEN");
+  });
+});
+
 function removeCheckInDb({
   locked,
   deleted,

@@ -8,7 +8,6 @@ import { MemberCard } from "~/app/portal/_components/member-card";
 import { SignOutButton } from "~/app/portal/_components/portal-ui";
 import { formatMonth } from "~/app/portal/_lib/format";
 import { requireSession } from "~/app/portal/_lib/session";
-import { Button } from "~/components/site";
 import { Card } from "~/components/ui/card";
 import { Separator } from "~/components/ui/separator";
 import { api } from "~/trpc/server";
@@ -23,6 +22,7 @@ export const metadata: Metadata = {
  */
 export default async function PortalDashboard() {
   const session = await requireSession("/portal");
+  const isOfficer = session.user.role === "ADMIN";
 
   const [stats, attended, upcoming] = await Promise.all([
     api.event.myStats(),
@@ -47,15 +47,17 @@ export default async function PortalDashboard() {
         <div>
           <Card className="bg-navy hover:bg-navy-deep group gap-0 rounded-lg border-0 py-0 transition-colors duration-300">
             <Link
-              href="/portal/check-in"
+              href={isOfficer ? "/portal/admin" : "/portal/check-in"}
               className="flex items-center justify-between gap-6 px-7 py-6"
             >
               <span>
                 <span className="font-display block text-xl font-bold text-white">
-                  Check in
+                  {isOfficer ? "Open check-in" : "Check in"}
                 </span>
                 <span className="mt-1 block text-white/70">
-                  Scan the QR code on the screen
+                  {isOfficer
+                    ? "Put the QR on a screen. Check yourself in from the event."
+                    : "Scan the QR code on the screen"}
                 </span>
               </span>
               <ArrowRight
@@ -101,9 +103,6 @@ export default async function PortalDashboard() {
                     ? `${open.length} ${open.length === 1 ? "event is" : "events are"} open right now — check into one and it lands here.`
                     : "Check-in opens when an officer starts an event."}
                 </p>
-                <div className="mt-7 flex justify-center">
-                  <Button href="/portal/check-in">Check in</Button>
-                </div>
               </div>
             }
             totalCount={stats.totalEvents}
@@ -123,17 +122,6 @@ export default async function PortalDashboard() {
           <div className="flex flex-wrap items-center justify-between gap-4 pt-6">
             <p className="text-ink-muted text-body-sm">
               {session.user.email}
-              {session.user.role === "ADMIN" && (
-                <>
-                  {" · "}
-                  <Link
-                    href="/portal/admin"
-                    className="text-navy font-semibold"
-                  >
-                    Officer tools
-                  </Link>
-                </>
-              )}
             </p>
             <SignOutButton />
           </div>

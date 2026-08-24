@@ -11,9 +11,9 @@ export default function AdminEventsPage() {
   return (
     <>
       <PortalHeader
-        eyebrow="Officer tools"
-        title="Chapter events."
-        body="Create an event, set what attending is worth, and read out the code at the door. Attendance and points are recorded the moment a member enters it."
+        eyebrow="Events"
+        title="Events"
+        body="Open check-in, put the QR on a screen, and check yourself in from the event. No scanning."
       />
 
       <Overview />

@@ -316,13 +316,6 @@ function EventRow({ event }: { event: AdminEvent }) {
     },
     onError: (e) => toast.error(e.message),
   });
-  const rotate = api.event.regenerateCode.useMutation({
-    onSuccess: async (updated) => {
-      toast.success(`New check-in code: ${updated.checkInCode}`);
-      await invalidate();
-    },
-    onError: (e) => toast.error(e.message),
-  });
   const archive = api.event.setArchived.useMutation({
     onSuccess: async (updated) => {
       toast.success(updated.archivedAt ? "Event archived." : "Event restored.");
@@ -372,19 +365,6 @@ function EventRow({ event }: { event: AdminEvent }) {
         {event.maxCheckIns !== null ? ` of ${event.maxCheckIns}` : ""}
       </TableCell>
 
-      {/* Officer-only screen: the code is a bearer credential and never renders
-          on anything member-facing. */}
-      <TableCell className="py-4">
-        <span
-          className={cn(
-            "border-hairline text-body-sm inline-flex rounded-md border px-2.5 py-1 font-mono font-semibold tracking-[0.2em] tabular-nums",
-            archived ? "bg-cream/50 text-ink-muted" : "bg-cream text-navy",
-          )}
-        >
-          {event.checkInCode}
-        </span>
-      </TableCell>
-
       <TableCell className="py-4">
         <div className="flex items-center justify-end gap-1.5">
           <Button asChild variant="outline" size="sm">
@@ -402,15 +382,6 @@ function EventRow({ event }: { event: AdminEvent }) {
             }
           >
             {event.checkInEnabled ? "Close check-in" : "Open check-in"}
-          </Button>
-
-          <Button
-            size="sm"
-            variant="ghost"
-            disabled={rotate.isPending}
-            onClick={() => rotate.mutate({ id: event.id })}
-          >
-            New code
           </Button>
 
           <EventDialog
@@ -559,7 +530,6 @@ export function AdminEvents() {
                   <TableHead>Status</TableHead>
                   <TableHead>Points</TableHead>
                   <TableHead>Checked in</TableHead>
-                  <TableHead>Check-in code</TableHead>
                   <TableHead className="text-right">
                     <span className="sr-only">Actions</span>
                   </TableHead>

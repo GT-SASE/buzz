@@ -1,16 +1,10 @@
 "use client";
 
-import Link from "next/link";
-
-import { formatEventTime } from "~/app/portal/_lib/format";
 import { Eyebrow } from "~/components/site";
-import { Badge } from "~/components/ui/badge";
 import { Skeleton } from "~/components/ui/skeleton";
 import { api, type RouterOutputs } from "~/trpc/react";
 
 type ChapterOverview = RouterOutputs["chapter"]["overview"];
-type NextEvent = NonNullable<ChapterOverview["nextEvent"]>;
-
 const figureGrid = "grid gap-8 sm:grid-cols-2 lg:grid-cols-4";
 
 function Figure({
@@ -39,50 +33,11 @@ function Figure({
   );
 }
 
-function NextUp({ event }: { event: NextEvent | null }) {
-  if (!event) {
-    return (
-      <p className="border-hairline text-ink-muted text-body-sm mt-8 border-t pt-6">
-        No upcoming events. Create one below and the next one appears here.
-      </p>
-    );
-  }
-
-  return (
-    <div className="border-hairline mt-8 border-t pt-6">
-      <Eyebrow tone="gold">Next up</Eyebrow>
-
-      <Link
-        href={`/portal/admin/events/${event.id}`}
-        className="font-display text-navy text-h3 mt-2 inline-flex min-h-11 items-center font-bold hover:underline"
-      >
-        {event.title}
-      </Link>
-
-      <p className="text-ink-muted text-body tabular-nums">
-        {formatEventTime(event.startsAt)}
-        {event.location ? ` · ${event.location}` : ""}
-      </p>
-
-      <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2">
-        <Badge variant={event.checkInEnabled ? "default" : "outline"}>
-          {event.checkInEnabled ? "Check-in open" : "Check-in closed"}
-        </Badge>
-        <p className="text-ink-muted text-body-sm tabular-nums">
-          {event.currentCheckIns}
-          {event.maxCheckIns !== null ? ` of ${event.maxCheckIns}` : ""} checked
-          in
-        </p>
-      </div>
-    </div>
-  );
-}
-
 function Figures({ data }: { data: ChapterOverview }) {
-  const { members, checkIns, events, nextEvent } = data;
+  const { members, checkIns, events } = data;
 
-  // Four zeroes and an empty "next up" describe a broken screen, not a chapter
-  // that has not run anything yet.
+  // Four zeroes describe a broken screen, not a chapter that has not run
+  // anything yet.
   if (events.total === 0) {
     return (
       <>
@@ -131,7 +86,6 @@ function Figures({ data }: { data: ChapterOverview }) {
         />
       </dl>
 
-      <NextUp event={nextEvent} />
     </>
   );
 }
@@ -149,11 +103,6 @@ function OverviewSkeleton() {
               <Skeleton className="mt-3 h-3 w-32" />
             </div>
           ))}
-        </div>
-        <div className="border-hairline mt-8 border-t pt-6">
-          <Skeleton className="h-3 w-20" />
-          <Skeleton className="mt-4 h-6 w-64 max-w-full" />
-          <Skeleton className="mt-3 h-3 w-48 max-w-full" />
         </div>
       </div>
     </>

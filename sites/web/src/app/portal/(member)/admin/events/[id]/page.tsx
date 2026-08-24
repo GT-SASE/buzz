@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { cache } from "react";
 
 import { orNotFound } from "~/app/portal/_lib/missing";
+import { requireOfficer } from "~/app/portal/_lib/session";
 import { Section } from "~/components/site";
 import {
   Breadcrumb,
@@ -41,6 +42,7 @@ export default async function AdminEventPage({
 }) {
   const { id } = await params;
   if (!id) notFound();
+  const session = await requireOfficer(`/portal/admin/events/${id}`);
   await orNotFound(eventForPage(id));
 
   return (
@@ -62,7 +64,7 @@ export default async function AdminEventPage({
           </BreadcrumbList>
         </Breadcrumb>
 
-        <EventAttendance eventId={id} />
+        <EventAttendance eventId={id} officerUserId={session.user.id} />
       </Section>
     </HydrateClient>
   );

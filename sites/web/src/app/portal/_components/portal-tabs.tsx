@@ -10,7 +10,9 @@ import { cn } from "~/lib/utils";
 /** Route links, not panel switchers — real anchors keep prefetch and open-in-tab. */
 export function PortalTabs({ isOfficer }: { isOfficer: boolean }) {
   const pathname = usePathname();
-  const tabs = isOfficer ? [...portalNav, ...adminNav] : portalNav;
+  const tabs = isOfficer
+    ? [{ href: "/portal", label: "My card" }, ...adminNav]
+    : portalNav;
 
   // Longest matching href wins, so a nested route lights one tab rather than
   // putting aria-current="page" on itself and on its parent.
