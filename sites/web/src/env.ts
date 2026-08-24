@@ -19,6 +19,13 @@ export const env = createEnv({
     AUTH_SECRET: secret,
     AUTH_GOOGLE_ID: secret,
     AUTH_GOOGLE_SECRET: secret,
+    /**
+     * Canonical Auth.js origin. Leave unset so the request host is used; the
+     * Google callback is pinned via AUTH_REDIRECT_PROXY_URL instead.
+     */
+    AUTH_URL: z.url().optional(),
+    /** Stable Auth.js path Google always returns to. */
+    AUTH_REDIRECT_PROXY_URL: z.url().optional(),
     DATABASE_URL: requirePortalSecrets ? z.url() : z.url().optional(),
     /** Comma-separated exact addresses. Never demotes. */
     ADMIN_EMAILS: z.string().optional(),
@@ -34,6 +41,8 @@ export const env = createEnv({
     AUTH_SECRET: process.env.AUTH_SECRET,
     AUTH_GOOGLE_ID: process.env.AUTH_GOOGLE_ID,
     AUTH_GOOGLE_SECRET: process.env.AUTH_GOOGLE_SECRET,
+    AUTH_URL: process.env.AUTH_URL,
+    AUTH_REDIRECT_PROXY_URL: process.env.AUTH_REDIRECT_PROXY_URL,
     DATABASE_URL: process.env.DATABASE_URL,
     ADMIN_EMAILS: process.env.ADMIN_EMAILS,
     NODE_ENV: process.env.NODE_ENV,

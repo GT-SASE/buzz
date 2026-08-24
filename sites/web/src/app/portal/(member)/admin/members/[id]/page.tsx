@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { cache } from "react";
 
 import { orNotFound } from "~/app/portal/_lib/missing";
 import { Section } from "~/components/site";
@@ -15,9 +16,23 @@ import {
 import { HydrateClient, api } from "~/trpc/server";
 import { MemberDetail } from "./member-detail";
 
-export const metadata: Metadata = {
-  title: "Member",
-};
+const memberForPage = cache((id: string) => api.member.byId({ id }));
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}): Promise<Metadata> {
+  const { id } = await params;
+  if (!id) return { title: "Member" };
+
+  try {
+    const { member } = await memberForPage(id);
+    return { title: member.name ?? member.email };
+  } catch {
+    return { title: "Member" };
+  }
+}
 
 export default async function AdminMemberPage({
   params,
@@ -26,7 +41,7 @@ export default async function AdminMemberPage({
 }) {
   const { id } = await params;
   if (!id) notFound();
-  await orNotFound(api.member.byId({ id }));
+  await orNotFound(memberForPage(id));
 
   return (
     <HydrateClient>

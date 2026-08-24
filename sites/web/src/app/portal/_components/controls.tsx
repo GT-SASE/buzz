@@ -1,8 +1,6 @@
 import { cloneElement, isValidElement, type ReactElement } from "react";
 
-import { Alert, AlertDescription } from "~/components/ui/alert";
 import { Button } from "~/components/ui/button";
-import { Card } from "~/components/ui/card";
 import { Label } from "~/components/ui/label";
 import { cn } from "~/lib/utils";
 
@@ -107,57 +105,5 @@ export function Field({
         </p>
       )}
     </div>
-  );
-}
-
-/** A bordered block with a heading and an optional action in its corner. */
-export function Panel({
-  title,
-  action,
-  children,
-  className,
-}: {
-  title?: string;
-  action?: React.ReactNode;
-  children: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <Card className={cn("ring-hairline bg-paper gap-0 py-0 ring-1", className)}>
-      {(title ?? action) && (
-        <header className="border-hairline flex flex-wrap items-center justify-between gap-4 border-b px-6 py-4">
-          {title && (
-            <h2 className="font-display text-navy text-h3 font-bold">
-              {title}
-            </h2>
-          )}
-          {action}
-        </header>
-      )}
-      <div className="p-6">{children}</div>
-    </Card>
-  );
-}
-
-/** Inline status. One shape for both outcomes so neither is a surprise. */
-export function Notice({
-  tone,
-  children,
-}: {
-  tone: "error" | "success";
-  children: React.ReactNode;
-}) {
-  return (
-    <Alert
-      variant={tone === "error" ? "destructive" : "default"}
-      className={cn(
-        "text-sm font-medium",
-        tone === "error"
-          ? "border-destructive/25 bg-destructive/5 text-destructive"
-          : "ring-gold/45 bg-cream text-navy border-0 ring-1",
-      )}
-    >
-      <AlertDescription>{children}</AlertDescription>
-    </Alert>
   );
 }

@@ -32,9 +32,6 @@ export function asInt(value: number | string | null | undefined) {
   return typeof value === "number" ? value : Number(value);
 }
 
-/** @deprecated use asDate */
-export const toDate = asDate;
-
 export const totalsColumns = {
   totalEvents: count(),
   totalPoints: sum(eventCheckIns.pointsEarned),

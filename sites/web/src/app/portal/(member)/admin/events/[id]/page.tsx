@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { cache } from "react";
 
 import { orNotFound } from "~/app/portal/_lib/missing";
 import { Section } from "~/components/site";
@@ -15,9 +16,23 @@ import {
 import { HydrateClient, api } from "~/trpc/server";
 import { EventAttendance } from "./event-attendance";
 
-export const metadata: Metadata = {
-  title: "Event",
-};
+const eventForPage = cache((id: string) => api.event.getById({ id }));
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}): Promise<Metadata> {
+  const { id } = await params;
+  if (!id) return { title: "Event" };
+
+  try {
+    const { event } = await eventForPage(id);
+    return { title: event.title };
+  } catch {
+    return { title: "Event" };
+  }
+}
 
 export default async function AdminEventPage({
   params,
@@ -26,7 +41,7 @@ export default async function AdminEventPage({
 }) {
   const { id } = await params;
   if (!id) notFound();
-  await orNotFound(api.event.getById({ id }));
+  await orNotFound(eventForPage(id));
 
   return (
     <HydrateClient>

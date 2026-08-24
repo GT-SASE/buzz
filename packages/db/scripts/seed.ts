@@ -13,7 +13,7 @@ import postgres from "postgres";
 
 import * as schema from "../src/schema.ts";
 
-const envFile = resolve(import.meta.dirname, "../../../sites/web/.env");
+const envFile = resolve(import.meta.dirname, "../../../.env");
 if (existsSync(envFile)) process.loadEnvFile(envFile);
 
 const url = process.env.DATABASE_URL;

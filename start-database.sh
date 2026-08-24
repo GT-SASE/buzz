@@ -11,8 +11,8 @@
 
 # On Linux and macOS you can run this script directly - `./start-database.sh`
 
-# import env variables from the web app's .env, which is the one copy of them
-ENV_FILE="$(dirname "$0")/sites/web/.env"
+# import env variables from the repo-root .env, which is the one copy of them
+ENV_FILE="$(dirname "$0")/.env"
 
 # Guarded: without this, a missing .env only prints a `source` error and the
 # script carries on with DATABASE_URL unset, deriving an empty port and a
@@ -20,7 +20,7 @@ ENV_FILE="$(dirname "$0")/sites/web/.env"
 # message that says nothing about the real cause.
 if [ ! -f "$ENV_FILE" ]; then
   echo "Missing $ENV_FILE"
-  echo "Copy sites/web/.env.example to sites/web/.env and fill it in first."
+  echo "Copy .env.example to .env and fill it in first."
   exit 1
 fi
 

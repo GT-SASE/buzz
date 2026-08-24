@@ -1,0 +1,9 @@
+* @GT-SASE/web
+
+/packages/auth/            @GT-SASE/web
+/packages/db/src/schema.ts @GT-SASE/web
+/packages/db/drizzle/      @GT-SASE/web
+/packages/api/src/trpc.ts  @GT-SASE/web
+/sites/web/src/env.ts      @GT-SASE/web
+/sites/web/next.config.ts  @GT-SASE/web
+/.github/workflows/        @GT-SASE/web

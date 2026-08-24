@@ -13,7 +13,6 @@ function sameOriginRejection(req: NextRequest): Response | null {
 
   const secFetchSite = req.headers.get("sec-fetch-site");
   if (secFetchSite === "same-origin" || secFetchSite === "none") return null;
-  if (secFetchSite === "same-site") return null;
 
   const origin = req.headers.get("origin");
   if (!origin) {
@@ -35,6 +34,56 @@ const createContext = async (req: NextRequest) => {
   });
 };
 
+const EXPECTED_CODES = new Set([
+  "BAD_REQUEST",
+  "CONFLICT",
+  "FORBIDDEN",
+  "NOT_FOUND",
+  "TOO_MANY_REQUESTS",
+  "UNAUTHORIZED",
+]);
+
+function logTRPCError({
+  path,
+  error,
+  ctx,
+}: {
+  path: string | undefined;
+  error: { code: string; message: string; cause?: unknown; stack?: string };
+  ctx:
+    | { session?: { user?: { id?: string; role?: string } } | null }
+    | undefined;
+}) {
+  const expected = EXPECTED_CODES.has(error.code);
+  const cause = error.cause;
+
+  const line = {
+    level: expected ? "warn" : "error",
+    event: "trpc.error",
+    path: path ?? "<no-path>",
+    code: error.code,
+    message: error.message,
+    userId: ctx?.session?.user?.id ?? null,
+    role: ctx?.session?.user?.role ?? null,
+    ...(expected
+      ? {}
+      : {
+          stack:
+            (cause instanceof Error ? cause.stack : undefined) ?? error.stack,
+        }),
+  };
+
+  if (env.NODE_ENV === "development") {
+    console[expected ? "warn" : "error"](
+      `tRPC ${error.code} on ${line.path}: ${error.message}`,
+      expected ? "" : (line.stack ?? ""),
+    );
+    return;
+  }
+
+  console[expected ? "warn" : "error"](JSON.stringify(line));
+}
+
 const handler = async (req: NextRequest) => {
   const rejected = sameOriginRejection(req);
   if (rejected) return rejected;
@@ -44,14 +93,9 @@ const handler = async (req: NextRequest) => {
     req,
     router: appRouter,
     createContext: () => createContext(req),
-    onError:
-      env.NODE_ENV === "development"
-        ? ({ path, error }) => {
-            console.error(
-              `tRPC failed on ${path ?? "<no-path>"}: ${error.message}`,
-            );
-          }
-        : undefined,
+    onError: ({ path, error, ctx }) => {
+      logTRPCError({ path, error, ctx });
+    },
   });
 };
 

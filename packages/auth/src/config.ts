@@ -56,7 +56,12 @@ export const authConfig = {
   trustHost: true,
   // Google only. Any Google account may join; there is no school-domain gate.
   // Credentials are read from AUTH_GOOGLE_ID / AUTH_GOOGLE_SECRET.
-  providers: [GoogleProvider],
+  // allowDangerousEmailAccountLinking lets a Google login attach to a user row
+  // that already exists with the same address. Without it, an officer seeded
+  // straight into the database cannot sign in at all — Auth.js throws
+  // OAuthAccountNotLinked. Safe here because Google is the only provider and it
+  // verifies the address; it would not be with an unverified email provider.
+  providers: [GoogleProvider({ allowDangerousEmailAccountLinking: true })],
   adapter: DrizzleAdapter(db, {
     usersTable: users,
     accountsTable: accounts,

@@ -1,4 +1,7 @@
 {
   "installCommand": "cd ../.. && pnpm install --frozen-lockfile",
-  "buildCommand": "cd ../.. && pnpm --filter @buzz/web build"
+  "buildCommand": "cd ../.. && pnpm --filter @buzz/web build",
+  "env": {
+    "AUTH_REDIRECT_PROXY_URL": "https://buzzsase.vercel.app/api/auth"
+  }
 }

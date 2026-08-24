@@ -3,14 +3,14 @@ import { resolve } from "node:path";
 import { type Config } from "drizzle-kit";
 
 /**
- * `.env` lives with the web app, because that is the one place Next.js reads it
- * from without configuration. drizzle-kit never loads Next, so it is pointed at
- * the same file rather than given a second copy of the credentials.
+ * `.env` lives at the repo root so the web app, drizzle-kit, and tests share
+ * one copy. Next.js does not auto-read a parent `.env`; `sites/web/next.config.ts`
+ * loads this same file.
  */
 // `process.cwd()`, not `import.meta.dirname`: drizzle-kit bundles this config
 // to CJS before running it, which leaves import.meta empty. The scripts that
 // use this file all run with the package directory as the working directory.
-const envFile = resolve(process.cwd(), "../../sites/web/.env");
+const envFile = resolve(process.cwd(), "../../.env");
 if (existsSync(envFile)) process.loadEnvFile(envFile);
 
 const url = process.env.DATABASE_URL;

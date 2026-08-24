@@ -59,15 +59,18 @@ The public site needs no environment at all — it builds and deploys with an
 empty environment, because none of its pages read the session or the database.
 Everything below is what turns the **portal** on.
 
-1. Copy `sites/web/.env.example` to `sites/web/.env` and fill it in. That path is
-   deliberate: it is where Next.js reads `.env` from without any configuration, and
-   `packages/db/drizzle.config.ts` is pointed at the same file so the credentials
+1. Copy `.env.example` to `.env` at the repo root and fill it in. Next.js does
+   not auto-read a parent `.env`, so `sites/web/next.config.ts` loads this file;
+   drizzle-kit and the test runner point at the same path so the credentials
    exist in exactly one place.
    - `DATABASE_URL` — the connection string for the database below.
-   - `AUTH_SECRET` — `npx auth secret`.
+   - `AUTH_SECRET` — `npx auth secret`. Same value as Vercel if you sign in
+     from localhost through the Google redirect proxy.
    - `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` — from a Google Cloud OAuth client
      of type "Web application". Google is the only way into the portal, local
      development included, so sign-in does nothing until these are set.
+   - `AUTH_REDIRECT_PROXY_URL` — `https://buzzsase.vercel.app/api/auth`. Pins
+     Google's callback to the one registered URI.
    - `ADMIN_EMAILS` — who gets the officer role. Optional; see `.env.example`.
 2. Start Postgres — `./start-database.sh` runs one in Docker. It reads the file
    from step 1, so that order matters.
@@ -76,20 +79,35 @@ Everything below is what turns the **portal** on.
    run migrations.
 4. `pnpm dev`.
 
+### Running the tests
+
+`pnpm test` reads **`TEST_DATABASE_URL`**, never `DATABASE_URL`. The integration
+and load suites create users, events and check-ins and delete them again, which
+is fine against a scratch database and not fine against the one serving members
+— so the app's database is deliberately unreachable from the suite. With
+`TEST_DATABASE_URL` unset, those suites skip and the rest still run.
+
+Point it at a throwaway Postgres, which is what `./start-database.sh` gives you:
+
+```
+TEST_DATABASE_URL=postgres://postgres:password@localhost:5432/buzz
+```
+
+Put it in `.env` at the repo root alongside the others. CI sets it to its own
+`postgres:16` service container.
+
 ### Google OAuth redirect URIs
 
-Every origin the portal runs on needs an entry, each with the
-`/api/auth/callback/google` suffix. A missing entry is what produces
+Google only needs the production callback. `AUTH_REDIRECT_PROXY_URL` sends
+every other origin (localhost, Vercel previews) through it, which is what stops
 `redirect_uri_mismatch`.
 
 ```
 Authorized JavaScript origins
   https://buzzsase.vercel.app
-  http://localhost:3000
 
 Authorized redirect URIs
   https://buzzsase.vercel.app/api/auth/callback/google
-  http://localhost:3000/api/auth/callback/google
 ```
 
 ### Vercel
@@ -98,22 +116,37 @@ Project settings → Environment Variables, all four for Production and Preview:
 
 ```
 DATABASE_URL         the same Postgres, or a separate one for previews
-AUTH_SECRET          a different value from your local one
+AUTH_SECRET          same value on Production and Preview (the Google proxy signs with it)
 AUTH_GOOGLE_ID
 AUTH_GOOGLE_SECRET
+AUTH_REDIRECT_PROXY_URL  https://buzzsase.vercel.app/api/auth  (also set in vercel.json)
 ADMIN_EMAILS         optional
 ```
 
-`AUTH_URL` is not required. Auth.js reads the deployment URL from Vercel's own
-`VERCEL_URL`, and `trustHost` is on so the forwarded host is accepted. Preview
-deployments get a different hostname on every push, which Google will refuse
-unless that exact origin is in the OAuth client. Sign in on the production
-domain, or set `AUTH_URL=https://buzzsase.vercel.app` on Vercel if you want
-every environment to callback against the canonical origin.
+Set `AUTH_REDIRECT_PROXY_URL=https://buzzsase.vercel.app/api/auth` locally and
+on Vercel (Production, Preview, and Development). Google only has the
+production callback registered; Auth.js then sends every other origin through
+that URI and bounces back after Google returns. `@buzz/auth` falls back to
+this same value if the variable is missing. `AUTH_SECRET` must be the same on
+the machine that starts sign-in and on production, or the bounce-back fails.
 
 The build itself needs none of these. It runs with an empty environment on
 purpose, so a missing variable shows up as a broken sign-in rather than a
 failed deploy — check them before assuming the deploy is fine.
+
+## When something breaks
+
+`GET /api/health` answers `200` with `{"status":"ok"}` when the database is
+reachable and `503` when it is not. It is unauthenticated, so it says nothing
+beyond that — point an uptime checker at it.
+
+Everything a tRPC procedure throws is logged as one JSON line on stdout, which
+means Vercel → the deployment → **Runtime Logs**. Filter on `"event":"trpc.error"`.
+A `"level":"warn"` line is the API refusing something on purpose — a member
+hitting an officer procedure, an expired check-in code, a rate limit. A
+`"level":"error"` line carries a stack and is a real fault. Each line names the
+procedure `path` and the `userId` that called it, so an officer reporting "the
+scanner did nothing" is findable without reproducing it.
 
 ## Promoting the first officer
 

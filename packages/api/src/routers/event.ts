@@ -6,10 +6,11 @@ import { asDate, asInt, totalsColumns } from "../aggregates";
 import { notFound } from "../errors";
 import { isUniqueViolation } from "../pg-errors";
 import {
+  assertRateLimit,
   CHECK_IN_LIMIT,
+  EXPORT_ATTENDANCE_LIMIT,
   MANUAL_CHECK_IN_LIMIT,
   REGENERATE_CODE_LIMIT,
-  takeToken,
 } from "../rate-limit";
 import { adminProcedure, createTRPCRouter, protectedProcedure } from "../trpc";
 import { eventCheckIns, events, users } from "@buzz/db";
@@ -68,18 +69,6 @@ function assertCheckInWindow(startsAt: Date) {
     throw new TRPCError({
       code: "BAD_REQUEST",
       message: "Check-in for this event has closed.",
-    });
-  }
-}
-
-function assertRateLimit(
-  key: string,
-  options: Parameters<typeof takeToken>[1],
-) {
-  if (!takeToken(key, options)) {
-    throw new TRPCError({
-      code: "TOO_MANY_REQUESTS",
-      message: "Too many requests. Try again shortly.",
     });
   }
 }
@@ -327,6 +316,11 @@ export const eventRouter = createTRPCRouter({
   exportAttendance: adminProcedure
     .input(z.object({ id: z.string().min(1) }))
     .query(async ({ ctx, input }) => {
+      assertRateLimit(
+        `export-attendance:${ctx.session.user.id}`,
+        EXPORT_ATTENDANCE_LIMIT,
+      );
+
       const event = await ctx.db.query.events.findFirst({
         where: eq(events.id, input.id),
         columns: { id: true },

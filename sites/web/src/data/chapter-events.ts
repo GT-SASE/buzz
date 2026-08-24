@@ -83,7 +83,14 @@ export async function getChapterEvents() {
     // Prefer an empty calendar over the unstyled Next error page on a cold
     // render. Marketing routes catch this at the segment boundary too, but
     // returning here keeps the homepage and /events themselves green.
-    console.error("Chapter calendar query failed:", error);
+    console.error(
+      JSON.stringify({
+        level: "error",
+        event: "chapter.calendar",
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      }),
+    );
     return { upcoming: [], past: [] };
   }
 }

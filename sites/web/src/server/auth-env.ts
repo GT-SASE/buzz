@@ -2,7 +2,10 @@ import { configureAdminEmails } from "@buzz/auth/admins";
 
 // Relative import: this file is also loaded from `next.config.ts`, where the
 // `~/*` path alias is not available during config transpile.
+import { site } from "../data/site";
 import { env } from "../env";
+
+process.env.AUTH_REDIRECT_PROXY_URL ??= `${site.url}/api/auth`;
 
 /**
  * Bridge `@t3-oss/env-nextjs` into `@buzz/auth` so officer allowlisting sees

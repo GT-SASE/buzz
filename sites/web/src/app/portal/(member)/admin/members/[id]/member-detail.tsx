@@ -241,7 +241,9 @@ export function MemberDetail({ memberId }: { memberId: string }) {
             {revoke.isPending
               ? "Revoking sessions..."
               : revoke.isSuccess
-                ? "Sessions revoked"
+                ? revoke.data.revoked === 0
+                  ? "No sessions to revoke"
+                  : `Revoked ${revoke.data.revoked} session${revoke.data.revoked === 1 ? "" : "s"}`
                 : "Revoke all sessions"}
           </Button>
         </div>

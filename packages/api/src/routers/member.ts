@@ -1,4 +1,3 @@
-import { TRPCError } from "@trpc/server";
 import {
   and,
   asc,
@@ -22,7 +21,7 @@ import {
   pointsSum,
 } from "../aggregates";
 import { notFound } from "../errors";
-import { EXPORT_ROSTER_LIMIT, takeToken } from "../rate-limit";
+import { assertRateLimit, EXPORT_ROSTER_LIMIT } from "../rate-limit";
 import { adminProcedure, createTRPCRouter, protectedProcedure } from "../trpc";
 import type * as BuzzDbModule from "@buzz/db";
 import { eventCheckIns, events, sessions, users } from "@buzz/db";
@@ -143,14 +142,10 @@ export const memberRouter = createTRPCRouter({
   exportRoster: adminProcedure
     .input(z.object({ search: z.string().trim().max(100).optional() }))
     .query(async ({ ctx, input }) => {
-      if (
-        !takeToken(`export-roster:${ctx.session.user.id}`, EXPORT_ROSTER_LIMIT)
-      ) {
-        throw new TRPCError({
-          code: "TOO_MANY_REQUESTS",
-          message: "Too many requests. Try again shortly.",
-        });
-      }
+      assertRateLimit(
+        `export-roster:${ctx.session.user.id}`,
+        EXPORT_ROSTER_LIMIT,
+      );
 
       const live = liveCheckInsSubquery(ctx.db);
       const totalPoints = sum(live.pointsEarned);
@@ -247,8 +242,12 @@ export const memberRouter = createTRPCRouter({
   revokeSessions: adminProcedure
     .input(z.object({ userId: z.string().min(1) }))
     .mutation(async ({ ctx, input }) => {
-      await ctx.db.delete(sessions).where(eq(sessions.userId, input.userId));
-      return { success: true };
+      const revoked = await ctx.db
+        .delete(sessions)
+        .where(eq(sessions.userId, input.userId))
+        .returning({ sessionToken: sessions.sessionToken });
+
+      return { success: true, revoked: revoked.length };
     }),
 
   // ----------------------------------------------------------------- members

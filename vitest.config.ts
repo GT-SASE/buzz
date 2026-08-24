@@ -3,12 +3,18 @@ import { resolve } from "node:path";
 import { defineConfig } from "vitest/config";
 
 /**
- * The integration suite talks to the real database, so it needs the same
- * credentials the app uses. Loaded here rather than in each test file so a
- * single missing `.env` produces one clear skip rather than a dozen failures.
+ * Tests read TEST_DATABASE_URL only. DATABASE_URL is cleared so nothing can
+ * fall back to the deployment's database; unset means the DB suites skip.
  */
-const envFile = resolve(import.meta.dirname, "sites/web/.env");
+const envFile = resolve(import.meta.dirname, ".env");
 if (existsSync(envFile)) process.loadEnvFile(envFile);
+
+const testDatabaseUrl = process.env.TEST_DATABASE_URL;
+if (testDatabaseUrl) {
+  process.env.DATABASE_URL = testDatabaseUrl;
+} else {
+  delete process.env.DATABASE_URL;
+}
 
 const workspaceAlias = [
   { find: "~", replacement: resolve(import.meta.dirname, "sites/web/src") },
@@ -63,6 +69,9 @@ export default defineConfig({
           environment: "jsdom",
           include: ["tests/**/*.test.tsx"],
           fileParallelism: false,
+          // Threads, not forks: only the node project needs fork semantics for
+          // process.env.TZ, and forking this one times out starting its worker.
+          pool: "threads",
         },
       },
     ],

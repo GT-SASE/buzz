@@ -1,17 +1,26 @@
-/**
- * In-process token bucket. Soft under multi-instance deploys — each instance
- * has its own counters — but enough to stop a single signed-in account from
- * hammering check-in or CSV export on one warm lambda.
- */
+import { TRPCError } from "@trpc/server";
 
-type Bucket = { tokens: number; updatedAt: number };
+type Bucket = {
+  tokens: number;
+  updatedAt: number;
+  fullAt: number;
+};
 
 const buckets = new Map<string, Bucket>();
 
+const SWEEP_INTERVAL_MS = 60_000;
+let sweptAt = 0;
+
+function sweep(now: number) {
+  if (now - sweptAt < SWEEP_INTERVAL_MS) return;
+  sweptAt = now;
+  for (const [key, bucket] of buckets) {
+    if (now >= bucket.fullAt) buckets.delete(key);
+  }
+}
+
 export type RateLimitOptions = {
-  /** Max tokens in the bucket. */
   limit: number;
-  /** How often one token is restored, in ms. */
   intervalMs: number;
 };
 
@@ -20,27 +29,51 @@ export function takeToken(
   { limit, intervalMs }: RateLimitOptions,
 ): boolean {
   const now = Date.now();
-  const current = buckets.get(key) ?? { tokens: limit, updatedAt: now };
-  const elapsed = now - current.updatedAt;
-  const restored = Math.floor(elapsed / intervalMs);
-  const tokens = Math.min(limit, current.tokens + restored);
+  sweep(now);
+
+  const current = buckets.get(key);
+  const elapsed = current ? now - current.updatedAt : 0;
+  const restored = current ? Math.floor(elapsed / intervalMs) : 0;
+  const tokens = current ? Math.min(limit, current.tokens + restored) : limit;
   const updatedAt =
-    restored > 0
+    current && restored > 0
       ? current.updatedAt + restored * intervalMs
-      : current.updatedAt;
+      : (current?.updatedAt ?? now);
 
   if (tokens <= 0) {
-    buckets.set(key, { tokens: 0, updatedAt });
+    buckets.set(key, {
+      tokens: 0,
+      updatedAt,
+      fullAt: updatedAt + limit * intervalMs,
+    });
     return false;
   }
 
-  buckets.set(key, { tokens: tokens - 1, updatedAt });
+  const remaining = tokens - 1;
+  buckets.set(key, {
+    tokens: remaining,
+    updatedAt,
+    fullAt: updatedAt + (limit - remaining) * intervalMs,
+  });
   return true;
 }
 
-/** Test helper. */
+export function assertRateLimit(key: string, options: RateLimitOptions) {
+  if (!takeToken(key, options)) {
+    throw new TRPCError({
+      code: "TOO_MANY_REQUESTS",
+      message: "Too many requests. Try again shortly.",
+    });
+  }
+}
+
 export function resetRateLimits() {
   buckets.clear();
+  sweptAt = 0;
+}
+
+export function rateLimitBucketCount() {
+  return buckets.size;
 }
 
 export const CHECK_IN_LIMIT = {
@@ -59,6 +92,11 @@ export const REGENERATE_CODE_LIMIT = {
 } as const;
 
 export const EXPORT_ROSTER_LIMIT = {
+  limit: 5,
+  intervalMs: 60_000,
+} as const;
+
+export const EXPORT_ATTENDANCE_LIMIT = {
   limit: 5,
   intervalMs: 60_000,
 } as const;

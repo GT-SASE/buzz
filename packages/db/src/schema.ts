@@ -183,6 +183,12 @@ export const events = createTable(
     uniqueIndex(idx("event_check_in_code_idx")).on(t.checkInCode),
     index(idx("event_starts_at_idx")).on(t.startsAt),
     index(idx("event_created_by_idx")).on(t.createdById),
+    check(idx("event_points_value_check"), sql`${t.pointsValue} >= 0`),
+    check(
+      idx("event_max_check_ins_check"),
+      sql`${t.maxCheckIns} is null or ${t.maxCheckIns} > 0`,
+    ),
+    check(idx("event_current_check_ins_check"), sql`${t.currentCheckIns} >= 0`),
   ],
 );
 
@@ -240,6 +246,7 @@ export const eventCheckIns = createTable(
       t.checkedInAt.desc(),
     ),
     check(idx("check_in_method_check"), sql`${t.method} in ('code', 'manual')`),
+    check(idx("check_in_points_earned_check"), sql`${t.pointsEarned} >= 0`),
   ],
 );
 
