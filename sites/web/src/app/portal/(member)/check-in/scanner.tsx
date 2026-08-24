@@ -285,7 +285,9 @@ export function Scanner({
         aria-live="polite"
         className={live ? "sr-only" : "text-ink-muted text-body-sm mt-3"}
       >
-        {live ? "Camera is scanning the check-in code." : "Starting the camera..."}
+        {live
+          ? "Camera is scanning the check-in code."
+          : "Starting the camera..."}
       </p>
     </div>
   );

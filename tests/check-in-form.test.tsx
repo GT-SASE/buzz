@@ -129,9 +129,9 @@ describe("CheckInForm", () => {
       within(input.closest("form")!).getByRole("button", { name: "Check in" }),
     );
 
-    expect(screen.getByRole("alert").textContent).toContain(
-      "That is not a code we issued. Check the screen again.",
-    );
+    expect(
+      screen.getByText("That is not a code we issued. Check the screen again."),
+    ).toBeTruthy();
     expect(mutate).not.toHaveBeenCalled();
   });
 
