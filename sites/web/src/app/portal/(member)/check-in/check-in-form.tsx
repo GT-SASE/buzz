@@ -359,10 +359,6 @@ export function CheckInForm({ initialCode }: { initialCode: string }) {
 
       <CardContent>
         <Scanner onDetect={submit} onUnavailable={setCameraNote} />
-
-        <div className="border-hairline mt-6 border-t pt-6">
-          <ManualCodeEntry onSubmit={submit} />
-        </div>
       </CardContent>
     </Card>
   );

@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { push } from "./mocks/next-navigation";
 
-const { mutate, toastError, mutation } = vi.hoisted(() => {
+const { mutate, toastError, mutation, cameraFail } = vi.hoisted(() => {
   const mutation: {
     isPending: boolean;
     data: unknown;
@@ -24,6 +24,7 @@ const { mutate, toastError, mutation } = vi.hoisted(() => {
     mutate: vi.fn(),
     toastError: vi.fn(),
     mutation,
+    cameraFail: { current: false },
   };
 });
 
@@ -83,9 +84,19 @@ vi.mock("~/trpc/react", () => ({
 
 vi.mock("~/app/portal/(member)/check-in/scanner", async (importOriginal) => {
   const actual = (await importOriginal()) as Record<string, unknown>;
+  const { useEffect } = await import("react");
   return {
     ...actual,
-    Scanner: () => <div data-testid="scanner" />,
+    Scanner: ({
+      onUnavailable,
+    }: {
+      onUnavailable: (reason: string) => void;
+    }) => {
+      useEffect(() => {
+        if (cameraFail.current) onUnavailable("This device has no camera.");
+      }, [onUnavailable]);
+      return cameraFail.current ? null : <div data-testid="scanner" />;
+    },
   };
 });
 
@@ -104,13 +115,15 @@ describe("CheckInForm", () => {
     mutation.data = undefined;
     mutation.error = undefined;
     mutation.onError = undefined;
+    cameraFail.current = false;
   });
 
   it("rejects a typed code that is not from the issued alphabet", async () => {
     const user = userEvent.setup();
+    cameraFail.current = true;
     render(<CheckInForm initialCode="" />);
 
-    const input = screen.getByLabelText(/enter the code instead/i);
+    const input = await screen.findByLabelText(/enter the code instead/i);
     await user.type(input, "IIIIII");
     await user.click(
       within(input.closest("form")!).getByRole("button", { name: "Check in" }),
@@ -124,9 +137,10 @@ describe("CheckInForm", () => {
 
   it("submits a typed code that matches the issued alphabet", async () => {
     const user = userEvent.setup();
+    cameraFail.current = true;
     render(<CheckInForm initialCode="" />);
 
-    const input = screen.getByLabelText(/enter the code instead/i);
+    const input = await screen.findByLabelText(/enter the code instead/i);
     await user.type(input, "abcd2345");
     await user.click(
       within(input.closest("form")!).getByRole("button", { name: "Check in" }),
