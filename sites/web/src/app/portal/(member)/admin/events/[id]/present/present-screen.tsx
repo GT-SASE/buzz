@@ -2,16 +2,15 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect } from "react";
 
+import { CheckInQr } from "~/app/portal/_components/check-in-qr";
 import { Honeycomb } from "~/app/portal/_components/honeycomb";
 import { Badge } from "~/components/ui/badge";
-import { Skeleton } from "~/components/ui/skeleton";
 import { api } from "~/trpc/react";
 
 export function PresentScreen({ eventId }: { eventId: string }) {
   const router = useRouter();
-  const [qr, setQr] = useState<string | null>(null);
   const eventPath = `/portal/admin/events/${eventId}`;
 
   // Nobody touches a projector for the length of a GBM, which is precisely what
@@ -30,7 +29,7 @@ export function PresentScreen({ eventId }: { eventId: string }) {
         sentinel = await navigator.wakeLock.request("screen");
       } catch {
         // Refused by the platform or the battery state. The wall still shows
-        // the code; it just dims on the usual timer.
+        // the QR; it just dims on the usual timer.
       }
     };
 
@@ -57,14 +56,8 @@ export function PresentScreen({ eventId }: { eventId: string }) {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [router, eventPath]);
 
-  const origin = useSyncExternalStore(
-    () => () => undefined,
-    () => window.location.origin,
-    () => "",
-  );
-
   // Polled: the count on the wall is the only feedback an officer gets that the
-  // door is working, and a stale zero looks like a broken code.
+  // door is working, and a stale zero looks like a broken QR.
   const detail = api.event.getById.useQuery(
     { id: eventId },
     { refetchInterval: 10_000 },
@@ -73,45 +66,12 @@ export function PresentScreen({ eventId }: { eventId: string }) {
   const event = detail.data?.event;
 
   // The same three facts `event.checkIn` tests, so the wall cannot advertise a
-  // code the door has already started refusing.
+  // QR the door has already started refusing.
   const open =
     event?.archivedAt === null &&
     event.checkInEnabled &&
     detail.data?.isPast === false;
 
-  // Fragment, not query: the bearer must not land in server logs or Referer.
-  const url =
-    origin && event && open
-      ? `${origin}/portal/check-in#code=${event.checkInCode}`
-      : null;
-
-  useEffect(() => {
-    // Clearing matters as much as drawing: holding the last PNG would leave a
-    // live-looking code on the wall after an officer closed the door.
-    if (!url) {
-      setQr(null);
-      return;
-    }
-    let cancelled = false;
-
-    void (async () => {
-      const { toDataURL } = await import("qrcode");
-      const png = await toDataURL(url, {
-        errorCorrectionLevel: "H",
-        margin: 1,
-        width: 1024,
-        color: { dark: "#003057ff", light: "#fdfaf4ff" },
-      });
-      if (!cancelled) setQr(png);
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [url]);
-
-  const code = event?.checkInCode ?? "";
-  const groups = code.match(/.{1,4}/g) ?? [];
   const closed = detail.data !== undefined && !open;
 
   return (
@@ -139,43 +99,25 @@ export function PresentScreen({ eventId }: { eventId: string }) {
             </p>
             <p className="mt-8 text-[clamp(1.125rem,1.8vw,2rem)] font-semibold text-white/75">
               {event?.archivedAt
-                ? "This event is archived. The code will not admit anyone."
+                ? "This event is archived. This QR will not admit anyone."
                 : detail.data?.isPast
                   ? "Check-in closed automatically 24 hours after this event started."
-                  : "Check-in is closed. This code will not admit anyone."}
+                  : "Check-in is closed. This QR will not admit anyone."}
             </p>
           </div>
-        ) : (
-          // QR fills leftover wall so a phone across the room can lock on
-          // without pinch-zoom. The code under it is the no-camera fallback,
-          // sized to read from the back row.
+        ) : event ? (
           <div className="flex h-full min-h-0 w-full flex-col items-center justify-center gap-4 sm:gap-5">
             <div className="flex min-h-0 w-full flex-1 items-center justify-center">
-              {qr ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={qr}
-                  alt=""
-                  className="bg-paper h-full max-h-full w-auto max-w-full object-contain p-3 sm:p-5"
-                />
-              ) : (
-                <Skeleton className="aspect-square h-full max-h-[min(70vh,40rem)] w-auto max-w-full rounded-none bg-white/10" />
-              )}
+              <CheckInQr
+                code={event.checkInCode}
+                className="h-full max-h-full w-auto max-w-full p-3 sm:p-5"
+              />
             </div>
-
             <p className="text-gold-bright tracking-masthead shrink-0 text-[clamp(1rem,2vw,2rem)] font-semibold uppercase">
-              {open
-                ? "Scan this, or type the code"
-                : "Ask an officer to add you"}
+              Scan to check in
             </p>
-
-            {code && (
-              <p className="text-gold-bright shrink-0 font-mono text-[clamp(1.75rem,8vw,6rem)] font-bold tracking-[0.12em] break-all tabular-nums sm:tracking-[0.18em]">
-                {groups.join(" ")}
-              </p>
-            )}
           </div>
-        )}
+        ) : null}
       </div>
 
       <footer className="relative flex shrink-0 items-center justify-end">

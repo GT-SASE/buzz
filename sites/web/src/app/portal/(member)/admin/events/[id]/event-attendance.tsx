@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { CheckInQr } from "~/app/portal/_components/check-in-qr";
 import { Honeycomb } from "~/app/portal/_components/honeycomb";
 import { EmptyState } from "~/app/portal/_components/portal-ui";
 import { downloadCsv, toCsv } from "~/app/portal/_lib/csv";
@@ -41,9 +42,6 @@ import { api, type RouterOutputs } from "~/trpc/react";
 
 type RosterRow = RouterOutputs["event"]["getById"]["roster"][number];
 type DoorState = "open" | "closed" | "archived";
-
-/** What officers read out. Bare host, because it goes on a slide. */
-const checkInHost = site.url.replace(/^https?:\/\//, "");
 
 const columnHeading =
   "text-eyebrow tracking-caps text-ink-muted h-auto py-3 font-semibold uppercase";

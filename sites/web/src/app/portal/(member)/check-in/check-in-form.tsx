@@ -17,93 +17,10 @@ import {
   CardHeader,
   CardTitle,
 } from "~/components/ui/card";
-import { Input } from "~/components/ui/input";
-import { Label } from "~/components/ui/label";
 import { Spinner } from "~/components/ui/spinner";
 import { site } from "~/data/site";
 import { api } from "~/trpc/react";
 import { Scanner, codeFromScan } from "./scanner";
-
-function CodePlate({ code }: { code: string }) {
-  return (
-    <p className="font-display text-navy font-mono text-2xl font-bold tracking-[0.12em] break-all tabular-nums sm:text-3xl sm:tracking-[0.2em]">
-      {code}
-    </p>
-  );
-}
-
-/**
- * The fallback for a camera that will not open — a blocked prompt, a laptop
- * with no rear camera, a cracked lens. The code is printed under the QR on the
- * projector for exactly this. Held to the issued alphabet before it is sent,
- * so a typo is answered here rather than by the rate limiter.
- */
-function ManualCodeEntry({ onSubmit }: { onSubmit: (code: string) => void }) {
-  const [value, setValue] = useState("");
-  const [error, setError] = useState<string | null>(null);
-
-  return (
-    <form
-      onSubmit={(event) => {
-        event.preventDefault();
-        const code = codeFromScan(value);
-        if (!code) {
-          setError("That is not a code we issued. Check the screen again.");
-          return;
-        }
-        setError(null);
-        onSubmit(code);
-      }}
-    >
-      <Label
-        htmlFor="manual-code"
-        className="text-eyebrow tracking-masthead text-ink-muted font-semibold uppercase"
-      >
-        Enter the code instead
-      </Label>
-
-      <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-        <Input
-          id="manual-code"
-          value={value}
-          onChange={(event) => {
-            setValue(event.target.value);
-            if (error) setError(null);
-          }}
-          // A code is drawn from an unambiguous alphabet, so the keyboard has
-          // no reason to autocorrect, capitalise or autocomplete it.
-          autoCapitalize="characters"
-          autoComplete="off"
-          autoCorrect="off"
-          spellCheck={false}
-          inputMode="text"
-          maxLength={12}
-          placeholder="ABCD12"
-          aria-describedby={error ? "manual-code-error" : undefined}
-          aria-invalid={error ? true : undefined}
-          className="border-hairline bg-paper min-w-40 flex-1 rounded-md font-mono text-base tracking-[0.2em] uppercase"
-        />
-        <Button
-          type="submit"
-          variant="outline"
-          className="border-hairline text-navy hover:bg-cream h-11 w-full rounded-md font-semibold sm:w-auto"
-        >
-          Check in
-        </Button>
-      </div>
-
-      {error && (
-        <p
-          id="manual-code-error"
-          role="alert"
-          className="text-destructive text-body-sm mt-3"
-        >
-          {error}
-        </p>
-      )}
-    </form>
-  );
-}
 
 function codeFromHash() {
   if (typeof window === "undefined") return "";
@@ -118,11 +35,10 @@ export function CheckInForm({ initialCode }: { initialCode: string }) {
   const router = useRouter();
   const utils = api.useUtils();
 
-  /** Set when a code arrives in the URL, which needs a tap before it fires. */
+  /** Set when a QR arrives in the URL, which needs a tap before it fires. */
   const [confirm, setConfirm] = useState(() =>
     (codeFromHash() || initialCode).toUpperCase(),
   );
-  const [submitted, setSubmitted] = useState("");
   /** Why the camera is not on screen, when it could not be started. */
   const [cameraNote, setCameraNote] = useState<string | null>(null);
 
@@ -159,7 +75,6 @@ export function CheckInForm({ initialCode }: { initialCode: string }) {
 
   const submit = (code: string) => {
     if (checkIn.isPending) return;
-    setSubmitted(code);
     checkIn.mutate({ code });
   };
 
@@ -203,7 +118,7 @@ export function CheckInForm({ initialCode }: { initialCode: string }) {
     );
   }
 
-  // The camera is released the moment a code is read, so this replaces the
+  // The camera is released the moment a QR is read, so this replaces the
   // viewfinder rather than sitting under it.
   if (checkIn.isPending) {
     return (
@@ -213,7 +128,6 @@ export function CheckInForm({ initialCode }: { initialCode: string }) {
           className="grid justify-items-center gap-4 py-14 text-center"
         >
           <Spinner className="text-gold-bright size-8" />
-          <CodePlate code={submitted} />
           <p className="text-ink-muted text-body-sm">Checking you in...</p>
         </CardContent>
       </Card>
@@ -272,9 +186,9 @@ export function CheckInForm({ initialCode }: { initialCode: string }) {
     return (
       <Card className="border-hairline bg-paper rounded-lg">
         <CardHeader>
-          <Eyebrow tone="muted">Code scanned</Eyebrow>
-          <CardTitle className="mt-2">
-            <CodePlate code={confirm} />
+          <Eyebrow tone="muted">QR scanned</Eyebrow>
+          <CardTitle className="font-display text-navy text-h3 mt-2 font-bold">
+            Check in to this event?
           </CardTitle>
         </CardHeader>
 
@@ -293,7 +207,7 @@ export function CheckInForm({ initialCode }: { initialCode: string }) {
               onClick={() => setConfirm("")}
               className="text-ink-muted hover:text-navy hover:bg-cream text-body-sm min-h-11 rounded-md font-semibold"
             >
-              Scan a different code
+              Scan a different QR
             </Button>
           </div>
         </CardContent>
@@ -301,7 +215,6 @@ export function CheckInForm({ initialCode }: { initialCode: string }) {
     );
   }
 
-  // The scanner failed. Typing the wall code still works; say who else can help.
   if (cameraNote) {
     return (
       <Card className="border-hairline bg-paper rounded-lg">
@@ -317,15 +230,10 @@ export function CheckInForm({ initialCode }: { initialCode: string }) {
             </AlertDescription>
           </Alert>
 
-          <div className="border-hairline mt-6 border-t pt-6">
-            <ManualCodeEntry onSubmit={submit} />
-          </div>
-
           <p className="text-ink-muted text-body-sm mt-6">
-            The code is printed under the QR code at the front of the room. You
-            can also point your phone&rsquo;s own camera at the QR code — it
-            opens this page with the code already in it. Otherwise ask an
-            officer to add you, or email{" "}
+            Point your phone&rsquo;s own camera at the QR on the screen — it
+            opens this page ready to check in. Otherwise ask an officer to add
+            you, or email{" "}
             <a
               href={`mailto:${site.email}`}
               className="text-navy inline-flex min-h-11 items-center underline"
@@ -361,9 +269,6 @@ export function CheckInForm({ initialCode }: { initialCode: string }) {
 
       <CardContent>
         <Scanner onDetect={submit} onUnavailable={setCameraNote} />
-        <div className="border-hairline mt-6 border-t pt-6">
-          <ManualCodeEntry onSubmit={submit} />
-        </div>
       </CardContent>
     </Card>
   );

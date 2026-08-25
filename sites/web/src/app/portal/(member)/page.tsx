@@ -57,7 +57,7 @@ export default async function PortalDashboard() {
                 <span className="mt-1 block text-white/70">
                   {isOfficer
                     ? "Put the QR on a screen. Check yourself in from the event."
-                    : "Scan the QR on the screen, or type the code"}
+                    : "Scan the QR on the screen"}
                 </span>
               </span>
               <ArrowRight
