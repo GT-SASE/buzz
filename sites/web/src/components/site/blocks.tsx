@@ -67,6 +67,7 @@ export function EventCard({
     displayDate: string;
     location: string | null;
     description: string | null;
+    reminder?: boolean;
   };
 }) {
   return (
@@ -74,6 +75,14 @@ export function EventCard({
       <p className="text-gold-ink text-eyebrow tracking-masthead font-semibold uppercase">
         {event.displayDate}
       </p>
+      {event.reminder && (
+        <Badge
+          variant="outline"
+          className="border-hairline text-ink-muted text-eyebrow tracking-masthead mt-3 w-fit rounded-md px-2.5 py-1 font-semibold uppercase"
+        >
+          Campus reminder
+        </Badge>
+      )}
       <h3 className="font-display text-navy text-h3 mt-5 font-bold">
         {event.title}
       </h3>

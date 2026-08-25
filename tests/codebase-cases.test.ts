@@ -10,6 +10,7 @@ import {
 import { firstParam, safeRedirectPath } from "~/app/portal/_lib/paths";
 import { codeFromScan } from "~/app/portal/(member)/check-in/scanner";
 import { stats, marqueeItems, missionPillars, programs } from "~/data/content";
+import { featuredPastEvents, pastEventYears } from "~/data/past-events";
 import { adminNav, portalNav, tierFor, tiers } from "~/data/portal";
 import {
   discord,
@@ -695,9 +696,24 @@ function buildCases(): Case[] {
     const slugs = programs.map((program) => program.slug);
     expect(new Set(slugs).size).toBe(slugs.length);
   });
-  add("content/stats", () => expect(stats.length).toBeGreaterThan(0));
-  add("content/marquee", () => expect(marqueeItems.length).toBeGreaterThan(0));
-  add("content/pillars", () => expect(missionPillars.length).toBe(3));
+  add("content/home-copy", () => {
+    expect(stats.length).toBeGreaterThan(0);
+    expect(marqueeItems.length).toBeGreaterThan(0);
+    expect(missionPillars.length).toBe(3);
+  });
+  add("content/archive-featured", () =>
+    expect(featuredPastEvents).toHaveLength(6),
+  );
+  add("content/archive-live-split", () => {
+    const titles = [
+      ...featuredPastEvents.map((event) => event.title),
+      ...pastEventYears.flatMap((group) =>
+        group.events.map((event) => event.title),
+      ),
+    ];
+    expect(titles).not.toContain("Fall Org Fair");
+    expect(titles).not.toContain("September Drawing Challenge GBM");
+  });
 
   return cases;
 }

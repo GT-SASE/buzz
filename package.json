@@ -21,6 +21,7 @@
     "db:migrate": "pnpm --filter @buzz/db db:migrate",
     "db:push": "pnpm --filter @buzz/db db:push",
     "db:seed": "pnpm --filter @buzz/db db:seed",
+    "db:seed:calendar": "pnpm --filter @buzz/db db:seed:calendar",
     "db:studio": "pnpm --filter @buzz/db db:studio"
   },
   "devDependencies": {

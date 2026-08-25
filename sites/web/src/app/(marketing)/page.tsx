@@ -51,9 +51,10 @@ export const metadata = pageMetadata({
 
 export default async function Home() {
   const { upcoming } = await getChapterEvents();
-  const nextUp = upcoming[0];
+  const hosted = upcoming.filter((event) => !event.reminder);
+  const nextUp = hosted[0];
   // The hero already prints the soonest event, so the band starts after it.
-  const calendar = upcoming.slice(1, 4);
+  const calendar = hosted.slice(1, 4);
 
   return (
     <>
