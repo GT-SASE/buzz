@@ -30,7 +30,7 @@ export function SiteFooter() {
             <TextLink
               href={`mailto:${site.email}`}
               tone="gold"
-              className="mt-6 py-1.5"
+              className="mt-6 min-h-11 py-3"
             >
               {site.email}
             </TextLink>
@@ -78,7 +78,7 @@ export function SiteFooter() {
             <TextLink
               href={`mailto:${site.email}?subject=Sponsorship%20packet`}
               tone="gold"
-              className="mt-4 py-1.5"
+              className="mt-4 min-h-11 py-3"
             >
               Request the sponsorship packet
             </TextLink>
@@ -94,7 +94,7 @@ export function SiteFooter() {
           <Link
             href="/portal"
             prefetch={false}
-            className="py-3 font-semibold transition hover:text-white"
+            className="inline-flex min-h-11 items-center py-3 font-semibold transition hover:text-white"
           >
             Member portal
           </Link>

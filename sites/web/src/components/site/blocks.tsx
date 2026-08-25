@@ -44,7 +44,7 @@ export function BoardRow({ member }: { member: BoardMember }) {
         {member.email && (
           <a
             href={`mailto:${member.email}`}
-            className="text-navy decoration-gold hover:text-gold-ink text-body-sm font-semibold underline decoration-2 underline-offset-4 transition"
+            className="text-navy decoration-gold hover:text-gold-ink text-body-sm min-h-11 py-3 font-semibold break-all underline decoration-2 underline-offset-4 transition"
           >
             {member.email}
           </a>

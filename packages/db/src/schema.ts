@@ -57,8 +57,8 @@ export const users = createTable(
      * column exists, so anything `notNull` here needs a default at the database
      * level, not just in the builder.
      *
-     * Officers are promoted via ADMIN_EMAILS on sign-in, or by hand in
-     * `pnpm db:studio`. There is no in-app promotion UI.
+     * Officers are promoted via ADMIN_EMAILS on sign-in, by an existing
+     * officer from the roster, or by hand in `pnpm db:studio`.
      */
     role: d
       .varchar({ length: 16 })
@@ -298,10 +298,7 @@ export const mentorshipEnrollments = createTable(
   }),
   (t) => [
     index(idx("mentorship_status_idx")).on(t.status),
-    check(
-      idx("mentorship_role_check"),
-      sql`${t.role} in ('mentor', 'mentee')`,
-    ),
+    check(idx("mentorship_role_check"), sql`${t.role} in ('mentor', 'mentee')`),
     check(
       idx("mentorship_status_check"),
       sql`${t.status} in ('interested', 'enrolled', 'withdrawn')`,

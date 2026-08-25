@@ -17,7 +17,7 @@ export default async function AdminLayout({
   return (
     <>
       {children}
-      <Toaster position="bottom-right" />
+      <Toaster position="bottom-center" />
     </>
   );
 }

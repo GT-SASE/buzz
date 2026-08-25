@@ -27,7 +27,7 @@ export function PortalTabs({ isOfficer }: { isOfficer: boolean }) {
     <nav aria-label="Portal" className="border-hairline border-t">
       <ul
         role="list"
-        className="max-w-content mx-auto flex min-w-0 items-center gap-1 overflow-x-auto px-3 sm:px-6"
+        className="max-w-content mx-auto flex min-w-0 items-center gap-1 overflow-x-auto overscroll-x-contain px-3 sm:px-6"
       >
         {tabs.map((tab) => {
           const active = tab.href === activeHref;

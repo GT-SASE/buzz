@@ -20,6 +20,14 @@ type PublicEvent = {
   displayDate: string;
 };
 
+type StoredEvent = {
+  id: string;
+  title: string;
+  description: string | null;
+  location: string | null;
+  startsAt: string;
+};
+
 const dayAndTime = new Intl.DateTimeFormat("en-US", {
   month: "short",
   day: "numeric",
@@ -32,6 +40,10 @@ const dayAndTime = new Intl.DateTimeFormat("en-US", {
 /** An event stays on the calendar until it is a day old, then moves to past. */
 const SETTLE_MS = 24 * 60 * 60 * 1000;
 
+/** `next dev` ignores page `revalidate`, so this is what stops a Postgres
+ * round-trip on every homepage refresh. Production ISR still caches the HTML. */
+const CALENDAR_TTL_MS = 60_000;
+
 const columns = {
   id: events.id,
   title: events.title,
@@ -42,24 +54,27 @@ const columns = {
   // the one query whose output reaches an unauthenticated page.
 } as const;
 
-const withDisplayDate = (row: Omit<PublicEvent, "displayDate">) => ({
-  ...row,
-  displayDate: dayAndTime.format(row.startsAt),
-});
+const revive = (row: StoredEvent): PublicEvent => {
+  const startsAt = new Date(row.startsAt);
+  return {
+    ...row,
+    startsAt,
+    displayDate: dayAndTime.format(startsAt),
+  };
+};
 
-export async function getChapterEvents() {
-  const cutoff = new Date(Date.now() - SETTLE_MS);
+type CalendarPayload = { upcoming: StoredEvent[]; past: StoredEvent[] };
 
-  // The public site is required to build with no environment at all. That is
-  // the ONLY case an empty calendar is the right answer for.
+const globalForCalendar = globalThis as unknown as {
+  chapterEvents: { expiresAt: number; payload: CalendarPayload } | undefined;
+};
+
+async function fetchChapterEvents(): Promise<CalendarPayload> {
   if (!process.env.DATABASE_URL) return { upcoming: [], past: [] };
 
+  const cutoff = new Date(Date.now() - SETTLE_MS);
+
   try {
-    // Two queries, each bounded from now, rather than one ascending window over
-    // the whole table. A single `order by starts_at asc limit n` returns the
-    // EARLIEST rows, so once the chapter has more than n unarchived events the
-    // limit is consumed entirely by history and newly published events stop
-    // appearing — silently, with an empty calendar and no error anywhere.
     const [upcoming, past] = await Promise.all([
       db
         .select(columns)
@@ -76,13 +91,16 @@ export async function getChapterEvents() {
     ]);
 
     return {
-      upcoming: upcoming.map(withDisplayDate),
-      past: past.map(withDisplayDate),
+      upcoming: upcoming.map((row) => ({
+        ...row,
+        startsAt: row.startsAt.toISOString(),
+      })),
+      past: past.map((row) => ({
+        ...row,
+        startsAt: row.startsAt.toISOString(),
+      })),
     };
   } catch (error) {
-    // Prefer an empty calendar over the unstyled Next error page on a cold
-    // render. Marketing routes catch this at the segment boundary too, but
-    // returning here keeps the homepage and /events themselves green.
     console.error(
       JSON.stringify({
         level: "error",
@@ -93,4 +111,22 @@ export async function getChapterEvents() {
     );
     return { upcoming: [], past: [] };
   }
+}
+
+export async function getChapterEvents() {
+  const now = Date.now();
+  const memo = globalForCalendar.chapterEvents;
+  if (memo && now < memo.expiresAt) {
+    return {
+      upcoming: memo.payload.upcoming.map(revive),
+      past: memo.payload.past.map(revive),
+    };
+  }
+
+  const payload = await fetchChapterEvents();
+  globalForCalendar.chapterEvents = { expiresAt: now + CALENDAR_TTL_MS, payload };
+  return {
+    upcoming: payload.upcoming.map(revive),
+    past: payload.past.map(revive),
+  };
 }

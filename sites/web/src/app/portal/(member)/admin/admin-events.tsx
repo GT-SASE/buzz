@@ -137,7 +137,7 @@ function EventForm({
           required
           maxLength={200}
           defaultValue={event?.title ?? ""}
-          className="font-display font-bold"
+          className="font-display text-base font-bold"
         />
       </div>
 
@@ -150,7 +150,7 @@ function EventForm({
             type="datetime-local"
             required
             defaultValue={event ? toLocalInputValue(event.startsAt) : undefined}
-            className="tabular-nums"
+            className="text-base tabular-nums"
           />
         </div>
 
@@ -164,7 +164,7 @@ function EventForm({
             max={100}
             required
             defaultValue={event?.pointsValue ?? 10}
-            className="tabular-nums"
+            className="text-base tabular-nums"
           />
         </div>
 
@@ -174,7 +174,10 @@ function EventForm({
             value={limited ? "limited" : "unlimited"}
             onValueChange={(value) => setLimited(value === "limited")}
           >
-            <SelectTrigger id="capacityMode" className="w-full">
+            <SelectTrigger
+              id="capacityMode"
+              className="h-auto min-h-11 w-full text-base"
+            >
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -194,7 +197,7 @@ function EventForm({
               min={1}
               required
               defaultValue={event?.maxCheckIns ?? ""}
-              className="tabular-nums"
+              className="text-base tabular-nums"
             />
           </div>
         )}
@@ -207,6 +210,7 @@ function EventForm({
           name="location"
           maxLength={200}
           defaultValue={event?.location ?? ""}
+          className="text-base"
         />
       </div>
 
@@ -218,6 +222,7 @@ function EventForm({
           rows={3}
           maxLength={1000}
           defaultValue={event?.description ?? ""}
+          className="text-base"
         />
       </div>
 
@@ -229,13 +234,13 @@ function EventForm({
         </p>
       )}
 
-      <DialogFooter className="mt-2">
+      <DialogFooter className="mt-2 gap-2 sm:gap-2">
         <DialogClose asChild>
-          <Button type="button" variant="outline">
+          <Button type="button" variant="outline" className="min-h-11">
             Cancel
           </Button>
         </DialogClose>
-        <Button type="submit" disabled={pending}>
+        <Button type="submit" disabled={pending} className="min-h-11">
           {pending ? "Saving..." : event ? "Save changes" : "Create event"}
         </Button>
       </DialogFooter>
@@ -293,7 +298,33 @@ function StatusBadges({ event }: { event: AdminEvent }) {
   );
 }
 
-function EventRow({ event }: { event: AdminEvent }) {
+function EventIdentity({ event }: { event: AdminEvent }) {
+  const archived = event.archivedAt !== null;
+
+  return (
+    <>
+      <span
+        className={cn(
+          "font-display text-body block font-bold",
+          archived ? "text-ink-muted" : "text-navy",
+        )}
+      >
+        {event.title}
+      </span>
+      <span className="text-ink-muted text-body-sm mt-1 block">
+        {formatEventTime(event.startsAt)}
+        {event.location ? ` · ${event.location}` : ""}
+      </span>
+      {archived && (
+        <span className="text-ink-muted/80 text-body-sm mt-1 block italic">
+          Hidden from members
+        </span>
+      )}
+    </>
+  );
+}
+
+function EventActions({ event }: { event: AdminEvent }) {
   const utils = api.useUtils();
 
   // Not just the list: the attendance screen reads `getById`, so it would
@@ -331,25 +362,82 @@ function EventRow({ event }: { event: AdminEvent }) {
   const openingIsUrgent = !archived && !event.checkInEnabled && !event.isPast;
 
   return (
+    <div className="flex flex-wrap items-center gap-2 md:justify-end">
+      <Button asChild variant="outline" className="min-h-11">
+        <Link href={`/portal/admin/events/${event.id}`}>Attendance</Link>
+      </Button>
+
+      {/* Disabled on an archived event because `event.checkIn` refuses one
+          outright. */}
+      <Button
+        className="min-h-11"
+        variant={openingIsUrgent ? "default" : "outline"}
+        disabled={toggle.isPending || archived}
+        onClick={() =>
+          toggle.mutate({ id: event.id, enabled: !event.checkInEnabled })
+        }
+      >
+        {event.checkInEnabled ? "Close check-in" : "Open check-in"}
+      </Button>
+
+      <EventDialog
+        event={event}
+        trigger={
+          <Button className="min-h-11" variant="ghost">
+            Edit
+          </Button>
+        }
+      />
+
+      {/* Archiving is reversible on purpose: an event with attendance is
+          chapter history and must never be deletable from this screen. */}
+      <AlertDialog>
+        <AlertDialogTrigger asChild>
+          <Button
+            variant="ghost"
+            className="text-ink-muted hover:bg-cream hover:text-navy min-h-11"
+            disabled={archive.isPending}
+          >
+            {archived ? "Restore" : "Archive"}
+          </Button>
+        </AlertDialogTrigger>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {archived ? "Restore this event?" : "Archive this event?"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {archived
+                ? `"${event.title}" goes back on the members' list and its code works again.`
+                : `"${event.title}" keeps its ${event.attendees} recorded check-ins, but members stop seeing it and its code stops working.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className={cn(
+                !archived && buttonVariants({ variant: "destructive" }),
+              )}
+              onClick={() =>
+                archive.mutate({ id: event.id, archived: !archived })
+              }
+            >
+              {archived ? "Yes, restore" : "Yes, archive"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}
+
+function EventRow({ event }: { event: AdminEvent }) {
+  const archived = event.archivedAt !== null;
+
+  return (
     <TableRow className={cn(archived && "bg-cream/60")}>
       <TableCell className="py-4 whitespace-normal">
-        <span
-          className={cn(
-            "font-display text-body block font-bold",
-            archived ? "text-ink-muted" : "text-navy",
-          )}
-        >
-          {event.title}
-        </span>
-        <span className="text-ink-muted text-body-sm mt-1 block">
-          {formatEventTime(event.startsAt)}
-          {event.location ? ` · ${event.location}` : ""}
-        </span>
-        {archived && (
-          <span className="text-ink-muted/80 text-body-sm mt-1 block italic">
-            Hidden from members
-          </span>
-        )}
+        <EventIdentity event={event} />
       </TableCell>
 
       <TableCell className="py-4">
@@ -365,76 +453,36 @@ function EventRow({ event }: { event: AdminEvent }) {
         {event.maxCheckIns !== null ? ` of ${event.maxCheckIns}` : ""}
       </TableCell>
 
-      <TableCell className="py-4">
-        <div className="flex items-center justify-end gap-1.5">
-          <Button asChild variant="outline" size="sm">
-            <Link href={`/portal/admin/events/${event.id}`}>Attendance</Link>
-          </Button>
-
-          {/* Disabled on an archived event because `event.checkIn` refuses one
-              outright. */}
-          <Button
-            size="sm"
-            variant={openingIsUrgent ? "default" : "outline"}
-            disabled={toggle.isPending || archived}
-            onClick={() =>
-              toggle.mutate({ id: event.id, enabled: !event.checkInEnabled })
-            }
-          >
-            {event.checkInEnabled ? "Close check-in" : "Open check-in"}
-          </Button>
-
-          <EventDialog
-            event={event}
-            trigger={
-              <Button size="sm" variant="ghost">
-                Edit
-              </Button>
-            }
-          />
-
-          {/* Archiving is reversible on purpose: an event with attendance is
-              chapter history and must never be deletable from this screen. */}
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="text-ink-muted hover:bg-cream hover:text-navy"
-                disabled={archive.isPending}
-              >
-                {archived ? "Restore" : "Archive"}
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>
-                  {archived ? "Restore this event?" : "Archive this event?"}
-                </AlertDialogTitle>
-                <AlertDialogDescription>
-                  {archived
-                    ? `"${event.title}" goes back on the members' list and its code works again.`
-                    : `"${event.title}" keeps its ${event.attendees} recorded check-ins, but members stop seeing it and its code stops working.`}
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction
-                  className={cn(
-                    !archived && buttonVariants({ variant: "destructive" }),
-                  )}
-                  onClick={() =>
-                    archive.mutate({ id: event.id, archived: !archived })
-                  }
-                >
-                  {archived ? "Yes, restore" : "Yes, archive"}
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-        </div>
+      <TableCell className="py-4 whitespace-normal">
+        <EventActions event={event} />
       </TableCell>
     </TableRow>
+  );
+}
+
+function EventCard({ event }: { event: AdminEvent }) {
+  const archived = event.archivedAt !== null;
+
+  return (
+    <li
+      className={cn(
+        "border-hairline rounded-lg border px-4 py-4",
+        archived && "bg-cream/60",
+      )}
+    >
+      <EventIdentity event={event} />
+      <div className="mt-3">
+        <StatusBadges event={event} />
+      </div>
+      <p className="text-ink-muted text-body-sm mt-2 tabular-nums">
+        {event.pointsValue} pts · {event.attendees}
+        {event.maxCheckIns !== null ? ` of ${event.maxCheckIns}` : ""} checked
+        in
+      </p>
+      <div className="mt-4">
+        <EventActions event={event} />
+      </div>
+    </li>
   );
 }
 
@@ -455,7 +503,9 @@ export function AdminEvents() {
     return filter === "Past" ? event.isPast : !event.isPast;
   });
 
-  const createAction = <EventDialog trigger={<Button>New event</Button>} />;
+  const createAction = (
+    <EventDialog trigger={<Button className="min-h-11">New event</Button>} />
+  );
 
   return (
     <div>
@@ -464,7 +514,7 @@ export function AdminEvents() {
         <div
           role="group"
           aria-label="Filter events"
-          className="ring-hairline bg-cream inline-flex gap-1 rounded-full p-1 ring-1"
+          className="ring-hairline bg-cream flex max-w-full gap-1 overflow-x-auto overscroll-x-contain rounded-full p-1 ring-1"
         >
           {filters.map((option) => (
             <Button
@@ -474,7 +524,7 @@ export function AdminEvents() {
               aria-pressed={filter === option}
               onClick={() => setFilter(option)}
               className={cn(
-                "text-eyebrow tracking-caps rounded-full font-semibold uppercase",
+                "text-eyebrow tracking-caps min-h-11 shrink-0 rounded-full font-semibold uppercase",
                 filter !== option &&
                   "text-ink-muted hover:bg-paper hover:text-navy",
               )}
@@ -523,24 +573,32 @@ export function AdminEvents() {
               </p>
             </div>
 
-            <Table label="Events" className="border-hairline border-b">
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Event</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Points</TableHead>
-                  <TableHead>Checked in</TableHead>
-                  <TableHead className="text-right">
-                    <span className="sr-only">Actions</span>
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {visible.map((event) => (
-                  <EventRow key={event.id} event={event} />
-                ))}
-              </TableBody>
-            </Table>
+            <ul className="mt-4 grid gap-4 md:hidden">
+              {visible.map((event) => (
+                <EventCard key={event.id} event={event} />
+              ))}
+            </ul>
+
+            <div className="hidden md:block">
+              <Table label="Events" className="border-hairline border-b">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Event</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Points</TableHead>
+                    <TableHead>Checked in</TableHead>
+                    <TableHead className="text-right">
+                      <span className="sr-only">Actions</span>
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {visible.map((event) => (
+                    <EventRow key={event.id} event={event} />
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           </>
         ) : (
           <div className="border-hairline bg-cream rounded-lg border border-dashed px-6 py-14 text-center">

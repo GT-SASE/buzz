@@ -112,45 +112,89 @@ export function Leaderboard() {
 
   return (
     <Board>
-      <Table label="Chapter leaderboard">
-        <TableCaption className="sr-only">
-          Members ranked by the points they have earned.
-        </TableCaption>
-        <TableHeader>
-          <TableRow className="hover:bg-transparent">
-            <TableHead className={cn(columnHeading, "w-12")}>Rank</TableHead>
-            <TableHead className={columnHeading}>Member</TableHead>
-            <TableHead className={cn(columnHeading, "text-right")}>
-              Events
-            </TableHead>
-            <TableHead className={cn(columnHeading, "text-right")}>
-              Points
-            </TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {top.map((row, index) => (
-            <Standing
-              key={index}
-              rank={row.rank}
-              name={row.name}
-              totalPoints={row.totalPoints}
-              totalEvents={row.totalEvents}
-              isYou={row.isYou}
-            />
-          ))}
-          {pinned && (
-            <Standing
-              rank={pinned.rank}
-              name="You"
-              totalPoints={pinned.totalPoints}
-              totalEvents={pinned.totalEvents}
-              isYou
-              pinned
-            />
-          )}
-        </TableBody>
-      </Table>
+      <ul className="mt-4 grid gap-3 md:hidden">
+        {top.map((row, index) => (
+          <li
+            key={index}
+            className={cn(
+              "border-hairline flex items-baseline justify-between gap-3 rounded-lg border px-4 py-3",
+              row.isYou && "bg-cream",
+            )}
+          >
+            <p className="min-w-0">
+              <span className="text-gold-ink font-bold tabular-nums">
+                {row.rank}
+              </span>
+              <span
+                className={cn(
+                  "text-navy ml-3",
+                  row.isYou ? "font-bold" : "font-medium",
+                )}
+              >
+                {row.isYou ? `${row.name} (you)` : row.name}
+              </span>
+            </p>
+            <p className="text-navy shrink-0 font-semibold tabular-nums">
+              {row.totalPoints}
+            </p>
+          </li>
+        ))}
+        {pinned && (
+          <li className="border-rule bg-cream flex items-baseline justify-between gap-3 rounded-lg border-t-2 px-4 py-3">
+            <p className="min-w-0">
+              <span className="text-gold-ink font-bold tabular-nums">
+                {pinned.rank}
+              </span>
+              <span className="text-navy ml-3 font-bold">You</span>
+            </p>
+            <p className="text-navy shrink-0 font-semibold tabular-nums">
+              {pinned.totalPoints}
+            </p>
+          </li>
+        )}
+      </ul>
+
+      <div className="hidden md:block">
+        <Table label="Chapter leaderboard">
+          <TableCaption className="sr-only">
+            Members ranked by the points they have earned.
+          </TableCaption>
+          <TableHeader>
+            <TableRow className="hover:bg-transparent">
+              <TableHead className={cn(columnHeading, "w-12")}>Rank</TableHead>
+              <TableHead className={columnHeading}>Member</TableHead>
+              <TableHead className={cn(columnHeading, "text-right")}>
+                Events
+              </TableHead>
+              <TableHead className={cn(columnHeading, "text-right")}>
+                Points
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {top.map((row, index) => (
+              <Standing
+                key={index}
+                rank={row.rank}
+                name={row.name}
+                totalPoints={row.totalPoints}
+                totalEvents={row.totalEvents}
+                isYou={row.isYou}
+              />
+            ))}
+            {pinned && (
+              <Standing
+                rank={pinned.rank}
+                name="You"
+                totalPoints={pinned.totalPoints}
+                totalEvents={pinned.totalEvents}
+                isYou
+                pinned
+              />
+            )}
+          </TableBody>
+        </Table>
+      </div>
 
       {you === null && (
         <p className="text-ink-muted text-body-sm mt-4">

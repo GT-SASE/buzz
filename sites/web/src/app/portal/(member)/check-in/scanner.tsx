@@ -251,7 +251,7 @@ export function Scanner({
 
   return (
     <div>
-      <div className="bg-navy relative mx-auto aspect-square w-full max-w-[22rem] overflow-hidden rounded-lg sm:max-w-none">
+      <div className="bg-navy relative mx-auto aspect-square w-full max-w-[min(22rem,calc(100dvh-14rem))] overflow-hidden rounded-lg">
         {/* Labelled rather than hidden: a screen reader user still has to know
             the camera is live and what it is pointed at. The status line below
             is the same element's description. */}

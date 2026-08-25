@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../packages/auth/src/index.ts", () => ({
   auth: () => Promise.resolve(null),
@@ -9,6 +9,7 @@ vi.mock("../packages/auth/src/index.ts", () => ({
 
 vi.stubEnv("NODE_ENV", "production");
 const { createCaller } = await import("../packages/api/src/root");
+const { resetRateLimits } = await import("../packages/api/src/rate-limit");
 vi.unstubAllEnvs();
 
 type Ctx = Parameters<typeof createCaller>[0];
@@ -57,6 +58,8 @@ const unreachableDb = new Proxy(
   },
 );
 
+beforeEach(() => resetRateLimits());
+
 describe("mentorship.list", () => {
   it("refuses a MEMBER session before reading", async () => {
     const error = await rejection(
@@ -97,10 +100,12 @@ describe("mentorship.expressInterest", () => {
       }),
     };
 
-    const result = await createCaller(memberCtx(db)).mentorship.expressInterest({
-      role: "mentee",
-      note: "CS, first year",
-    });
+    const result = await createCaller(memberCtx(db)).mentorship.expressInterest(
+      {
+        role: "mentee",
+        note: "CS, first year",
+      },
+    );
 
     expect(inserted).toHaveLength(1);
     expect(inserted[0]).toMatchObject({
@@ -141,6 +146,16 @@ describe("mentorship.expressInterest", () => {
 });
 
 describe("mentorship.setStatus", () => {
+  it("refuses a MEMBER session before writing", async () => {
+    const error = await rejection(
+      createCaller(memberCtx(unreachableDb)).mentorship.setStatus({
+        userId: "member-1",
+        status: "enrolled",
+      }),
+    );
+    expect(error.code).toBe("FORBIDDEN");
+  });
+
   it("lets an officer enroll someone who signed up", async () => {
     const sets: unknown[] = [];
     const db = {

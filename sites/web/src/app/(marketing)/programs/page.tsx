@@ -44,8 +44,8 @@ export default function ProgramsPage() {
               className="border-hairline rounded-none"
             >
               <AccordionTrigger className="[&>svg]:text-gold-ink items-center gap-6 rounded-none py-7 hover:no-underline">
-                <span className="grid flex-1 gap-x-16 gap-y-4 lg:grid-cols-[1.35fr_1fr] lg:items-center">
-                  <span className="flex items-center gap-5 sm:gap-8">
+                <span className="grid min-w-0 flex-1 gap-x-16 gap-y-4 lg:grid-cols-[1.35fr_1fr] lg:items-center">
+                  <span className="flex min-w-0 items-center gap-5 sm:gap-8">
                     <span
                       aria-hidden="true"
                       className="text-numeral tracking-caps text-gold-ink font-semibold"
@@ -56,11 +56,11 @@ export default function ProgramsPage() {
                       name={program.icon}
                       className="text-gold-ink size-7 shrink-0"
                     />
-                    <span className="font-display text-navy text-h3 font-bold">
+                    <span className="font-display text-navy text-h3 min-w-0 font-bold">
                       {program.title}
                     </span>
                   </span>
-                  <span className="text-ink-muted text-body-sm leading-relaxed font-normal">
+                  <span className="text-ink-muted text-body-sm hidden leading-relaxed font-normal lg:block">
                     {program.body}
                   </span>
                 </span>
@@ -68,9 +68,19 @@ export default function ProgramsPage() {
               {/* pr-10 clears the trigger's chevron so the detail lines up under
                   the summary it expands. */}
               <AccordionContent className="grid gap-x-16 pb-10 lg:grid-cols-[1.35fr_1fr] lg:pr-10">
-                <p className="text-ink-muted text-body max-w-measure leading-relaxed lg:col-start-2">
-                  {program.detail}
-                </p>
+                <div className="grid gap-5 lg:col-start-2">
+                  <p className="text-ink-muted text-body max-w-measure leading-relaxed">
+                    {program.detail}
+                  </p>
+                  {program.slug === "mentorship" && (
+                    <Button
+                      href="/portal/mentorship"
+                      className="w-full justify-center sm:w-auto"
+                    >
+                      Sign up in the portal
+                    </Button>
+                  )}
+                </div>
               </AccordionContent>
             </AccordionItem>
           ))}
@@ -83,7 +93,9 @@ export default function ProgramsPage() {
         title="Pick one and show up."
         lead="Every program starts at a general body meeting."
       >
-        <Button href="/join">Join SASE</Button>
+        <Button href="/join" className="w-full justify-center sm:w-auto">
+          Join SASE
+        </Button>
       </Section>
     </>
   );

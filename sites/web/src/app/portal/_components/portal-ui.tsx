@@ -17,10 +17,10 @@ export function PortalHeader({
 }) {
   return (
     <section className="bg-cream paper-wash border-hairline relative border-b">
-      <div className="max-w-content relative mx-auto grid gap-10 px-5 py-12 sm:px-6 sm:py-16 lg:grid-cols-[1fr_auto] lg:items-center lg:gap-16">
+      <div className="max-w-content relative mx-auto grid gap-6 px-5 py-8 sm:gap-10 sm:px-6 sm:py-16 lg:grid-cols-[1fr_auto] lg:items-center lg:gap-16">
         <div className="max-w-xl">
           <Eyebrow tone="gold">{eyebrow}</Eyebrow>
-          <h1 className="font-display text-navy text-h1 mt-5 font-bold tracking-tight text-balance">
+          <h1 className="font-display text-navy text-h2 sm:text-h1 mt-4 font-bold tracking-tight text-balance sm:mt-5">
             {title}
           </h1>
           {body && (
@@ -72,7 +72,7 @@ export function SignOutButton() {
         type="submit"
         variant="ghost"
         size="sm"
-        className="text-ink-muted hover:text-navy hover:bg-cream text-body-sm rounded-none font-semibold"
+        className="text-ink-muted hover:text-navy hover:bg-cream text-body-sm min-h-11 rounded-none font-semibold"
       >
         Sign out
       </Button>

@@ -26,7 +26,7 @@ import { Scanner, codeFromScan } from "./scanner";
 
 function CodePlate({ code }: { code: string }) {
   return (
-    <p className="font-display text-navy font-mono text-3xl font-bold tracking-[0.2em] tabular-nums">
+    <p className="font-display text-navy font-mono text-2xl font-bold tracking-[0.12em] break-all tabular-nums sm:text-3xl sm:tracking-[0.2em]">
       {code}
     </p>
   );
@@ -62,7 +62,7 @@ function ManualCodeEntry({ onSubmit }: { onSubmit: (code: string) => void }) {
         Enter the code instead
       </Label>
 
-      <div className="mt-3 flex flex-wrap gap-3">
+      <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
         <Input
           id="manual-code"
           value={value}
@@ -86,7 +86,7 @@ function ManualCodeEntry({ onSubmit }: { onSubmit: (code: string) => void }) {
         <Button
           type="submit"
           variant="outline"
-          className="border-hairline text-navy hover:bg-cream rounded-none font-semibold"
+          className="border-hairline text-navy hover:bg-cream h-11 w-full rounded-none font-semibold sm:w-auto"
         >
           Check in
         </Button>
@@ -194,7 +194,7 @@ export function CheckInForm({ initialCode }: { initialCode: string }) {
           <Button
             asChild
             size="lg"
-            className="bg-gold-bright text-navy hover:bg-gold text-eyebrow tracking-caps rounded-none px-6 font-semibold uppercase"
+            className="bg-gold-bright text-navy hover:bg-gold text-eyebrow tracking-caps h-auto min-h-12 rounded-none px-6 font-semibold uppercase"
           >
             <Link href="/portal">See your card</Link>
           </Button>
@@ -254,7 +254,7 @@ export function CheckInForm({ initialCode }: { initialCode: string }) {
             setConfirm("");
             checkIn.reset();
           }}
-          className="bg-gold-bright text-navy hover:bg-gold mt-5 w-full rounded-none py-6 text-base font-semibold"
+          className="bg-gold-bright text-navy hover:bg-gold mt-5 h-auto min-h-12 w-full rounded-none py-6 text-base font-semibold"
         >
           Scan again
         </Button>
@@ -282,7 +282,7 @@ export function CheckInForm({ initialCode }: { initialCode: string }) {
           <Button
             size="lg"
             onClick={() => submit(confirm)}
-            className="bg-gold-bright text-navy hover:bg-gold w-full rounded-none py-6 text-base font-semibold"
+            className="bg-gold-bright text-navy hover:bg-gold h-auto min-h-12 w-full rounded-none py-6 text-base font-semibold"
           >
             Check in
           </Button>
@@ -291,7 +291,7 @@ export function CheckInForm({ initialCode }: { initialCode: string }) {
             <Button
               variant="ghost"
               onClick={() => setConfirm("")}
-              className="text-ink-muted hover:text-navy hover:bg-cream text-body-sm rounded-none font-semibold"
+              className="text-ink-muted hover:text-navy hover:bg-cream text-body-sm min-h-11 rounded-none font-semibold"
             >
               Scan a different code
             </Button>
@@ -326,7 +326,10 @@ export function CheckInForm({ initialCode }: { initialCode: string }) {
             can also point your phone&rsquo;s own camera at the QR code — it
             opens this page with the code already in it. Otherwise ask an
             officer to add you, or email{" "}
-            <a href={`mailto:${site.email}`} className="text-navy underline">
+            <a
+              href={`mailto:${site.email}`}
+              className="text-navy inline-flex min-h-11 items-center underline"
+            >
               {site.email}
             </a>
             .
@@ -335,7 +338,7 @@ export function CheckInForm({ initialCode }: { initialCode: string }) {
           <Button
             variant="outline"
             onClick={() => setCameraNote(null)}
-            className="border-hairline text-navy hover:bg-cream mt-6 w-full rounded-none"
+            className="border-hairline text-navy hover:bg-cream mt-6 min-h-11 w-full rounded-none"
           >
             Try the camera again
           </Button>

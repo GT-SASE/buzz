@@ -43,22 +43,22 @@ export function PhotoFrame({
 }
 
 /** Asymmetric photo mosaic — deliberately unequal, so it reads as a spread. */
-export function PhotoMosaic({ photos }: { photos: Photo[] }) {
+export function PhotoMosaic({ photos }: { photos: readonly Photo[] }) {
   const [lead, ...rest] = photos;
   if (!lead) return null;
 
   return (
-    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 lg:grid-rows-2">
+    <div className="grid grid-cols-2 gap-4 lg:grid-cols-4 lg:grid-rows-2">
       <PhotoFrame
         photo={lead}
-        sizes="(min-width: 640px) 50vw, 100vw"
-        className="aspect-[4/3] lg:col-span-2 lg:row-span-2 lg:aspect-auto"
+        sizes="(min-width: 1024px) 50vw, 100vw"
+        className="col-span-2 aspect-[16/10] lg:row-span-2 lg:aspect-auto"
       />
       {rest.map((photo) => (
         <PhotoFrame
           key={photo.alt}
           photo={photo}
-          sizes="(min-width: 1024px) 25vw, (min-width: 640px) 50vw, 100vw"
+          sizes="(min-width: 1024px) 25vw, 50vw"
           className="aspect-[4/3]"
         />
       ))}

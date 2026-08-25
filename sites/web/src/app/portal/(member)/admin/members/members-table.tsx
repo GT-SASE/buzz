@@ -137,6 +137,46 @@ function RosterTable({
   );
 }
 
+function MemberCard({ member }: { member: Member }) {
+  return (
+    <li>
+      <Link
+        href={`/portal/admin/members/${member.id}`}
+        className="border-hairline block min-h-11 rounded-lg border px-4 py-4"
+      >
+        <div className="flex items-start justify-between gap-3">
+          <p className="text-navy min-w-0 font-semibold">
+            {member.name ?? "—"}
+          </p>
+          {member.role === "ADMIN" ? (
+            <Badge className="bg-gold-bright text-navy shrink-0 border-transparent font-semibold">
+              Officer
+            </Badge>
+          ) : (
+            <Badge
+              variant="outline"
+              className="border-hairline text-ink-muted shrink-0 font-semibold"
+            >
+              Member
+            </Badge>
+          )}
+        </div>
+        <p className="text-ink-muted text-body-sm mt-1 break-all">
+          {member.email}
+        </p>
+        <p className="text-ink-muted text-body-sm mt-2 tabular-nums">
+          {member.totalPoints} pts · {member.totalEvents}{" "}
+          {member.totalEvents === 1 ? "event" : "events"}
+        </p>
+        <p className="text-ink-muted text-body-sm mt-1 tabular-nums">
+          Last check-in{" "}
+          {member.lastCheckInAt ? formatDate(member.lastCheckInAt) : "never"}
+        </p>
+      </Link>
+    </li>
+  );
+}
+
 function MemberRow({ member }: { member: Member }) {
   return (
     <TableRow className="border-hairline">
@@ -382,9 +422,23 @@ export function MembersTable() {
           // inert as well as hidden: the sort headers are real buttons, and a
           // focusable control inside an aria-hidden subtree is a trap.
           <div aria-hidden="true" inert>
-            <RosterTable sort={sort} onSort={changeSort}>
-              <SkeletonRows />
-            </RosterTable>
+            <ul className="grid gap-3 md:hidden">
+              {Array.from({ length: 4 }, (_, index) => (
+                <li
+                  key={index}
+                  className="border-hairline rounded-lg border px-4 py-4"
+                >
+                  <Skeleton className="h-4 w-32" />
+                  <Skeleton className="mt-2 h-3 w-48" />
+                  <Skeleton className="mt-3 h-3 w-24" />
+                </li>
+              ))}
+            </ul>
+            <div className="hidden md:block">
+              <RosterTable sort={sort} onSort={changeSort}>
+                <SkeletonRows />
+              </RosterTable>
+            </div>
           </div>
         ) : members.length > 0 ? (
           <div
@@ -393,11 +447,18 @@ export function MembersTable() {
               stale && "opacity-60",
             )}
           >
-            <RosterTable sort={sort} onSort={changeSort}>
+            <ul className="grid gap-3 md:hidden">
               {members.map((member) => (
-                <MemberRow key={member.id} member={member} />
+                <MemberCard key={member.id} member={member} />
               ))}
-            </RosterTable>
+            </ul>
+            <div className="hidden md:block">
+              <RosterTable sort={sort} onSort={changeSort}>
+                {members.map((member) => (
+                  <MemberRow key={member.id} member={member} />
+                ))}
+              </RosterTable>
+            </div>
           </div>
         ) : offset > 0 ? (
           // A page past the end of a result set that shrank. Without this the

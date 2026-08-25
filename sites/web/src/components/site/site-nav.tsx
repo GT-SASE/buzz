@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown, Menu } from "lucide-react";
+import { ChevronDown, Menu, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -15,6 +15,7 @@ import {
 } from "~/components/ui/dropdown-menu";
 import {
   Sheet,
+  SheetClose,
   SheetContent,
   SheetDescription,
   SheetHeader,
@@ -24,8 +25,8 @@ import {
 import { navCta, navGroups, site } from "~/data/site";
 import { cn } from "~/lib/utils";
 
-/** Nav rows, minus the entry the CTA block already covers. */
-const groups = navGroups.filter((group) => group.href !== navCta.href);
+/** Nav rows, minus Join — the CTA is that action, and it now opens the portal. */
+const groups = navGroups.filter((group) => group.href !== "/join");
 
 /** "/events#past" -> "/events" so aria-current only marks the real route. */
 const toPath = (href: string) => href.split("#")[0];
@@ -68,7 +69,7 @@ export function SiteNav() {
         aria-label="Primary"
         className="max-w-content mx-auto flex items-center justify-between gap-3 px-5 py-3 sm:gap-6 sm:px-6 sm:py-4"
       >
-        <Link href="/" className="shrink-0">
+        <Link href="/" className="inline-flex min-h-11 shrink-0 items-center">
           <Wordmark tone="dark" />
         </Link>
 
@@ -163,6 +164,7 @@ export function SiteNav() {
             >
               <Link
                 href={navCta.href}
+                prefetch={false}
                 aria-current={pathname === navCta.href ? "page" : undefined}
               >
                 {navCta.label}
@@ -184,23 +186,36 @@ export function SiteNav() {
           </SheetTrigger>
           <SheetContent
             side="right"
-            className="bg-paper w-full gap-0 border-0 px-5 pb-10 sm:max-w-sm"
+            showCloseButton={false}
+            className="bg-paper w-full gap-0 overflow-hidden border-0 px-5 pt-[max(0.75rem,env(safe-area-inset-top))] pb-[max(2.5rem,env(safe-area-inset-bottom))] sm:max-w-sm"
           >
-            <SheetHeader className="px-0">
+            <SheetHeader className="flex flex-row items-center justify-between space-y-0 px-0 py-1">
               <SheetTitle className="sr-only">Site menu</SheetTitle>
               <SheetDescription className="sr-only">
                 Chapter pages, the member portal, and how to reach us.
               </SheetDescription>
+              <SheetClose asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Close menu"
+                  className="text-navy ml-auto size-11 rounded-none"
+                >
+                  <X className="size-6" />
+                </Button>
+              </SheetClose>
             </SheetHeader>
 
             <Button
               asChild
-              className="text-eyebrow tracking-caps bg-navy hover:bg-navy-deep mt-2 h-auto w-full rounded-none px-6 py-4 font-semibold text-white uppercase"
+              className="text-eyebrow tracking-caps bg-navy hover:bg-navy-deep h-auto w-full rounded-none px-6 py-4 font-semibold text-white uppercase"
             >
-              <Link href={navCta.href}>{navCta.label}</Link>
+              <Link href={navCta.href} prefetch={false}>
+                {navCta.label}
+              </Link>
             </Button>
 
-            <div className="mt-2 overflow-y-auto">
+            <div className="mt-2 min-h-0 flex-1 overflow-y-auto">
               {groups.map((group) => (
                 <div key={group.href} className="border-hairline border-b py-3">
                   <Link
@@ -222,7 +237,7 @@ export function SiteNav() {
                                 ? "page"
                                 : undefined
                             }
-                            className="text-ink-muted text-body-sm block py-2.5"
+                            className="text-ink-muted text-body-sm block min-h-11 py-3"
                           >
                             {item.label}
                           </Link>

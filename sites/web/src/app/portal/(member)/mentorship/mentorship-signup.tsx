@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { mentorshipTierFor } from "~/data/portal";
@@ -29,6 +29,12 @@ export function MentorshipSignup() {
   const mine = api.mentorship.mine.useQuery();
   const [role, setRole] = useState<"mentor" | "mentee">("mentee");
   const [note, setNote] = useState("");
+
+  useEffect(() => {
+    if (!mine.data) return;
+    setRole(mine.data.role);
+    setNote(mine.data.note ?? "");
+  }, [mine.data]);
 
   const enroll = api.mentorship.expressInterest.useMutation({
     onSuccess: async () => {
@@ -65,7 +71,9 @@ export function MentorshipSignup() {
       {row && (
         <div className="border-hairline bg-cream mt-8 rounded-lg border px-5 py-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <Badge variant={row.status === "enrolled" ? "default" : "secondary"}>
+            <Badge
+              variant={row.status === "enrolled" ? "default" : "secondary"}
+            >
               {row.status === "interested"
                 ? "Interested"
                 : row.status === "enrolled"
@@ -105,7 +113,7 @@ export function MentorshipSignup() {
             {roles.map((option) => (
               <label
                 key={option.value}
-                className="border-hairline has-checked:border-navy has-checked:bg-cream flex cursor-pointer gap-3 rounded-lg border p-4"
+                className="border-hairline has-[:checked]:border-navy has-[:checked]:bg-cream flex cursor-pointer gap-3 rounded-lg border p-4"
               >
                 <input
                   type="radio"
@@ -113,7 +121,7 @@ export function MentorshipSignup() {
                   value={option.value}
                   checked={role === option.value}
                   onChange={() => setRole(option.value)}
-                  className="mt-1 size-4 accent-navy"
+                  className="accent-navy mt-1 size-4"
                 />
                 <span>
                   <span className="text-navy block font-semibold">
@@ -128,7 +136,9 @@ export function MentorshipSignup() {
           </fieldset>
 
           <div>
-            <Label htmlFor="mentorship-note">Anything the board should know</Label>
+            <Label htmlFor="mentorship-note">
+              Anything the board should know
+            </Label>
             <Textarea
               id="mentorship-note"
               value={note}

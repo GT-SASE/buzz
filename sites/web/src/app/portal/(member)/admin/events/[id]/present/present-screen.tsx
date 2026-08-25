@@ -170,7 +170,7 @@ export function PresentScreen({ eventId }: { eventId: string }) {
             </p>
 
             {code && (
-              <p className="text-gold-bright shrink-0 font-mono text-[clamp(2.75rem,8vw,6rem)] font-bold tracking-[0.18em] tabular-nums">
+              <p className="text-gold-bright shrink-0 font-mono text-[clamp(1.75rem,8vw,6rem)] font-bold tracking-[0.12em] break-all tabular-nums sm:tracking-[0.18em]">
                 {groups.join(" ")}
               </p>
             )}
@@ -181,7 +181,7 @@ export function PresentScreen({ eventId }: { eventId: string }) {
       <footer className="relative flex shrink-0 items-center justify-end">
         <Link
           href={eventPath}
-          className="text-body-sm font-semibold text-white/50 transition hover:text-white"
+          className="text-body-sm inline-flex min-h-11 items-center font-semibold text-white/50 transition hover:text-white"
         >
           Leave the projector view
           <span className="ml-2 hidden font-normal text-white/35 sm:inline">

@@ -25,9 +25,15 @@ const url = process.env.DATABASE_URL;
 const conn =
   globalForDb.conn ??
   (url
-    ? // Serverless-friendly: one connection per instance, drop idle sockets,
-      // and skip prepared statements (transaction-mode poolers reject them).
-      postgres(url, { max: 1, idle_timeout: 20, prepare: false })
+    ? // Serverless-friendly: one connection per instance. Skip prepared
+      // statements (transaction-mode poolers reject them). Fail fast if the
+      // host will not accept a socket, instead of waiting on TCP defaults.
+      postgres(url, {
+        max: 1,
+        idle_timeout: 60,
+        connect_timeout: 5,
+        prepare: false,
+      })
     : postgres({
         host: "database-url-is-not-set.invalid",
         port: 1,

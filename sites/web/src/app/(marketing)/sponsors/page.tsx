@@ -136,7 +136,7 @@ export default function SponsorsPage() {
           </p>
           <Button
             href={`mailto:${site.email}?subject=${encodeURIComponent("Sponsorship packet")}`}
-            className="mt-7"
+            className="mt-7 w-full justify-center sm:w-auto"
           >
             Request the sponsorship packet
           </Button>

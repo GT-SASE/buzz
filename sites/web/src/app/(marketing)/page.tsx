@@ -33,7 +33,7 @@ import {
   programs,
   stats,
 } from "~/data/content";
-import { galleryPhotos, photos } from "~/data/photos";
+import { galleryPhotos, homePhotos } from "~/data/photos-home";
 import { site } from "~/data/site";
 import { pageMetadata } from "~/lib/seo";
 
@@ -97,7 +97,10 @@ export default async function Home() {
                 student on campus, any major, any background.
               </p>
               <div className="mt-8 flex flex-col items-stretch gap-4 sm:mt-10 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-8 sm:gap-y-5">
-                <Button href="/join" className="w-full justify-center sm:w-auto">
+                <Button
+                  href="/join"
+                  className="w-full justify-center sm:w-auto"
+                >
                   Become a member
                 </Button>
                 <Button
@@ -112,12 +115,12 @@ export default async function Home() {
 
             <div className="rise" style={{ animationDelay: "140ms" }}>
               <PhotoFrame
-                photo={photos.conventionDelegation}
+                photo={homePhotos.conventionDelegation}
                 priority
                 sizes="(min-width: 1024px) 42vw, 100vw"
                 className="aspect-[4/3] lg:aspect-[4/5]"
               />
-              <Card className="mt-10">
+              <Card className="mt-6 sm:mt-10">
                 <Eyebrow tone="muted" rule={false}>
                   Come to a meeting
                 </Eyebrow>
@@ -160,9 +163,9 @@ export default async function Home() {
       {/* The photograph is decorative — the figures carry the information — so
           it takes an empty alt and sits behind a scrim that holds the gold at
           AA for large text. */}
-      <section className="bg-navy relative overflow-hidden px-5 py-20 sm:px-6 sm:py-24">
+      <section className="bg-navy relative overflow-hidden px-5 py-14 sm:px-6 sm:py-24">
         <Image
-          src={photos.generalBody.src}
+          src={homePhotos.generalBody.src}
           alt=""
           fill
           sizes="100vw"
@@ -272,7 +275,9 @@ export default async function Home() {
           ))}
         </ol>
         <div className="mt-12">
-          <Button href="/join">Start at the next meeting</Button>
+          <Button href="/join" className="w-full justify-center sm:w-auto">
+            Start at the next meeting
+          </Button>
         </div>
       </Section>
 
@@ -353,7 +358,11 @@ export default async function Home() {
                 business students.
               </p>
               <div className="mt-8">
-                <Button href="/sponsors" variant="solid">
+                <Button
+                  href="/sponsors"
+                  variant="solid"
+                  className="w-full justify-center sm:w-auto"
+                >
                   See sponsorship tiers
                 </Button>
               </div>
@@ -394,9 +403,15 @@ export default async function Home() {
               will know by the end of it whether this is your crowd.
             </p>
           </div>
-          <div className="mt-10 flex flex-wrap items-center gap-x-8 gap-y-5">
-            <Button href="/join">Join SASE GT</Button>
-            <Button href="/contact" variant="outline">
+          <div className="mt-10 flex flex-col items-stretch gap-4 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-8 sm:gap-y-5">
+            <Button href="/join" className="w-full justify-center sm:w-auto">
+              Join SASE GT
+            </Button>
+            <Button
+              href="/contact"
+              variant="outline"
+              className="w-full justify-center sm:w-auto"
+            >
               Ask us anything
             </Button>
           </div>

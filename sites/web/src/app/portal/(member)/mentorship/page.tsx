@@ -14,7 +14,7 @@ export default async function MentorshipPage() {
   return (
     <>
       <MentorshipSignup />
-      <Toaster position="bottom-right" />
+      <Toaster position="bottom-center" />
     </>
   );
 }

@@ -49,7 +49,7 @@ export default async function SignInPage({
             <Button
               type="submit"
               size="lg"
-              className="bg-navy hover:bg-navy-deep w-full rounded-none py-6 font-semibold text-white"
+              className="bg-navy hover:bg-navy-deep h-auto min-h-12 w-full rounded-none py-6 font-semibold text-white"
             >
               Continue with Google
             </Button>

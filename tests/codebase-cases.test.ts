@@ -674,7 +674,7 @@ function buildCases(): Case[] {
   add("nav/instagram", () => expect(instagram?.id).toBe("instagram"));
   add("nav/discord", () => expect(discord?.id).toBe("discord"));
   add("nav/engage", () => expect(engage?.id).toBe("engage"));
-  add("nav/cta", () => expect(navCta.href).toBe("/join"));
+  add("nav/cta", () => expect(navCta.href).toBe("/portal"));
   add("nav/portal-check-in", () =>
     expect(portalNav.map((tab) => tab.href)).toContain("/portal/check-in"),
   );

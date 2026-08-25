@@ -61,8 +61,8 @@ export function Button({
       variant="ghost"
       size="lg"
       className={cn(
-        "group text-eyebrow tracking-caps h-auto gap-3 font-semibold uppercase transition duration-200",
-        boxed ? "rounded-none px-7 py-4" : "",
+        "group text-eyebrow tracking-caps h-auto gap-3 font-semibold uppercase transition duration-200 max-sm:min-w-0 max-sm:shrink max-sm:whitespace-normal",
+        boxed ? "rounded-none px-7 py-4" : "min-h-11 items-end py-3",
         actionVariants[variant],
         className,
       )}
@@ -98,7 +98,7 @@ export function TextLink({
   className?: string;
 }) {
   const classes = cn(
-    "group text-body-sm inline-flex items-center gap-2 font-semibold",
+    "group text-body-sm inline-flex min-h-11 items-center gap-2 py-3 font-semibold",
     tone === "gold" ? "text-gold-bright" : "text-navy",
     className,
   );

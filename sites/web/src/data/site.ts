@@ -100,4 +100,4 @@ export const navGroups: NavGroup[] = [
 ];
 
 /** The one high-emphasis call to action in the site chrome. */
-export const navCta = { label: "Join SASE", href: "/join" } as const;
+export const navCta = { label: "Join SASE", href: "/portal" } as const;

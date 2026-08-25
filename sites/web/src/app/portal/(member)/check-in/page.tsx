@@ -29,9 +29,9 @@ export default async function CheckInPage({
 
   // No masthead. This is a task done standing up in a room, usually one-handed.
   return (
-    <div className="mx-auto w-full max-w-md px-5 py-10 sm:px-6 sm:py-14">
+    <div className="mx-auto w-full max-w-md px-5 py-6 sm:px-6 sm:py-14">
       <CheckInForm initialCode={code ?? ""} />
-      <Toaster position="top-center" />
+      <Toaster position="bottom-center" />
     </div>
   );
 }

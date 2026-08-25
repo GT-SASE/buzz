@@ -48,9 +48,9 @@ export default async function PortalDashboard() {
           <Card className="bg-navy hover:bg-navy-deep group gap-0 rounded-lg border-0 py-0 transition-colors duration-300">
             <Link
               href={isOfficer ? "/portal/admin" : "/portal/check-in"}
-              className="flex items-center justify-between gap-6 px-5 py-5 sm:px-7 sm:py-6"
+              className="flex min-h-11 items-center justify-between gap-4 px-5 py-5 sm:gap-6 sm:px-7 sm:py-6"
             >
-              <span>
+              <span className="min-w-0">
                 <span className="font-display block text-xl font-bold text-white">
                   {isOfficer ? "Open check-in" : "Check in"}
                 </span>
@@ -72,9 +72,9 @@ export default async function PortalDashboard() {
               href={
                 isOfficer ? "/portal/admin/mentorship" : "/portal/mentorship"
               }
-              className="flex items-center justify-between gap-6 px-5 py-5 sm:px-7"
+              className="flex min-h-11 items-center justify-between gap-4 px-5 py-5 sm:gap-6 sm:px-7"
             >
-              <span>
+              <span className="min-w-0">
                 <span className="font-display text-navy block text-lg font-bold">
                   Mentor families
                 </span>
@@ -143,9 +143,7 @@ export default async function PortalDashboard() {
 
           <Separator className="mt-12" />
           <div className="flex flex-wrap items-center justify-between gap-4 pt-6">
-            <p className="text-ink-muted text-body-sm">
-              {session.user.email}
-            </p>
+            <p className="text-ink-muted text-body-sm">{session.user.email}</p>
             <SignOutButton />
           </div>
         </div>

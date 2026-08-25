@@ -55,7 +55,7 @@ export function PageHeader({
   body: string;
 }) {
   return (
-    <header className="px-5 pt-10 pb-14 sm:px-6 sm:pt-14 sm:pb-20">
+    <header className="px-5 pt-8 pb-10 sm:px-6 sm:pt-14 sm:pb-20">
       <div className="max-w-content rise mx-auto">
         <p className="text-eyebrow tracking-masthead text-ink-muted pb-4 font-semibold uppercase">
           {eyebrow}
@@ -74,9 +74,9 @@ export function PageHeader({
 }
 
 const sectionPadding = {
-  sm: "py-12 sm:py-16 lg:py-20",
-  md: "py-16 sm:py-20 lg:py-28",
-  lg: "py-20 sm:py-28 lg:py-36",
+  sm: "py-10 sm:py-16 lg:py-20",
+  md: "py-12 sm:py-20 lg:py-28",
+  lg: "py-16 sm:py-28 lg:py-36",
 } as const;
 
 const sectionTones = {
@@ -206,7 +206,7 @@ export function Card({
     return (
       <UiCard
         className={cn(
-          "bg-navy navy-wash relative gap-0 rounded-none border-0 p-8 text-white shadow-none lg:p-12",
+          "bg-navy navy-wash relative gap-0 rounded-none border-0 p-5 text-white shadow-none sm:p-8 lg:p-12",
           className,
         )}
       >
@@ -257,7 +257,7 @@ export function CtaPanel({
           {title}
         </h2>
         {body && <p className="text-lead mt-4 text-white/75">{body}</p>}
-        <div className="mt-9 flex flex-wrap items-center justify-center gap-4">
+        <div className="mt-9 flex flex-col items-stretch gap-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-center [&_a]:w-full sm:[&_a]:w-auto">
           {children}
         </div>
       </div>

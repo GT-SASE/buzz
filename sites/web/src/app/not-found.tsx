@@ -33,9 +33,15 @@ export default function NotFound() {
                 homepage.
               </p>
             </div>
-            <div className="mt-12 flex flex-wrap items-center gap-x-8 gap-y-4">
-              <Button href="/">Back home</Button>
-              <Button href="/events" variant="outline">
+            <div className="mt-12 flex flex-col items-stretch gap-4 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-8 sm:gap-y-4">
+              <Button href="/" className="w-full justify-center sm:w-auto">
+                Back home
+              </Button>
+              <Button
+                href="/events"
+                variant="outline"
+                className="w-full justify-center sm:w-auto"
+              >
                 See events
               </Button>
             </div>

@@ -43,7 +43,7 @@ export function Action({
       onClick={onClick}
       variant="ghost"
       className={cn(
-        "h-auto rounded-full px-5 py-2 text-sm font-semibold transition duration-200 disabled:cursor-not-allowed disabled:opacity-45",
+        "h-auto min-h-11 rounded-full px-5 py-2.5 text-sm font-semibold transition duration-200 disabled:cursor-not-allowed disabled:opacity-45",
         actionTones[tone],
         className,
       )}
@@ -60,7 +60,7 @@ export function Action({
  * is text content with no exemption.
  */
 export const inputClass =
-  "border-hairline bg-cream/60 text-ink placeholder:text-ink-muted focus:bg-paper w-full rounded-lg border px-4 py-2.5 text-body-sm transition";
+  "border-hairline bg-cream/60 text-ink placeholder:text-ink-muted focus:bg-paper w-full rounded-lg border px-4 py-2.5 text-base transition";
 
 export function Field({
   label,

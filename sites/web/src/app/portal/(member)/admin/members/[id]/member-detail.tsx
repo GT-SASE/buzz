@@ -5,6 +5,17 @@ import Link from "next/link";
 import { EmptyState } from "~/app/portal/_components/portal-ui";
 import { formatDate, formatMonth } from "~/app/portal/_lib/format";
 import { Eyebrow, InitialDisc } from "~/components/site";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "~/components/ui/alert-dialog";
 import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
@@ -98,6 +109,35 @@ function HistoryRows({ rows }: { rows: HistoryRow[] }) {
   );
 }
 
+function HistoryCards({ rows }: { rows: HistoryRow[] }) {
+  return (
+    <ul className="grid gap-3 md:hidden">
+      {rows.map((row) => (
+        <li key={row.eventId}>
+          <Link
+            href={`/portal/admin/events/${row.eventId}`}
+            className="border-hairline block min-h-11 rounded-lg border px-4 py-4"
+          >
+            <p className="text-navy font-semibold">{row.title}</p>
+            {row.location && (
+              <p className="text-ink-muted text-body-sm mt-1">{row.location}</p>
+            )}
+            <p className="text-ink-muted text-body-sm mt-2 tabular-nums">
+              {formatDate(row.startsAt)}
+              {formatDate(row.checkedInAt) !== formatDate(row.startsAt) &&
+                ` · checked in ${formatDate(row.checkedInAt)}`}
+            </p>
+            <p className="text-gold-ink text-body-sm mt-2 font-semibold tabular-nums">
+              +{row.pointsEarned} ·{" "}
+              {row.method === "manual" ? "Added by an officer" : "Scanned"}
+            </p>
+          </Link>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function SkeletonRows() {
   return (
     <>
@@ -143,7 +183,7 @@ function MemberSkeleton() {
       <div className="mt-14">
         <Skeleton className="h-6 w-48" />
       </div>
-      <div className="mt-6">
+      <div className="mt-6 hidden md:block">
         <HistoryTable>
           <SkeletonRows />
         </HistoryTable>
@@ -166,6 +206,14 @@ export function MemberDetail({ memberId }: { memberId: string }) {
   const revoke = api.member.revokeSessions.useMutation({
     onSuccess: async () => {
       await utils.member.byId.invalidate({ id: memberId });
+    },
+  });
+  const promote = api.member.promote.useMutation({
+    onSuccess: async () => {
+      await Promise.all([
+        utils.member.byId.invalidate({ id: memberId }),
+        utils.member.list.invalidate(),
+      ]);
     },
   });
 
@@ -231,21 +279,61 @@ export function MemberDetail({ memberId }: { memberId: string }) {
               Tier: {tier.name}
             </Badge>
           </div>
-          <Button
-            type="button"
-            variant="outline"
-            disabled={revoke.isPending}
-            onClick={() => revoke.mutate({ userId: member.id })}
-            className="border-hairline text-navy hover:bg-cream mt-4 min-h-11 rounded-none font-semibold"
-          >
-            {revoke.isPending
-              ? "Revoking sessions..."
-              : revoke.isSuccess
-                ? revoke.data.revoked === 0
-                  ? "No sessions to revoke"
-                  : `Revoked ${revoke.data.revoked} session${revoke.data.revoked === 1 ? "" : "s"}`
-                : "Revoke all sessions"}
-          </Button>
+          <div className="mt-4 flex flex-wrap gap-2">
+            {member.role !== "ADMIN" && (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button
+                    type="button"
+                    disabled={promote.isPending}
+                    className="bg-navy hover:bg-navy-deep min-h-11 rounded-none font-semibold text-white"
+                  >
+                    {promote.isPending ? "Promoting..." : "Make officer"}
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>
+                      Make {displayName} an officer?
+                    </AlertDialogTitle>
+                    <AlertDialogDescription>
+                      They will see the officer tools the next time they load
+                      the portal. This does not take officer access away from
+                      anyone else.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={() => promote.mutate({ userId: member.id })}
+                    >
+                      Yes, make officer
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
+            <Button
+              type="button"
+              variant="outline"
+              disabled={revoke.isPending}
+              onClick={() => revoke.mutate({ userId: member.id })}
+              className="border-hairline text-navy hover:bg-cream min-h-11 rounded-none font-semibold"
+            >
+              {revoke.isPending
+                ? "Revoking sessions..."
+                : revoke.isSuccess
+                  ? revoke.data.revoked === 0
+                    ? "No sessions to revoke"
+                    : `Revoked ${revoke.data.revoked} session${revoke.data.revoked === 1 ? "" : "s"}`
+                  : "Revoke all sessions"}
+            </Button>
+          </div>
+          {promote.error && (
+            <p className="text-destructive text-body-sm mt-2">
+              {promote.error.message}
+            </p>
+          )}
         </div>
       </div>
 
@@ -275,9 +363,12 @@ export function MemberDetail({ memberId }: { memberId: string }) {
       <div className="mt-6">
         {history.length > 0 ? (
           <>
-            <HistoryTable>
-              <HistoryRows rows={history} />
-            </HistoryTable>
+            <HistoryCards rows={history} />
+            <div className="hidden md:block">
+              <HistoryTable>
+                <HistoryRows rows={history} />
+              </HistoryTable>
+            </div>
             {history.length < totalEvents && (
               <p className="text-ink-muted text-body-sm mt-4">
                 Showing the {history.length} most recent of {totalEvents}{" "}

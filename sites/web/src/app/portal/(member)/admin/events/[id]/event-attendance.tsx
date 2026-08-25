@@ -81,6 +81,49 @@ function CheckInStatus({ state }: { state: DoorState }) {
   );
 }
 
+function RemoveCheckIn({
+  name,
+  points,
+  removing,
+  onRemove,
+}: {
+  name: string;
+  points: number;
+  removing: boolean;
+  onRemove: () => void;
+}) {
+  return (
+    <AlertDialog>
+      <AlertDialogTrigger asChild>
+        <Button
+          variant="ghost"
+          disabled={removing}
+          className="text-ink-muted hover:text-destructive text-body-sm min-h-11 font-semibold"
+        >
+          Remove
+        </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Remove {name}?</AlertDialogTitle>
+          <AlertDialogDescription>
+            Their check-in and the {points} points it earned are taken back.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            className="bg-destructive hover:bg-destructive/90 text-white"
+            onClick={onRemove}
+          >
+            Yes, remove
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
 function RosterRows({
   rows,
   onRemove,
@@ -113,43 +156,64 @@ function RosterRows({
             {formatEventTime(row.checkedInAt)}
           </TableCell>
           <TableCell className="py-4 text-right">
-            {/* Removing takes a member's points back, so it asks first. */}
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  disabled={removing}
-                  className="text-ink-muted hover:text-destructive text-body-sm font-semibold"
-                >
-                  Remove
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>
-                    Remove {row.name ?? row.email}?
-                  </AlertDialogTitle>
-                  <AlertDialogDescription>
-                    Their check-in and the {row.pointsEarned} points it earned
-                    are taken back.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction
-                    className="bg-destructive hover:bg-destructive/90 text-white"
-                    onClick={() => onRemove(row.userId)}
-                  >
-                    Yes, remove
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
+            <RemoveCheckIn
+              name={row.name ?? row.email}
+              points={row.pointsEarned}
+              removing={removing}
+              onRemove={() => onRemove(row.userId)}
+            />
           </TableCell>
         </TableRow>
       ))}
     </>
+  );
+}
+
+function RosterCards({
+  rows,
+  onRemove,
+  removing,
+}: {
+  rows: RosterRow[];
+  onRemove: (userId: string) => void;
+  removing: boolean;
+}) {
+  return (
+    <ul className="grid gap-3 md:hidden">
+      {rows.map((row) => (
+        <li
+          key={row.userId}
+          className="border-hairline rounded-lg border px-4 py-4"
+        >
+          <p className="text-navy font-semibold">{row.name ?? row.email}</p>
+          <p className="text-ink-muted text-body-sm mt-0.5 break-all">
+            {row.email}
+          </p>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <Badge
+              variant={row.method === "manual" ? "secondary" : "outline"}
+              className="text-body-sm border-hairline font-semibold"
+            >
+              {row.method === "manual" ? "Officer" : "Code"}
+            </Badge>
+            <span className="text-gold-ink text-body-sm font-semibold tabular-nums">
+              +{row.pointsEarned}
+            </span>
+          </div>
+          <p className="text-ink-muted text-body-sm mt-2 tabular-nums">
+            {formatEventTime(row.checkedInAt)}
+          </p>
+          <div className="mt-3">
+            <RemoveCheckIn
+              name={row.name ?? row.email}
+              points={row.pointsEarned}
+              removing={removing}
+              onRemove={() => onRemove(row.userId)}
+            />
+          </div>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -216,7 +280,7 @@ function EventSkeleton() {
       <div className="mt-14">
         <Skeleton className="h-6 w-48" />
       </div>
-      <div className="mt-6">
+      <div className="mt-6 hidden md:block">
         <RosterTable>
           <SkeletonRows />
         </RosterTable>
@@ -379,7 +443,7 @@ export function EventAttendance({
 
               <p
                 className={cn(
-                  "mt-6 font-mono text-2xl font-bold tracking-[0.2em] tabular-nums",
+                  "mt-6 font-mono text-xl font-bold tracking-[0.12em] break-all tabular-nums sm:text-2xl sm:tracking-[0.2em]",
                   state === "open" ? "text-gold-bright" : "text-white/55",
                 )}
               >
@@ -404,7 +468,7 @@ export function EventAttendance({
         <Button
           asChild
           size="lg"
-          className="bg-gold-bright text-navy hover:bg-gold rounded-full font-semibold"
+          className="bg-gold-bright text-navy hover:bg-gold h-auto min-h-12 w-full rounded-full font-semibold sm:w-auto"
         >
           <Link href={`/portal/admin/events/${event.id}/present`}>
             Open the projector view
@@ -421,7 +485,7 @@ export function EventAttendance({
               variant="outline"
               disabled={self.isPending}
               onClick={() => self.mutate({ eventId: event.id })}
-              className="border-hairline text-navy hover:bg-cream rounded-full font-semibold"
+              className="border-hairline text-navy hover:bg-cream h-auto min-h-12 w-full rounded-full font-semibold sm:w-auto"
             >
               {self.isPending ? "Checking you in..." : "I'm here"}
             </Button>
@@ -441,7 +505,7 @@ export function EventAttendance({
             <Button
               variant="outline"
               disabled={rotate.isPending}
-              className="border-hairline text-navy hover:bg-cream rounded-full font-semibold"
+              className="border-hairline text-navy hover:bg-cream min-h-11 w-full rounded-full font-semibold sm:w-auto"
             >
               {rotate.isPending ? "Rotating..." : "Rotate the code"}
             </Button>
@@ -485,7 +549,7 @@ export function EventAttendance({
           <Button
             variant="outline"
             onClick={() => void exportAttendance()}
-            className="border-hairline text-navy hover:bg-cream rounded-full font-semibold"
+            className="border-hairline text-navy hover:bg-cream min-h-11 w-full rounded-full font-semibold sm:w-auto"
           >
             Export CSV
           </Button>
@@ -494,15 +558,26 @@ export function EventAttendance({
 
       <div className="mt-6">
         {roster.length > 0 ? (
-          <RosterTable>
-            <RosterRows
+          <>
+            <RosterCards
               rows={roster}
               removing={remove.isPending}
               onRemove={(userId) =>
                 remove.mutate({ eventId: event.id, userId })
               }
             />
-          </RosterTable>
+            <div className="hidden md:block">
+              <RosterTable>
+                <RosterRows
+                  rows={roster}
+                  removing={remove.isPending}
+                  onRemove={(userId) =>
+                    remove.mutate({ eventId: event.id, userId })
+                  }
+                />
+              </RosterTable>
+            </div>
+          </>
         ) : (
           <EmptyState
             title="Nobody has checked in yet."
@@ -526,7 +601,7 @@ export function EventAttendance({
               manual.mutate({ eventId: event.id, email });
             }}
           >
-            <div className="min-w-64 flex-1">
+            <div className="w-full min-w-0 flex-1 sm:min-w-64">
               <Label
                 htmlFor="manual-email"
                 className="text-eyebrow tracking-caps text-ink-muted font-semibold uppercase"
@@ -545,7 +620,7 @@ export function EventAttendance({
             <Button
               type="submit"
               disabled={manual.isPending}
-              className="bg-gold-bright text-navy hover:bg-gold h-11 rounded-full font-semibold"
+              className="bg-gold-bright text-navy hover:bg-gold h-11 w-full rounded-full font-semibold sm:w-auto"
             >
               {manual.isPending ? "Adding..." : "Add to roster"}
             </Button>

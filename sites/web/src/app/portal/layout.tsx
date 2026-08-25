@@ -33,9 +33,9 @@ export default async function PortalLayout({
       >
         Skip to content
       </a>
-      <header className="border-rule bg-paper sticky top-0 z-50 border-b-2">
-        <div className="max-w-content mx-auto flex items-center justify-between gap-6 px-5 py-4 sm:px-6">
-          <Link href="/" className="shrink-0">
+      <header className="border-rule bg-paper z-50 border-b-2 sm:sticky sm:top-0">
+        <div className="max-w-content mx-auto flex items-center justify-between gap-4 px-5 py-3 sm:gap-6 sm:px-6 sm:py-4">
+          <Link href="/" className="inline-flex min-h-11 shrink-0 items-center">
             <Wordmark tone="dark" />
           </Link>
           {user && (

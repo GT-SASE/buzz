@@ -430,6 +430,56 @@ describe("member.revokeSessions", () => {
   });
 });
 
+function promoteDb(returned: { id: string; role: "ADMIN" }[]) {
+  const db = {
+    update: () => ({
+      set: () => ({
+        where: () => ({ returning: () => Promise.resolve(returned) }),
+      }),
+    }),
+  };
+  return { db };
+}
+
+describe("member.promote", () => {
+  it("promotes the member to ADMIN", async () => {
+    const { db } = promoteDb([{ id: "member-1", role: "ADMIN" }]);
+    const result = await createCaller(adminCtx(db)).member.promote({
+      userId: "member-1",
+    });
+
+    expect(result).toEqual({ success: true, role: "ADMIN" });
+  });
+
+  it("is a no-op success when they are already an officer", async () => {
+    const { db } = promoteDb([{ id: "officer-2", role: "ADMIN" }]);
+    const result = await createCaller(adminCtx(db)).member.promote({
+      userId: "officer-2",
+    });
+
+    expect(result).toEqual({ success: true, role: "ADMIN" });
+  });
+
+  it("404s when the user row is missing", async () => {
+    const { db } = promoteDb([]);
+    const error = await rejection(
+      createCaller(adminCtx(db)).member.promote({ userId: "missing" }),
+    );
+
+    expect(error.code).toBe("NOT_FOUND");
+  });
+
+  it("refuses a MEMBER session before writing", async () => {
+    const error = await rejection(
+      createCaller(memberCtx(unreachableDb)).member.promote({
+        userId: "member-2",
+      }),
+    );
+
+    expect(error.code).toBe("FORBIDDEN");
+  });
+});
+
 describe("token bucket", () => {
   const OPTIONS = { limit: 3, intervalMs: 60_000 };
   const T0 = new Date("2026-09-01T12:00:00.000Z").getTime();

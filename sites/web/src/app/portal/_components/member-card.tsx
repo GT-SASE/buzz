@@ -41,7 +41,7 @@ export function MemberCard({
           className="ring-gold-ink/15 pointer-events-none absolute inset-3 rounded-[1.4rem] ring-1"
         />
 
-        <CardHeader className="relative px-7 pt-7 sm:px-8 sm:pt-8">
+        <CardHeader className="relative px-5 pt-6 sm:px-8 sm:pt-8">
           <CardTitle className="font-display text-navy text-lg leading-none font-bold tracking-tight">
             {site.theme}
           </CardTitle>
@@ -55,8 +55,8 @@ export function MemberCard({
           </CardAction>
         </CardHeader>
 
-        <CardContent className="relative mt-8 px-7 sm:px-8">
-          <p className="font-display text-navy text-xl font-bold tracking-tight">
+        <CardContent className="relative mt-8 px-5 sm:px-8">
+          <p className="font-display text-navy text-xl font-bold tracking-tight break-words">
             {name}
           </p>
           {memberSince && (
@@ -66,7 +66,7 @@ export function MemberCard({
           )}
         </CardContent>
 
-        <CardFooter className="relative mt-8 items-end justify-between gap-5 px-7 pb-7 sm:px-8 sm:pb-8">
+        <CardFooter className="relative mt-8 flex-col items-start gap-4 px-5 pb-6 sm:flex-row sm:items-end sm:justify-between sm:gap-5 sm:px-8 sm:pb-8">
           <div>
             <p className="font-display text-navy text-5xl leading-none font-bold tabular-nums">
               {totalPoints}
@@ -77,7 +77,7 @@ export function MemberCard({
           </div>
 
           {/* Foil, not a flat gold pill: the sheen is what makes it read stamped on. */}
-          <Badge className="text-navy border-transparent bg-[linear-gradient(105deg,#b3a369_0%,#eaaa00_20%,#fff2c0_34%,#eaaa00_48%,#b3a369_72%,#d9c98d_100%)] px-4 py-1.5 text-xs font-bold tracking-[0.18em] uppercase shadow-[inset_0_1px_0_rgb(255_255_255/0.45)]">
+          <Badge className="text-navy max-w-full shrink border-transparent bg-[linear-gradient(105deg,#b3a369_0%,#eaaa00_20%,#fff2c0_34%,#eaaa00_48%,#b3a369_72%,#d9c98d_100%)] px-4 py-1.5 text-xs font-bold tracking-[0.12em] whitespace-normal uppercase shadow-[inset_0_1px_0_rgb(255_255_255/0.45)] sm:tracking-[0.18em]">
             {tier.name}
           </Badge>
         </CardFooter>

@@ -120,7 +120,7 @@ export default function AboutPage() {
           body="Show up once. Membership is free, there is no application, and no prior involvement is assumed."
         >
           <Button href="/join" variant="solid">
-            Come to a general body meeting
+            Come to a meeting
           </Button>
         </CtaPanel>
       </Section>

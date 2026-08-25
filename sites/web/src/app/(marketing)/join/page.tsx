@@ -82,13 +82,17 @@ function StepLinks({ links }: { links: StepLink[] }) {
             href={link.href}
             target="_blank"
             rel="noopener noreferrer"
-            className={stepLink}
+            className={`${stepLink} inline-flex min-h-11 items-center`}
           >
             {link.label}
             <span className="sr-only"> (opens in a new tab)</span>
           </a>
         ) : (
-          <Link key={link.href} href={link.href} className={stepLink}>
+          <Link
+            key={link.href}
+            href={link.href}
+            className={`${stepLink} inline-flex min-h-11 items-center`}
+          >
             {link.label}
           </Link>
         ),
@@ -119,9 +123,15 @@ export default function JoinPage() {
       />
 
       <section className="px-5 pt-12 sm:px-6">
-        <div className="max-w-content mx-auto flex flex-wrap items-center gap-x-8 gap-y-4">
-          <Button href="/events">Find the next meeting</Button>
-          <Button href="/portal" variant="outline">
+        <div className="max-w-content mx-auto flex flex-col items-stretch gap-4 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-8 sm:gap-y-4">
+          <Button href="/events" className="w-full justify-center sm:w-auto">
+            Find the next meeting
+          </Button>
+          <Button
+            href="/portal"
+            variant="outline"
+            className="w-full justify-center sm:w-auto"
+          >
             Member portal
           </Button>
         </div>
@@ -201,7 +211,10 @@ export default function JoinPage() {
               in.
             </p>
             <p className="text-body-sm mt-5 font-semibold">
-              <Link href="/programs" className={stepLink}>
+              <Link
+                href="/programs"
+                className={`${stepLink} inline-flex min-h-11 items-center`}
+              >
                 See what membership opens up
               </Link>
             </p>

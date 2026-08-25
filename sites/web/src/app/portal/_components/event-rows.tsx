@@ -58,44 +58,28 @@ export function EventRows({
           {empty}
         </div>
       ) : (
-        <Table label={title}>
-          <TableCaption className="sr-only">{title}</TableCaption>
-          <TableHeader>
-            <TableRow className="hover:bg-transparent">
-              <TableHead className="text-eyebrow tracking-caps text-ink-muted w-36 px-0 font-semibold uppercase">
-                When
-              </TableHead>
-              <TableHead className="text-eyebrow tracking-caps text-ink-muted px-0 font-semibold uppercase">
-                Event
-              </TableHead>
-              <TableHead className="text-eyebrow tracking-caps text-ink-muted px-0 text-right font-semibold uppercase">
-                Points
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
+        <>
+          <ul className="mt-4 grid gap-4 md:hidden">
             {rows.map((row) => (
-              <TableRow key={row.key}>
-                <TableCell className="text-ink-muted text-body-sm px-0 py-4 align-top tabular-nums">
+              <li
+                key={row.key}
+                className="border-hairline rounded-lg border px-4 py-4"
+              >
+                <p className="text-ink-muted text-body-sm">
                   {formatEventTime(row.at)}
-                </TableCell>
-
-                <TableCell className="px-0 py-4 align-top whitespace-normal">
-                  <span className="text-navy font-semibold">{row.title}</span>
-                  {row.location && (
-                    <span className="text-ink-muted text-body-sm">
-                      {" "}
-                      · {row.location}
-                    </span>
-                  )}
-                  {row.note && (
-                    <span className="text-ink-muted/80 text-body-sm block italic">
-                      {row.note}
-                    </span>
-                  )}
-                </TableCell>
-
-                <TableCell className="px-0 py-4 text-right align-top">
+                </p>
+                <p className="text-navy mt-1 font-semibold">{row.title}</p>
+                {row.location && (
+                  <p className="text-ink-muted text-body-sm mt-1">
+                    {row.location}
+                  </p>
+                )}
+                {row.note && (
+                  <p className="text-ink-muted/80 text-body-sm mt-1 italic">
+                    {row.note}
+                  </p>
+                )}
+                <p className="mt-3">
                   {row.done ? (
                     <Badge
                       variant="secondary"
@@ -108,11 +92,71 @@ export function EventRows({
                       +{row.points}
                     </span>
                   )}
-                </TableCell>
-              </TableRow>
+                </p>
+              </li>
             ))}
-          </TableBody>
-        </Table>
+          </ul>
+
+          <div className="hidden md:block">
+            <Table label={title}>
+              <TableCaption className="sr-only">{title}</TableCaption>
+              <TableHeader>
+                <TableRow className="hover:bg-transparent">
+                  <TableHead className="text-eyebrow tracking-caps text-ink-muted w-36 px-0 font-semibold uppercase">
+                    When
+                  </TableHead>
+                  <TableHead className="text-eyebrow tracking-caps text-ink-muted px-0 font-semibold uppercase">
+                    Event
+                  </TableHead>
+                  <TableHead className="text-eyebrow tracking-caps text-ink-muted px-0 text-right font-semibold uppercase">
+                    Points
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {rows.map((row) => (
+                  <TableRow key={row.key}>
+                    <TableCell className="text-ink-muted text-body-sm px-0 py-4 align-top whitespace-normal tabular-nums">
+                      {formatEventTime(row.at)}
+                    </TableCell>
+
+                    <TableCell className="px-0 py-4 align-top whitespace-normal">
+                      <span className="text-navy font-semibold">
+                        {row.title}
+                      </span>
+                      {row.location && (
+                        <span className="text-ink-muted text-body-sm">
+                          {" "}
+                          · {row.location}
+                        </span>
+                      )}
+                      {row.note && (
+                        <span className="text-ink-muted/80 text-body-sm block italic">
+                          {row.note}
+                        </span>
+                      )}
+                    </TableCell>
+
+                    <TableCell className="px-0 py-4 text-right align-top">
+                      {row.done ? (
+                        <Badge
+                          variant="secondary"
+                          className="text-ink-muted font-semibold"
+                        >
+                          Checked in
+                        </Badge>
+                      ) : (
+                        <span className="text-gold-ink text-body-sm font-semibold tabular-nums">
+                          +{row.points}
+                        </span>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </>
       )}
 
       {truncated && (

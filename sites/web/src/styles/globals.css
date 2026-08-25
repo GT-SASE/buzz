@@ -136,7 +136,7 @@
   --text-h2--line-height: 1.05;
   --text-h1: clamp(2.75rem, 6vw, 5.5rem);
   --text-h1--line-height: 0.98;
-  --text-hero: clamp(2.6rem, 11vw, 8rem);
+  --text-hero: clamp(2.15rem, 9vw, 8rem);
   --text-hero--line-height: 0.92;
   --text-stat: clamp(2.75rem, 4vw, 4.5rem);
   --text-stat--line-height: 0.95;

@@ -104,7 +104,7 @@ function AlertDialogAction({
 }: AlertDialogActionPrimitiveProps) {
   return (
     <AlertDialogActionPrimitive
-      className={cn(buttonVariants(), className)}
+      className={cn(buttonVariants(), "min-h-11", className)}
       {...props}
     />
   );
@@ -118,7 +118,11 @@ function AlertDialogCancel({
 }: AlertDialogCancelPrimitiveProps) {
   return (
     <AlertDialogCancelPrimitive
-      className={cn(buttonVariants({ variant: "outline" }), className)}
+      className={cn(
+        buttonVariants({ variant: "outline" }),
+        "min-h-11",
+        className,
+      )}
       {...props}
     />
   );

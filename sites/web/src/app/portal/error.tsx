@@ -46,18 +46,18 @@ export default function PortalShellError({
         </CardContent>
 
         <CardFooter className="flex-col items-start gap-6">
-          <div className="flex flex-wrap gap-3">
+          <div className="flex w-full flex-col gap-3 sm:flex-row sm:flex-wrap">
             <Button
               type="button"
               onClick={reset}
-              className="bg-gold-bright text-navy hover:bg-gold rounded-none font-semibold"
+              className="bg-gold-bright text-navy hover:bg-gold min-h-11 w-full rounded-none font-semibold sm:w-auto"
             >
               Try again
             </Button>
             <Button
               asChild
               variant="outline"
-              className="border-hairline text-navy hover:bg-cream rounded-none font-semibold"
+              className="border-hairline text-navy hover:bg-cream min-h-11 w-full rounded-none font-semibold sm:w-auto"
             >
               <a href="/">Back to the site</a>
             </Button>

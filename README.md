@@ -148,16 +148,15 @@ hitting an officer procedure, an expired check-in code, a rate limit. A
 procedure `path` and the `userId` that called it, so an officer reporting "the
 scanner did nothing" is findable without reproducing it.
 
-## Promoting the first officer
+## Promoting officers
 
-There is no in-app way to make someone an admin — that would be a privilege-escalation
-surface with no benefit, since it happens roughly once a year. Set `ADMIN_EMAILS`, or:
+The first officer still needs `ADMIN_EMAILS` (or a `role` edit in `pnpm db:studio`) so
+someone can open the roster. After that, any officer can promote a member from their
+page under `/portal/admin/members`: **Make officer**. The role rides on the database
+session, so it takes effect on their next request.
 
-1. Have the officer sign in once at `/portal`, which creates their user row.
-2. `pnpm db:studio`, open `buzz_user`, find them by email, set `role` to `ADMIN`.
-
-The role rides on the database session, so it takes effect on their next request. The same
-step in reverse revokes it.
+Demotion is still a database edit — set `role` back to `MEMBER`. Removing an address
+from `ADMIN_EMAILS` does not revoke someone who is already an officer.
 
 ## How points work
 
