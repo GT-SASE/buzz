@@ -4,15 +4,15 @@ import { PortalHeader } from "~/app/portal/_components/portal-ui";
 import { Section, TextLink } from "~/components/site";
 import { MentorshipRoster } from "./mentorship-roster";
 
-export const metadata: Metadata = { title: "Mentor families" };
+export const metadata: Metadata = { title: "SASE KIN" };
 
 export default function AdminMentorshipPage() {
   return (
     <>
       <PortalHeader
-        eyebrow="Families"
-        title="Mentor families"
-        body="Enroll people who signed up. Family points are separate from event check-ins — tap +5 after a meeting."
+        eyebrow="SASE KIN"
+        title="Kin groups"
+        body="Enroll people who signed up. KIN points are separate from event check-ins — tap +5 after a meeting."
       />
       <Section size="sm">
         <MentorshipRoster />

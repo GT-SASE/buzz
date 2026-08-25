@@ -42,7 +42,6 @@ export default function AboutPage() {
       <Section
         eyebrow="Our mission"
         title="What we are here to do."
-        number="01"
         size="lg"
       >
         <PillarGrid pillars={missionPillars} />
@@ -64,7 +63,6 @@ export default function AboutPage() {
       <Section
         eyebrow="History"
         title="Where the organization came from."
-        number="02"
         size="md"
       >
         <div className="grid gap-x-16 gap-y-14 lg:grid-cols-[minmax(0,1fr)_20rem]">
@@ -84,7 +82,7 @@ export default function AboutPage() {
             <p>
               A year here follows the same spine: a fall kickoff general body
               meeting, professional development workshops with industry
-              partners, mentor/mentee pairing for the semester, a chapter
+              partners, SASE KIN pairing for the semester, a chapter
               delegation to the SASE National Convention, and Taste of SASE in
               the spring. Between those are general body meetings, technical
               projects, service with Atlanta-area students, and socials. The

@@ -58,13 +58,13 @@ export function MentorshipSignup() {
   return (
     <div className="mx-auto w-full max-w-lg px-5 py-10 sm:px-6 sm:py-14">
       <p className="text-eyebrow tracking-caps text-gold-ink font-semibold uppercase">
-        Mentor families
+        SASE KIN
       </p>
       <h1 className="font-display text-navy text-h2 mt-3 font-bold tracking-tight">
-        Sign up for a family.
+        Sign up for SASE KIN.
       </h1>
       <p className="text-ink-muted text-body mt-4">
-        Event check-ins stay on your card. These points are only for family
+        Event check-ins stay on your card. These points are only for kin
         meetings — an officer adds them after you actually meet.
       </p>
 
@@ -96,7 +96,7 @@ export function MentorshipSignup() {
       {locked ? (
         <p className="text-ink-muted text-body-sm mt-8">
           An officer enrolled you. If that should change, ask them — you cannot
-          withdraw from here once you are in a family.
+          withdraw from here once you are in a kin group.
         </p>
       ) : (
         <form
@@ -153,7 +153,7 @@ export function MentorshipSignup() {
           <Button
             type="submit"
             disabled={enroll.isPending}
-            className="bg-navy hover:bg-navy-deep h-12 w-full rounded-none font-semibold text-white sm:w-auto"
+            className="bg-navy hover:bg-navy-deep h-12 w-full rounded-md font-semibold text-white sm:w-auto"
           >
             {enroll.isPending ? "Saving..." : "I'm interested"}
           </Button>

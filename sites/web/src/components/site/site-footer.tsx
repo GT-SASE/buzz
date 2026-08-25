@@ -96,7 +96,7 @@ export function SiteFooter() {
             prefetch={false}
             className="inline-flex min-h-11 items-center py-3 font-semibold transition hover:text-white"
           >
-            Member portal
+            Join SASE
           </Link>
         </div>
       </div>

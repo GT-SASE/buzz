@@ -59,7 +59,7 @@ export function SiteNav() {
   return (
     <header
       className={cn(
-        "border-rule sticky top-0 z-50 border-b-2 backdrop-blur-md transition-colors duration-300",
+        "border-gold sticky top-0 z-50 border-b-2 backdrop-blur-md transition-colors duration-300",
         // Scrolling closes the ground: once copy runs under the bar it has to
         // be opaque paper rather than a tint over the text.
         scrolled ? "bg-paper" : "bg-paper/90",
@@ -112,7 +112,7 @@ export function SiteNav() {
                   <DropdownMenuContent
                     align="start"
                     sideOffset={14}
-                    className="border-rule ring-hairline bg-paper w-56 rounded-none border-0 border-t-2 p-0 ring-1"
+                    className="border-gold ring-hairline bg-paper w-56 rounded-xl border-0 border-t-2 p-0 ring-1"
                   >
                     {/* A real <Link> inside the item rather than `asChild`:
                         Watermelon's motion-wrapped DropdownMenuItem omits that
@@ -145,22 +145,10 @@ export function SiteNav() {
             );
           })}
 
-          {/* Written out here rather than added to `navGroups`: that array also
-              drives the footer's Explore list, and the active test above is an
-              exact path match, so /portal/check-in would render inactive. */}
-          <li>
-            <Link
-              href="/portal"
-              prefetch={false}
-              className="text-ink-muted hover:text-navy text-eyebrow tracking-caps inline-flex items-center px-2.5 py-3 font-semibold uppercase transition"
-            >
-              Member portal
-            </Link>
-          </li>
           <li className="ml-4">
             <Button
               asChild
-              className="text-eyebrow tracking-caps bg-navy hover:bg-navy-deep h-auto rounded-none px-4 py-3 font-semibold text-white uppercase"
+              className="text-eyebrow tracking-caps bg-navy hover:bg-navy-deep h-auto rounded-md px-4 py-3 font-semibold text-white uppercase"
             >
               <Link
                 href={navCta.href}
@@ -192,7 +180,7 @@ export function SiteNav() {
             <SheetHeader className="flex flex-row items-center justify-between space-y-0 px-0 py-1">
               <SheetTitle className="sr-only">Site menu</SheetTitle>
               <SheetDescription className="sr-only">
-                Chapter pages, the member portal, and how to reach us.
+                Chapter pages, how to join, and how to reach us.
               </SheetDescription>
               <SheetClose asChild>
                 <Button
@@ -208,7 +196,7 @@ export function SiteNav() {
 
             <Button
               asChild
-              className="text-eyebrow tracking-caps bg-navy hover:bg-navy-deep h-auto w-full rounded-none px-6 py-4 font-semibold text-white uppercase"
+              className="text-eyebrow tracking-caps bg-navy hover:bg-navy-deep h-auto w-full rounded-md px-6 py-4 font-semibold text-white uppercase"
             >
               <Link href={navCta.href} prefetch={false}>
                 {navCta.label}
@@ -248,19 +236,9 @@ export function SiteNav() {
                 </div>
               ))}
 
-              {/* py-3 throughout: at py-1.5 these rows measured ~34px, under
-                  the 44px minimum touch target. */}
-              <Link
-                href="/portal"
-                prefetch={false}
-                className="text-ink-muted text-body-sm tracking-caps mt-6 block py-3 font-semibold uppercase"
-              >
-                Member portal
-              </Link>
-
               <a
                 href={`mailto:${site.email}`}
-                className="text-ink-muted text-body-sm block py-3"
+                className="text-ink-muted text-body-sm mt-6 block py-3"
               >
                 {site.email}
               </a>

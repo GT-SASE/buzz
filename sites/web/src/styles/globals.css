@@ -7,8 +7,8 @@
 @custom-variant dark (&:is(.dark *));
 
 /* ---------------------------------------------------------------------------
-   GT palette. Georgia Tech navy and gold on a warm paper ground.
-   Every neutral is warm — the ink is brown-black, not blue-black.
+   Hive palette. Georgia Tech navy and sting gold on comb paper.
+   Ink stays warm so gold never sits on a cool gray.
 --------------------------------------------------------------------------- */
 :root {
   --navy: #003057;
@@ -16,10 +16,10 @@
   --gold: #b3a369;
   --gold-bright: #eaaa00;
 
-  --paper: #fdfaf4;
-  --cream: #f7f1e5;
-  --sand: #efe5d2;
-  --parchment: #e5d8bf;
+  --paper: #f6f1e3;
+  --cream: #efe6d2;
+  --sand: #e4d7bc;
+  --parchment: #dccaa3;
 
   --ink: #241f1a;
   --ink-muted: #5b5348;
@@ -29,7 +29,7 @@
   --rule: rgb(36 31 26 / 0.9);
 
   /* shadcn contract, mapped onto the palette above. */
-  --radius: 0.375rem;
+  --radius: 0.75rem;
 
   --background: var(--paper);
   --foreground: var(--ink);
@@ -68,8 +68,9 @@
 }
 
 @theme inline {
-  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-bricolage), ui-sans-serif, system-ui, sans-serif;
   --font-display: var(--font-display), Georgia, "Times New Roman", serif;
+  --font-mono: var(--font-ibm), ui-monospace, monospace;
 
   --color-navy: var(--navy);
   --color-navy-deep: var(--navy-deep);
@@ -211,10 +212,33 @@
     animation: rise 0.8s cubic-bezier(0.22, 1, 0.36, 1) both;
   }
 
-  /* The section divider. A page is divided by these rather than by alternating
-     background bands, which is what stops every section reading as a card. */
+  /* The comb edge. Gold, not ink — the newspaper rule is gone. */
   .rule-heavy {
-    border-top: 2px solid var(--rule);
+    border-top: 2px solid var(--gold);
+  }
+
+  /* Point-up hex. Used for the GT lockup and as a kicker pip. */
+  .hex-face {
+    clip-path: polygon(
+      50% 5%,
+      94% 27.5%,
+      94% 72.5%,
+      50% 95%,
+      6% 72.5%,
+      6% 27.5%
+    );
+  }
+
+  /* Opposite chamfers so a photo reads as a cell, not a rectangle. */
+  .hex-cut {
+    clip-path: polygon(
+      0 0,
+      calc(100% - 1.5rem) 0,
+      100% 1.5rem,
+      100% 100%,
+      1.5rem 100%,
+      0 calc(100% - 1.5rem)
+    );
   }
 
   /* Fraunces carries noticeable left side bearing at hero sizes, so a headline

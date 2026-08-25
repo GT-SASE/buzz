@@ -1,4 +1,5 @@
 import { Avatar, AvatarFallback } from "~/components/ui/avatar";
+import { HexMark } from "~/components/site/hive";
 import { site } from "~/data/site";
 import { cn } from "~/lib/utils";
 
@@ -6,9 +7,11 @@ import { cn } from "~/lib/utils";
 export function Wordmark({ tone }: { tone: "light" | "dark" }) {
   return (
     <span className="flex items-center gap-3">
-      <span className="bg-navy text-gold-bright font-display flex size-10 items-center justify-center rounded-full text-sm font-bold">
-        GT
-      </span>
+      <HexMark
+        className={
+          tone === "light" ? "bg-gold-bright text-navy" : undefined
+        }
+      />
       <span className="flex flex-col leading-none">
         <span
           className={cn(
@@ -39,15 +42,13 @@ export function ThemeBadge({ tone = "dark" }: { tone?: "dark" | "light" }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-2.5 border-t-2 pt-2",
-        tone === "dark"
-          ? "border-gold text-navy"
-          : "border-gold-bright text-white",
+        "inline-flex items-center gap-2.5",
+        tone === "dark" ? "text-navy" : "text-white",
       )}
     >
       <span
         aria-hidden="true"
-        className="bg-gold-bright size-2 shrink-0 rounded-full"
+        className="hex-face bg-gold-bright size-2.5 shrink-0"
       />
       <span className="font-display text-body-sm font-bold tracking-tight">
         {site.theme}
@@ -81,7 +82,7 @@ export function InitialDisc({
   return (
     <Avatar
       aria-hidden="true"
-      className={cn("ring-hairline size-14 ring-1", className)}
+      className={cn("hex-face ring-gold/30 size-14 ring-1", className)}
     >
       <AvatarFallback className="bg-sand text-navy font-display text-lg font-bold">
         {initials || "GT"}

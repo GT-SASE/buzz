@@ -14,6 +14,7 @@ import {
   Section,
   StatValue,
   TextLink,
+  ThemeBadge,
 } from "~/components/site";
 import { JsonLd } from "~/components/site/json-ld";
 import { Badge } from "~/components/ui/badge";
@@ -44,7 +45,7 @@ export const revalidate = 3600;
 export const metadata = pageMetadata({
   title: `${site.name} — ${site.tagline}`,
   description:
-    "The Georgia Tech chapter of the Society of Asian Scientists and Engineers. Mentor families, recruiter resume workshops, semester-long technical projects, and Taste of SASE — open to every Georgia Tech student, any major, any year.",
+    "The Georgia Tech chapter of the Society of Asian Scientists and Engineers. SASE KIN, recruiter resume workshops, semester-long technical projects, and Taste of SASE — open to every Georgia Tech student, any major, any year.",
   path: "/",
 });
 
@@ -72,11 +73,10 @@ export default async function Home() {
 
       <section className="px-5 sm:px-6">
         <div className="max-w-content mx-auto">
-          <div className="text-eyebrow tracking-masthead text-ink-muted border-rule flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2 border-b-2 pt-6 pb-3 font-semibold uppercase sm:pt-8 sm:pb-4">
-            <span className="text-navy">{site.name}</span>
-            <span className="flex flex-wrap items-baseline gap-x-6 gap-y-2">
-              <span className="hidden sm:inline">{site.theme}</span>
-              <span>2026&ndash;2027</span>
+          <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 pt-6 pb-2 sm:pt-8 sm:pb-3">
+            <ThemeBadge />
+            <span className="text-eyebrow tracking-masthead text-ink-muted font-semibold uppercase">
+              2026&ndash;2027
             </span>
           </div>
 
@@ -92,7 +92,7 @@ export default async function Home() {
               </h1>
               <p className="text-lead text-ink-muted max-w-measure mt-6 sm:mt-8">
                 We are the Georgia Tech chapter of the Society of Asian
-                Scientists and Engineers. Mentor families, recruiter workshops,
+                Scientists and Engineers. SASE KIN, recruiter workshops,
                 semester-long build teams, and Taste of SASE — open to every
                 student on campus, any major, any background.
               </p>
@@ -136,7 +136,7 @@ export default async function Home() {
 
                 {nextUp && (
                   <div className="border-hairline mt-7 border-t pt-6">
-                    <Badge className="bg-gold-bright text-navy text-eyebrow tracking-masthead rounded-none font-semibold uppercase">
+                    <Badge className="bg-gold-bright text-navy text-eyebrow tracking-masthead rounded-md font-semibold uppercase">
                       Next up
                     </Badge>
                     <p className="font-display text-navy text-h3 mt-3 font-bold">
@@ -193,7 +193,6 @@ export default async function Home() {
       </section>
 
       <Section
-        number="01"
         eyebrow="Our mission"
         title="Three commitments we hold each other to."
         lead="SASE's national mission, run at chapter scale on the Flats."
@@ -205,7 +204,6 @@ export default async function Home() {
       </Section>
 
       <Section
-        number="02"
         eyebrow="What we do"
         title="What membership actually gets you."
       >
@@ -215,7 +213,7 @@ export default async function Home() {
         >
           {programs.map((program) => (
             <li key={program.slug} className="h-full">
-              <UiCard className="border-hairline hover:border-rule hover:bg-cream h-full gap-0 rounded-none bg-transparent py-8 shadow-none transition duration-200">
+              <UiCard className="border-hairline hover:border-gold hover:bg-cream h-full gap-0 rounded-xl bg-transparent py-8 shadow-none transition duration-200">
                 <CardHeader className="gap-0">
                   <Icon
                     name={program.icon}
@@ -242,7 +240,6 @@ export default async function Home() {
       {/* The hesitation to answer is not "what is SASE" but "what happens if I
           show up alone". */}
       <Section
-        number="03"
         eyebrow="Your first month"
         title="What happens if you just show up."
         lead="You do not need a friend already in it, a technical major, or a plan."
@@ -252,7 +249,10 @@ export default async function Home() {
           className="stagger grid gap-x-10 gap-y-12 sm:grid-cols-2 lg:grid-cols-4"
         >
           {firstMonth.map((step, i) => (
-            <li key={step.when} className="border-rule border-t-2 pt-6">
+            <li
+              key={step.when}
+              className="border-gold border-t-2 pt-6"
+            >
               <div className="flex items-center gap-4">
                 <span
                   aria-hidden="true"
@@ -262,7 +262,7 @@ export default async function Home() {
                 </span>
                 <Badge
                   variant="secondary"
-                  className="text-eyebrow tracking-masthead rounded-none font-semibold uppercase"
+                  className="text-eyebrow tracking-masthead rounded-md font-semibold uppercase"
                 >
                   {step.when}
                 </Badge>
@@ -282,7 +282,6 @@ export default async function Home() {
       </Section>
 
       <Section
-        number="04"
         eyebrow="Life in the chapter"
         title="A year of it, roughly."
         lead="Convention delegations, campus tabling, service nights, Hawks games, and the trips in between."
@@ -292,7 +291,6 @@ export default async function Home() {
       </Section>
 
       <Section
-        number="05"
         layout="split"
         eyebrow="Leadership"
         title="The people running the chapter."
@@ -308,7 +306,7 @@ export default async function Home() {
         </div>
       </Section>
 
-      <Section number="06" eyebrow="Calendar" title="What's coming up.">
+      <Section eyebrow="Calendar" title="What's coming up.">
         {calendar.length > 0 ? (
           <>
             <ul
@@ -341,7 +339,6 @@ export default async function Home() {
 
       {/* Partners. An invitation, not a wall of empty logo tiles. */}
       <Section
-        number="07"
         eyebrow="Partners"
         title="Recruit from this chapter."
       >
@@ -380,7 +377,7 @@ export default async function Home() {
                 >
                   <span
                     aria-hidden="true"
-                    className="bg-gold-bright mt-2 h-1.5 w-1.5 shrink-0"
+                    className="hex-face bg-gold-bright mt-2 size-2 shrink-0"
                   />
                   {perk}
                 </li>

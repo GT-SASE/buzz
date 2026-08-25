@@ -58,20 +58,20 @@ export function tierFor(points: number) {
 export const portalNav = [
   { href: "/portal", label: "My card" },
   { href: "/portal/check-in", label: "Check in" },
-  { href: "/portal/mentorship", label: "Families" },
+  { href: "/portal/mentorship", label: "SASE KIN" },
 ] as const;
 
 export const adminNav = [
   { href: "/portal/admin", label: "Events" },
   { href: "/portal/admin/members", label: "Members" },
-  { href: "/portal/admin/mentorship", label: "Families" },
+  { href: "/portal/admin/mentorship", label: "SASE KIN" },
 ] as const;
 
 /** Mentorship points only. Event attendance has its own card and tiers. */
 export const mentorshipTiers = [
   { name: "Signed up", min: 0 },
   { name: "Meeting", min: 10 },
-  { name: "Family", min: 30 },
+  { name: "Kin", min: 30 },
 ] as const;
 
 export function mentorshipTierFor(points: number) {

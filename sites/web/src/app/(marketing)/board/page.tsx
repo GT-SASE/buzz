@@ -50,7 +50,7 @@ export default function BoardPage() {
         {openSeats > 0 && (
           <Alert
             role="note"
-            className="border-hairline bg-cream border-t-rule max-w-measure mb-10 gap-y-3 rounded-none border-t-2 px-6 py-7"
+            className="border-hairline bg-cream border-t-gold max-w-measure mb-10 gap-y-3 rounded-xl border-t-2 px-6 py-7"
           >
             <AlertTitle className="font-display text-navy text-h3 line-clamp-none font-bold">
               {openSeats === board.length

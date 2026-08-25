@@ -81,12 +81,12 @@ function ManualCodeEntry({ onSubmit }: { onSubmit: (code: string) => void }) {
           placeholder="ABCD12"
           aria-describedby={error ? "manual-code-error" : undefined}
           aria-invalid={error ? true : undefined}
-          className="border-hairline bg-paper min-w-40 flex-1 rounded-none font-mono text-base tracking-[0.2em] uppercase"
+          className="border-hairline bg-paper min-w-40 flex-1 rounded-md font-mono text-base tracking-[0.2em] uppercase"
         />
         <Button
           type="submit"
           variant="outline"
-          className="border-hairline text-navy hover:bg-cream h-11 w-full rounded-none font-semibold sm:w-auto"
+          className="border-hairline text-navy hover:bg-cream h-11 w-full rounded-md font-semibold sm:w-auto"
         >
           Check in
         </Button>
@@ -194,7 +194,7 @@ export function CheckInForm({ initialCode }: { initialCode: string }) {
           <Button
             asChild
             size="lg"
-            className="bg-gold-bright text-navy hover:bg-gold text-eyebrow tracking-caps h-auto min-h-12 rounded-none px-6 font-semibold uppercase"
+            className="bg-gold-bright text-navy hover:bg-gold text-eyebrow tracking-caps h-auto min-h-12 rounded-md px-6 font-semibold uppercase"
           >
             <Link href="/portal">See your card</Link>
           </Button>
@@ -254,7 +254,7 @@ export function CheckInForm({ initialCode }: { initialCode: string }) {
             setConfirm("");
             checkIn.reset();
           }}
-          className="bg-gold-bright text-navy hover:bg-gold mt-5 h-auto min-h-12 w-full rounded-none py-6 text-base font-semibold"
+          className="bg-gold-bright text-navy hover:bg-gold mt-5 h-auto min-h-12 w-full rounded-md py-6 text-base font-semibold"
         >
           Scan again
         </Button>
@@ -282,7 +282,7 @@ export function CheckInForm({ initialCode }: { initialCode: string }) {
           <Button
             size="lg"
             onClick={() => submit(confirm)}
-            className="bg-gold-bright text-navy hover:bg-gold h-auto min-h-12 w-full rounded-none py-6 text-base font-semibold"
+            className="bg-gold-bright text-navy hover:bg-gold h-auto min-h-12 w-full rounded-md py-6 text-base font-semibold"
           >
             Check in
           </Button>
@@ -291,7 +291,7 @@ export function CheckInForm({ initialCode }: { initialCode: string }) {
             <Button
               variant="ghost"
               onClick={() => setConfirm("")}
-              className="text-ink-muted hover:text-navy hover:bg-cream text-body-sm min-h-11 rounded-none font-semibold"
+              className="text-ink-muted hover:text-navy hover:bg-cream text-body-sm min-h-11 rounded-md font-semibold"
             >
               Scan a different code
             </Button>
@@ -338,7 +338,7 @@ export function CheckInForm({ initialCode }: { initialCode: string }) {
           <Button
             variant="outline"
             onClick={() => setCameraNote(null)}
-            className="border-hairline text-navy hover:bg-cream mt-6 min-h-11 w-full rounded-none"
+            className="border-hairline text-navy hover:bg-cream mt-6 min-h-11 w-full rounded-md"
           >
             Try the camera again
           </Button>

@@ -89,7 +89,7 @@ export function EventCard({
   );
 }
 
-/** The three mission pillars, numbered. Used on / and /about. */
+/** The three mission pillars. Used on / and /about. */
 export function PillarGrid({
   pillars,
 }: {
@@ -97,15 +97,13 @@ export function PillarGrid({
 }) {
   return (
     <div className="stagger grid gap-x-10 gap-y-12 md:grid-cols-3">
-      {pillars.map((pillar, i) => (
+      {pillars.map((pillar) => (
         <div key={pillar.title}>
           <p
             aria-hidden="true"
-            className="text-numeral tracking-caps text-gold-ink font-semibold"
-          >
-            0{i + 1}
-          </p>
-          <span className="bg-gold/40 mt-4 block h-px w-full" />
+            className="hex-face bg-gold-bright size-3"
+          />
+          <span className="bg-gold/40 mt-5 block h-px w-full" />
           <h3 className="font-display text-navy text-h3 mt-6 font-bold">
             {pillar.title}
           </h3>

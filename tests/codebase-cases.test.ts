@@ -674,10 +674,14 @@ function buildCases(): Case[] {
   add("nav/instagram", () => expect(instagram?.id).toBe("instagram"));
   add("nav/discord", () => expect(discord?.id).toBe("discord"));
   add("nav/engage", () => expect(engage?.id).toBe("engage"));
-  add("nav/cta", () => expect(navCta.href).toBe("/portal"));
-  add("nav/portal-check-in", () =>
-    expect(portalNav.map((tab) => tab.href)).toContain("/portal/check-in"),
-  );
+  add("nav/cta", () => {
+    expect(navCta.href).toBe("/portal");
+    expect(navCta.label).toBe("Join SASE");
+  });
+  add("nav/portal-check-in", () => {
+    expect(portalNav.map((tab) => tab.href)).toContain("/portal/check-in");
+    expect(portalNav.map((tab) => tab.label)).toContain("SASE KIN");
+  });
   add("nav/admin-no-scan", () =>
     expect(adminNav.map((tab) => tab.href)).not.toContain("/portal/check-in"),
   );

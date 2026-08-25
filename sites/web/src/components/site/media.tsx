@@ -24,7 +24,7 @@ export function PhotoFrame({
   return (
     <div
       className={cn(
-        "bg-sand group relative overflow-hidden",
+        "bg-sand group relative overflow-hidden hex-cut",
         rounded,
         className,
       )}
@@ -118,7 +118,7 @@ export function Marquee({ items }: { items: readonly string[] }) {
           {item}
           <span
             aria-hidden="true"
-            className="bg-gold-bright mx-7 size-1.5 sm:mx-10"
+            className="hex-face bg-gold-bright mx-7 size-2 sm:mx-10"
           />
         </li>
       ))}

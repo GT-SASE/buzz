@@ -132,7 +132,7 @@ export default function JoinPage() {
             variant="outline"
             className="w-full justify-center sm:w-auto"
           >
-            Member portal
+            Check in
           </Button>
         </div>
       </section>
@@ -169,7 +169,6 @@ export default function JoinPage() {
       </Section>
 
       <Section
-        number="02"
         eyebrow="Cadence and dues"
         title="What the year asks of you."
         lead="One recurring commitment and no invoice. Everything else is opt-in, semester by semester."
@@ -223,7 +222,6 @@ export default function JoinPage() {
       </Section>
 
       <Section
-        number="03"
         eyebrow="Questions"
         title="Before you ask."
         lead="If the answer you need is not here, email the chapter — someone on the board reads it."
@@ -252,7 +250,6 @@ export default function JoinPage() {
       </Section>
 
       <Section
-        number="04"
         eyebrow="Stay in touch"
         title="Find us here."
         size="sm"

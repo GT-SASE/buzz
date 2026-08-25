@@ -38,7 +38,7 @@ export function PortalTabs({ isOfficer }: { isOfficer: boolean }) {
                 asChild
                 variant="ghost"
                 className={cn(
-                  "text-body-sm hover:bg-cream relative h-auto min-h-11 shrink-0 rounded-none px-3 py-3.5 font-medium sm:px-4",
+                  "text-body-sm hover:bg-cream relative h-auto min-h-11 shrink-0 rounded-md px-3 py-3.5 font-medium sm:px-4",
                   active
                     ? "text-navy hover:text-navy after:bg-gold-bright after:absolute after:inset-x-3 after:bottom-0 after:h-0.5"
                     : "text-ink-muted hover:text-navy",

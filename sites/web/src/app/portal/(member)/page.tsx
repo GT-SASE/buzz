@@ -76,10 +76,10 @@ export default async function PortalDashboard() {
             >
               <span className="min-w-0">
                 <span className="font-display text-navy block text-lg font-bold">
-                  Mentor families
+                  SASE KIN
                 </span>
                 <span className="text-ink-muted mt-1 block text-sm">
-                  Sign up as a mentor or mentee. Family points stay off your
+                  Sign up as a mentor or mentee. KIN points stay off your
                   event card.
                 </span>
               </span>

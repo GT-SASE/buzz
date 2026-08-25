@@ -50,14 +50,14 @@ export default function PortalShellError({
             <Button
               type="button"
               onClick={reset}
-              className="bg-gold-bright text-navy hover:bg-gold min-h-11 w-full rounded-none font-semibold sm:w-auto"
+              className="bg-gold-bright text-navy hover:bg-gold min-h-11 w-full rounded-md font-semibold sm:w-auto"
             >
               Try again
             </Button>
             <Button
               asChild
               variant="outline"
-              className="border-hairline text-navy hover:bg-cream min-h-11 w-full rounded-none font-semibold sm:w-auto"
+              className="border-hairline text-navy hover:bg-cream min-h-11 w-full rounded-md font-semibold sm:w-auto"
             >
               <a href="/">Back to the site</a>
             </Button>

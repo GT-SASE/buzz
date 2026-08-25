@@ -1,18 +1,19 @@
 import { Card as UiCard } from "~/components/ui/card";
 import { Separator } from "~/components/ui/separator";
+import { Honeycomb } from "~/components/site/hive";
 import { cn } from "~/lib/utils";
 
 const eyebrowTones = {
   /** Default: kicker on paper or cream. */
-  dark: { text: "text-navy/85", rule: "bg-navy/35" },
+  dark: { text: "text-navy/85", pip: "bg-gold-bright" },
   /** On navy grounds. */
-  light: { text: "text-gold-bright", rule: "bg-gold-bright/50" },
+  light: { text: "text-gold-bright", pip: "bg-gold-bright" },
   /** Gold made legible as text on light grounds (5.4:1). */
-  gold: { text: "text-gold-ink", rule: "bg-gold-ink/45" },
+  gold: { text: "text-gold-ink", pip: "bg-gold" },
   /** Secondary kicker on light grounds — labels, not headings. */
-  muted: { text: "text-ink-muted", rule: "bg-ink-muted/40" },
+  muted: { text: "text-ink-muted", pip: "bg-gold" },
   /** Neutral kicker on navy, where gold would over-emphasize. */
-  onNavy: { text: "text-white/75", rule: "bg-white/30" },
+  onNavy: { text: "text-white/75", pip: "bg-gold-bright" },
 } as const;
 
 /** The one uppercase kicker on the site. */
@@ -29,7 +30,7 @@ export function Eyebrow({
   as?: "p" | "h3" | "dt";
   className?: string;
 }) {
-  const { text, rule: ruleColor } = eyebrowTones[tone];
+  const { text, pip } = eyebrowTones[tone];
   return (
     <Tag
       className={cn(
@@ -38,13 +39,15 @@ export function Eyebrow({
         className,
       )}
     >
-      {rule && <span className={cn("h-px w-8 shrink-0", ruleColor)} />}
+      {rule && (
+        <span aria-hidden="true" className={cn("hex-face size-2 shrink-0", pip)} />
+      )}
       {children}
     </Tag>
   );
 }
 
-/** Masthead at the top of every interior page. One per page. */
+/** Comb header at the top of every interior page. One per page. */
 export function PageHeader({
   eyebrow,
   title,
@@ -55,9 +58,14 @@ export function PageHeader({
   body: string;
 }) {
   return (
-    <header className="px-5 pt-8 pb-10 sm:px-6 sm:pt-14 sm:pb-20">
-      <div className="max-w-content rise mx-auto">
-        <p className="text-eyebrow tracking-masthead text-ink-muted pb-4 font-semibold uppercase">
+    <header className="relative overflow-hidden px-5 pt-8 pb-10 sm:px-6 sm:pt-14 sm:pb-20">
+      <Honeycomb className="text-gold/25 pointer-events-none absolute -top-6 -right-8 hidden h-52 w-[26rem] sm:block" />
+      <div className="max-w-content rise relative mx-auto">
+        <p className="text-eyebrow tracking-masthead text-ink-muted flex items-center gap-2.5 pb-4 font-semibold uppercase">
+          <span
+            aria-hidden="true"
+            className="hex-face bg-gold-bright size-2.5 shrink-0"
+          />
           {eyebrow}
         </p>
         <div className="rule-heavy grid gap-x-16 gap-y-6 pt-8 lg:grid-cols-[1.35fr_1fr] lg:items-end">
@@ -190,8 +198,9 @@ export function Section({
 type CardTone = "paper" | "cream" | "navy";
 
 /**
- * A column of content, ruled at the top rather than boxed. `tone="navy"` fills,
- * because a closing panel genuinely is a block of colour rather than a column.
+ * A column of content, gold-edged at the top rather than boxed. `tone="navy"`
+ * fills, because a closing panel genuinely is a block of colour rather than a
+ * column.
  */
 export function Card({
   children,
@@ -206,11 +215,12 @@ export function Card({
     return (
       <UiCard
         className={cn(
-          "bg-navy navy-wash relative gap-0 rounded-none border-0 p-5 text-white shadow-none sm:p-8 lg:p-12",
+          "bg-navy navy-wash relative gap-0 overflow-hidden rounded-xl border-0 p-5 text-white shadow-none sm:p-8 lg:p-12",
           className,
         )}
       >
-        {children}
+        <Honeycomb className="text-gold-bright/10 pointer-events-none absolute inset-0 h-full w-full" />
+        <div className="relative">{children}</div>
       </UiCard>
     );
   }
@@ -218,7 +228,7 @@ export function Card({
   return (
     <UiCard
       className={cn(
-        "border-rule gap-0 rounded-none border-0 border-t-2 bg-transparent py-0 pt-6 shadow-none",
+        "border-gold gap-0 rounded-xl border-0 border-t-2 bg-transparent py-0 pt-6 shadow-none",
         tone === "cream" ? "bg-cream px-6 pb-6" : "",
         className,
       )}
@@ -242,6 +252,7 @@ export function CtaPanel({
 }) {
   return (
     <div className="bg-navy navy-wash relative overflow-hidden px-6 py-16 sm:px-12 lg:py-24">
+      <Honeycomb className="text-gold-bright/12 pointer-events-none absolute inset-0 h-full w-full" />
       <div className="max-w-measure relative mx-auto text-center">
         {eyebrow && (
           <Eyebrow tone="light" rule={false} className="justify-center">

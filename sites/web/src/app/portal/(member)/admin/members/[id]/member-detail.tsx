@@ -230,7 +230,7 @@ export function MemberDetail({ memberId }: { memberId: string }) {
         >
           <Button
             asChild
-            className="bg-navy hover:bg-navy-deep min-h-11 rounded-none font-semibold text-white"
+            className="bg-navy hover:bg-navy-deep min-h-11 rounded-md font-semibold text-white"
           >
             <Link href="/portal/admin/members">Back to the roster</Link>
           </Button>
@@ -286,7 +286,7 @@ export function MemberDetail({ memberId }: { memberId: string }) {
                   <Button
                     type="button"
                     disabled={promote.isPending}
-                    className="bg-navy hover:bg-navy-deep min-h-11 rounded-none font-semibold text-white"
+                    className="bg-navy hover:bg-navy-deep min-h-11 rounded-md font-semibold text-white"
                   >
                     {promote.isPending ? "Promoting..." : "Make officer"}
                   </Button>
@@ -318,7 +318,7 @@ export function MemberDetail({ memberId }: { memberId: string }) {
               variant="outline"
               disabled={revoke.isPending}
               onClick={() => revoke.mutate({ userId: member.id })}
-              className="border-hairline text-navy hover:bg-cream min-h-11 rounded-none font-semibold"
+              className="border-hairline text-navy hover:bg-cream min-h-11 rounded-md font-semibold"
             >
               {revoke.isPending
                 ? "Revoking sessions..."

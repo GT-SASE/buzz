@@ -48,7 +48,6 @@ export default function ContactPage() {
 
       <Section
         id="prospective"
-        number="01"
         eyebrow="Prospective members"
         title="Start at a general body meeting."
         lead="Nothing is required to attend. Membership is free, there is no application, and there is no major requirement. Come once and decide from there."
@@ -91,7 +90,6 @@ export default function ContactPage() {
 
       <Section
         id="members"
-        number="02"
         eyebrow="Current members"
         title="Day-to-day channels."
         size="sm"

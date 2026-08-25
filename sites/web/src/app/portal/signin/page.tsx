@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 
 import { signInWithGoogle } from "~/app/portal/_components/auth-actions";
 import { safeRedirectPath } from "~/app/portal/_lib/paths";
-import { Eyebrow } from "~/components/site";
+import { Eyebrow, Honeycomb } from "~/components/site";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader } from "~/components/ui/card";
 import { auth } from "@buzz/auth";
@@ -28,10 +28,11 @@ export default async function SignInPage({
   }
 
   return (
-    <section className="bg-cream paper-wash flex min-h-[70vh] items-center px-5 py-20 sm:px-6">
-      <Card className="border-hairline bg-paper mx-auto w-full max-w-md rounded-lg">
+    <section className="bg-cream paper-wash relative flex min-h-[70vh] items-center overflow-hidden px-5 py-20 sm:px-6">
+      <Honeycomb className="text-gold/20 pointer-events-none absolute inset-0 h-full w-full" />
+      <Card className="border-hairline bg-paper relative mx-auto w-full max-w-md rounded-xl">
         <CardHeader>
-          <Eyebrow tone="gold">Member portal</Eyebrow>
+          <Eyebrow tone="gold">Buzz by SASE</Eyebrow>
           <h1 className="font-display text-navy text-h2 mt-5 font-bold tracking-tight text-balance">
             Sign in to check in.
           </h1>
@@ -49,7 +50,7 @@ export default async function SignInPage({
             <Button
               type="submit"
               size="lg"
-              className="bg-navy hover:bg-navy-deep h-auto min-h-12 w-full rounded-none py-6 font-semibold text-white"
+              className="bg-navy hover:bg-navy-deep h-auto min-h-12 w-full rounded-md py-6 font-semibold text-white"
             >
               Continue with Google
             </Button>

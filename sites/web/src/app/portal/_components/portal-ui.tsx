@@ -1,4 +1,5 @@
 import { Eyebrow } from "~/components/site";
+import { Honeycomb } from "~/components/site/hive";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent } from "~/components/ui/card";
 import { signOutOfPortal } from "./auth-actions";
@@ -16,7 +17,8 @@ export function PortalHeader({
   aside?: React.ReactNode;
 }) {
   return (
-    <section className="bg-cream paper-wash border-hairline relative border-b">
+    <section className="bg-cream paper-wash border-hairline relative overflow-hidden border-b">
+      <Honeycomb className="text-gold/20 pointer-events-none absolute -top-8 -right-10 h-48 w-80" />
       <div className="max-w-content relative mx-auto grid gap-6 px-5 py-8 sm:gap-10 sm:px-6 sm:py-16 lg:grid-cols-[1fr_auto] lg:items-center lg:gap-16">
         <div className="max-w-xl">
           <Eyebrow tone="gold">{eyebrow}</Eyebrow>
@@ -72,7 +74,7 @@ export function SignOutButton() {
         type="submit"
         variant="ghost"
         size="sm"
-        className="text-ink-muted hover:text-navy hover:bg-cream text-body-sm min-h-11 rounded-none font-semibold"
+        className="text-ink-muted hover:text-navy hover:bg-cream text-body-sm min-h-11 rounded-md font-semibold"
       >
         Sign out
       </Button>

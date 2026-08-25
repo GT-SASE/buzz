@@ -33,7 +33,7 @@ export const meeting = {
 
 /** Ribbon under the hero — what a member actually gets, in six words or less. */
 export const marqueeItems = [
-  "Mentor families",
+  "SASE KIN",
   "Recruiter resume workshops",
   "Technical project teams",
   "Taste of SASE",
@@ -71,10 +71,10 @@ export const programs = [
   {
     slug: "mentorship",
     icon: "compass",
-    title: "Mentorship",
-    body: "Big/little mentor families pairing first-years with upperclassmen and alumni in industry.",
+    title: "SASE KIN",
+    body: "Kin groups pairing first-years with upperclassmen and alumni in industry.",
     detail:
-      "Every member who signs up is placed in a mentor family: a small group of first- and second-years matched with upperclassmen, and where possible an alum in industry. Families set their own rhythm — coffee between classes, resume passes before a deadline, someone to text when a semester goes sideways.",
+      "Every member who signs up is placed in a SASE KIN group: a small cluster of first- and second-years matched with upperclassmen, and where possible an alum in industry. Kin set their own rhythm — coffee between classes, resume passes before a deadline, someone to text when a semester goes sideways.",
   },
   {
     slug: "technical-projects",
@@ -123,7 +123,7 @@ export const firstMonth = [
   },
   {
     when: "Week two",
-    title: "Get placed in a mentor family",
+    title: "Get placed in SASE KIN",
     body: "A small group of first- and second-years matched with upperclassmen, and where possible an alum in industry.",
   },
   {

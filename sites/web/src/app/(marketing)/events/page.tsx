@@ -33,7 +33,7 @@ function EmptyState({
   return (
     <Alert
       role="note"
-      className="border-hairline bg-cream border-t-rule max-w-measure gap-y-3 rounded-none border-t-2 px-6 py-7"
+      className="border-hairline bg-cream border-t-gold max-w-measure gap-y-3 rounded-xl border-t-2 px-6 py-7"
     >
       <AlertTitle className="font-display text-navy text-h3 line-clamp-none font-bold">
         {title}
@@ -62,7 +62,7 @@ export default async function EventsPage() {
         body="General body meetings, workshops, socials, and conferences. Open to all Georgia Tech students unless noted."
       />
 
-      <Section number="01" eyebrow="Upcoming" title="On the calendar now.">
+      <Section eyebrow="Upcoming" title="On the calendar now.">
         {upcoming.length > 0 ? (
           <div className="stagger grid gap-x-10 gap-y-12 sm:grid-cols-2 lg:grid-cols-3">
             {upcoming.map((event) => (
@@ -93,7 +93,6 @@ export default async function EventsPage() {
           the archive is empty rather than dropping the anchor. */}
       <Section
         id="past"
-        number="02"
         eyebrow="Archive"
         title="What we ran last year."
         tone="cream"
@@ -115,7 +114,7 @@ export default async function EventsPage() {
                   {event.location && (
                     <Badge
                       variant="outline"
-                      className="border-hairline text-ink-muted text-body-sm mt-2 rounded-none px-2.5 py-1 font-normal"
+                      className="border-hairline text-ink-muted text-body-sm mt-2 rounded-md px-2.5 py-1 font-normal"
                     >
                       {event.location}
                     </Badge>

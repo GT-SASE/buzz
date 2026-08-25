@@ -51,7 +51,6 @@ export default function SponsorsPage() {
       {/* No logo wall until there are logos — an empty one advertises that the
           chapter has no partners. */}
       <Section
-        number="01"
         eyebrow="2026-2027"
         title="Partner slots are open."
         lead="The chapter is building its corporate partner roster for the coming year. Early partners choose their event first."
@@ -70,7 +69,6 @@ export default function SponsorsPage() {
 
       <Section
         size="lg"
-        number="02"
         eyebrow="Tiers"
         title="Pick a level, or ask for something custom."
       >

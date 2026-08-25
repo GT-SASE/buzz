@@ -5,7 +5,7 @@ import { Toaster } from "~/components/ui/sonner";
 import { MentorshipSignup } from "./mentorship-signup";
 
 export const metadata: Metadata = {
-  title: "Mentor families",
+  title: "SASE KIN",
 };
 
 export default async function MentorshipPage() {

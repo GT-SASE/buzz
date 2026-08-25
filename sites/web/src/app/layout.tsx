@@ -3,7 +3,7 @@ import "~/styles/globals.css";
 import type { Metadata, Viewport } from "next";
 import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
-import { Fraunces, Inter } from "next/font/google";
+import { Bricolage_Grotesque, Fraunces, IBM_Plex_Mono } from "next/font/google";
 
 import { site } from "~/data/site";
 import { jsonLd, organizationSchema } from "~/lib/seo";
@@ -63,9 +63,9 @@ export const viewport: Viewport = {
   themeColor: "#003057",
 };
 
-const inter = Inter({
+const sans = Bricolage_Grotesque({
   subsets: ["latin"],
-  variable: "--font-inter",
+  variable: "--font-bricolage",
   display: "swap",
 });
 
@@ -75,6 +75,13 @@ const display = Fraunces({
   subsets: ["latin"],
   variable: "--font-display",
   weight: ["700"],
+  display: "swap",
+});
+
+const mono = IBM_Plex_Mono({
+  subsets: ["latin"],
+  variable: "--font-ibm",
+  weight: ["500"],
   display: "swap",
 });
 
@@ -91,7 +98,11 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={`${inter.variable} ${display.variable}`}>
+    <html
+      lang="en"
+      data-scroll-behavior="smooth"
+      className={`${sans.variable} ${display.variable} ${mono.variable}`}
+    >
       <body className="text-ink bg-paper flex min-h-screen flex-col antialiased">
         <script
           type="application/ld+json"

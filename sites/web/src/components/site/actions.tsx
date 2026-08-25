@@ -10,7 +10,7 @@ function isRouterHref(href: string, external: boolean) {
 }
 
 /**
- * Squared blocks and ruled links, not pills — the editorial system's two action
+ * Hex cells and ruled links, not pills — the hive system's two action
  * shapes, layered onto the Watermelon Button so it keeps the shared focus ring,
  * disabled handling, and icon sizing.
  */
@@ -62,7 +62,7 @@ export function Button({
       size="lg"
       className={cn(
         "group text-eyebrow tracking-caps h-auto gap-3 font-semibold uppercase transition duration-200 max-sm:min-w-0 max-sm:shrink max-sm:whitespace-normal",
-        boxed ? "rounded-none px-7 py-4" : "min-h-11 items-end py-3",
+        boxed ? "rounded-md px-7 py-4" : "min-h-11 items-end py-3",
         actionVariants[variant],
         className,
       )}

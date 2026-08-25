@@ -12,13 +12,9 @@ import { breadcrumbSchema, pageMetadata } from "~/lib/seo";
 export const metadata = pageMetadata({
   title: "Programs",
   description:
-    "Six standing programs at SASE Georgia Tech: professional development, mentor families, technical projects, community service, socials, and national conferences.",
+    "Six standing programs at SASE Georgia Tech: professional development, SASE KIN, technical projects, community service, socials, and national conferences.",
   path: "/programs",
 });
-
-function numeral(index: number) {
-  return String(index + 1).padStart(2, "0");
-}
 
 export default function ProgramsPage() {
   return (
@@ -36,7 +32,7 @@ export default function ProgramsPage() {
           collapsible
           className="rule-heavy border-hairline border-b"
         >
-          {programs.map((program, i) => (
+          {programs.map((program) => (
             <AccordionItem
               key={program.slug}
               id={program.slug}
@@ -48,10 +44,8 @@ export default function ProgramsPage() {
                   <span className="flex min-w-0 items-center gap-5 sm:gap-8">
                     <span
                       aria-hidden="true"
-                      className="text-numeral tracking-caps text-gold-ink font-semibold"
-                    >
-                      {numeral(i)}
-                    </span>
+                      className="hex-face bg-gold-bright size-3 shrink-0"
+                    />
                     <Icon
                       name={program.icon}
                       className="text-gold-ink size-7 shrink-0"
@@ -77,7 +71,7 @@ export default function ProgramsPage() {
                       href="/portal/mentorship"
                       className="w-full justify-center sm:w-auto"
                     >
-                      Sign up in the portal
+                      Sign up for SASE KIN
                     </Button>
                   )}
                 </div>

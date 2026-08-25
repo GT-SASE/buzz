@@ -103,7 +103,7 @@ export function MentorshipRoster() {
   if (rows.length === 0) {
     return (
       <p className="text-ink-muted text-body">
-        Nobody has signed up yet. Members use Families in the portal.
+        Nobody has signed up yet. Members use SASE KIN in the portal.
       </p>
     );
   }
@@ -160,7 +160,7 @@ export function MentorshipRoster() {
       </ul>
 
       <div className="hidden md:block">
-        <Table label="Mentor families">
+        <Table label="SASE KIN">
           <TableHeader>
             <TableRow>
               <TableHead>Member</TableHead>

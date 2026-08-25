@@ -22,9 +22,9 @@ export default function OpengraphImage() {
         flexDirection: "column",
         justifyContent: "space-between",
         padding: 80,
-        backgroundColor: "#f7f1e5",
+        backgroundColor: "#f6f1e3",
         backgroundImage:
-          "radial-gradient(900px 600px at 8% -10%, rgba(234,170,0,0.30), rgba(247,241,229,0)), radial-gradient(700px 500px at 100% 100%, rgba(0,48,87,0.16), rgba(247,241,229,0))",
+          "radial-gradient(900px 600px at 8% -10%, rgba(234,170,0,0.30), rgba(246,241,227,0)), radial-gradient(700px 500px at 100% 100%, rgba(0,48,87,0.16), rgba(246,241,227,0))",
       }}
     >
       <div
@@ -38,15 +38,16 @@ export default function OpengraphImage() {
           <div
             style={{
               width: 68,
-              height: 68,
-              borderRadius: 999,
+              height: 76,
               backgroundColor: "#003057",
               color: "#eaaa00",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              fontSize: 26,
+              fontSize: 22,
               fontWeight: 700,
+              clipPath:
+                "polygon(50% 5%, 94% 27.5%, 94% 72.5%, 50% 95%, 6% 72.5%, 6% 27.5%)",
             }}
           >
             GT
@@ -92,9 +93,10 @@ export default function OpengraphImage() {
             style={{
               width: 12,
               height: 12,
-              borderRadius: 999,
               backgroundColor: "#eaaa00",
               marginRight: 12,
+              clipPath:
+                "polygon(50% 5%, 94% 27.5%, 94% 72.5%, 50% 95%, 6% 72.5%, 6% 27.5%)",
             }}
           />
           {site.theme}
