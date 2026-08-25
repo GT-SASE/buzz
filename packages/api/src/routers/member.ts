@@ -252,7 +252,7 @@ export const memberRouter = createTRPCRouter({
 
   /**
    * One-way: an officer makes a member an officer. Never demotes — that is a
-   * database edit, same as taking someone off `ADMIN_EMAILS`.
+   * database edit.
    */
   promote: adminProcedure
     .input(z.object({ userId: z.string().min(1) }))

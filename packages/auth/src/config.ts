@@ -11,7 +11,6 @@ import {
   verificationTokens,
   type UserRole,
 } from "@buzz/db";
-import { isOfficerEmail } from "./admins";
 
 /**
  * Module augmentation for `next-auth` types. Allows us to add custom properties to the `session`
@@ -44,6 +43,17 @@ declare module "@auth/core/adapters" {
 }
 
 const SESSION_MAX_AGE_SEC = 30 * 24 * 60 * 60;
+
+async function storeEmailLowercase(user: {
+  id?: string;
+  email?: string | null;
+}) {
+  if (!user.id) return;
+  const email = user.email?.trim().toLowerCase();
+  if (email && email !== user.email) {
+    await db.update(users).set({ email }).where(eq(users.id, user.id));
+  }
+}
 
 /**
  * Options for NextAuth.js used to configure adapters, providers, callbacks, etc.
@@ -89,38 +99,15 @@ export const authConfig = {
   },
   events: {
     /**
-     * Seed the role from the allowlist and normalize email to lowercase.
-     *
-     * `createUser` covers the first sign-in; `signIn` covers an account that
-     * already existed when its address was added. Deliberately one-way: it
-     * never demotes, so an officer who leaves the allowlist keeps access until
-     * somebody actually edits the row, rather than losing it silently the next
-     * time an environment variable changes.
+     * Store email lowercase so roster search and the unique index agree.
+     * Officer access is the `role` column — promote from the roster, never
+     * from an env allowlist on sign-in.
      */
     createUser: async ({ user }) => {
-      if (!user.id) return;
-      const email = user.email?.trim().toLowerCase();
-      if (email && email !== user.email) {
-        await db.update(users).set({ email }).where(eq(users.id, user.id));
-      }
-      if (!isOfficerEmail(email ?? user.email)) return;
-      await db
-        .update(users)
-        .set({ role: "ADMIN" })
-        .where(eq(users.id, user.id));
+      await storeEmailLowercase(user);
     },
     signIn: async ({ user }) => {
-      if (!user.id) return;
-      const email = user.email?.trim().toLowerCase();
-      if (email && email !== user.email) {
-        await db.update(users).set({ email }).where(eq(users.id, user.id));
-      }
-      if (user.role === "ADMIN") return;
-      if (!isOfficerEmail(email ?? user.email)) return;
-      await db
-        .update(users)
-        .set({ role: "ADMIN" })
-        .where(eq(users.id, user.id));
+      await storeEmailLowercase(user);
     },
   },
   callbacks: {

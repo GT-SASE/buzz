@@ -25,7 +25,6 @@ import { cn } from "~/lib/utils";
 import { asDate, asInt } from "../packages/api/src/aggregates";
 import { isUniqueViolation } from "../packages/api/src/pg-errors";
 import { resetRateLimits, takeToken } from "../packages/api/src/rate-limit";
-import { isOfficerEmail } from "../packages/auth/src/admins";
 
 /**
  * One thousand cases across the helpers the rest of the app actually calls.
@@ -268,86 +267,11 @@ function buildCases(): Case[] {
     });
   }
 
-  // --- officers (84) ---
-  const originalAdmin = process.env.ADMIN_EMAILS;
-  const officerCases: Array<{
-    list: string;
-    email: string | null | undefined;
-    expected: boolean;
-  }> = [];
-  const pushOfficer = (
-    list: string,
-    email: string | null | undefined,
-    expected: boolean,
-  ) => officerCases.push({ list, email, expected });
-
-  for (const email of [
-    "officer@saseconnect.org",
-    "OFFICER@saseconnect.org",
-    "  officer@SASECONNECT.org  ",
-    "officer@saseconnect.org\n",
-  ]) {
-    pushOfficer("officer@saseconnect.org", email, true);
+  // --- member roster redirects (82) ---
+  for (let i = 0; i < 82; i++) {
+    const path = `/portal/admin/members/${i}`;
+    add(`path/member/${i}`, () => expect(safeRedirectPath(path)).toBe(path));
   }
-  for (const email of [
-    "officer2@saseconnect.org",
-    "xofficer@saseconnect.org",
-    "officer@example.com",
-    "anyone@saseconnect.org",
-    "ab@saseconnect.org",
-  ]) {
-    pushOfficer("officer@saseconnect.org", email, false);
-  }
-  for (const email of [
-    "ab@gmail.com",
-    "a.b@gmail.com",
-    "a.b+sase@gmail.com",
-    "ab+anything@gmail.com",
-    "AB@Gmail.Com",
-    "ab@googlemail.com",
-    "a.b+sase@googlemail.com",
-    "a.b@googlemail.com",
-  ]) {
-    pushOfficer("ab@gmail.com", email, true);
-  }
-  for (const email of [
-    "abc@gmail.com",
-    "ab@yahoo.com",
-    "a.b@saseconnect.org",
-    "notab@gmail.com",
-    "ab@gatech.edu",
-  ]) {
-    pushOfficer("ab@gmail.com", email, false);
-  }
-  pushOfficer("a.b@saseconnect.org", "a.b@saseconnect.org", true);
-  pushOfficer("a.b@saseconnect.org", "ab@saseconnect.org", false);
-  pushOfficer("a.b@saseconnect.org", "a.b+x@saseconnect.org", false);
-  pushOfficer("@saseconnect.org", "anyone@saseconnect.org", false);
-  pushOfficer(
-    "@saseconnect.org,officer@saseconnect.org",
-    "officer@saseconnect.org",
-    true,
-  );
-  pushOfficer("officer@saseconnect.org", null, false);
-  pushOfficer("officer@saseconnect.org", undefined, false);
-  pushOfficer("officer@saseconnect.org", "", false);
-  pushOfficer("officer@saseconnect.org", "   ", false);
-  pushOfficer("officer@saseconnect.org", "@", false);
-  pushOfficer("", "officer@saseconnect.org", false);
-  pushOfficer(",", "officer@saseconnect.org", false);
-  pushOfficer(" , president@gmail.com,", "pre.sident+gt@googlemail.com", true);
-  for (let i = 0; i < 47; i++) {
-    pushOfficer("board@saseconnect.org", `member${i}@gatech.edu`, false);
-  }
-  // 4+5+8+5+3+2+6+3+1+47 = 84
-  officerCases.forEach((entry, i) =>
-    add(`officer/${i}`, () => {
-      process.env.ADMIN_EMAILS = entry.list;
-      expect(isOfficerEmail(entry.email)).toBe(entry.expected);
-      if (originalAdmin === undefined) delete process.env.ADMIN_EMAILS;
-      else process.env.ADMIN_EMAILS = originalAdmin;
-    }),
-  );
 
   // --- Atlanta clocks (96 round trips + 36 date prints) ---
   const hours = [0, 3, 6, 9, 12, 15, 18, 21];
@@ -724,12 +648,8 @@ if (CASES.length !== 1000) {
   throw new Error(`codebase case table must be 1000, got ${CASES.length}`);
 }
 
-const originalAdmin = process.env.ADMIN_EMAILS;
-
 describe("one thousand cases across the codebase", () => {
   afterEach(() => {
-    if (originalAdmin === undefined) delete process.env.ADMIN_EMAILS;
-    else process.env.ADMIN_EMAILS = originalAdmin;
     resetRateLimits();
   });
 

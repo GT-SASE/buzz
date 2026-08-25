@@ -159,8 +159,8 @@ is an ops or board task that has to happen in a console, not in this repo.
 
 ### Security / reliability
 
-- Admin allowlist fail-closed; exact emails only (no `@domain` wildcard);
-  no hardcoded default admins; `ADMIN_EMAILS` via `@t3-oss/env-nextjs`
+- Officer access is the `role` column; promote from the roster, not an env
+  allowlist; no hardcoded default admins
 - Portal secrets required when `VERCEL_ENV === "production"`
 - Security headers + CSP + `poweredByHeader: false`
 - Auth.js `trustHost` so Vercel host headers are accepted
@@ -218,7 +218,7 @@ DDL helpers (`lower(email)` index, CHECK constraints).
 ## Remaining (ops / board, not code)
 
 1. **Confirm production env** on Vercel: `DATABASE_URL`, `AUTH_SECRET`,
-   Google OAuth IDs + redirect URIs, `ADMIN_EMAILS` (first officer). Optional:
+   Google OAuth IDs + redirect URIs. Officers are added from the roster. Optional:
    `AUTH_URL=https://buzzsase.vercel.app` if preview sign-in should hit the
    canonical origin.
 2. ~~**Promote the first officer.**~~ **Done, 16 Aug 2026.**

@@ -18,7 +18,7 @@ hours, and there is no bounty programme.
 
 - Anything that reads or writes another member's data
 - Anything that grants officer (`ADMIN`) access other than an existing officer
-  promoting someone from the roster, or `ADMIN_EMAILS` on sign-in
+  promoting someone from the roster
 - Check-in fraud: awarding points to someone who was not there, or awarding them
   more than once
 - Leaking a `checkInCode` to a non-officer — it is a bearer credential, and

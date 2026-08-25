@@ -93,9 +93,9 @@ export default async function Home() {
               </h1>
               <p className="text-lead text-ink-muted max-w-measure mt-6 sm:mt-8">
                 We are the Georgia Tech chapter of the Society of Asian
-                Scientists and Engineers. SASE KIN, recruiter workshops,
-                semester-long build teams, and Taste of SASE — open to every
-                student on campus, any major, any background.
+                Scientists and Engineers. SASE KIN, recruiter workshops, and
+                semester-long build teams — open to every student on campus,
+                any major, any background.
               </p>
               <div className="mt-8 flex flex-col items-stretch gap-4 sm:mt-10 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-8 sm:gap-y-5">
                 <Button

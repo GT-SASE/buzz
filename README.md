@@ -71,7 +71,6 @@ Everything below is what turns the **portal** on.
      development included, so sign-in does nothing until these are set.
    - `AUTH_REDIRECT_PROXY_URL` — `https://buzzsase.vercel.app/api/auth`. Pins
      Google's callback to the one registered URI.
-   - `ADMIN_EMAILS` — who gets the officer role. Optional; see `.env.example`.
 2. Start Postgres — `./start-database.sh` runs one in Docker. It reads the file
    from step 1, so that order matters.
 3. `pnpm db:migrate` to apply the committed SQL under `packages/db/drizzle`.
@@ -112,7 +111,7 @@ Authorized redirect URIs
 
 ### Vercel
 
-Project settings → Environment Variables, all four for Production and Preview:
+Project settings → Environment Variables, for Production and Preview:
 
 ```
 DATABASE_URL         the same Postgres, or a separate one for previews
@@ -120,7 +119,6 @@ AUTH_SECRET          same value on Production and Preview (the Google proxy sign
 AUTH_GOOGLE_ID
 AUTH_GOOGLE_SECRET
 AUTH_REDIRECT_PROXY_URL  https://buzzsase.vercel.app/api/auth  (also set in vercel.json)
-ADMIN_EMAILS         optional
 ```
 
 Set `AUTH_REDIRECT_PROXY_URL=https://buzzsase.vercel.app/api/auth` locally and
@@ -150,13 +148,14 @@ scanner did nothing" is findable without reproducing it.
 
 ## Promoting officers
 
-The first officer still needs `ADMIN_EMAILS` (or a `role` edit in `pnpm db:studio`) so
-someone can open the roster. After that, any officer can promote a member from their
-page under `/portal/admin/members`: **Make officer**. The role rides on the database
-session, so it takes effect on their next request.
+Any officer can promote a member from their page under `/portal/admin/members`:
+**Make officer**. The role rides on the database session, so it takes effect on
+their next request.
 
-Demotion is still a database edit — set `role` back to `MEMBER`. Removing an address
-from `ADMIN_EMAILS` does not revoke someone who is already an officer.
+The first officer on a fresh database is a `role` edit in `pnpm db:studio` (or
+the seed script locally). After that, the roster is the only way.
+
+Demotion is still a database edit — set `role` back to `MEMBER`.
 
 ## How points work
 

@@ -1,8 +1,7 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { codeFromScan } from "~/app/portal/(member)/check-in/scanner";
 import { tiers, tierFor } from "~/data/portal";
-import { isOfficerEmail } from "../packages/auth/src/admins";
 
 describe("tiers", () => {
   /**
@@ -119,124 +118,6 @@ describe("tierFor", () => {
     // `Math.min` caps the ceiling; nothing holds the floor, and below the
     // lowest band the divisor `next.min - current.min` is 0 as well.
     expect(tierFor(-5).progress).toBeGreaterThanOrEqual(0);
-  });
-});
-
-describe("isOfficerEmail", () => {
-  const original = process.env.ADMIN_EMAILS;
-
-  afterEach(() => {
-    if (original === undefined) delete process.env.ADMIN_EMAILS;
-    else process.env.ADMIN_EMAILS = original;
-  });
-
-  it("matches an exact address and nothing else", () => {
-    process.env.ADMIN_EMAILS = "officer@saseconnect.org";
-    expect(isOfficerEmail("officer@saseconnect.org")).toBe(true);
-    expect(isOfficerEmail("officer2@saseconnect.org")).toBe(false);
-    expect(isOfficerEmail("officer@example.com")).toBe(false);
-    expect(isOfficerEmail("xofficer@saseconnect.org")).toBe(false);
-  });
-
-  it("ignores case and surrounding whitespace on both sides", () => {
-    process.env.ADMIN_EMAILS = "  Officer@SaseConnect.ORG ,  ";
-    expect(isOfficerEmail("OFFICER@saseconnect.org")).toBe(true);
-    expect(isOfficerEmail("  officer@SASECONNECT.org\n")).toBe(true);
-  });
-
-  /**
-   * One Google account, several spellings. A member who signs in as
-   * `a.b+sase@gmail.com` is the same inbox as the `ab@gmail.com` on the
-   * allowlist, and an officer typing their own address into ADMIN_EMAILS with
-   * their usual dots must not lock themselves out of the admin nav.
-   */
-  it("treats gmail dots and +tags as one inbox, in both directions", () => {
-    process.env.ADMIN_EMAILS = "ab@gmail.com";
-    expect(isOfficerEmail("a.b+sase@gmail.com")).toBe(true);
-    expect(isOfficerEmail("a.b@gmail.com")).toBe(true);
-    expect(isOfficerEmail("ab+anything@gmail.com")).toBe(true);
-    expect(isOfficerEmail("ab@googlemail.com")).toBe(true);
-    expect(isOfficerEmail("a.b+sase@googlemail.com")).toBe(true);
-
-    process.env.ADMIN_EMAILS = "a.b+sase@gmail.com";
-    expect(isOfficerEmail("ab@gmail.com")).toBe(true);
-    expect(isOfficerEmail("abc@gmail.com")).toBe(false);
-  });
-
-  /**
-   * The dot rule is a Gmail rule. Applying it everywhere would make
-   * `a.b@saseconnect.org` and `ab@saseconnect.org` the same person on a domain
-   * where they are two different mailboxes — that is a privilege grant to
-   * whoever registers the other spelling.
-   */
-  it("does not strip dots or +tags outside gmail", () => {
-    process.env.ADMIN_EMAILS = "a.b@saseconnect.org";
-    expect(isOfficerEmail("a.b@saseconnect.org")).toBe(true);
-    expect(isOfficerEmail("ab@saseconnect.org")).toBe(false);
-    expect(isOfficerEmail("a.b+x@saseconnect.org")).toBe(false);
-  });
-
-  /**
-   * Domain wildcards used to promote every account on a domain to ADMIN. Exact
-   * addresses only — an `@domain` entry is ignored, not expanded.
-   */
-  it("ignores domain wildcard entries", () => {
-    process.env.ADMIN_EMAILS = "@saseconnect.org";
-    expect(isOfficerEmail("anyone@saseconnect.org")).toBe(false);
-
-    process.env.ADMIN_EMAILS = "@saseconnect.org,officer@saseconnect.org";
-    expect(isOfficerEmail("anyone@saseconnect.org")).toBe(false);
-    expect(isOfficerEmail("officer@saseconnect.org")).toBe(true);
-  });
-
-  it("takes a missing or empty address as not an officer", () => {
-    process.env.ADMIN_EMAILS = "officer@saseconnect.org";
-    expect(isOfficerEmail(null)).toBe(false);
-    expect(isOfficerEmail(undefined)).toBe(false);
-    expect(isOfficerEmail("")).toBe(false);
-    expect(isOfficerEmail("   ")).toBe(false);
-    expect(isOfficerEmail("@")).toBe(false);
-  });
-
-  it("reads several comma-separated entries and skips blank ones", () => {
-    process.env.ADMIN_EMAILS = " , president@gmail.com,";
-    expect(isOfficerEmail("pre.sident+gt@googlemail.com")).toBe(true);
-    expect(isOfficerEmail("someone@example.com")).toBe(false);
-  });
-
-  /**
-   * The allowlist is read on every call, not captured at import. Hoisting it
-   * to a module constant would be an easy "optimisation" that breaks the
-   * server actions this runs inside, where the module outlives a config
-   * change, and would break this test first.
-   */
-  it("re-reads ADMIN_EMAILS on every call", () => {
-    process.env.ADMIN_EMAILS = "first@saseconnect.org";
-    expect(isOfficerEmail("first@saseconnect.org")).toBe(true);
-    expect(isOfficerEmail("second@saseconnect.org")).toBe(false);
-
-    process.env.ADMIN_EMAILS = "second@saseconnect.org";
-    expect(isOfficerEmail("first@saseconnect.org")).toBe(false);
-    expect(isOfficerEmail("second@saseconnect.org")).toBe(true);
-  });
-
-  /**
-   * Fail closed: unset or empty ADMIN_EMAILS promotes nobody. The first
-   * officer is set via env or a deliberate database edit.
-   */
-  it("promotes nobody when ADMIN_EMAILS is unset or empty", () => {
-    delete process.env.ADMIN_EMAILS;
-    expect(isOfficerEmail("aamoghsawantt@gmail.com")).toBe(false);
-    expect(isOfficerEmail("officer@saseconnect.org")).toBe(false);
-
-    process.env.ADMIN_EMAILS = "";
-    expect(isOfficerEmail("officer@saseconnect.org")).toBe(false);
-
-    process.env.ADMIN_EMAILS = ",";
-    expect(isOfficerEmail("officer@saseconnect.org")).toBe(false);
-
-    process.env.ADMIN_EMAILS = "officer@saseconnect.org";
-    expect(isOfficerEmail("officer@saseconnect.org")).toBe(true);
   });
 });
 

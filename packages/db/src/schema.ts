@@ -57,8 +57,8 @@ export const users = createTable(
      * column exists, so anything `notNull` here needs a default at the database
      * level, not just in the builder.
      *
-     * Officers are promoted via ADMIN_EMAILS on sign-in, by an existing
-     * officer from the roster, or by hand in `pnpm db:studio`.
+     * Officers are promoted from the roster by an existing officer, or by
+     * hand in `pnpm db:studio`.
      */
     role: d
       .varchar({ length: 16 })
