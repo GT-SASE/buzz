@@ -36,7 +36,6 @@ import {
   TableHeader,
   TableRow,
 } from "~/components/ui/table";
-import { site } from "~/data/site";
 import { cn } from "~/lib/utils";
 import { api, type RouterOutputs } from "~/trpc/react";
 
@@ -418,45 +417,32 @@ export function EventAttendance({
         {event.location ? ` · ${event.location}` : ""}
       </p>
 
-      {/* The projector panel. Sized to be read from the back of a lecture hall,
-          which is why the code alphabet has no I, L, O, U, 0 or 1. */}
+      {/* Preview of the wall QR. Members scan; they never type a code. */}
       <div className="bg-navy navy-wash border-navy-deep relative mt-8 overflow-hidden rounded-lg border">
         <Honeycomb className="text-gold-bright/[0.13] absolute inset-0 h-full w-full" />
 
         <div className="relative px-5 py-10 sm:px-10 sm:py-14">
           <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-4">
             <Eyebrow tone="onNavy" rule={false}>
-              Check in at
+              Check-in QR
             </Eyebrow>
             <CheckInStatus state={state} />
           </div>
 
-          {/* A preview of what goes on the wall. Members scan; the code beneath
-              is an officer's reference for adding somebody by hand. */}
-          <div className="mt-2 min-w-0">
-            <div className="min-w-0">
-              <p className="text-lead font-semibold text-white">
-                {checkInHost}/portal
-              </p>
-
-              <p
-                className={cn(
-                  "mt-6 font-mono text-xl font-bold tracking-[0.12em] break-all tabular-nums sm:text-2xl sm:tracking-[0.2em]",
-                  state === "open" ? "text-gold-bright" : "text-white/55",
-                )}
-              >
-                {event.checkInCode}
-              </p>
+          {state === "open" ? (
+            <div className="mt-8 flex justify-center sm:justify-start">
+              <CheckInQr
+                code={event.checkInCode}
+                className="size-48 p-3 sm:size-56"
+              />
             </div>
-          </div>
-
-          {state !== "open" && (
+          ) : (
             <p className="text-body max-w-measure mt-6 text-white/75">
               {state === "archived"
-                ? "This event is archived. The code will not admit anyone."
+                ? "This event is archived. The QR will not admit anyone."
                 : isPast
-                  ? "Check-in closed automatically 24 hours after this event started. The code will not admit anyone."
-                  : "Check-in is closed — members entering this code will be turned away."}
+                  ? "Check-in closed automatically 24 hours after this event started. The QR will not admit anyone."
+                  : "Check-in is closed — members scanning this QR will be turned away."}
             </p>
           )}
         </div>
@@ -492,7 +478,7 @@ export function EventAttendance({
 
       <div className="mt-6 flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
         <p className="text-ink-muted text-body-sm max-w-measure">
-          Anyone holding this code can check in. Rotating it revokes a
+          Anyone who photographs this QR can check in. Rotating it revokes a
           photographed slide immediately.
         </p>
 
@@ -505,15 +491,15 @@ export function EventAttendance({
               disabled={rotate.isPending}
               className="border-hairline text-navy hover:bg-cream min-h-11 w-full rounded-full font-semibold sm:w-auto"
             >
-              {rotate.isPending ? "Rotating..." : "Rotate the code"}
+              {rotate.isPending ? "Rotating..." : "Rotate the QR"}
             </Button>
           </AlertDialogTrigger>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Replace the code on screen?</AlertDialogTitle>
+              <AlertDialogTitle>Replace the QR on screen?</AlertDialogTitle>
               <AlertDialogDescription>
-                Every slide, poster and photograph carrying the current code
-                stops working the moment you do this, and the old code cannot be
+                Every slide, poster and photograph of the current QR stops
+                working the moment you do this, and the old one cannot be
                 brought back.
               </AlertDialogDescription>
             </AlertDialogHeader>

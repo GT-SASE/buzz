@@ -110,7 +110,7 @@ export function PresentScreen({ eventId }: { eventId: string }) {
             <div className="flex min-h-0 w-full flex-1 items-center justify-center">
               <CheckInQr
                 code={event.checkInCode}
-                className="h-full max-h-full w-auto max-w-full p-3 sm:p-5"
+                className="aspect-square h-full max-h-[min(70vh,40rem)] w-auto max-w-full p-3 sm:p-5"
               />
             </div>
             <p className="text-gold-bright tracking-masthead shrink-0 text-[clamp(1rem,2vw,2rem)] font-semibold uppercase">
