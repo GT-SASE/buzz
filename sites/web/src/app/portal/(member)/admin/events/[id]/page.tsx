@@ -42,7 +42,7 @@ export default async function AdminEventPage({
 }) {
   const { id } = await params;
   if (!id) notFound();
-  const session = await requireOfficer(`/portal/admin/events/${id}`);
+  await requireOfficer(`/portal/admin/events/${id}`);
   await orNotFound(eventForPage(id));
 
   return (
@@ -64,7 +64,7 @@ export default async function AdminEventPage({
           </BreadcrumbList>
         </Breadcrumb>
 
-        <EventAttendance eventId={id} officerUserId={session.user.id} />
+        <EventAttendance eventId={id} />
       </Section>
     </HydrateClient>
   );

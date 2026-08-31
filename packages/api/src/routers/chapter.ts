@@ -3,11 +3,15 @@ import {
   asc,
   count,
   countDistinct,
+  desc,
   eq,
+  gt,
   gte,
   isNull,
   lt,
+  or,
 } from "drizzle-orm";
+import { z } from "zod";
 
 import { asInt } from "../aggregates";
 import { adminProcedure, createTRPCRouter } from "../trpc";
@@ -121,4 +125,137 @@ export const chapterRouter = createTRPCRouter({
       nextEvent,
     };
   }),
+
+  /**
+   * Past events in a window, newest first. Campus listings (0 points,
+   * check-in never opened, nobody came) stay out. Archived events stay in:
+   * hiding one from the calendar must not erase the year.
+   */
+  attendance: adminProcedure
+    .input(
+      z.object({
+        period: z.enum(["30d", "90d", "semester", "all"]).default("semester"),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const now = new Date();
+      const since = periodSince(input.period, now);
+      const inWindow = since
+        ? and(lt(events.startsAt, now), gte(events.startsAt, since))
+        : lt(events.startsAt, now);
+      const countable = or(
+        eq(events.checkInEnabled, true),
+        gt(events.pointsValue, 0),
+        gt(events.currentCheckIns, 0),
+      );
+      const where = and(inWindow, countable);
+
+      const [[totals], recent] = await Promise.all([
+        ctx.db
+          .select({
+            events: countDistinct(events.id),
+            checkIns: count(eventCheckIns.id),
+            uniqueMembers: countDistinct(eventCheckIns.userId),
+          })
+          .from(events)
+          .leftJoin(eventCheckIns, eq(eventCheckIns.eventId, events.id))
+          .where(where),
+        ctx.db
+          .select({
+            id: events.id,
+            title: events.title,
+            startsAt: events.startsAt,
+            checkIns: count(eventCheckIns.id),
+          })
+          .from(events)
+          .leftJoin(eventCheckIns, eq(eventCheckIns.eventId, events.id))
+          .where(where)
+          .groupBy(events.id)
+          .orderBy(desc(events.startsAt))
+          .limit(SERIES_LIMIT),
+      ]);
+
+      const eventCount = asInt(totals?.events);
+      const checkInCount = asInt(totals?.checkIns);
+      const averageAttendance =
+        eventCount === 0
+          ? 0
+          : Math.round((checkInCount / eventCount) * 10) / 10;
+
+      return {
+        period: input.period,
+        since,
+        until: now,
+        events: eventCount,
+        checkIns: checkInCount,
+        uniqueMembers: asInt(totals?.uniqueMembers),
+        averageAttendance,
+        series: recent.map((row) => ({
+          id: row.id,
+          title: row.title,
+          startsAt: row.startsAt,
+          checkIns: asInt(row.checkIns),
+        })),
+      };
+    }),
 });
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const SERIES_LIMIT = 48;
+const ATLANTA = "America/New_York";
+
+function atlantaParts(at: Date) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: ATLANTA,
+    hour12: false,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(at);
+  const get = (type: Intl.DateTimeFormatPartTypes) =>
+    Number(parts.find((part) => part.type === type)?.value ?? 0);
+  return { year: get("year"), month: get("month") };
+}
+
+function atlantaOffsetMs(at: Date) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: ATLANTA,
+    hour12: false,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).formatToParts(at);
+  const get = (type: Intl.DateTimeFormatPartTypes) =>
+    Number(parts.find((part) => part.type === type)?.value ?? 0);
+  const asIfUtc = Date.UTC(
+    get("year"),
+    get("month") - 1,
+    get("day"),
+    get("hour") % 24,
+    get("minute"),
+    get("second"),
+  );
+  return asIfUtc - at.getTime();
+}
+
+/** Midnight on that Atlanta calendar day. */
+function atlantaStartOfDay(year: number, month: number, day: number) {
+  const guess = new Date(Date.UTC(year, month - 1, day, 0, 0, 0));
+  const once = new Date(guess.getTime() - atlantaOffsetMs(guess));
+  return new Date(guess.getTime() - atlantaOffsetMs(once));
+}
+
+function periodSince(
+  period: "30d" | "90d" | "semester" | "all",
+  now: Date,
+): Date | null {
+  if (period === "all") return null;
+  if (period === "30d") return new Date(now.getTime() - 30 * DAY_MS);
+  if (period === "90d") return new Date(now.getTime() - 90 * DAY_MS);
+  const { year, month } = atlantaParts(now);
+  const startYear = month >= 8 ? year : year - 1;
+  return atlantaStartOfDay(startYear, 8, 1);
+}

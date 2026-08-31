@@ -196,6 +196,8 @@ type World = {
   /** Check-ins at past non-archived events. */
   pastCheckIns: number;
   upcoming: EventRow[];
+  /** Past countable events for `chapter.attendance` series queries. */
+  series?: EventRow[];
 };
 
 type Subject = "members" | "membersWithCheckIns" | "checkIns" | "events";
@@ -231,7 +233,7 @@ function subjectFor(
   from: unknown,
 ): Subject | undefined {
   const name = key.toLowerCase().replace(/[^a-z0-9]/g, "");
-  if (/withcheckins|attended|activemembers/.test(name))
+  if (/withcheckins|attended|activemembers|uniquemembers/.test(name))
     return "membersWithCheckIns";
   // `count(distinct check_ins.userId)` is the members who attended something;
   // `count(distinct users.id)` is simply every member.
@@ -346,10 +348,19 @@ function chapterDb(world: World) {
 
   function answer(capture: Capture): unknown {
     if (capture.counted) return valueFor("total", "", capture, world);
-    if (isEventRowQuery(capture))
+    if (isEventRowQuery(capture)) {
+      // `chapter.attendance` groups past events newest-first; `overview`
+      // nextEvent is the same shape with limit 1.
+      if (capture.groupBy.length > 0 && capture.limit !== 1) {
+        return (world.series ?? []).map((row) => ({
+          ...pick(row, capture.fields),
+          checkIns: row.currentCheckIns,
+        }));
+      }
       return orderedEvents(capture, world).map((row) =>
         pick(row, capture.fields),
       );
+    }
 
     const fields = capture.fields;
     if (fields === undefined)
@@ -770,5 +781,145 @@ describe("chapter.overview", () => {
     );
 
     expect(error.code).toBe("FORBIDDEN");
+  });
+});
+
+const PAST_SERIES: EventRow[] = [
+  {
+    id: "event-12",
+    title: "March GBM",
+    startsAt: new Date("2026-03-12T22:30:00.000Z"),
+    location: "Klaus 1443",
+    checkInEnabled: true,
+    currentCheckIns: 41,
+    maxCheckIns: null,
+    checkInCode: "SECRET12",
+    archivedAt: null,
+  },
+  {
+    id: "event-8",
+    title: "Spring Kickoff",
+    startsAt: new Date("2026-01-16T23:00:00.000Z"),
+    location: "Klaus Atrium",
+    checkInEnabled: true,
+    currentCheckIns: 28,
+    maxCheckIns: null,
+    checkInCode: "SECRET08",
+    archivedAt: null,
+  },
+];
+
+describe("chapter.attendance", () => {
+  it("is refused to a member who is not an officer", async () => {
+    const error = await rejection(
+      createCaller(memberCtx(unreachableDb)).chapter.attendance({
+        period: "semester",
+      }),
+    );
+
+    expect(error.code).toBe("FORBIDDEN");
+  });
+
+  it("returns countable past events newest-first without the check-in code", async () => {
+    const { db, captures } = chapterDb({
+      ...CHAPTER,
+      series: PAST_SERIES,
+    });
+    const result = await createCaller(adminCtx(db)).chapter.attendance({
+      period: "all",
+    });
+
+    expect(result.series.map((row) => row.id)).toEqual(["event-12", "event-8"]);
+    expect(result.series.map((row) => row.checkIns)).toEqual([41, 28]);
+    for (const row of result.series) {
+      expect(Object.keys(row).sort()).toEqual([
+        "checkIns",
+        "id",
+        "startsAt",
+        "title",
+      ]);
+    }
+
+    const seriesQuery = captures.find(
+      (capture) =>
+        tableName(capture.from) === EVENTS &&
+        capture.groupBy.length > 0 &&
+        capture.limit !== 1,
+    );
+    expect(seriesQuery).toBeDefined();
+    expect(seriesQuery!.orderBy.map(orderText).join(", ")).toMatch(/\bdesc\b/i);
+    expect(seriesQuery!.limit).toBe(48);
+    expect(sqlText(seriesQuery!.where)).toMatch(/check.{0,3}in.{0,3}enabled/i);
+  });
+
+  it("opens a 30-day window on the same instant as the past cutoff", async () => {
+    const { db, captures } = chapterDb({ ...CHAPTER, series: PAST_SERIES });
+    await underTickingClock(() =>
+      createCaller(adminCtx(db)).chapter.attendance({ period: "30d" }),
+    );
+
+    const bound = captures
+      .flatMap((capture) => boundValues(capture.where))
+      .filter((value): value is Date => value instanceof Date);
+    const instants = [...new Set(bound.map((date) => date.getTime()))];
+    const latest = Math.max(...instants);
+    expect(instants).toContain(latest - THIRTY_DAYS_MS);
+    expect(instants).toHaveLength(2);
+  });
+
+  it("starts the school year on 1 August in Atlanta", async () => {
+    const { db } = chapterDb({ ...CHAPTER, series: PAST_SERIES });
+    const result = await underTickingClock(() =>
+      createCaller(adminCtx(db)).chapter.attendance({ period: "semester" }),
+    );
+
+    expect(result.since).toBeInstanceOf(Date);
+    const atlanta = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/New_York",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(result.since!);
+    expect(atlanta).toBe("2025-08-01");
+  });
+
+  it("does not bind a lower start date for all time", async () => {
+    const { db, captures } = chapterDb({ ...CHAPTER, series: PAST_SERIES });
+    const result = await createCaller(adminCtx(db)).chapter.attendance({
+      period: "all",
+    });
+
+    expect(result.since).toBeNull();
+    const lowerBounds = captures
+      .map((capture) => sqlText(capture.where))
+      .filter((text) => /starts.{0,3}at\s*>=?\s*\?/i.test(text));
+    expect(lowerBounds).toEqual([]);
+  });
+
+  it("keeps empty events in the average's denominator", async () => {
+    const { db, captures } = chapterDb({
+      ...CHAPTER,
+      pastEvents: 4,
+      pastCheckIns: 2,
+      series: PAST_SERIES,
+    });
+    const result = await createCaller(adminCtx(db)).chapter.attendance({
+      period: "all",
+    });
+
+    expect(result.averageAttendance).toBe(0.5);
+
+    const totals = captures.find(
+      (capture) =>
+        tableName(capture.from) === EVENTS &&
+        capture.groupBy.length === 0 &&
+        Object.keys(capture.fields ?? {}).includes("uniqueMembers"),
+    );
+    expect(totals).toBeDefined();
+    expect(
+      totals!.joins.some(
+        (join) => join.kind === "left" && tableName(join.table) === CHECK_INS,
+      ),
+    ).toBe(true);
   });
 });
