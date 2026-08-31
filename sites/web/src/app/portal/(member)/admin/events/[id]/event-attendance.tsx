@@ -286,13 +286,7 @@ function EventSkeleton() {
   );
 }
 
-export function EventAttendance({
-  eventId,
-  officerUserId,
-}: {
-  eventId: string;
-  officerUserId: string;
-}) {
+export function EventAttendance({ eventId }: { eventId: string }) {
   const utils = api.useUtils();
   const [email, setEmail] = useState("");
 
@@ -338,13 +332,6 @@ export function EventAttendance({
     },
     onError: (error) => toast.error(error.message),
   });
-  const self = api.event.selfCheckIn.useMutation({
-    onSuccess: async () => {
-      toast.success("You're checked in.");
-      await invalidate();
-    },
-    onError: (error) => toast.error(error.message),
-  });
 
   if (detail.isPending) {
     return <EventSkeleton />;
@@ -358,7 +345,6 @@ export function EventAttendance({
   }
 
   const { event, roster, rosterTotal, isPast } = detail.data;
-  const here = roster.some((row) => row.userId === officerUserId);
 
   // The same three facts the check-in procedure tests before it lets anyone in,
   // so the panel cannot advertise a door the server has already shut.
@@ -458,22 +444,6 @@ export function EventAttendance({
             Open the projector view
           </Link>
         </Button>
-        {state === "open" &&
-          (here ? (
-            <p className="text-body-sm text-navy font-semibold">
-              {"You're checked in."}
-            </p>
-          ) : (
-            <Button
-              size="lg"
-              variant="outline"
-              disabled={self.isPending}
-              onClick={() => self.mutate({ eventId: event.id })}
-              className="border-hairline text-navy hover:bg-cream h-auto min-h-12 w-full rounded-full font-semibold sm:w-auto"
-            >
-              {self.isPending ? "Checking you in..." : "I'm here"}
-            </Button>
-          ))}
       </div>
 
       <div className="mt-6 flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
@@ -565,7 +535,7 @@ export function EventAttendance({
         ) : (
           <EmptyState
             title="Nobody has checked in yet."
-            body="Open the projector for members to scan, or check yourself in above."
+            body="Open the projector for members to scan, or add someone below."
           />
         )}
       </div>

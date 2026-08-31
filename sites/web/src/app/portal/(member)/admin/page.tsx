@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 
 import { PortalHeader } from "~/app/portal/_components/portal-ui";
 import { Section } from "~/components/site";
+import { Attendance } from "./attendance";
 import { AdminEvents } from "./admin-events";
 import { Overview } from "./overview";
 
@@ -13,10 +14,12 @@ export default function AdminEventsPage() {
       <PortalHeader
         eyebrow="Events"
         title="Events"
-        body="Open check-in, put the QR on a screen, and check yourself in from the event. No scanning."
+        body="Open check-in and put the QR on a screen. No scanning."
       />
 
       <Overview />
+
+      <Attendance />
 
       <Section size="sm">
         <AdminEvents />
