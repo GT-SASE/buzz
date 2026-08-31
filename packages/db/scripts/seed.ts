@@ -75,8 +75,8 @@ async function main() {
       maxCheckIns: 40,
     },
     {
-      title: "Taste of SASE",
-      description: "The cultural food festival on Tech Green.",
+      title: "Spring Social",
+      description: "The end-of-semester hang on Tech Green.",
       location: "Tech Green",
       // Yesterday, so the closed-door and past-event states are visible too.
       startsAt: new Date(now - 1 * day),

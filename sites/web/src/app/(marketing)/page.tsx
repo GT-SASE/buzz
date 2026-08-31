@@ -45,7 +45,7 @@ export const revalidate = 3600;
 export const metadata = pageMetadata({
   title: `${site.name} — ${site.tagline}`,
   description:
-    "The Georgia Tech chapter of the Society of Asian Scientists and Engineers. SASE KIN, recruiter resume workshops, semester-long technical projects, and Taste of SASE — open to every Georgia Tech student, any major, any year.",
+    "The Georgia Tech chapter of the Society of Asian Scientists and Engineers. SASE KIN, recruiter resume workshops, semester-long technical projects, and socials — open to every Georgia Tech student, any major, any year.",
   path: "/",
 });
 

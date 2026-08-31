@@ -36,7 +36,7 @@ export const marqueeItems = [
   "SASE KIN",
   "Recruiter resume workshops",
   "Technical project teams",
-  "Taste of SASE",
+  "Game nights & socials",
   "National convention",
   "Any major, any year",
 ] as const;
@@ -96,9 +96,9 @@ export const programs = [
     slug: "socials",
     icon: "cup",
     title: "Socials",
-    body: "Boba runs, game nights, Taste of SASE, and intramural sports throughout the semester.",
+    body: "Boba runs, game nights, and intramural sports throughout the semester.",
     detail:
-      "The social calendar is the low-stakes way in: boba runs after class, game nights, intramural teams, and Taste of SASE, our cultural food festival. No sign-up sheet and no experience required — just show up.",
+      "The social calendar is the low-stakes way in: boba runs after class, game nights, and intramural teams. No sign-up sheet and no experience required — just show up.",
   },
   {
     slug: "conferences",

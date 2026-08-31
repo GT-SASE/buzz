@@ -27,7 +27,7 @@ export const revalidate = 3600;
 export const metadata = pageMetadata({
   title: "Events",
   description:
-    "General body meetings, recruiter resume workshops, socials, Taste of SASE, and national conference delegations. Open to all Georgia Tech students unless noted.",
+    "General body meetings, recruiter resume workshops, socials, and national conference delegations. Open to all Georgia Tech students unless noted.",
   path: "/events",
 });
 
