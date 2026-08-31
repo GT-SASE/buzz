@@ -20,7 +20,7 @@
     "next-auth": "5.0.0-beta.32"
   },
   "devDependencies": {
-    "@types/node": "^25.6.2",
+    "@types/node": "^26.4.0",
     "@types/react": "^19.2.18",
     "react": "^19.2.8",
     "typescript-7": "npm:typescript@^7.0.0"
