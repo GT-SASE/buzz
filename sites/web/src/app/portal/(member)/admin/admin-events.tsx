@@ -54,11 +54,15 @@ import {
 import { Textarea } from "~/components/ui/textarea";
 import { cn } from "~/lib/utils";
 import { api, type RouterOutputs } from "~/trpc/react";
+import {
+  adminEventFilters,
+  visibleEvents,
+  type AdminEventFilter,
+} from "./visible-events";
 
 type AdminEvent = RouterOutputs["event"]["listAll"]["events"][number];
-
-const filters = ["Open", "Past", "Archived", "All"] as const;
-type Filter = (typeof filters)[number];
+type Filter = AdminEventFilter;
+const filters = adminEventFilters;
 
 /** FormData entries are `string | File`; only the string case is ever real here. */
 const text = (value: FormDataEntryValue | null) =>
@@ -495,13 +499,7 @@ export function AdminEvents() {
 
   // `isPast` is decided server-side against the same cutoff the check-in door
   // uses, so this list never disagrees with what a member can actually enter.
-  const visible = allEvents.filter((event) => {
-    const archived = event.archivedAt !== null;
-    if (filter === "Archived") return archived;
-    if (filter === "All") return true;
-    if (archived) return false;
-    return filter === "Past" ? event.isPast : !event.isPast;
-  });
+  const visible = visibleEvents(allEvents, filter);
 
   const createAction = (
     <EventDialog trigger={<Button className="min-h-11">New event</Button>} />
