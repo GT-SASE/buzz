@@ -40,7 +40,10 @@ export function Eyebrow({
       )}
     >
       {rule && (
-        <span aria-hidden="true" className={cn("hex-face size-2 shrink-0", pip)} />
+        <span
+          aria-hidden="true"
+          className={cn("hex-face size-2 shrink-0", pip)}
+        />
       )}
       {children}
     </Tag>

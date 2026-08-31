@@ -1,4 +1,4 @@
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -118,48 +118,32 @@ describe("CheckInForm", () => {
     cameraFail.current = false;
   });
 
-  it("rejects a typed code that is not from the issued alphabet", async () => {
-    const user = userEvent.setup();
+  it("when the camera cannot start, tells the member to scan with their phone or ask an officer", async () => {
     cameraFail.current = true;
     render(<CheckInForm initialCode="" />);
 
-    const input = await screen.findByLabelText(/enter the code instead/i);
-    await user.type(input, "IIIIII");
-    await user.click(
-      within(input.closest("form")!).getByRole("button", { name: "Check in" }),
-    );
-
-    expect(
-      screen.getByText("That is not a code we issued. Check the screen again."),
-    ).toBeTruthy();
+    expect(await screen.findByText("The scanner cannot start")).toBeTruthy();
+    expect(screen.getByText("This device has no camera.")).toBeTruthy();
+    expect(screen.queryByRole("textbox")).toBeNull();
     expect(mutate).not.toHaveBeenCalled();
   });
 
-  it("submits a typed code that matches the issued alphabet", async () => {
+  it("shows the scanner when the camera is available, with no typed-code field", () => {
+    render(<CheckInForm initialCode="" />);
+
+    expect(screen.getByTestId("scanner")).toBeTruthy();
+    expect(screen.queryByRole("textbox")).toBeNull();
+  });
+
+  it("asks for a tap before checking in a code that arrived in the URL", async () => {
     const user = userEvent.setup();
-    cameraFail.current = true;
-    render(<CheckInForm initialCode="" />);
-
-    const input = await screen.findByLabelText(/enter the code instead/i);
-    await user.type(input, "abcd2345");
-    await user.click(
-      within(input.closest("form")!).getByRole("button", { name: "Check in" }),
-    );
-
-    expect(mutate).toHaveBeenCalledWith({ code: "ABCD2345" });
-  });
-
-  it("keeps the typed-code field on screen while the camera is running", () => {
-    render(<CheckInForm initialCode="" />);
-
-    expect(screen.getByLabelText(/enter the code instead/i)).toBeTruthy();
-  });
-
-  it("asks for a tap before checking in a code that arrived in the URL", () => {
     render(<CheckInForm initialCode="ABCD2345" />);
 
-    expect(screen.getByText("ABCD2345")).toBeTruthy();
+    expect(screen.getByText("Check in to this event?")).toBeTruthy();
     expect(mutate).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "Check in" }));
+    expect(mutate).toHaveBeenCalledWith({ code: "ABCD2345" });
   });
 
   it("sends an expired session back to sign-in", async () => {

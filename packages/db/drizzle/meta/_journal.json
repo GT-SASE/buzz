@@ -15,6 +15,13 @@
       "when": 1786898562750,
       "tag": "0001_blue_bedlam",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1788158906578,
+      "tag": "0002_wandering_queen_noir",
+      "breakpoints": true
     }
   ]
 }

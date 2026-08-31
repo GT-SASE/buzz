@@ -85,7 +85,6 @@ function Figures({ data }: { data: ChapterOverview }) {
           note={attendanceNote}
         />
       </dl>
-
     </>
   );
 }

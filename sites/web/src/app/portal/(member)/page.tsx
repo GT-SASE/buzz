@@ -79,8 +79,8 @@ export default async function PortalDashboard() {
                   SASE KIN
                 </span>
                 <span className="text-ink-muted mt-1 block text-sm">
-                  Sign up as a mentor or mentee. KIN points stay off your
-                  event card.
+                  Sign up as a mentor or mentee. KIN points stay off your event
+                  card.
                 </span>
               </span>
               <ArrowRight

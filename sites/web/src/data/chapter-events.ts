@@ -162,7 +162,10 @@ export async function getChapterEvents() {
   }
 
   const payload = await fetchChapterEvents();
-  globalForCalendar.chapterEvents = { expiresAt: now + CALENDAR_TTL_MS, payload };
+  globalForCalendar.chapterEvents = {
+    expiresAt: now + CALENDAR_TTL_MS,
+    payload,
+  };
   return {
     upcoming: payload.upcoming.map(revive),
     past: payload.past.map(revive),

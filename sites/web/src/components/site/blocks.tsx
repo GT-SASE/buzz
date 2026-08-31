@@ -108,10 +108,7 @@ export function PillarGrid({
     <div className="stagger grid gap-x-10 gap-y-12 md:grid-cols-3">
       {pillars.map((pillar) => (
         <div key={pillar.title}>
-          <p
-            aria-hidden="true"
-            className="hex-face bg-gold-bright size-3"
-          />
+          <p aria-hidden="true" className="hex-face bg-gold-bright size-3" />
           <span className="bg-gold/40 mt-5 block h-px w-full" />
           <h3 className="font-display text-navy text-h3 mt-6 font-bold">
             {pillar.title}

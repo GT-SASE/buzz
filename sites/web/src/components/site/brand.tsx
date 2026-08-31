@@ -8,9 +8,7 @@ export function Wordmark({ tone }: { tone: "light" | "dark" }) {
   return (
     <span className="flex items-center gap-3">
       <HexMark
-        className={
-          tone === "light" ? "bg-gold-bright text-navy" : undefined
-        }
+        className={tone === "light" ? "bg-gold-bright text-navy" : undefined}
       />
       <span className="flex flex-col leading-none">
         <span

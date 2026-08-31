@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "pnpm --filter @buzz/web dev",
     "build": "pnpm --filter @buzz/web build",
+    "vercel-build": "node scripts/vercel-build.mjs",
     "start": "pnpm --filter @buzz/web start",
     "preview": "pnpm --filter @buzz/web preview",
     "check": "pnpm run lint && pnpm run typecheck && pnpm run format:check && pnpm run test",

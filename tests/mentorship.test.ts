@@ -165,7 +165,7 @@ describe("mentorship.setStatus", () => {
         }),
       }),
       update: () => ({
-        set: (row: unknown) => {
+        set: (row: Record<string, unknown>) => {
           sets.push(row);
           return {
             where: () => ({

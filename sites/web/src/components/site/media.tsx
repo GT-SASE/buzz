@@ -24,7 +24,7 @@ export function PhotoFrame({
   return (
     <div
       className={cn(
-        "bg-sand group relative overflow-hidden hex-cut",
+        "bg-sand group hex-cut relative overflow-hidden",
         rounded,
         className,
       )}
