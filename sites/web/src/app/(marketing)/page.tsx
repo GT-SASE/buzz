@@ -94,8 +94,8 @@ export default async function Home() {
               <p className="text-lead text-ink-muted max-w-measure mt-6 sm:mt-8">
                 We are the Georgia Tech chapter of the Society of Asian
                 Scientists and Engineers. SASE KIN, recruiter workshops, and
-                semester-long build teams — open to every student on campus,
-                any major, any background.
+                semester-long build teams — open to every student on campus, any
+                major, any background.
               </p>
               <div className="mt-8 flex flex-col items-stretch gap-4 sm:mt-10 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-8 sm:gap-y-5">
                 <Button
@@ -204,10 +204,7 @@ export default async function Home() {
         </div>
       </Section>
 
-      <Section
-        eyebrow="What we do"
-        title="What membership actually gets you."
-      >
+      <Section eyebrow="What we do" title="What membership actually gets you.">
         <ul
           role="list"
           className="stagger grid gap-x-8 gap-y-8 sm:grid-cols-2 lg:grid-cols-3"
@@ -250,10 +247,7 @@ export default async function Home() {
           className="stagger grid gap-x-10 gap-y-12 sm:grid-cols-2 lg:grid-cols-4"
         >
           {firstMonth.map((step, i) => (
-            <li
-              key={step.when}
-              className="border-gold border-t-2 pt-6"
-            >
+            <li key={step.when} className="border-gold border-t-2 pt-6">
               <div className="flex items-center gap-4">
                 <span
                   aria-hidden="true"
@@ -339,10 +333,7 @@ export default async function Home() {
       </Section>
 
       {/* Partners. An invitation, not a wall of empty logo tiles. */}
-      <Section
-        eyebrow="Partners"
-        title="Recruit from this chapter."
-      >
+      <Section eyebrow="Partners" title="Recruit from this chapter.">
         <Card tone="navy">
           <div className="grid gap-10 lg:grid-cols-[1.2fr_0.8fr] lg:items-center">
             <div>

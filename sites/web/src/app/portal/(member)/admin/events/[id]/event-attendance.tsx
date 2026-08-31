@@ -461,7 +461,7 @@ export function EventAttendance({
         {state === "open" &&
           (here ? (
             <p className="text-body-sm text-navy font-semibold">
-              You're checked in.
+              {"You're checked in."}
             </p>
           ) : (
             <Button

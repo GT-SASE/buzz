@@ -13,10 +13,14 @@ const requirePortalSecrets =
     process.env.VERCEL_ENV !== "development");
 
 const secret = requirePortalSecrets ? z.string().min(1) : z.string().optional();
+/** Auth.js rejects secrets shorter than 32 characters at runtime. */
+const authSecret = requirePortalSecrets
+  ? z.string().min(32)
+  : z.string().optional();
 
 export const env = createEnv({
   server: {
-    AUTH_SECRET: secret,
+    AUTH_SECRET: authSecret,
     AUTH_GOOGLE_ID: secret,
     AUTH_GOOGLE_SECRET: secret,
     /**

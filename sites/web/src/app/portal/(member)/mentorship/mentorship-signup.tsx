@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 
 import { mentorshipTierFor } from "~/data/portal";
@@ -8,8 +8,9 @@ import { Alert, AlertDescription } from "~/components/ui/alert";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Label } from "~/components/ui/label";
+import { Skeleton } from "~/components/ui/skeleton";
 import { Textarea } from "~/components/ui/textarea";
-import { api } from "~/trpc/react";
+import { api, type RouterOutputs } from "~/trpc/react";
 
 const roles = [
   {
@@ -24,17 +25,34 @@ const roles = [
   },
 ];
 
-export function MentorshipSignup() {
-  const utils = api.useUtils();
-  const mine = api.mentorship.mine.useQuery();
-  const [role, setRole] = useState<"mentor" | "mentee">("mentee");
-  const [note, setNote] = useState("");
+type Signup = RouterOutputs["mentorship"]["mine"];
 
-  useEffect(() => {
-    if (!mine.data) return;
-    setRole(mine.data.role);
-    setNote(mine.data.note ?? "");
-  }, [mine.data]);
+export function MentorshipSignup() {
+  const mine = api.mentorship.mine.useQuery();
+
+  if (mine.isPending) {
+    return (
+      <div
+        aria-busy="true"
+        aria-live="polite"
+        className="mx-auto w-full max-w-lg px-5 py-10 sm:px-6 sm:py-14"
+      >
+        <span className="sr-only">Loading SASE KIN signup.</span>
+        <Skeleton className="h-4 w-24 rounded-full" />
+        <Skeleton className="mt-3 h-10 w-64 rounded-lg" />
+        <Skeleton className="mt-4 h-16 w-full rounded-lg" />
+        <Skeleton className="mt-8 h-28 w-full rounded-lg" />
+      </div>
+    );
+  }
+
+  return <MentorshipSignupForm row={mine.data ?? null} />;
+}
+
+function MentorshipSignupForm({ row }: { row: Signup }) {
+  const utils = api.useUtils();
+  const [role, setRole] = useState<"mentor" | "mentee">(row?.role ?? "mentee");
+  const [note, setNote] = useState(row?.note ?? "");
 
   const enroll = api.mentorship.expressInterest.useMutation({
     onSuccess: async () => {
@@ -51,7 +69,6 @@ export function MentorshipSignup() {
     onError: (error) => toast.error(error.message),
   });
 
-  const row = mine.data;
   const locked = row?.status === "enrolled";
   const tier = mentorshipTierFor(row?.points ?? 0);
 
@@ -103,7 +120,8 @@ export function MentorshipSignup() {
           className="mt-8 grid gap-6"
           onSubmit={(event) => {
             event.preventDefault();
-            enroll.mutate({ role, note: note.trim() || undefined });
+            const trimmed = note.trim();
+            enroll.mutate({ role, note: trimmed ? trimmed : undefined });
           }}
         >
           <fieldset className="grid gap-3">
@@ -160,7 +178,7 @@ export function MentorshipSignup() {
         </form>
       )}
 
-      {row && row.status === "interested" && (
+      {row?.status === "interested" && (
         <Button
           type="button"
           variant="ghost"

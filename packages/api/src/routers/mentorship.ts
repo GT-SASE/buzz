@@ -50,7 +50,7 @@ export const mentorshipRouter = createTRPCRouter({
         });
       }
 
-      const note = input.note || null;
+      const note = input.note ?? null;
 
       if (!existing) {
         const [created] = await ctx.db

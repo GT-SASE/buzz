@@ -32,16 +32,14 @@ export const featuredPastEvents: FeaturedEvent[] = [
     title: "SASE Connect 2024",
     displayDate: "Oct 9–12, 2024",
     location: "Boston",
-    description:
-      "The national conference, then a chapter day in Chinatown.",
+    description: "The national conference, then a chapter day in Chinatown.",
     photo: "connect",
   },
   {
     title: "SASE National Conference 2023",
     displayDate: "Oct 11–14, 2023",
     location: "Georgia World Congress Center, Atlanta",
-    description:
-      "Nationals on home turf — GWCC and the Omni at CNN Center.",
+    description: "Nationals on home turf — GWCC and the Omni at CNN Center.",
     photo: "nationals",
   },
   {
@@ -76,7 +74,8 @@ export const pastEventYears: { year: string; events: ArchiveEvent[] }[] = [
         title: "National Conference info + destress coloring",
         displayDate: "Apr 28, 2026",
         location: "IC 211",
-        description: "Cookies, coloring, and the last NC briefing of the spring.",
+        description:
+          "Cookies, coloring, and the last NC briefing of the spring.",
       },
       {
         title: "April GBM and NC informational",

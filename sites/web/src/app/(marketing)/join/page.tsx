@@ -249,11 +249,7 @@ export default function JoinPage() {
         </Accordion>
       </Section>
 
-      <Section
-        eyebrow="Stay in touch"
-        title="Find us here."
-        size="sm"
-      >
+      <Section eyebrow="Stay in touch" title="Find us here." size="sm">
         <div className="flex flex-wrap items-center gap-x-8 gap-y-4">
           {site.socials.map((social) => (
             <Button

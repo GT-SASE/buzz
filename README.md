@@ -128,9 +128,11 @@ that URI and bounces back after Google returns. `@buzz/auth` falls back to
 this same value if the variable is missing. `AUTH_SECRET` must be the same on
 the machine that starts sign-in and on production, or the bounce-back fails.
 
-The build itself needs none of these. It runs with an empty environment on
-purpose, so a missing variable shows up as a broken sign-in rather than a
-failed deploy — check them before assuming the deploy is fine.
+Production Vercel builds run `pnpm db:migrate` when `DATABASE_URL` is set,
+then the Next build. A preview with no database skips migrate so the public
+site still prerenders. `AUTH_SECRET` must be at least 32 characters on
+production. A missing portal variable there fails the build rather than
+shipping a broken sign-in.
 
 ## When something breaks
 

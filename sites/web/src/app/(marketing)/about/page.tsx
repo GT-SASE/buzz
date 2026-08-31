@@ -39,11 +39,7 @@ export default function AboutPage() {
         body="The Georgia Tech chapter of the Society of Asian Scientists and Engineers — a national nonprofit serving Asian heritage students and professionals in STEM."
       />
 
-      <Section
-        eyebrow="Our mission"
-        title="What we are here to do."
-        size="lg"
-      >
+      <Section eyebrow="Our mission" title="What we are here to do." size="lg">
         <PillarGrid pillars={missionPillars} />
 
         <div className="mt-16 grid gap-4 sm:grid-cols-2">
@@ -82,12 +78,11 @@ export default function AboutPage() {
             <p>
               A year here follows the same spine: a fall kickoff general body
               meeting, professional development workshops with industry
-              partners, SASE KIN pairing for the semester, a chapter
-              delegation to the SASE National Convention, and Taste of SASE in
-              the spring. Between those are general body meetings, technical
-              projects, service with Atlanta-area students, and socials. The
-              chapter hosted the SASE Southeast Regional Conference in 2017 and
-              2019.
+              partners, SASE KIN pairing for the semester, a chapter delegation
+              to the SASE National Convention, and Taste of SASE in the spring.
+              Between those are general body meetings, technical projects,
+              service with Atlanta-area students, and socials. The chapter
+              hosted the SASE Southeast Regional Conference in 2017 and 2019.
             </p>
             <p>
               Membership is open to all Georgia Tech students regardless of
