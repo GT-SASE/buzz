@@ -835,4 +835,65 @@ export const eventRouter = createTRPCRouter({
       .orderBy(asc(events.startsAt))
       .limit(20);
   }),
+
+  /**
+   * The member home screen. One procedure so the three reads share a pool
+   * checkout burst instead of three separate tRPC round-trips.
+   */
+  home: protectedProcedure.query(async ({ ctx }) => {
+    const userId = ctx.session.user.id;
+    const cutoff = new Date(Date.now() - CHECK_IN_WINDOW_MS);
+
+    const [attended, totals, upcoming] = await Promise.all([
+      ctx.db
+        .select({
+          id: events.id,
+          title: events.title,
+          location: events.location,
+          startsAt: events.startsAt,
+          pointsEarned: eventCheckIns.pointsEarned,
+          method: eventCheckIns.method,
+          checkedInAt: eventCheckIns.checkedInAt,
+        })
+        .from(eventCheckIns)
+        .innerJoin(events, eq(events.id, eventCheckIns.eventId))
+        .where(and(eq(eventCheckIns.userId, userId), isNull(events.archivedAt)))
+        .orderBy(desc(eventCheckIns.checkedInAt))
+        .limit(100),
+      ctx.db
+        .select(totalsColumns)
+        .from(eventCheckIns)
+        .innerJoin(events, eq(events.id, eventCheckIns.eventId))
+        .where(
+          and(eq(eventCheckIns.userId, userId), isNull(events.archivedAt)),
+        ),
+      ctx.db
+        .select({
+          ...publicEventColumns,
+          attendedAt: eventCheckIns.checkedInAt,
+        })
+        .from(events)
+        .leftJoin(
+          eventCheckIns,
+          and(
+            eq(eventCheckIns.eventId, events.id),
+            eq(eventCheckIns.userId, userId),
+          ),
+        )
+        .where(and(isNull(events.archivedAt), gte(events.startsAt, cutoff)))
+        .orderBy(asc(events.startsAt))
+        .limit(20),
+    ]);
+
+    const [row] = totals;
+    return {
+      attended,
+      upcoming,
+      stats: {
+        totalEvents: asInt(row?.totalEvents),
+        totalPoints: asInt(row?.totalPoints),
+        memberSince: asDate(row?.memberSince),
+      },
+    };
+  }),
 });

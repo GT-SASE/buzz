@@ -21,9 +21,8 @@ import { eventCheckIns, users } from "../packages/db/src/schema";
  * pattern, the ORDER BY, the distinct count — rather than against rows this
  * file made up. The rows are only there to prove they survive the trip.
  *
- * Same import dance as tests/event-router.test.ts: the timing middleware
- * sleeps 100-500ms per call whenever the tRPC config was built with `isDev`,
- * and that flag is frozen when `@buzz/api/trpc` is first evaluated.
+ * Same import dance as tests/event-router.test.ts: tRPC config is frozen when
+ * `@buzz/api/trpc` is first evaluated, so tests pin `NODE_ENV` to production.
  */
 vi.mock("../packages/auth/src/index.ts", () => ({
   auth: () => Promise.resolve(null),

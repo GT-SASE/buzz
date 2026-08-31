@@ -1,8 +1,11 @@
 import "server-only";
 
+import { unstable_cache } from "next/cache";
 import { and, asc, desc, gte, isNull, lt } from "drizzle-orm";
 
 import { db, events } from "@buzz/db";
+
+export const CHAPTER_EVENTS_TAG = "chapter-events";
 
 /**
  * The live chapter calendar. Upcoming rows (and the ones that just wrapped)
@@ -58,11 +61,6 @@ const SETTLE_MS = 24 * 60 * 60 * 1000;
  * the static archive.
  */
 const LIVE_CALENDAR_START = new Date("2026-08-01T00:00:00-04:00");
-
-/** `next dev` ignores page `revalidate`, so this is what stops a Postgres
- * round-trip on every homepage refresh. Production ISR still caches the HTML. */
-const CALENDAR_TTL_MS = 60_000;
-
 const columns = {
   id: events.id,
   title: events.title,
@@ -102,10 +100,6 @@ const revive = (row: StoredEvent): PublicEvent => ({
 });
 
 type CalendarPayload = { upcoming: StoredEvent[]; past: StoredEvent[] };
-
-const globalForCalendar = globalThis as unknown as {
-  chapterEvents: { expiresAt: number; payload: CalendarPayload } | undefined;
-};
 
 async function fetchChapterEvents(): Promise<CalendarPayload> {
   if (!process.env.DATABASE_URL) return { upcoming: [], past: [] };
@@ -151,21 +145,19 @@ async function fetchChapterEvents(): Promise<CalendarPayload> {
   }
 }
 
-export async function getChapterEvents() {
-  const now = Date.now();
-  const memo = globalForCalendar.chapterEvents;
-  if (memo && now < memo.expiresAt) {
-    return {
-      upcoming: memo.payload.upcoming.map(revive),
-      past: memo.payload.past.map(revive),
-    };
-  }
+/** Matches the homepage/events ISR in production. `next dev` ignores page
+ * `revalidate`, so keep a short data-cache life there. */
+const loadChapterEvents = unstable_cache(
+  fetchChapterEvents,
+  [CHAPTER_EVENTS_TAG],
+  {
+    tags: [CHAPTER_EVENTS_TAG],
+    revalidate: process.env.NODE_ENV === "production" ? 3600 : 60,
+  },
+);
 
-  const payload = await fetchChapterEvents();
-  globalForCalendar.chapterEvents = {
-    expiresAt: now + CALENDAR_TTL_MS,
-    payload,
-  };
+export async function getChapterEvents() {
+  const payload = await loadChapterEvents();
   return {
     upcoming: payload.upcoming.map(revive),
     past: payload.past.map(revive),

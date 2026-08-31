@@ -8,9 +8,9 @@ export const createQueryClient = () =>
   new QueryClient({
     defaultOptions: {
       queries: {
-        // With SSR, we usually want to set some default staleTime
-        // above 0 to avoid refetching immediately on the client
-        staleTime: 30 * 1000,
+        // Prefetched RSC data should survive tab switches without a refetch.
+        // Mutations still invalidate the keys they write.
+        staleTime: 2 * 60 * 1000,
       },
       dehydrate: {
         serializeData: SuperJSON.serialize,

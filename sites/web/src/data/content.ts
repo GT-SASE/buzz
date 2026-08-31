@@ -153,19 +153,19 @@ export type BoardMember = {
  */
 export const board: BoardMember[] = [
   {
-    name: "Enson Lin",
+    name: "Alex Liu",
     role: "President",
-    major: "B.S. Aerospace Engineering 2026",
+    major: "B.S. Computer Science 2027",
+  },
+  {
+    name: "Aamogh Sawant",
+    role: "Vice President",
+    major: "B.S. Computer Science 2027",
   },
   {
     name: "Kim Thai",
     role: "External Vice President",
     major: "B.S. Electrical Engineering 2027",
-  },
-  {
-    name: "Alex Liu",
-    role: "Internal Vice President",
-    major: "B.S. Computer Science 2027",
   },
   {
     name: "Julia Moy",
