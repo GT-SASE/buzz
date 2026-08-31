@@ -2,6 +2,8 @@ import { SiteFooter } from "~/components/site/site-footer";
 import { SiteNav } from "~/components/site/site-nav";
 
 /** Public chrome: everything outside /portal and /api. */
+export const dynamic = "force-static";
+
 export default function MarketingLayout({
   children,
 }: {

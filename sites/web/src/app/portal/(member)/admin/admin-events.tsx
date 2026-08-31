@@ -54,6 +54,7 @@ import {
 import { Textarea } from "~/components/ui/textarea";
 import { cn } from "~/lib/utils";
 import { api, type RouterOutputs } from "~/trpc/react";
+import { revalidatePublicCalendar } from "./revalidate-calendar";
 import {
   adminEventFilters,
   visibleEvents,
@@ -85,6 +86,8 @@ function EventForm({
       utils.event.listAll.invalidate(),
       utils.event.getById.invalidate(),
       utils.chapter.overview.invalidate(),
+      utils.chapter.attendance.invalidate(),
+      revalidatePublicCalendar(),
     ]);
     onDone();
   };
@@ -339,6 +342,8 @@ function EventActions({ event }: { event: AdminEvent }) {
       utils.event.listAll.invalidate(),
       utils.event.getById.invalidate({ id: event.id }),
       utils.chapter.overview.invalidate(),
+      utils.chapter.attendance.invalidate(),
+      revalidatePublicCalendar(),
     ]);
   };
 

@@ -6,11 +6,10 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
  * that reaches it: the router's own `createCaller`, with a stub `db`. Nothing
  * in this file opens a connection.
  *
- * The import is dynamic, under a production NODE_ENV, on purpose. The timing
- * middleware sleeps 100-500ms per call whenever the tRPC config was built with
- * `isDev`, and that flag is frozen at `initTRPC.create()` — i.e. the moment
- * `@buzz/api/trpc` is first evaluated. Generating a few thousand check-in codes
- * through the router would otherwise take a quarter of an hour.
+ * The import is dynamic, under a production NODE_ENV, on purpose. tRPC
+ * config is frozen at `initTRPC.create()` — i.e. the moment
+ * `@buzz/api/trpc` is first evaluated — so tests pin production the same
+ * way deploy does.
  */
 /**
  * `@buzz/auth` is reachable from the router only through `createTRPCContext`,

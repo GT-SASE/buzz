@@ -34,7 +34,7 @@ const { createCaller } = await import("../packages/api/src/root");
 const { and, eq, inArray } =
   await import("../packages/db/node_modules/drizzle-orm/index.js");
 
-/** The dev-mode timing middleware sleeps up to 400ms per call. */
+/** Integration tests share a database; give them room to finish. */
 const SLOW = 30_000;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -658,13 +658,14 @@ describe.skipIf(!process.env.DATABASE_URL)("check-in", () => {
      * actually reaches the browser.
      */
     it(
-      "never carries checkInCode in myEvents, myStats or upcoming",
+      "never carries checkInCode in myEvents, myStats, upcoming or home",
       async () => {
         const caller = callerFor(statsMember);
-        const [mine, stats, upcoming] = await Promise.all([
+        const [mine, stats, upcoming, home] = await Promise.all([
           caller.event.myEvents(),
           caller.event.myStats(),
           caller.event.upcoming(),
+          caller.event.home(),
         ]);
 
         expect(mine.length).toBeGreaterThan(0);
@@ -673,12 +674,20 @@ describe.skipIf(!process.env.DATABASE_URL)("check-in", () => {
         // assertions below are examining real rows rather than empty lists.
         expect(mine.some((row) => row.id === id.snapshot)).toBe(true);
         expect(upcoming.some((row) => row.id === id.snapshot)).toBe(true);
+        expect(home.attended.some((row) => row.id === id.snapshot)).toBe(true);
 
-        for (const row of [...mine, ...upcoming, stats]) {
+        for (const row of [
+          ...mine,
+          ...upcoming,
+          stats,
+          ...home.attended,
+          ...home.upcoming,
+          home.stats,
+        ]) {
           expect(row).not.toHaveProperty("checkInCode");
         }
 
-        const payload = JSON.stringify({ mine, stats, upcoming });
+        const payload = JSON.stringify({ mine, stats, upcoming, home });
         for (const secret of allCodes) {
           expect(payload).not.toContain(secret);
         }

@@ -23,9 +23,8 @@ import { eventCheckIns, events, users } from "../packages/db/src/schema";
  * because that file exports nothing, plus a relational `query.events.findFirst`
  * path so either way of reading nextEvent is answered.
  *
- * Same import dance too: the timing middleware sleeps 100-500ms per call
- * whenever the tRPC config was built with `isDev`, and that flag is frozen when
- * `@buzz/api/trpc` is first evaluated.
+ * Same import dance too: tRPC config is frozen when `@buzz/api/trpc` is first
+ * evaluated, so tests pin `NODE_ENV` to production.
  */
 vi.mock("../packages/auth/src/index.ts", () => ({
   auth: () => Promise.resolve(null),

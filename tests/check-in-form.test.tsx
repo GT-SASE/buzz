@@ -54,6 +54,7 @@ vi.mock("~/trpc/react", () => ({
   api: {
     useUtils: () => ({
       event: {
+        home: { invalidate: vi.fn() },
         myStats: { invalidate: vi.fn() },
         myEvents: { invalidate: vi.fn() },
         upcoming: { invalidate: vi.fn() },

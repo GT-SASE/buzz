@@ -57,6 +57,7 @@ export function CheckInForm({ initialCode }: { initialCode: string }) {
       // The dashboard is server-rendered, so both the query cache and the RSC
       // payload have to be told the totals moved.
       await Promise.all([
+        utils.event.home.invalidate(),
         utils.event.myStats.invalidate(),
         utils.event.myEvents.invalidate(),
         utils.event.upcoming.invalidate(),
