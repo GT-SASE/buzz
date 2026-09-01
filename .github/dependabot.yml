@@ -44,6 +44,10 @@ updates:
       - dependency-name: next-auth
       - dependency-name: typescript
       - dependency-name: typescript-7
+      # ESLint 10 crashes with eslint-config-next 16 / react-hooks 7
+      # (scopeManager.addGlobals). Stay on 9 until those plugins support 10.
+      - dependency-name: eslint
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: /

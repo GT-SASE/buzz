@@ -1,6 +1,4 @@
 import type { Metadata } from "next";
-
-import type { Metadata } from "next";
 import { Suspense } from "react";
 
 import { PortalHeader } from "~/app/portal/_components/portal-ui";

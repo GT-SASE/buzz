@@ -8,10 +8,9 @@ import { db, events } from "@buzz/db";
 export const CHAPTER_EVENTS_TAG = "chapter-events";
 
 /**
- * The live chapter calendar. Upcoming rows (and the ones that just wrapped)
- * come from the same table the officer tools write to. Years of Engage history
- * do not — that archive is static, in `past-events.ts`, so this table stays
- * the one members can still check into.
+ * The public calendar. Every row comes from the same table the officer tools
+ * write to. Archived events stay off the site; check-in codes never leave
+ * this query.
  */
 export type PublicEvent = {
   id: string;
@@ -55,12 +54,6 @@ const dateOnly = new Intl.DateTimeFormat("en-US", {
 /** An event stays on the calendar until it is a day old, then moves to past. */
 const SETTLE_MS = 24 * 60 * 60 * 1000;
 
-/**
- * "Recently wrapped" on the public page is this year's portal calendar, not
- * whatever leftover rows happen to sit in the table. History before that is
- * the static archive.
- */
-const LIVE_CALENDAR_START = new Date("2026-08-01T00:00:00-04:00");
 const columns = {
   id: events.id,
   title: events.title,
@@ -117,15 +110,9 @@ async function fetchChapterEvents(): Promise<CalendarPayload> {
       db
         .select(columns)
         .from(events)
-        .where(
-          and(
-            isNull(events.archivedAt),
-            lt(events.startsAt, cutoff),
-            gte(events.startsAt, LIVE_CALENDAR_START),
-          ),
-        )
+        .where(and(isNull(events.archivedAt), lt(events.startsAt, cutoff)))
         .orderBy(desc(events.startsAt))
-        .limit(24),
+        .limit(200),
     ]);
 
     return {

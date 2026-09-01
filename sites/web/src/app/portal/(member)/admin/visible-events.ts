@@ -24,7 +24,7 @@ export function visibleEvents<T extends RankableEvent>(
   });
 
   const nextFirst = filter === "Open";
-  return filtered.toSorted((a, b) => {
+  return [...filtered].sort((a, b) => {
     const delta = a.startsAt.getTime() - b.startsAt.getTime();
     return nextFirst ? delta : -delta;
   });
