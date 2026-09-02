@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import { codeFromScan } from "~/app/portal/(member)/check-in/scanner";
+import { checkInQrUrl } from "~/app/portal/_components/check-in-qr";
 import { tiers, tierFor } from "~/data/portal";
+import { site } from "~/data/site";
 
 describe("tiers", () => {
   /**
@@ -124,20 +126,20 @@ describe("tierFor", () => {
 describe("codeFromScan", () => {
   it("pulls the code out of a full check-in URL", () => {
     expect(
-      codeFromScan("https://sasegt.org/portal/check-in?code=ABCD2345"),
+      codeFromScan(`${site.url}/portal/check-in?code=ABCD2345`),
     ).toBe("ABCD2345");
     expect(
-      codeFromScan("https://sasegt.org/portal/check-in?code=abcd2345"),
+      codeFromScan(`${site.url}/portal/check-in?code=abcd2345`),
     ).toBe("ABCD2345");
     expect(
       codeFromScan(
-        "https://sasegt.org/portal/check-in?from=qr&code=abcd2345#x",
+        `${site.url}/portal/check-in?from=qr&code=abcd2345#x`,
       ),
     ).toBe("ABCD2345");
     expect(
-      codeFromScan("https://sasegt.org/portal/check-in#code=ABCD2345"),
+      codeFromScan(`${site.url}/portal/check-in#code=ABCD2345`),
     ).toBe("ABCD2345");
-    expect(codeFromScan("https://sasegt.org/portal/check-in#ABCD2345")).toBe(
+    expect(codeFromScan(`${site.url}/portal/check-in#ABCD2345`)).toBe(
       "ABCD2345",
     );
   });
@@ -147,7 +149,7 @@ describe("codeFromScan", () => {
     expect(codeFromScan("abcd2345")).toBe("ABCD2345");
     expect(codeFromScan("  abcd2345\n")).toBe("ABCD2345");
     // A QR reader hands back the URL with the same trailing newline.
-    expect(codeFromScan("  https://sasegt.org/check-in?code=abcd2345 \n")).toBe(
+    expect(codeFromScan(`  ${site.url}/check-in?code=abcd2345 \n`)).toBe(
       "ABCD2345",
     );
   });
@@ -165,9 +167,9 @@ describe("codeFromScan", () => {
    * miss, not a guess fired at the check-in endpoint.
    */
   it("rejects a payload that is not a code", () => {
-    expect(codeFromScan("https://sasegt.org/portal/check-in")).toBeNull();
-    expect(codeFromScan("https://sasegt.org/portal/check-in?code=")).toBeNull();
-    expect(codeFromScan("https://sasegt.org/events")).toBeNull();
+    expect(codeFromScan(`${site.url}/portal/check-in`)).toBeNull();
+    expect(codeFromScan(`${site.url}/portal/check-in?code=`)).toBeNull();
+    expect(codeFromScan(`${site.url}/events`)).toBeNull();
     expect(codeFromScan("WIFI:S=GTGuest;T=WPA;P=hunter2;;")).toBeNull();
     expect(codeFromScan("tel:+14045550100")).toBeNull();
     expect(codeFromScan("BEGIN:VCARD")).toBeNull();
@@ -210,18 +212,21 @@ describe("codeFromScan", () => {
     // Too short for the procedure to accept, which is what produced the raw
     // ZodError; it never leaves the client now.
     expect(
-      codeFromScan("https://sasegt.org/portal/check-in?code=ABC"),
+      codeFromScan(`${site.url}/portal/check-in?code=ABC`),
     ).toBeNull();
     // The glyphs the generator never issues are refused here as well.
     expect(
-      codeFromScan("https://sasegt.org/portal/check-in?code=SASE0GT2"),
+      codeFromScan(`${site.url}/portal/check-in?code=SASE0GT2`),
     ).toBeNull();
   });
 
   /** A genuine check-in URL still works, which is the branch's whole job. */
   it("still takes the code out of the officer's own QR", () => {
     expect(
-      codeFromScan("https://sasegt.org/portal/check-in?code=ABCD2345"),
+      codeFromScan(`${site.url}/portal/check-in?code=ABCD2345`),
     ).toBe("ABCD2345");
+    expect(checkInQrUrl(site.url, "ABCD2345")).toBe(
+      `${site.url}/portal/check-in#code=ABCD2345`,
+    );
   });
 });

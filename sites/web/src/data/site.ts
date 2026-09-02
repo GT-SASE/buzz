@@ -91,7 +91,7 @@ export const navGroups: NavGroup[] = [
     href: "/events",
     items: [
       { label: "Upcoming", href: "/events" },
-      { label: "Past highlights", href: "/events#past" },
+      { label: "Past events", href: "/events#past" },
     ],
   },
   { label: "Sponsors", href: "/sponsors", items: [] },

@@ -1,7 +1,23 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
+import { site } from "~/data/site";
+
 describe("vercel deploy", () => {
+  it("pins Google's callback to the public origin", () => {
+    const proxy = `${site.url}/api/auth`;
+    const vercel = JSON.parse(
+      readFileSync("sites/web/vercel.json", "utf8"),
+    ) as { env?: { AUTH_REDIRECT_PROXY_URL?: string } };
+    expect(vercel.env?.AUTH_REDIRECT_PROXY_URL).toBe(proxy);
+
+    const auth = readFileSync("packages/auth/src/index.ts", "utf8");
+    expect(auth).toContain(`"${proxy}"`);
+
+    const example = readFileSync(".env.example", "utf8");
+    expect(example).toContain(`AUTH_REDIRECT_PROXY_URL="${proxy}"`);
+  });
+
   it("applies committed migrations before the Next build", () => {
     const vercel = JSON.parse(
       readFileSync("sites/web/vercel.json", "utf8"),

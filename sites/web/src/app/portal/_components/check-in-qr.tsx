@@ -1,21 +1,14 @@
 "use client";
 
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useState } from "react";
 
 import { Skeleton } from "~/components/ui/skeleton";
+import { site } from "~/data/site";
 import { cn } from "~/lib/utils";
 
 /** Fragment, not query: the bearer must not land in server logs or Referer. */
 export function checkInQrUrl(origin: string, code: string) {
   return `${origin}/portal/check-in#code=${code}`;
-}
-
-export function usePageOrigin() {
-  return useSyncExternalStore(
-    () => () => undefined,
-    () => window.location.origin,
-    () => "",
-  );
 }
 
 export function CheckInQr({
@@ -27,15 +20,10 @@ export function CheckInQr({
   className?: string;
   label?: string;
 }) {
-  const origin = usePageOrigin();
-  const url = origin ? checkInQrUrl(origin, code) : null;
+  const url = checkInQrUrl(site.url, code);
   const [qr, setQr] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!url) {
-      setQr(null);
-      return;
-    }
     let cancelled = false;
 
     void (async () => {

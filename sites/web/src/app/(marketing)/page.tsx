@@ -326,7 +326,7 @@ export default async function Home() {
                 : "The calendar for next semester goes up before classes start. Instagram gets it first."}
             </p>
             <div className="mt-5">
-              <TextLink href="/events">Past highlights</TextLink>
+              <TextLink href="/events#past">Past events</TextLink>
             </div>
           </Card>
         )}

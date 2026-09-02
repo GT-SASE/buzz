@@ -83,11 +83,11 @@ function buildCases(): Case[] {
     );
   }
   const wraps = [
-    (code: string) => `https://sasegt.org/portal/check-in?code=${code}`,
-    (code: string) => `https://sasegt.org/portal/check-in#code=${code}`,
-    (code: string) => `https://sasegt.org/portal/check-in#${code}`,
+    (code: string) => `${site.url}/portal/check-in?code=${code}`,
+    (code: string) => `${site.url}/portal/check-in#code=${code}`,
+    (code: string) => `${site.url}/portal/check-in#${code}`,
     (code: string) =>
-      `https://sasegt.org/portal/check-in?from=qr&code=${code.toLowerCase()}#x`,
+      `${site.url}/portal/check-in?from=qr&code=${code.toLowerCase()}#x`,
   ];
   for (let i = 0; i < 20; i++) {
     const code = issued(8);
@@ -612,6 +612,11 @@ function buildCases(): Case[] {
   add("nav/url", () => {
     expect(site.url.startsWith("https://")).toBe(true);
     expect(site.url.endsWith("/")).toBe(false);
+    const events = navGroups.find((group) => group.label === "Events");
+    expect(events?.items.map((item) => item.href)).toEqual([
+      "/events",
+      "/events#past",
+    ]);
   });
   add("nav/email", () => expect(site.email).toContain("@"));
   add("nav/tiers-floor", () => expect(tiers[0]?.min).toBe(0));
