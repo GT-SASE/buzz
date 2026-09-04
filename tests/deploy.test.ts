@@ -44,5 +44,6 @@ describe("vercel deploy", () => {
       "utf8",
     );
     expect(journal).toContain("0002_wandering_queen_noir");
+    expect(journal).toContain("0003_committee_application");
   });
 });
