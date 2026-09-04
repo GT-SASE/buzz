@@ -125,20 +125,18 @@ describe("tierFor", () => {
 
 describe("codeFromScan", () => {
   it("pulls the code out of a full check-in URL", () => {
+    expect(codeFromScan(`${site.url}/portal/check-in?code=ABCD2345`)).toBe(
+      "ABCD2345",
+    );
+    expect(codeFromScan(`${site.url}/portal/check-in?code=abcd2345`)).toBe(
+      "ABCD2345",
+    );
     expect(
-      codeFromScan(`${site.url}/portal/check-in?code=ABCD2345`),
+      codeFromScan(`${site.url}/portal/check-in?from=qr&code=abcd2345#x`),
     ).toBe("ABCD2345");
-    expect(
-      codeFromScan(`${site.url}/portal/check-in?code=abcd2345`),
-    ).toBe("ABCD2345");
-    expect(
-      codeFromScan(
-        `${site.url}/portal/check-in?from=qr&code=abcd2345#x`,
-      ),
-    ).toBe("ABCD2345");
-    expect(
-      codeFromScan(`${site.url}/portal/check-in#code=ABCD2345`),
-    ).toBe("ABCD2345");
+    expect(codeFromScan(`${site.url}/portal/check-in#code=ABCD2345`)).toBe(
+      "ABCD2345",
+    );
     expect(codeFromScan(`${site.url}/portal/check-in#ABCD2345`)).toBe(
       "ABCD2345",
     );
@@ -211,9 +209,7 @@ describe("codeFromScan", () => {
     expect(codeFromScan("https://example.com/?code=x")).toBeNull();
     // Too short for the procedure to accept, which is what produced the raw
     // ZodError; it never leaves the client now.
-    expect(
-      codeFromScan(`${site.url}/portal/check-in?code=ABC`),
-    ).toBeNull();
+    expect(codeFromScan(`${site.url}/portal/check-in?code=ABC`)).toBeNull();
     // The glyphs the generator never issues are refused here as well.
     expect(
       codeFromScan(`${site.url}/portal/check-in?code=SASE0GT2`),
@@ -222,9 +218,9 @@ describe("codeFromScan", () => {
 
   /** A genuine check-in URL still works, which is the branch's whole job. */
   it("still takes the code out of the officer's own QR", () => {
-    expect(
-      codeFromScan(`${site.url}/portal/check-in?code=ABCD2345`),
-    ).toBe("ABCD2345");
+    expect(codeFromScan(`${site.url}/portal/check-in?code=ABCD2345`)).toBe(
+      "ABCD2345",
+    );
     expect(checkInQrUrl(site.url, "ABCD2345")).toBe(
       `${site.url}/portal/check-in#code=ABCD2345`,
     );

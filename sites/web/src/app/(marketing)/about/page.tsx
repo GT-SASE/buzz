@@ -79,10 +79,10 @@ export default function AboutPage() {
               A year here follows the same spine: a fall kickoff general body
               meeting, professional development workshops with industry
               partners, SASE KIN pairing for the semester, a chapter delegation
-              to the SASE National Convention, and the spring banquet.
-              Between those are general body meetings, technical projects,
-              service with Atlanta-area students, and socials. The chapter
-              hosted the SASE Southeast Regional Conference in 2017 and 2019.
+              to the SASE National Convention, and the spring banquet. Between
+              those are general body meetings, technical projects, service with
+              Atlanta-area students, and socials. The chapter hosted the SASE
+              Southeast Regional Conference in 2017 and 2019.
             </p>
             <p>
               Membership is open to all Georgia Tech students regardless of
