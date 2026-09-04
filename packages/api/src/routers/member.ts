@@ -7,6 +7,7 @@ import {
   ilike,
   isNull,
   max,
+  min,
   or,
   sum,
   type SQL,
@@ -21,6 +22,7 @@ import {
   pointsSum,
 } from "../aggregates";
 import { notFound } from "../errors";
+import { schoolYearStart } from "../periods";
 import { assertRateLimit, EXPORT_ROSTER_LIMIT } from "../rate-limit";
 import { adminProcedure, createTRPCRouter, protectedProcedure } from "../trpc";
 import type * as BuzzDbModule from "@buzz/db";
@@ -46,6 +48,8 @@ function rosterFilter(search: string | undefined) {
 }
 
 const rosterSort = z.enum(["points", "name", "recent"]);
+
+const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
 /**
  * Live (non-archived) check-ins as a Drizzle subquery. Roster aggregates join
@@ -131,6 +135,98 @@ export const memberRouter = createTRPCRouter({
           lastCheckInAt: asDate(row.lastCheckInAt),
         })),
         total: asInt(totals?.total),
+      };
+    }),
+
+  /**
+   * Roster-wide figures for the members screen. Tier floors are an input
+   * because tiers are a render-time policy in the web app, not a column, and
+   * the roster must not hold a second copy of them.
+   */
+  metrics: adminProcedure
+    .input(
+      z.object({
+        tiers: z.array(z.number().int().min(0)).min(1).max(8).default([0]),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      // One clock for every window, so "active" and "new" cannot land either
+      // side of a tick and disagree.
+      const now = new Date();
+      const since30 = new Date(now.getTime() - THIRTY_DAYS_MS);
+      const yearStart = schoolYearStart(now);
+
+      const live = liveCheckInsSubquery(ctx.db);
+
+      const [[rosterTotals], [officerTotals], attended] = await Promise.all([
+        ctx.db.select({ total: count() }).from(users),
+        ctx.db
+          .select({ total: count() })
+          .from(users)
+          .where(eq(users.role, "ADMIN")),
+        // One row per member who has attended anything live. Members with no
+        // attendance are the difference against the roster count below.
+        ctx.db
+          .select({
+            points: sum(live.pointsEarned),
+            firstCheckInAt: min(live.checkedInAt),
+            lastCheckInAt: max(live.checkedInAt),
+          })
+          .from(users)
+          .innerJoin(live, eq(live.userId, users.id))
+          .groupBy(users.id),
+      ]);
+
+      const floors = [...input.tiers].sort((a, b) => a - b);
+      const bands = floors.map(() => 0);
+
+      let totalPoints = 0;
+      let activeLast30 = 0;
+      let activeThisYear = 0;
+      let newLast30 = 0;
+
+      for (const row of attended) {
+        const points = asInt(row.points);
+        totalPoints += points;
+
+        const last = asDate(row.lastCheckInAt);
+        if (last && last >= since30) activeLast30 += 1;
+        if (last && last >= yearStart) activeThisYear += 1;
+
+        const first = asDate(row.firstCheckInAt);
+        if (first && first >= since30) newLast30 += 1;
+
+        // Highest floor the total clears; a total under the lowest floor sits
+        // in the bottom band rather than nowhere.
+        let band = 0;
+        for (let i = 0; i < floors.length; i += 1) {
+          if (points >= floors[i]!) band = i;
+        }
+        bands[band] = (bands[band] ?? 0) + 1;
+      }
+
+      const total = asInt(rosterTotals?.total);
+      const withCheckIns = attended.length;
+      // Everyone who has never checked in has zero points, so they all sit in
+      // the bottom band without a row of their own.
+      bands[0] = (bands[0] ?? 0) + Math.max(0, total - withCheckIns);
+
+      return {
+        total,
+        officers: asInt(officerTotals?.total),
+        withCheckIns,
+        neverCheckedIn: Math.max(0, total - withCheckIns),
+        activeLast30,
+        activeThisYear,
+        newLast30,
+        totalPoints,
+        averagePoints:
+          total === 0 ? 0 : Math.round((totalPoints / total) * 10) / 10,
+        tiers: floors.map((floor, index) => ({
+          min: floor,
+          members: bands[index] ?? 0,
+        })),
+        since: { last30: since30, schoolYear: yearStart },
       };
     }),
 

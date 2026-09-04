@@ -996,3 +996,152 @@ describe("member.leaderboard", () => {
     ]);
   });
 });
+
+// ----------------------------------------------------------- member.metrics
+
+const TIER_FLOORS = [0, 25, 75, 150];
+
+/**
+ * The metrics resolver reads three things: the roster count, the officer count
+ * (the one with a WHERE), and one row per member with live attendance.
+ */
+function metricsDb(
+  attended: Record<string, unknown>[],
+  { total, officers }: { total: number; officers: number },
+) {
+  return selectCapturingDb((capture) => {
+    const keys = Object.keys(capture.fields ?? {});
+    if (keys.includes("points")) return attended;
+    if (keys.length === 1 && keys[0] === "total") {
+      return [{ total: capture.where === undefined ? total : officers }];
+    }
+    throw new Error(`unexpected metrics query: ${keys.join(", ")}`);
+  });
+}
+
+/** `sum()` comes back as a string from the driver, dates as strings too. */
+function attendedRow(
+  points: number,
+  firstCheckInAt: string,
+  lastCheckInAt: string,
+) {
+  return {
+    points: String(points),
+    firstCheckInAt,
+    lastCheckInAt,
+  };
+}
+
+describe("member.metrics", () => {
+  it("is closed to a member session", async () => {
+    const { db } = metricsDb([], { total: 0, officers: 0 });
+    await expect(
+      createCaller(memberCtx(db)).member.metrics({ tiers: TIER_FLOORS }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
+  /**
+   * Somebody who has signed in and never come to anything is the roster's
+   * most interesting row, and the inner join cannot see them. They have zero
+   * points, so they belong in the bottom band — not missing from every band.
+   */
+  it("counts members with no attendance into the roster and the bottom tier", async () => {
+    const { db } = metricsDb(
+      [attendedRow(40, "2026-08-20T18:00:00Z", "2026-08-20T18:00:00Z")],
+      { total: 4, officers: 1 },
+    );
+
+    const result = await createCaller(adminCtx(db)).member.metrics({
+      tiers: TIER_FLOORS,
+    });
+
+    expect(result.total).toBe(4);
+    expect(result.officers).toBe(1);
+    expect(result.withCheckIns).toBe(1);
+    expect(result.neverCheckedIn).toBe(3);
+    expect(result.tiers[0]).toEqual({ min: 0, members: 3 });
+    expect(result.tiers[1]).toEqual({ min: 25, members: 1 });
+    // Averaged over the roster, not over the people who turned up: 40 / 4.
+    expect(result.averagePoints).toBe(10);
+  });
+
+  it("bands each total by the highest floor it clears", async () => {
+    const now = new Date().toISOString();
+    const { db } = metricsDb(
+      [
+        attendedRow(0, now, now),
+        attendedRow(24, now, now),
+        attendedRow(25, now, now),
+        attendedRow(80, now, now),
+        attendedRow(1000, now, now),
+      ],
+      { total: 5, officers: 0 },
+    );
+
+    const result = await createCaller(adminCtx(db)).member.metrics({
+      tiers: TIER_FLOORS,
+    });
+
+    expect(result.tiers.map((band) => band.members)).toEqual([2, 1, 1, 1]);
+  });
+
+  it("sorts the floors it is sent rather than trusting their order", async () => {
+    const now = new Date().toISOString();
+    const { db } = metricsDb([attendedRow(80, now, now)], {
+      total: 1,
+      officers: 0,
+    });
+
+    const result = await createCaller(adminCtx(db)).member.metrics({
+      tiers: [75, 0, 150, 25],
+    });
+
+    expect(result.tiers.map((band) => band.min)).toEqual([0, 25, 75, 150]);
+    expect(result.tiers.map((band) => band.members)).toEqual([0, 0, 1, 0]);
+  });
+
+  it("separates active, recently active, and newly joined", async () => {
+    const now = Date.now();
+    const days = (count: number) =>
+      new Date(now - count * 24 * 60 * 60 * 1000).toISOString();
+
+    const { db } = metricsDb(
+      [
+        // Joined years ago, came last week.
+        attendedRow(60, days(400), days(7)),
+        // Joined last week: new, and active on both windows.
+        attendedRow(10, days(6), days(6)),
+        // Came earlier this school year but not this month.
+        attendedRow(30, days(400), days(60)),
+        // Last seen before this school year started.
+        attendedRow(90, days(900), days(800)),
+      ],
+      { total: 4, officers: 0 },
+    );
+
+    const result = await createCaller(adminCtx(db)).member.metrics({
+      tiers: TIER_FLOORS,
+    });
+
+    expect(result.activeLast30).toBe(2);
+    expect(result.newLast30).toBe(1);
+    // The fourth row is 800 days stale, so it is outside any school year the
+    // clock is in; the 60-day-old one is inside it unless the run lands in the
+    // first weeks of August.
+    expect(result.activeThisYear).toBeLessThanOrEqual(3);
+    expect(result.activeThisYear).toBeGreaterThanOrEqual(2);
+    expect(result.totalPoints).toBe(190);
+  });
+
+  it("reports zeroes rather than dividing by an empty roster", async () => {
+    const { db } = metricsDb([], { total: 0, officers: 0 });
+
+    const result = await createCaller(adminCtx(db)).member.metrics({
+      tiers: TIER_FLOORS,
+    });
+
+    expect(result.averagePoints).toBe(0);
+    expect(result.neverCheckedIn).toBe(0);
+    expect(result.tiers.every((band) => band.members === 0)).toBe(true);
+  });
+});

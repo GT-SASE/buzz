@@ -316,3 +316,81 @@ export const mentorshipEnrollmentsRelations = relations(
     }),
   }),
 );
+
+export type CommitteeId = "events" | "marketing" | "treasury";
+export type CommitteeApplicationStatus =
+  | "submitted"
+  | "interviewing"
+  | "accepted"
+  | "declined"
+  | "withdrawn";
+
+/**
+ * One committee application per member per recruiting cycle.
+ *
+ * Answers are the Google Form fields. Status and officerNotes are the
+ * interview sheet — members never read those columns.
+ */
+export const committeeApplications = createTable(
+  "committee_application",
+  (d) => ({
+    id: d
+      .varchar({ length: 255 })
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    userId: d
+      .varchar({ length: 255 })
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** `fall-2026`. A new cycle is a new row, not an overwrite. */
+    cycle: d.varchar({ length: 32 }).notNull(),
+    wantsEvents: d.boolean().notNull().default(false),
+    wantsMarketing: d.boolean().notNull().default(false),
+    wantsTreasury: d.boolean().notNull().default(false),
+    discordHandle: d.varchar({ length: 80 }).notNull(),
+    eventsWhy: d.varchar({ length: 2000 }),
+    eventsCollabs: d.varchar({ length: 1000 }),
+    marketingWhy: d.varchar({ length: 2000 }),
+    marketingConnections: d.varchar({ length: 1000 }),
+    treasuryWhy: d.varchar({ length: 2000 }),
+    otherOrgs: d.varchar({ length: 1000 }),
+    comments: d.varchar({ length: 1000 }),
+    status: d
+      .varchar({ length: 16 })
+      .$type<CommitteeApplicationStatus>()
+      .notNull()
+      .default("submitted"),
+    officerNotes: d.varchar({ length: 4000 }),
+    submittedAt: d
+      .timestamp({ withTimezone: true })
+      .$defaultFn(() => /* @__PURE__ */ new Date())
+      .notNull(),
+    createdAt: d
+      .timestamp({ withTimezone: true })
+      .$defaultFn(() => /* @__PURE__ */ new Date())
+      .notNull(),
+    updatedAt: d.timestamp({ withTimezone: true }).$onUpdate(() => new Date()),
+  }),
+  (t) => [
+    unique(idx("committee_app_user_cycle")).on(t.userId, t.cycle),
+    index(idx("committee_app_cycle_status_idx")).on(t.cycle, t.status),
+    check(
+      idx("committee_app_status_check"),
+      sql`${t.status} in ('submitted', 'interviewing', 'accepted', 'declined', 'withdrawn')`,
+    ),
+    check(
+      idx("committee_app_committee_check"),
+      sql`${t.wantsEvents} or ${t.wantsMarketing} or ${t.wantsTreasury}`,
+    ),
+  ],
+);
+
+export const committeeApplicationsRelations = relations(
+  committeeApplications,
+  ({ one }) => ({
+    user: one(users, {
+      fields: [committeeApplications.userId],
+      references: [users.id],
+    }),
+  }),
+);

@@ -293,14 +293,25 @@ function StatusBadges({ event }: { event: AdminEvent }) {
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       {archived ? (
-        <Badge variant="secondary">Archived</Badge>
+        <Badge variant="secondary" className="border-hairline bg-cream/70 text-ink-muted">
+          Archived
+        </Badge>
       ) : event.checkInEnabled ? (
-        <Badge>Check-in open</Badge>
+        <Badge className="bg-emerald-600/10 text-emerald-800 border-emerald-600/30 gap-1.5 font-medium shadow-none">
+          <span className="size-1.5 rounded-full bg-emerald-600 animate-pulse" />
+          Check-in open
+        </Badge>
       ) : (
-        <Badge variant="outline">Check-in closed</Badge>
+        <Badge variant="outline" className="border-hairline text-ink-muted">
+          Check-in closed
+        </Badge>
       )}
       {full && <Badge variant="destructive">At capacity</Badge>}
-      {event.isPast && !archived && <Badge variant="outline">Past</Badge>}
+      {event.isPast && !archived && (
+        <Badge variant="outline" className="border-hairline text-ink-muted/80">
+          Past
+        </Badge>
+      )}
     </div>
   );
 }
@@ -312,7 +323,7 @@ function EventIdentity({ event }: { event: AdminEvent }) {
     <>
       <span
         className={cn(
-          "font-display text-body block font-bold",
+          "font-display text-base block font-bold leading-snug",
           archived ? "text-ink-muted" : "text-navy",
         )}
       >
@@ -371,15 +382,21 @@ function EventActions({ event }: { event: AdminEvent }) {
   const openingIsUrgent = !archived && !event.checkInEnabled && !event.isPast;
 
   return (
-    <div className="flex flex-wrap items-center gap-2 md:justify-end">
-      <Button asChild variant="outline" className="min-h-11">
+    <div className="flex flex-wrap items-center gap-1.5 md:justify-end">
+      <Button
+        asChild
+        variant="outline"
+        size="sm"
+        className="h-9 min-h-9 rounded-md border-hairline font-semibold text-navy hover:bg-cream"
+      >
         <Link href={`/portal/admin/events/${event.id}`}>Attendance</Link>
       </Button>
 
       {/* Disabled on an archived event because `event.checkIn` refuses one
           outright. */}
       <Button
-        className="min-h-11"
+        size="sm"
+        className="h-9 min-h-9 rounded-md font-semibold"
         variant={openingIsUrgent ? "default" : "outline"}
         disabled={toggle.isPending || archived}
         onClick={() =>
@@ -392,7 +409,11 @@ function EventActions({ event }: { event: AdminEvent }) {
       <EventDialog
         event={event}
         trigger={
-          <Button className="min-h-11" variant="ghost">
+          <Button
+            size="sm"
+            className="h-9 min-h-9 rounded-md font-semibold text-ink-muted hover:text-navy"
+            variant="ghost"
+          >
             Edit
           </Button>
         }
@@ -403,8 +424,9 @@ function EventActions({ event }: { event: AdminEvent }) {
       <AlertDialog>
         <AlertDialogTrigger asChild>
           <Button
+            size="sm"
             variant="ghost"
-            className="text-ink-muted hover:bg-cream hover:text-navy min-h-11"
+            className="text-ink-muted hover:bg-cream hover:text-navy h-9 min-h-9 rounded-md font-semibold"
             disabled={archive.isPending}
           >
             {archived ? "Restore" : "Archive"}
@@ -444,7 +466,7 @@ function EventRow({ event }: { event: AdminEvent }) {
   const archived = event.archivedAt !== null;
 
   return (
-    <TableRow className={cn(archived && "bg-cream/60")}>
+    <TableRow className={cn("hover:bg-cream/30 transition-colors", archived && "bg-cream/60 opacity-80")}>
       <TableCell className="py-4 whitespace-normal">
         <EventIdentity event={event} />
       </TableCell>
@@ -453,12 +475,12 @@ function EventRow({ event }: { event: AdminEvent }) {
         <StatusBadges event={event} />
       </TableCell>
 
-      <TableCell className="text-ink-muted py-4 tabular-nums">
+      <TableCell className="text-navy py-4 font-semibold tabular-nums">
         {event.pointsValue} pts
       </TableCell>
 
       <TableCell className="text-ink-muted py-4 tabular-nums">
-        {event.attendees}
+        <span className="font-semibold text-navy">{event.attendees}</span>
         {event.maxCheckIns !== null ? ` of ${event.maxCheckIns}` : ""}
       </TableCell>
 
@@ -475,20 +497,19 @@ function EventCard({ event }: { event: AdminEvent }) {
   return (
     <li
       className={cn(
-        "border-hairline rounded-lg border px-4 py-4",
-        archived && "bg-cream/60",
+        "border-hairline bg-paper/80 shadow-xs rounded-xl border p-5 transition",
+        archived && "bg-cream/60 opacity-80",
       )}
     >
       <EventIdentity event={event} />
-      <div className="mt-3">
+      <div className="mt-3 flex flex-wrap items-center gap-2">
         <StatusBadges event={event} />
+        <span className="text-ink-muted text-body-sm tabular-nums">
+          · {event.pointsValue} pts · {event.attendees}
+          {event.maxCheckIns !== null ? ` of ${event.maxCheckIns}` : ""} checked in
+        </span>
       </div>
-      <p className="text-ink-muted text-body-sm mt-2 tabular-nums">
-        {event.pointsValue} pts · {event.attendees}
-        {event.maxCheckIns !== null ? ` of ${event.maxCheckIns}` : ""} checked
-        in
-      </p>
-      <div className="mt-4">
+      <div className="border-hairline mt-4 border-t pt-3">
         <EventActions event={event} />
       </div>
     </li>
@@ -507,17 +528,23 @@ export function AdminEvents() {
   const visible = visibleEvents(allEvents, filter);
 
   const createAction = (
-    <EventDialog trigger={<Button className="min-h-11">New event</Button>} />
+    <EventDialog
+      trigger={
+        <Button className="bg-navy hover:bg-navy-deep min-h-10 rounded-lg px-4 font-semibold text-white shadow-xs">
+          + New event
+        </Button>
+      }
+    />
   );
 
   return (
     <div>
-      <div className="flex flex-wrap items-center justify-between gap-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         {/* One track, four positions. */}
         <div
           role="group"
           aria-label="Filter events"
-          className="ring-hairline bg-cream flex max-w-full gap-1 overflow-x-auto overscroll-x-contain rounded-full p-1 ring-1"
+          className="ring-hairline bg-cream flex max-w-full gap-1 overflow-x-auto overscroll-x-contain rounded-xl p-1 ring-1"
         >
           {filters.map((option) => (
             <Button
@@ -527,9 +554,10 @@ export function AdminEvents() {
               aria-pressed={filter === option}
               onClick={() => setFilter(option)}
               className={cn(
-                "text-eyebrow tracking-caps min-h-11 shrink-0 rounded-full font-semibold uppercase",
-                filter !== option &&
-                  "text-ink-muted hover:bg-paper hover:text-navy",
+                "text-xs min-h-9 shrink-0 rounded-lg px-3.5 font-semibold transition-all",
+                filter === option
+                  ? "bg-navy text-white shadow-xs"
+                  : "text-ink-muted hover:bg-paper hover:text-navy",
               )}
             >
               {option}
@@ -540,7 +568,7 @@ export function AdminEvents() {
         {createAction}
       </div>
 
-      <div className="mt-10">
+      <div className="mt-8">
         {listing.isPending ? (
           <>
             <p className="sr-only">Loading events.</p>
@@ -564,7 +592,7 @@ export function AdminEvents() {
         ) : visible.length > 0 ? (
           <>
             {/* What am I looking at, and how much of it. */}
-            <div className="border-hairline flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 border-b pb-3">
+            <div className="mb-4 flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
               <h2 className="text-eyebrow tracking-caps text-ink-muted font-semibold uppercase">
                 {filter === "All" ? "All events" : `${filter} events`}
               </h2>
@@ -583,24 +611,26 @@ export function AdminEvents() {
             </ul>
 
             <div className="hidden md:block">
-              <Table label="Events" className="border-hairline border-b">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Event</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Points</TableHead>
-                    <TableHead>Checked in</TableHead>
-                    <TableHead className="text-right">
-                      <span className="sr-only">Actions</span>
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {visible.map((event) => (
-                    <EventRow key={event.id} event={event} />
-                  ))}
-                </TableBody>
-              </Table>
+              <div className="border-hairline bg-paper/50 overflow-hidden rounded-xl border shadow-xs">
+                <Table label="Events">
+                  <TableHeader className="bg-cream/40 border-hairline border-b">
+                    <TableRow>
+                      <TableHead className="font-semibold text-ink-muted">Event</TableHead>
+                      <TableHead className="font-semibold text-ink-muted">Status</TableHead>
+                      <TableHead className="font-semibold text-ink-muted">Points</TableHead>
+                      <TableHead className="font-semibold text-ink-muted">Checked in</TableHead>
+                      <TableHead className="text-right font-semibold text-ink-muted">
+                        <span className="sr-only">Actions</span>
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {visible.map((event) => (
+                      <EventRow key={event.id} event={event} />
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
             </div>
           </>
         ) : (

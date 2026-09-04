@@ -395,149 +395,187 @@ export function EventAttendance({ eventId }: { eventId: string }) {
 
       {/* Deliberately an h2-sized h1: on this screen the title is the label and
           the code is the content. */}
-      <h1 className="font-display text-navy text-h2 font-bold tracking-tight text-balance">
-        {event.title}
-      </h1>
-      <p className="text-ink-muted text-body mt-2">
-        {formatEventTime(event.startsAt)}
-        {event.location ? ` · ${event.location}` : ""}
-      </p>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <div className="flex flex-wrap items-center gap-3">
+            <h1 className="font-display text-navy text-h2 font-bold tracking-tight text-balance">
+              {event.title}
+            </h1>
+            <CheckInStatus state={state} />
+          </div>
+          <p className="text-ink-muted text-body mt-2">
+            {formatEventTime(event.startsAt)}
+            {event.location ? ` · ${event.location}` : ""}
+          </p>
+        </div>
 
-      {/* Preview of the wall QR. Members scan; they never type a code. */}
-      <div className="bg-navy navy-wash border-navy-deep relative mt-8 overflow-hidden rounded-lg border">
-        <Honeycomb className="text-gold-bright/[0.13] absolute inset-0 h-full w-full" />
+        <div className="flex flex-wrap items-center gap-2">
+          {state === "open" && (
+            <Button
+              asChild
+              className="bg-navy hover:bg-navy-deep min-h-10 rounded-lg px-4 font-semibold text-white shadow-xs"
+            >
+              <Link href={`/portal/admin/events/${event.id}/present`}>
+                Open projector view
+              </Link>
+            </Button>
+          )}
 
-        <div className="relative px-5 py-10 sm:px-10 sm:py-14">
-          <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-4">
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                variant="outline"
+                disabled={rotate.isPending}
+                className="border-hairline text-navy hover:bg-cream min-h-10 rounded-lg px-4 font-semibold"
+              >
+                {rotate.isPending ? "Rotating..." : "Rotate QR"}
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Replace the QR on screen?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Every slide, poster and photograph of the current QR stops
+                  working the moment you do this, and the old one cannot be
+                  brought back.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  className="bg-destructive hover:bg-destructive/90 text-white"
+                  onClick={() => rotate.mutate({ id: event.id })}
+                >
+                  Yes, rotate
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+
+          {rosterTotal > 0 && (
+            <Button
+              variant="outline"
+              onClick={() => void exportAttendance()}
+              className="border-hairline text-navy hover:bg-cream min-h-10 rounded-lg px-4 font-semibold"
+            >
+              Export CSV
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {/* Overview Grid: QR Preview & Quick Metrics */}
+      <div className="mt-8 grid gap-6 md:grid-cols-[auto_1fr]">
+        {/* Preview of the wall QR */}
+        <div className="bg-navy navy-wash border-navy-deep relative flex flex-col justify-between overflow-hidden rounded-xl border p-6 text-white md:w-80">
+          <Honeycomb className="text-gold-bright/[0.13] absolute inset-0 h-full w-full" />
+          <div className="relative">
             <Eyebrow tone="onNavy" rule={false}>
               Check-in QR
             </Eyebrow>
-            <CheckInStatus state={state} />
+            {state === "open" ? (
+              <div className="mt-4 flex justify-center">
+                <CheckInQr
+                  code={event.checkInCode}
+                  className="size-48 rounded-lg p-2 sm:size-52"
+                />
+              </div>
+            ) : (
+              <p className="text-body-sm mt-4 text-white/75">
+                {state === "archived"
+                  ? "This event is archived. The QR will not admit anyone."
+                  : isPast
+                    ? "Check-in closed automatically 24 hours after this event started."
+                    : "Check-in is closed — members scanning this QR will be turned away."}
+              </p>
+            )}
+          </div>
+          <p className="text-white/60 text-xs mt-4 relative">
+            Rotate immediately if this code was leaked or photographed outside the event.
+          </p>
+        </div>
+
+        {/* Quick event stats */}
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="border-hairline bg-paper/80 shadow-xs flex flex-col justify-between rounded-xl border p-5">
+            <span className="text-eyebrow tracking-caps text-ink-muted text-xs font-semibold uppercase">
+              Attendance
+            </span>
+            <div className="mt-4">
+              <span className="font-display text-navy text-3xl font-bold tabular-nums block sm:text-4xl">
+                {rosterTotal}
+              </span>
+              <span className="text-ink-muted text-body-sm mt-1 block tabular-nums">
+                {event.maxCheckIns !== null
+                  ? `of ${event.maxCheckIns} seats filled`
+                  : "unlimited capacity"}
+              </span>
+            </div>
+            {overCapacity && (
+              <p className="text-destructive text-xs mt-2 font-medium">
+                Over capacity limit.
+              </p>
+            )}
           </div>
 
-          {state === "open" ? (
-            <div className="mt-8 flex justify-center sm:justify-start">
-              <CheckInQr
-                code={event.checkInCode}
-                className="size-48 p-3 sm:size-56"
-              />
+          <div className="border-hairline bg-paper/80 shadow-xs flex flex-col justify-between rounded-xl border p-5">
+            <span className="text-eyebrow tracking-caps text-ink-muted text-xs font-semibold uppercase">
+              Reward Points
+            </span>
+            <div className="mt-4">
+              <span className="font-display text-navy text-3xl font-bold tabular-nums block sm:text-4xl">
+                +{event.pointsValue}
+              </span>
+              <span className="text-ink-muted text-body-sm mt-1 block">
+                pts awarded per attendee
+              </span>
             </div>
-          ) : (
-            <p className="text-body max-w-measure mt-6 text-white/75">
-              {state === "archived"
-                ? "This event is archived. The QR will not admit anyone."
-                : isPast
-                  ? "Check-in closed automatically 24 hours after this event started. The QR will not admit anyone."
-                  : "Check-in is closed — members scanning this QR will be turned away."}
-            </p>
-          )}
+          </div>
         </div>
       </div>
 
-      <div className="mt-6 flex flex-wrap items-center gap-3">
-        <Button
-          asChild
-          size="lg"
-          className="bg-gold-bright text-navy hover:bg-gold h-auto min-h-12 w-full rounded-full font-semibold sm:w-auto"
-        >
-          <Link href={`/portal/admin/events/${event.id}/present`}>
-            Open the projector view
-          </Link>
-        </Button>
-      </div>
+      <div className="mt-12">
+        <div className="mb-4 flex flex-wrap items-baseline justify-between gap-4">
+          <div>
+            <Eyebrow tone="gold">Roster</Eyebrow>
+            <h2 className="font-display text-navy text-h3 mt-2 font-bold tabular-nums">
+              {rosterTotal} checked in
+              {event.maxCheckIns !== null ? ` of ${event.maxCheckIns}` : ""}
+            </h2>
+          </div>
+        </div>
 
-      <div className="mt-6 flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
-        <p className="text-ink-muted text-body-sm max-w-measure">
-          Anyone who photographs this QR can check in. Rotating it revokes a
-          photographed slide immediately.
-        </p>
-
-        {/* Asks first, unlike the other quiet controls here: rotating mid-event
-            invalidates the code the room is looking at, and there is no undo. */}
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <Button
-              variant="outline"
-              disabled={rotate.isPending}
-              className="border-hairline text-navy hover:bg-cream min-h-11 w-full rounded-full font-semibold sm:w-auto"
-            >
-              {rotate.isPending ? "Rotating..." : "Rotate the QR"}
-            </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Replace the QR on screen?</AlertDialogTitle>
-              <AlertDialogDescription>
-                Every slide, poster and photograph of the current QR stops
-                working the moment you do this, and the old one cannot be
-                brought back.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction
-                className="bg-destructive hover:bg-destructive/90 text-white"
-                onClick={() => rotate.mutate({ id: event.id })}
-              >
-                Yes, rotate
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      </div>
-
-      <div className="mt-14 flex flex-wrap items-end justify-between gap-4">
         <div>
-          <Eyebrow tone="gold">Attendance</Eyebrow>
-          <h2 className="font-display text-navy text-h3 mt-4 font-bold tabular-nums">
-            {rosterTotal} checked in
-            {event.maxCheckIns !== null ? ` of ${event.maxCheckIns}` : ""}
-          </h2>
-          {overCapacity && (
-            <p className="text-destructive text-body-sm mt-2">
-              Over capacity — officers added check-ins past the listed limit.
-            </p>
+          {roster.length > 0 ? (
+            <>
+              <RosterCards
+                rows={roster}
+                removing={remove.isPending}
+                onRemove={(userId) =>
+                  remove.mutate({ eventId: event.id, userId })
+                }
+              />
+              <div className="hidden md:block">
+                <div className="border-hairline bg-paper/50 overflow-hidden rounded-xl border shadow-xs">
+                  <RosterTable>
+                    <RosterRows
+                      rows={roster}
+                      removing={remove.isPending}
+                      onRemove={(userId) =>
+                        remove.mutate({ eventId: event.id, userId })
+                      }
+                    />
+                  </RosterTable>
+                </div>
+              </div>
+            </>
+          ) : (
+            <EmptyState
+              title="Nobody has checked in yet."
+              body="Open the projector for members to scan, or add someone below."
+            />
           )}
         </div>
-        {rosterTotal > 0 && (
-          <Button
-            variant="outline"
-            onClick={() => void exportAttendance()}
-            className="border-hairline text-navy hover:bg-cream min-h-11 w-full rounded-full font-semibold sm:w-auto"
-          >
-            Export CSV
-          </Button>
-        )}
-      </div>
-
-      <div className="mt-6">
-        {roster.length > 0 ? (
-          <>
-            <RosterCards
-              rows={roster}
-              removing={remove.isPending}
-              onRemove={(userId) =>
-                remove.mutate({ eventId: event.id, userId })
-              }
-            />
-            <div className="hidden md:block">
-              <RosterTable>
-                <RosterRows
-                  rows={roster}
-                  removing={remove.isPending}
-                  onRemove={(userId) =>
-                    remove.mutate({ eventId: event.id, userId })
-                  }
-                />
-              </RosterTable>
-            </div>
-          </>
-        ) : (
-          <EmptyState
-            title="Nobody has checked in yet."
-            body="Open the projector for members to scan, or add someone below."
-          />
-        )}
       </div>
 
       <Card className="border-hairline mt-10 rounded-lg shadow-none">

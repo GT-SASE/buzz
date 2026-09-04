@@ -48,7 +48,7 @@ export function EmptyState({
   children?: React.ReactNode;
 }) {
   return (
-    <Card className="border-hairline bg-cream rounded-lg border-dashed py-14 text-center shadow-none">
+    <Card className="border-hairline bg-paper/60 rounded-xl border-dashed py-12 text-center shadow-xs">
       <CardContent>
         <h3 className="font-display text-navy text-h3 font-bold text-balance">
           {title}
@@ -57,7 +57,7 @@ export function EmptyState({
           {body}
         </p>
         {children && (
-          <div className="mt-7 flex flex-wrap justify-center gap-4">
+          <div className="mt-6 flex flex-wrap justify-center gap-3">
             {children}
           </div>
         )}

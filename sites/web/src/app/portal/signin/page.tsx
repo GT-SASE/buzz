@@ -57,7 +57,7 @@ export default async function SignInPage({
           </form>
 
           <p className="text-ink-muted text-body-sm mt-6">
-            Use your Georgia Tech account. Nothing is posted anywhere and the
+            Sign in with any Google account. Nothing is posted anywhere and the
             chapter only sees your name and email.
           </p>
         </CardContent>

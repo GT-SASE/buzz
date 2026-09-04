@@ -13,6 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "~/components/ui/table";
+import { cn } from "~/lib/utils";
 import { api, type RouterOutputs } from "~/trpc/react";
 
 type Row = RouterOutputs["mentorship"]["list"][number];
@@ -129,79 +130,89 @@ export function MentorshipRoster() {
         {rows.map((row) => (
           <li
             key={row.userId}
-            className="border-hairline rounded-lg border px-4 py-4"
+            className="border-hairline bg-paper/80 shadow-xs rounded-xl border p-5 transition"
           >
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <p className="text-navy font-semibold">
+                <p className="font-display text-navy text-base font-bold">
                   {row.name ?? row.email}
                 </p>
-                <p className="text-ink-muted text-body-sm break-all">
+                <p className="text-ink-muted text-body-sm mt-0.5 break-all">
                   {row.email}
                 </p>
               </div>
               <Badge
                 variant={row.status === "enrolled" ? "default" : "secondary"}
+                className={cn(
+                  "capitalize font-semibold",
+                  row.status === "enrolled" && "bg-emerald-600/15 text-emerald-800 border-emerald-600/30",
+                )}
               >
                 {row.status}
               </Badge>
             </div>
-            <p className="text-ink-muted text-body-sm mt-2 capitalize">
-              {row.role} · {row.points} pts
+            <p className="text-ink-muted text-body-sm mt-2.5 capitalize font-medium">
+              {row.role} · <span className="font-semibold text-navy tabular-nums">{row.points} pts</span>
             </p>
             {row.note && (
               <p className="text-ink-muted/80 text-body-sm mt-1 italic">
                 {row.note}
               </p>
             )}
-            <div className="mt-4">{actions(row)}</div>
+            <div className="border-hairline mt-4 border-t pt-3">{actions(row)}</div>
           </li>
         ))}
       </ul>
 
       <div className="hidden md:block">
-        <Table label="SASE KIN">
-          <TableHeader>
-            <TableRow>
-              <TableHead>Member</TableHead>
-              <TableHead>Role</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Points</TableHead>
-              <TableHead>
-                <span className="sr-only">Actions</span>
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.map((row) => (
-              <TableRow key={row.userId}>
-                <TableCell className="whitespace-normal">
-                  <p className="text-navy font-semibold">
-                    {row.name ?? row.email}
-                  </p>
-                  <p className="text-ink-muted text-body-sm">{row.email}</p>
-                  {row.note && (
-                    <p className="text-ink-muted/80 text-body-sm mt-1 italic">
-                      {row.note}
-                    </p>
-                  )}
-                </TableCell>
-                <TableCell className="capitalize">{row.role}</TableCell>
-                <TableCell>
-                  <Badge
-                    variant={
-                      row.status === "enrolled" ? "default" : "secondary"
-                    }
-                  >
-                    {row.status}
-                  </Badge>
-                </TableCell>
-                <TableCell className="tabular-nums">{row.points}</TableCell>
-                <TableCell>{actions(row)}</TableCell>
+        <div className="border-hairline bg-paper/50 overflow-hidden rounded-xl border shadow-xs">
+          <Table label="SASE KIN">
+            <TableHeader className="bg-cream/40 border-hairline border-b">
+              <TableRow>
+                <TableHead className="font-semibold text-ink-muted">Member</TableHead>
+                <TableHead className="font-semibold text-ink-muted">Role</TableHead>
+                <TableHead className="font-semibold text-ink-muted">Status</TableHead>
+                <TableHead className="font-semibold text-ink-muted">Points</TableHead>
+                <TableHead className="text-right font-semibold text-ink-muted">
+                  <span className="sr-only">Actions</span>
+                </TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {rows.map((row) => (
+                <TableRow key={row.userId} className="hover:bg-cream/30 transition-colors">
+                  <TableCell className="py-4 whitespace-normal">
+                    <p className="text-navy font-semibold">
+                      {row.name ?? row.email}
+                    </p>
+                    <p className="text-ink-muted text-body-sm mt-0.5">{row.email}</p>
+                    {row.note && (
+                      <p className="text-ink-muted/80 text-body-sm mt-1 italic">
+                        {row.note}
+                      </p>
+                    )}
+                  </TableCell>
+                  <TableCell className="capitalize font-medium text-navy">{row.role}</TableCell>
+                  <TableCell>
+                    <Badge
+                      variant={
+                        row.status === "enrolled" ? "default" : "secondary"
+                      }
+                      className={cn(
+                        "capitalize font-semibold",
+                        row.status === "enrolled" && "bg-emerald-600/15 text-emerald-800 border-emerald-600/30",
+                      )}
+                    >
+                      {row.status}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="font-bold text-navy tabular-nums">{row.points}</TableCell>
+                  <TableCell>{actions(row)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
       </div>
     </>
   );

@@ -110,3 +110,13 @@ export const MENTORSHIP_AWARD_LIMIT = {
   limit: 30,
   intervalMs: 60_000,
 } as const;
+
+export const COMMITTEE_APPLY_LIMIT = {
+  limit: 10,
+  intervalMs: 60_000,
+} as const;
+
+export const EXPORT_COMMITTEE_LIMIT = {
+  limit: 5,
+  intervalMs: 60_000,
+} as const;

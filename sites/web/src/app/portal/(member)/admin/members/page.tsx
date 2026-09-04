@@ -6,6 +6,7 @@ import { Section } from "~/components/site";
 import { HydrateClient, api } from "~/trpc/server";
 import AdminLoading from "../loading";
 import { MembersTable } from "./members-table";
+import { RosterMetrics, tierFloors } from "./roster-metrics";
 
 export const metadata: Metadata = {
   title: "Roster",
@@ -20,7 +21,10 @@ export default function AdminMembersPage() {
 }
 
 async function AdminMembersBody() {
-  await api.member.list({ limit: 25, offset: 0, sort: "points" });
+  await Promise.all([
+    api.member.list({ limit: 25, offset: 0, sort: "points" }),
+    api.member.metrics({ tiers: tierFloors }),
+  ]);
 
   return (
     <HydrateClient>
@@ -29,6 +33,8 @@ async function AdminMembersBody() {
         title="Roster"
         body="Who has signed in, what they have earned, when they last came."
       />
+
+      <RosterMetrics />
 
       <Section size="sm">
         <MembersTable />

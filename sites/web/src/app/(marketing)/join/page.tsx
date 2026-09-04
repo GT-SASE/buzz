@@ -10,6 +10,11 @@ import {
 } from "~/components/ui/accordion";
 import { Badge } from "~/components/ui/badge";
 import { meeting } from "~/data/content";
+import {
+  committeeCycle,
+  committeeExpectations,
+  committees,
+} from "~/data/committees";
 import { discord, engage, instagram, site } from "~/data/site";
 import { breadcrumbSchema, pageMetadata } from "~/lib/seo";
 
@@ -166,6 +171,55 @@ export default function JoinPage() {
             </li>
           ))}
         </ol>
+      </Section>
+
+      <Section
+        eyebrow="Committees"
+        title="Want to help run the chapter?"
+        lead={`Events, Marketing, and Treasury are recruiting for ${committeeCycle.label}. Membership is still free and does not need this form. Applications close ${committeeCycle.closesLabel}.`}
+      >
+        <div className="grid gap-x-12 gap-y-10 md:grid-cols-3">
+          {committees.map((committee) => (
+            <Card key={committee.id} className="h-full">
+              <h3 className="font-display text-navy text-h3 font-bold">
+                {committee.title}
+              </h3>
+              <p className="text-ink-muted text-body-sm mt-4 leading-relaxed">
+                {committee.blurb}
+              </p>
+              <ul className="text-ink-muted text-body-sm mt-5 grid gap-2">
+                {committee.responsibilities.map((item) => (
+                  <li key={item} className="flex gap-3">
+                    <span
+                      aria-hidden="true"
+                      className="bg-gold-bright mt-1.5 size-1.5 shrink-0 rounded-full"
+                    />
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          ))}
+        </div>
+        <ul className="text-ink-muted text-body-sm mt-10 grid gap-2 sm:grid-cols-2">
+          {committeeExpectations.map((item) => (
+            <li key={item} className="flex gap-3">
+              <span
+                aria-hidden="true"
+                className="bg-gold-bright mt-1.5 size-1.5 shrink-0 rounded-full"
+              />
+              <span>{item}</span>
+            </li>
+          ))}
+        </ul>
+        <div className="mt-10">
+          <Button
+            href="/portal/committees"
+            className="w-full justify-center sm:w-auto"
+          >
+            Apply in the portal
+          </Button>
+        </div>
       </Section>
 
       <Section

@@ -97,43 +97,45 @@ function RosterTable({
   children: React.ReactNode;
 }) {
   return (
-    <Table
-      label="Members"
-      className="border-hairline min-w-[46rem] border-b text-left"
-    >
-      <TableHeader>
-        <TableRow className="border-hairline">
-          {/* w-full on the one elastic column; the rest hug their text. */}
-          <SortHeader
-            label="Name"
-            sortKey="name"
-            sort={sort}
-            onSort={onSort}
-            className="w-full pr-6"
-          />
-          <TableHead className={cn(columnHeading, "pr-6")}>Email</TableHead>
-          <TableHead className={cn(columnHeading, "pr-6")}>Role</TableHead>
-          <SortHeader
-            label="Points"
-            sortKey="points"
-            sort={sort}
-            onSort={onSort}
-            className="pr-6 text-right"
-          />
-          <TableHead className={cn(columnHeading, "pr-6 text-right")}>
-            Events
-          </TableHead>
-          <SortHeader
-            label="Last check-in"
-            sortKey="recent"
-            sort={sort}
-            onSort={onSort}
-            className="text-right"
-          />
-        </TableRow>
-      </TableHeader>
-      <TableBody>{children}</TableBody>
-    </Table>
+    <div className="border-hairline bg-paper/50 overflow-hidden rounded-xl border shadow-xs">
+      <Table
+        label="Members"
+        className="min-w-[46rem] text-left"
+      >
+        <TableHeader className="bg-cream/40 border-hairline border-b">
+          <TableRow className="border-hairline">
+            {/* w-full on the one elastic column; the rest hug their text. */}
+            <SortHeader
+              label="Name"
+              sortKey="name"
+              sort={sort}
+              onSort={onSort}
+              className="w-full pr-6 font-semibold"
+            />
+            <TableHead className={cn(columnHeading, "pr-6 font-semibold")}>Email</TableHead>
+            <TableHead className={cn(columnHeading, "pr-6 font-semibold")}>Role</TableHead>
+            <SortHeader
+              label="Points"
+              sortKey="points"
+              sort={sort}
+              onSort={onSort}
+              className="pr-6 text-right font-semibold"
+            />
+            <TableHead className={cn(columnHeading, "pr-6 text-right font-semibold")}>
+              Events
+            </TableHead>
+            <SortHeader
+              label="Last check-in"
+              sortKey="recent"
+              sort={sort}
+              onSort={onSort}
+              className="text-right font-semibold"
+            />
+          </TableRow>
+        </TableHeader>
+        <TableBody>{children}</TableBody>
+      </Table>
+    </div>
   );
 }
 
@@ -142,14 +144,14 @@ function MemberCard({ member }: { member: Member }) {
     <li>
       <Link
         href={`/portal/admin/members/${member.id}`}
-        className="border-hairline block min-h-11 rounded-lg border px-4 py-4"
+        className="border-hairline bg-paper/80 shadow-xs hover:border-gold-ink/30 block min-h-11 rounded-xl border p-4 transition-all"
       >
         <div className="flex items-start justify-between gap-3">
-          <p className="text-navy min-w-0 font-semibold">
+          <p className="font-display text-navy text-base font-bold">
             {member.name ?? "—"}
           </p>
           {member.role === "ADMIN" ? (
-            <Badge className="bg-gold-bright text-navy shrink-0 border-transparent font-semibold">
+            <Badge className="bg-gold-bright text-navy shrink-0 border-transparent font-semibold shadow-none">
               Officer
             </Badge>
           ) : (
@@ -164,14 +166,10 @@ function MemberCard({ member }: { member: Member }) {
         <p className="text-ink-muted text-body-sm mt-1 break-all">
           {member.email}
         </p>
-        <p className="text-ink-muted text-body-sm mt-2 tabular-nums">
-          {member.totalPoints} pts · {member.totalEvents}{" "}
-          {member.totalEvents === 1 ? "event" : "events"}
-        </p>
-        <p className="text-ink-muted text-body-sm mt-1 tabular-nums">
-          Last check-in{" "}
-          {member.lastCheckInAt ? formatDate(member.lastCheckInAt) : "never"}
-        </p>
+        <div className="border-hairline mt-3 flex items-center justify-between border-t pt-2.5 text-ink-muted text-body-sm tabular-nums">
+          <span>{member.totalPoints} pts · {member.totalEvents} {member.totalEvents === 1 ? "event" : "events"}</span>
+          <span>Last: {member.lastCheckInAt ? formatDate(member.lastCheckInAt) : "never"}</span>
+        </div>
       </Link>
     </li>
   );
@@ -179,26 +177,26 @@ function MemberCard({ member }: { member: Member }) {
 
 function MemberRow({ member }: { member: Member }) {
   return (
-    <TableRow className="border-hairline">
-      <TableCell className="py-3 pr-6 whitespace-normal">
+    <TableRow className="border-hairline hover:bg-cream/30 transition-colors">
+      <TableCell className="py-3.5 pr-6 whitespace-normal">
         {/* A real anchor, so middle-click and open-in-new-tab work. The label
             carries the email when there is no name to read out. */}
         <Link
           href={`/portal/admin/members/${member.id}`}
           aria-label={member.name ?? `Member ${member.email}`}
-          className="font-display text-navy hover:text-gold-ink inline-flex min-h-11 items-center font-bold"
+          className="font-display text-navy hover:text-gold-ink inline-flex min-h-9 items-center font-bold text-base"
         >
           {member.name ?? "—"}
         </Link>
       </TableCell>
 
-      <TableCell className="text-ink-muted text-body-sm py-3 pr-6">
+      <TableCell className="text-ink-muted text-body-sm py-3.5 pr-6">
         {member.email}
       </TableCell>
 
-      <TableCell className="py-3 pr-6">
+      <TableCell className="py-3.5 pr-6">
         {member.role === "ADMIN" ? (
-          <Badge className="bg-gold-bright text-navy border-transparent font-semibold">
+          <Badge className="bg-gold-bright text-navy border-transparent font-semibold shadow-none">
             Officer
           </Badge>
         ) : (
@@ -211,15 +209,15 @@ function MemberRow({ member }: { member: Member }) {
         )}
       </TableCell>
 
-      <TableCell className="text-navy py-3 pr-6 text-right font-semibold tabular-nums">
+      <TableCell className="text-navy py-3.5 pr-6 text-right font-bold tabular-nums">
         {member.totalPoints}
       </TableCell>
 
-      <TableCell className="text-ink-muted py-3 pr-6 text-right tabular-nums">
+      <TableCell className="text-ink-muted py-3.5 pr-6 text-right tabular-nums">
         {member.totalEvents}
       </TableCell>
 
-      <TableCell className="text-ink-muted text-body-sm py-3 text-right tabular-nums">
+      <TableCell className="text-ink-muted text-body-sm py-3.5 text-right tabular-nums">
         {member.lastCheckInAt ? formatDate(member.lastCheckInAt) : "Never"}
       </TableCell>
     </TableRow>
@@ -380,34 +378,34 @@ export function MembersTable() {
 
   return (
     <div>
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <Field
-          label="Search members"
-          htmlFor="member-search"
-          className="max-w-sm flex-1"
-        >
-          <Input
-            id="member-search"
-            type="search"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Name or email"
-            maxLength={SEARCH_MAX}
-            className={cn(inputClass, "h-11")}
-          />
-        </Field>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div className="w-full max-w-sm">
+          <Field
+            label="Search members"
+            htmlFor="member-search"
+          >
+            <Input
+              id="member-search"
+              type="search"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Name or email"
+              maxLength={SEARCH_MAX}
+              className={cn(inputClass, "h-11 bg-paper/80")}
+            />
+          </Field>
+        </div>
 
-        <div className="sm:text-right">
+        <div className="flex flex-col items-start sm:items-end">
           <Action
             onClick={() => void exportRoster()}
             disabled={exporting || total === 0}
-            className="min-h-11"
+            className="min-h-11 shadow-xs"
           >
             {exporting ? "Exporting..." : "Export CSV"}
           </Action>
-          <p className="text-ink-muted text-body-sm max-w-measure mt-2">
-            Exports every member matching the current search, not only this
-            page.
+          <p className="text-ink-muted text-body-sm mt-1.5 sm:text-right">
+            Exports all matching members to CSV.
           </p>
         </div>
       </div>
@@ -489,12 +487,12 @@ export function MembersTable() {
       </div>
 
       {!listing.error && (
-        <div className="border-hairline mt-6 flex flex-wrap items-center justify-between gap-4 border-t pt-4">
+        <div className="border-hairline bg-paper/50 mt-6 flex flex-wrap items-center justify-between gap-4 rounded-xl border p-4 shadow-xs">
           {/* The only thing that tells a screen reader the page moved, and the
               one region the export reports into rather than opening a second. */}
           <p
             aria-live="polite"
-            className="text-ink-muted text-body-sm tabular-nums"
+            className="text-ink-muted text-body-sm font-medium tabular-nums"
           >
             {countLine}
             {exportStatus ? ` · ${exportStatus}` : ""}
@@ -508,14 +506,14 @@ export function MembersTable() {
               <Action
                 disabled={stale || offset === 0}
                 onClick={() => goTo(Math.max(0, offset - PAGE_SIZE))}
-                className="min-h-11"
+                className="h-10 min-h-10 px-4 text-xs font-semibold"
               >
                 Previous
               </Action>
               <Action
                 disabled={stale || offset + PAGE_SIZE >= total}
                 onClick={() => goTo(offset + PAGE_SIZE)}
-                className="min-h-11"
+                className="h-10 min-h-10 px-4 text-xs font-semibold"
               >
                 Next
               </Action>

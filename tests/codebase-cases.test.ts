@@ -605,10 +605,14 @@ function buildCases(): Case[] {
   add("nav/portal-check-in", () => {
     expect(portalNav.map((tab) => tab.href)).toContain("/portal/check-in");
     expect(portalNav.map((tab) => tab.label)).toContain("SASE KIN");
+    expect(portalNav.map((tab) => tab.href)).toContain("/portal/committees");
   });
-  add("nav/admin-no-scan", () =>
-    expect(adminNav.map((tab) => tab.href)).not.toContain("/portal/check-in"),
-  );
+  add("nav/admin-no-scan", () => {
+    expect(adminNav.map((tab) => tab.href)).not.toContain("/portal/check-in");
+    expect(adminNav.map((tab) => tab.href)).toContain(
+      "/portal/admin/committees",
+    );
+  });
   add("nav/url", () => {
     expect(site.url.startsWith("https://")).toBe(true);
     expect(site.url.endsWith("/")).toBe(false);

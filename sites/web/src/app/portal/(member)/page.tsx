@@ -101,6 +101,28 @@ async function DashboardBody() {
               </Link>
             </Card>
 
+            <Card className="border-hairline mt-3 gap-0 rounded-lg py-0 shadow-none">
+              <Link
+                href={
+                  isOfficer ? "/portal/admin/committees" : "/portal/committees"
+                }
+                className="flex min-h-11 items-center justify-between gap-4 px-5 py-5 sm:gap-6 sm:px-7"
+              >
+                <span className="min-w-0">
+                  <span className="font-display text-navy block text-lg font-bold">
+                    Committees
+                  </span>
+                  <span className="text-ink-muted mt-1 block text-sm">
+                    Apply to Events, Marketing, or Treasury. Closes September 9.
+                  </span>
+                </span>
+                <ArrowRight
+                  aria-hidden="true"
+                  className="text-gold-ink size-5 shrink-0"
+                />
+              </Link>
+            </Card>
+
             <EventRows
               title="Open now"
               empty={

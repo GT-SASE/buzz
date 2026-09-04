@@ -14,6 +14,7 @@ import {
 import { z } from "zod";
 
 import { asInt } from "../aggregates";
+import { periodSince } from "../periods";
 import { adminProcedure, createTRPCRouter } from "../trpc";
 import { eventCheckIns, events, users } from "@buzz/db";
 
@@ -200,62 +201,4 @@ export const chapterRouter = createTRPCRouter({
     }),
 });
 
-const DAY_MS = 24 * 60 * 60 * 1000;
 const SERIES_LIMIT = 48;
-const ATLANTA = "America/New_York";
-
-function atlantaParts(at: Date) {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: ATLANTA,
-    hour12: false,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(at);
-  const get = (type: Intl.DateTimeFormatPartTypes) =>
-    Number(parts.find((part) => part.type === type)?.value ?? 0);
-  return { year: get("year"), month: get("month") };
-}
-
-function atlantaOffsetMs(at: Date) {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: ATLANTA,
-    hour12: false,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  }).formatToParts(at);
-  const get = (type: Intl.DateTimeFormatPartTypes) =>
-    Number(parts.find((part) => part.type === type)?.value ?? 0);
-  const asIfUtc = Date.UTC(
-    get("year"),
-    get("month") - 1,
-    get("day"),
-    get("hour") % 24,
-    get("minute"),
-    get("second"),
-  );
-  return asIfUtc - at.getTime();
-}
-
-/** Midnight on that Atlanta calendar day. */
-function atlantaStartOfDay(year: number, month: number, day: number) {
-  const guess = new Date(Date.UTC(year, month - 1, day, 0, 0, 0));
-  const once = new Date(guess.getTime() - atlantaOffsetMs(guess));
-  return new Date(guess.getTime() - atlantaOffsetMs(once));
-}
-
-function periodSince(
-  period: "30d" | "90d" | "semester" | "all",
-  now: Date,
-): Date | null {
-  if (period === "all") return null;
-  if (period === "30d") return new Date(now.getTime() - 30 * DAY_MS);
-  if (period === "90d") return new Date(now.getTime() - 90 * DAY_MS);
-  const { year, month } = atlantaParts(now);
-  const startYear = month >= 8 ? year : year - 1;
-  return atlantaStartOfDay(startYear, 8, 1);
-}
