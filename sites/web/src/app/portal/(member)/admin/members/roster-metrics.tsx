@@ -27,12 +27,17 @@ function Figure({
   note: string;
 }) {
   return (
-    <div className="border-hairline bg-paper/80 shadow-xs hover:border-gold-ink/30 flex flex-col justify-between rounded-xl border p-5 transition-all">
-      <Eyebrow as="dt" tone="muted" rule={false} className="text-xs uppercase tracking-wider text-ink-muted font-semibold">
+    <div className="border-hairline bg-paper/80 hover:border-gold-ink/30 flex flex-col justify-between rounded-xl border p-5 shadow-xs transition-all">
+      <Eyebrow
+        as="dt"
+        tone="muted"
+        rule={false}
+        className="text-ink-muted text-xs font-semibold tracking-wider uppercase"
+      >
         {label}
       </Eyebrow>
       <dd className="mt-4">
-        <span className="font-display text-navy text-3xl font-bold tabular-nums tracking-tight block sm:text-4xl">
+        <span className="font-display text-navy block text-3xl font-bold tracking-tight tabular-nums sm:text-4xl">
           {value}
         </span>
         <span className="text-ink-muted text-body-sm mt-1.5 block tabular-nums">
@@ -53,7 +58,7 @@ function TierBars({ data }: { data: Metrics }) {
   }));
 
   return (
-    <div className="border-hairline bg-paper/60 shadow-xs mt-8 rounded-xl border p-6">
+    <div className="border-hairline bg-paper/60 mt-8 rounded-xl border p-6 shadow-xs">
       <div className="border-hairline border-b pb-4">
         <h3 className="text-eyebrow tracking-caps text-ink-muted font-semibold uppercase">
           Where the roster sits
@@ -150,7 +155,10 @@ function MetricsSkeleton() {
       <div aria-hidden="true">
         <div className={figureGrid}>
           {[0, 1, 2, 3].map((figure) => (
-            <div key={figure} className="border-hairline bg-paper/50 rounded-xl border p-5">
+            <div
+              key={figure}
+              className="border-hairline bg-paper/50 rounded-xl border p-5"
+            >
               <Skeleton className="h-3.5 w-24" />
               <Skeleton className="mt-4 h-9 w-20" />
               <Skeleton className="mt-2.5 h-3.5 w-32" />
@@ -180,7 +188,7 @@ export function RosterMetrics() {
   return (
     <section
       aria-labelledby="roster-metrics-heading"
-      className="border-hairline border-b bg-cream/30"
+      className="border-hairline bg-cream/30 border-b"
     >
       <div className="max-w-content mx-auto px-5 py-8 sm:px-6 sm:py-10">
         <div className="mb-6 flex items-center justify-between">

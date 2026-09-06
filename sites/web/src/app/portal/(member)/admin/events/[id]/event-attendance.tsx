@@ -490,19 +490,20 @@ export function EventAttendance({ eventId }: { eventId: string }) {
               </p>
             )}
           </div>
-          <p className="text-white/60 text-xs mt-4 relative">
-            Rotate immediately if this code was leaked or photographed outside the event.
+          <p className="relative mt-4 text-xs text-white/60">
+            Rotate immediately if this code was leaked or photographed outside
+            the event.
           </p>
         </div>
 
         {/* Quick event stats */}
         <div className="grid gap-4 sm:grid-cols-2">
-          <div className="border-hairline bg-paper/80 shadow-xs flex flex-col justify-between rounded-xl border p-5">
+          <div className="border-hairline bg-paper/80 flex flex-col justify-between rounded-xl border p-5 shadow-xs">
             <span className="text-eyebrow tracking-caps text-ink-muted text-xs font-semibold uppercase">
               Attendance
             </span>
             <div className="mt-4">
-              <span className="font-display text-navy text-3xl font-bold tabular-nums block sm:text-4xl">
+              <span className="font-display text-navy block text-3xl font-bold tabular-nums sm:text-4xl">
                 {rosterTotal}
               </span>
               <span className="text-ink-muted text-body-sm mt-1 block tabular-nums">
@@ -512,18 +513,18 @@ export function EventAttendance({ eventId }: { eventId: string }) {
               </span>
             </div>
             {overCapacity && (
-              <p className="text-destructive text-xs mt-2 font-medium">
+              <p className="text-destructive mt-2 text-xs font-medium">
                 Over capacity limit.
               </p>
             )}
           </div>
 
-          <div className="border-hairline bg-paper/80 shadow-xs flex flex-col justify-between rounded-xl border p-5">
+          <div className="border-hairline bg-paper/80 flex flex-col justify-between rounded-xl border p-5 shadow-xs">
             <span className="text-eyebrow tracking-caps text-ink-muted text-xs font-semibold uppercase">
               Reward Points
             </span>
             <div className="mt-4">
-              <span className="font-display text-navy text-3xl font-bold tabular-nums block sm:text-4xl">
+              <span className="font-display text-navy block text-3xl font-bold tabular-nums sm:text-4xl">
                 +{event.pointsValue}
               </span>
               <span className="text-ink-muted text-body-sm mt-1 block">

@@ -42,7 +42,7 @@ function PeriodSwitch({
             aria-checked={selected}
             onClick={() => onChange(period.id)}
             className={cn(
-              "text-xs min-h-9 rounded-md px-3 py-1.5 font-semibold transition-all",
+              "min-h-9 rounded-md px-3 py-1.5 text-xs font-semibold transition-all",
               selected
                 ? "bg-navy text-white shadow-xs"
                 : "text-ink-muted hover:bg-paper hover:text-navy",
@@ -60,34 +60,54 @@ function PeriodFigures({ data }: { data: Attendance }) {
   return (
     <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
       <div className="border-hairline bg-paper rounded-lg border p-4 shadow-xs">
-        <Eyebrow as="dt" tone="muted" rule={false} className="text-xs uppercase tracking-wider text-ink-muted font-semibold">
+        <Eyebrow
+          as="dt"
+          tone="muted"
+          rule={false}
+          className="text-ink-muted text-xs font-semibold tracking-wider uppercase"
+        >
           Check-ins
         </Eyebrow>
-        <dd className="font-display text-navy text-2xl font-bold mt-2 tabular-nums">
+        <dd className="font-display text-navy mt-2 text-2xl font-bold tabular-nums">
           {data.checkIns}
         </dd>
       </div>
       <div className="border-hairline bg-paper rounded-lg border p-4 shadow-xs">
-        <Eyebrow as="dt" tone="muted" rule={false} className="text-xs uppercase tracking-wider text-ink-muted font-semibold">
+        <Eyebrow
+          as="dt"
+          tone="muted"
+          rule={false}
+          className="text-ink-muted text-xs font-semibold tracking-wider uppercase"
+        >
           Members who came
         </Eyebrow>
-        <dd className="font-display text-navy text-2xl font-bold mt-2 tabular-nums">
+        <dd className="font-display text-navy mt-2 text-2xl font-bold tabular-nums">
           {data.uniqueMembers}
         </dd>
       </div>
       <div className="border-hairline bg-paper rounded-lg border p-4 shadow-xs">
-        <Eyebrow as="dt" tone="muted" rule={false} className="text-xs uppercase tracking-wider text-ink-muted font-semibold">
+        <Eyebrow
+          as="dt"
+          tone="muted"
+          rule={false}
+          className="text-ink-muted text-xs font-semibold tracking-wider uppercase"
+        >
           Events
         </Eyebrow>
-        <dd className="font-display text-navy text-2xl font-bold mt-2 tabular-nums">
+        <dd className="font-display text-navy mt-2 text-2xl font-bold tabular-nums">
           {data.events}
         </dd>
       </div>
       <div className="border-hairline bg-paper rounded-lg border p-4 shadow-xs">
-        <Eyebrow as="dt" tone="muted" rule={false} className="text-xs uppercase tracking-wider text-ink-muted font-semibold">
+        <Eyebrow
+          as="dt"
+          tone="muted"
+          rule={false}
+          className="text-ink-muted text-xs font-semibold tracking-wider uppercase"
+        >
           Average attendance
         </Eyebrow>
-        <dd className="font-display text-navy text-2xl font-bold mt-2 tabular-nums">
+        <dd className="font-display text-navy mt-2 text-2xl font-bold tabular-nums">
           {data.averageAttendance.toFixed(1)}
         </dd>
       </div>
@@ -115,7 +135,7 @@ function EventBars({ series }: { series: Attendance["series"] }) {
                     {formatDate(row.startsAt)}
                   </span>
                 </p>
-                <div className="flex items-baseline gap-1.5 shrink-0">
+                <div className="flex shrink-0 items-baseline gap-1.5">
                   <span className="font-display text-navy text-lg font-bold tabular-nums">
                     {row.checkIns}
                   </span>
@@ -169,7 +189,10 @@ function AttendanceSkeleton() {
     <div aria-hidden="true" className="mt-6">
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {[0, 1, 2, 3].map((figure) => (
-          <div key={figure} className="border-hairline bg-paper/50 rounded-lg border p-4">
+          <div
+            key={figure}
+            className="border-hairline bg-paper/50 rounded-lg border p-4"
+          >
             <Skeleton className="h-3 w-24" />
             <Skeleton className="mt-3 h-7 w-16" />
           </div>
@@ -177,7 +200,10 @@ function AttendanceSkeleton() {
       </div>
       <div className="mt-6 grid gap-3">
         {[0, 1, 2].map((row) => (
-          <div key={row} className="border-hairline bg-paper/50 rounded-lg border p-4">
+          <div
+            key={row}
+            className="border-hairline bg-paper/50 rounded-lg border p-4"
+          >
             <Skeleton className="h-4 w-40" />
             <Skeleton className="mt-3 h-2 w-full" />
           </div>
@@ -202,7 +228,7 @@ export function Attendance() {
     >
       <div className="max-w-content mx-auto px-5 sm:px-6">
         <div className="border-hairline bg-paper/50 rounded-xl border p-6 sm:p-8">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-hairline border-b pb-6">
+          <div className="border-hairline flex flex-col gap-4 border-b pb-6 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2
                 id="attendance-heading"

@@ -39,11 +39,16 @@ const columnHeading =
 
 function Figure({ label, value }: { label: string; value: string }) {
   return (
-    <div className="border-hairline bg-paper/80 shadow-xs flex flex-col justify-between rounded-xl border p-5 transition-all">
-      <Eyebrow as="dt" tone="muted" rule={false} className="text-xs uppercase tracking-wider text-ink-muted font-semibold">
+    <div className="border-hairline bg-paper/80 flex flex-col justify-between rounded-xl border p-5 shadow-xs transition-all">
+      <Eyebrow
+        as="dt"
+        tone="muted"
+        rule={false}
+        className="text-ink-muted text-xs font-semibold tracking-wider uppercase"
+      >
         {label}
       </Eyebrow>
-      <dd className="font-display text-navy text-3xl font-bold mt-3 tabular-nums tracking-tight">
+      <dd className="font-display text-navy mt-3 text-3xl font-bold tracking-tight tabular-nums">
         {value}
       </dd>
     </div>
@@ -58,11 +63,17 @@ function HistoryTable({ children }: { children: React.ReactNode }) {
           <TableHead className={cn(columnHeading, "w-full pr-6 font-semibold")}>
             Event
           </TableHead>
-          <TableHead className={cn(columnHeading, "pr-6 font-semibold")}>Date</TableHead>
-          <TableHead className={cn(columnHeading, "pr-6 text-right font-semibold")}>
+          <TableHead className={cn(columnHeading, "pr-6 font-semibold")}>
+            Date
+          </TableHead>
+          <TableHead
+            className={cn(columnHeading, "pr-6 text-right font-semibold")}
+          >
             Points
           </TableHead>
-          <TableHead className={cn(columnHeading, "font-semibold")}>How</TableHead>
+          <TableHead className={cn(columnHeading, "font-semibold")}>
+            How
+          </TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>{children}</TableBody>
@@ -348,8 +359,10 @@ export function MemberDetail({ memberId }: { memberId: string }) {
 
       {tier.pointsToNext !== null && (
         <p className="text-ink-muted text-body-sm mt-3">
-          <span className="tabular-nums font-semibold text-navy">{tier.pointsToNext}</span> more to
-          reach {tier.next}.
+          <span className="text-navy font-semibold tabular-nums">
+            {tier.pointsToNext}
+          </span>{" "}
+          more to reach {tier.next}.
         </p>
       )}
 

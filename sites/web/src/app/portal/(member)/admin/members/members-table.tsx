@@ -98,10 +98,7 @@ function RosterTable({
 }) {
   return (
     <div className="border-hairline bg-paper/50 overflow-hidden rounded-xl border shadow-xs">
-      <Table
-        label="Members"
-        className="min-w-[46rem] text-left"
-      >
+      <Table label="Members" className="min-w-[46rem] text-left">
         <TableHeader className="bg-cream/40 border-hairline border-b">
           <TableRow className="border-hairline">
             {/* w-full on the one elastic column; the rest hug their text. */}
@@ -112,8 +109,12 @@ function RosterTable({
               onSort={onSort}
               className="w-full pr-6 font-semibold"
             />
-            <TableHead className={cn(columnHeading, "pr-6 font-semibold")}>Email</TableHead>
-            <TableHead className={cn(columnHeading, "pr-6 font-semibold")}>Role</TableHead>
+            <TableHead className={cn(columnHeading, "pr-6 font-semibold")}>
+              Email
+            </TableHead>
+            <TableHead className={cn(columnHeading, "pr-6 font-semibold")}>
+              Role
+            </TableHead>
             <SortHeader
               label="Points"
               sortKey="points"
@@ -121,7 +122,9 @@ function RosterTable({
               onSort={onSort}
               className="pr-6 text-right font-semibold"
             />
-            <TableHead className={cn(columnHeading, "pr-6 text-right font-semibold")}>
+            <TableHead
+              className={cn(columnHeading, "pr-6 text-right font-semibold")}
+            >
               Events
             </TableHead>
             <SortHeader
@@ -144,7 +147,7 @@ function MemberCard({ member }: { member: Member }) {
     <li>
       <Link
         href={`/portal/admin/members/${member.id}`}
-        className="border-hairline bg-paper/80 shadow-xs hover:border-gold-ink/30 block min-h-11 rounded-xl border p-4 transition-all"
+        className="border-hairline bg-paper/80 hover:border-gold-ink/30 block min-h-11 rounded-xl border p-4 shadow-xs transition-all"
       >
         <div className="flex items-start justify-between gap-3">
           <p className="font-display text-navy text-base font-bold">
@@ -166,9 +169,15 @@ function MemberCard({ member }: { member: Member }) {
         <p className="text-ink-muted text-body-sm mt-1 break-all">
           {member.email}
         </p>
-        <div className="border-hairline mt-3 flex items-center justify-between border-t pt-2.5 text-ink-muted text-body-sm tabular-nums">
-          <span>{member.totalPoints} pts · {member.totalEvents} {member.totalEvents === 1 ? "event" : "events"}</span>
-          <span>Last: {member.lastCheckInAt ? formatDate(member.lastCheckInAt) : "never"}</span>
+        <div className="border-hairline text-ink-muted text-body-sm mt-3 flex items-center justify-between border-t pt-2.5 tabular-nums">
+          <span>
+            {member.totalPoints} pts · {member.totalEvents}{" "}
+            {member.totalEvents === 1 ? "event" : "events"}
+          </span>
+          <span>
+            Last:{" "}
+            {member.lastCheckInAt ? formatDate(member.lastCheckInAt) : "never"}
+          </span>
         </div>
       </Link>
     </li>
@@ -184,7 +193,7 @@ function MemberRow({ member }: { member: Member }) {
         <Link
           href={`/portal/admin/members/${member.id}`}
           aria-label={member.name ?? `Member ${member.email}`}
-          className="font-display text-navy hover:text-gold-ink inline-flex min-h-9 items-center font-bold text-base"
+          className="font-display text-navy hover:text-gold-ink inline-flex min-h-9 items-center text-base font-bold"
         >
           {member.name ?? "—"}
         </Link>
@@ -380,10 +389,7 @@ export function MembersTable() {
     <div>
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div className="w-full max-w-sm">
-          <Field
-            label="Search members"
-            htmlFor="member-search"
-          >
+          <Field label="Search members" htmlFor="member-search">
             <Input
               id="member-search"
               type="search"
@@ -391,7 +397,7 @@ export function MembersTable() {
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Name or email"
               maxLength={SEARCH_MAX}
-              className={cn(inputClass, "h-11 bg-paper/80")}
+              className={cn(inputClass, "bg-paper/80 h-11")}
             />
           </Field>
         </div>

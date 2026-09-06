@@ -293,12 +293,15 @@ function StatusBadges({ event }: { event: AdminEvent }) {
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       {archived ? (
-        <Badge variant="secondary" className="border-hairline bg-cream/70 text-ink-muted">
+        <Badge
+          variant="secondary"
+          className="border-hairline bg-cream/70 text-ink-muted"
+        >
           Archived
         </Badge>
       ) : event.checkInEnabled ? (
-        <Badge className="bg-emerald-600/10 text-emerald-800 border-emerald-600/30 gap-1.5 font-medium shadow-none">
-          <span className="size-1.5 rounded-full bg-emerald-600 animate-pulse" />
+        <Badge className="gap-1.5 border-emerald-600/30 bg-emerald-600/10 font-medium text-emerald-800 shadow-none">
+          <span className="size-1.5 animate-pulse rounded-full bg-emerald-600" />
           Check-in open
         </Badge>
       ) : (
@@ -323,7 +326,7 @@ function EventIdentity({ event }: { event: AdminEvent }) {
     <>
       <span
         className={cn(
-          "font-display text-base block font-bold leading-snug",
+          "font-display block text-base leading-snug font-bold",
           archived ? "text-ink-muted" : "text-navy",
         )}
       >
@@ -387,7 +390,7 @@ function EventActions({ event }: { event: AdminEvent }) {
         asChild
         variant="outline"
         size="sm"
-        className="h-9 min-h-9 rounded-md border-hairline font-semibold text-navy hover:bg-cream"
+        className="border-hairline text-navy hover:bg-cream h-9 min-h-9 rounded-md font-semibold"
       >
         <Link href={`/portal/admin/events/${event.id}`}>Attendance</Link>
       </Button>
@@ -411,7 +414,7 @@ function EventActions({ event }: { event: AdminEvent }) {
         trigger={
           <Button
             size="sm"
-            className="h-9 min-h-9 rounded-md font-semibold text-ink-muted hover:text-navy"
+            className="text-ink-muted hover:text-navy h-9 min-h-9 rounded-md font-semibold"
             variant="ghost"
           >
             Edit
@@ -466,7 +469,12 @@ function EventRow({ event }: { event: AdminEvent }) {
   const archived = event.archivedAt !== null;
 
   return (
-    <TableRow className={cn("hover:bg-cream/30 transition-colors", archived && "bg-cream/60 opacity-80")}>
+    <TableRow
+      className={cn(
+        "hover:bg-cream/30 transition-colors",
+        archived && "bg-cream/60 opacity-80",
+      )}
+    >
       <TableCell className="py-4 whitespace-normal">
         <EventIdentity event={event} />
       </TableCell>
@@ -480,7 +488,7 @@ function EventRow({ event }: { event: AdminEvent }) {
       </TableCell>
 
       <TableCell className="text-ink-muted py-4 tabular-nums">
-        <span className="font-semibold text-navy">{event.attendees}</span>
+        <span className="text-navy font-semibold">{event.attendees}</span>
         {event.maxCheckIns !== null ? ` of ${event.maxCheckIns}` : ""}
       </TableCell>
 
@@ -497,7 +505,7 @@ function EventCard({ event }: { event: AdminEvent }) {
   return (
     <li
       className={cn(
-        "border-hairline bg-paper/80 shadow-xs rounded-xl border p-5 transition",
+        "border-hairline bg-paper/80 rounded-xl border p-5 shadow-xs transition",
         archived && "bg-cream/60 opacity-80",
       )}
     >
@@ -506,7 +514,8 @@ function EventCard({ event }: { event: AdminEvent }) {
         <StatusBadges event={event} />
         <span className="text-ink-muted text-body-sm tabular-nums">
           · {event.pointsValue} pts · {event.attendees}
-          {event.maxCheckIns !== null ? ` of ${event.maxCheckIns}` : ""} checked in
+          {event.maxCheckIns !== null ? ` of ${event.maxCheckIns}` : ""} checked
+          in
         </span>
       </div>
       <div className="border-hairline mt-4 border-t pt-3">
@@ -554,7 +563,7 @@ export function AdminEvents() {
               aria-pressed={filter === option}
               onClick={() => setFilter(option)}
               className={cn(
-                "text-xs min-h-9 shrink-0 rounded-lg px-3.5 font-semibold transition-all",
+                "min-h-9 shrink-0 rounded-lg px-3.5 text-xs font-semibold transition-all",
                 filter === option
                   ? "bg-navy text-white shadow-xs"
                   : "text-ink-muted hover:bg-paper hover:text-navy",
@@ -615,11 +624,19 @@ export function AdminEvents() {
                 <Table label="Events">
                   <TableHeader className="bg-cream/40 border-hairline border-b">
                     <TableRow>
-                      <TableHead className="font-semibold text-ink-muted">Event</TableHead>
-                      <TableHead className="font-semibold text-ink-muted">Status</TableHead>
-                      <TableHead className="font-semibold text-ink-muted">Points</TableHead>
-                      <TableHead className="font-semibold text-ink-muted">Checked in</TableHead>
-                      <TableHead className="text-right font-semibold text-ink-muted">
+                      <TableHead className="text-ink-muted font-semibold">
+                        Event
+                      </TableHead>
+                      <TableHead className="text-ink-muted font-semibold">
+                        Status
+                      </TableHead>
+                      <TableHead className="text-ink-muted font-semibold">
+                        Points
+                      </TableHead>
+                      <TableHead className="text-ink-muted font-semibold">
+                        Checked in
+                      </TableHead>
+                      <TableHead className="text-ink-muted text-right font-semibold">
                         <span className="sr-only">Actions</span>
                       </TableHead>
                     </TableRow>
