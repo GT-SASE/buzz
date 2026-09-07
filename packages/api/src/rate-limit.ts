@@ -120,3 +120,8 @@ export const EXPORT_COMMITTEE_LIMIT = {
   limit: 5,
   intervalMs: 60_000,
 } as const;
+
+export const RESUME_UPLOAD_LIMIT = {
+  limit: 8,
+  intervalMs: 60_000,
+} as const;

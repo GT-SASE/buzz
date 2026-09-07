@@ -255,7 +255,7 @@ export function MemberDetail({ memberId }: { memberId: string }) {
     );
   }
 
-  const { member, totalPoints, totalEvents, memberSince, history } =
+  const { member, totalPoints, totalEvents, memberSince, history, resume } =
     detail.data;
 
   const displayName = member.name ?? member.email;
@@ -273,6 +273,11 @@ export function MemberDetail({ memberId }: { memberId: string }) {
           <p className="text-ink-muted text-body mt-2 break-words">
             {member.email}
           </p>
+          {resume && (
+            <p className="text-ink-muted text-body-sm mt-2">
+              Resume on file: {resume.fileName}
+            </p>
+          )}
 
           {/* Both pills read "Member" for a new member, so each says which it
               is rather than relying on colour to tell them apart. */}
@@ -291,6 +296,17 @@ export function MemberDetail({ memberId }: { memberId: string }) {
             </Badge>
           </div>
           <div className="mt-4 flex flex-wrap gap-2">
+            {resume && (
+              <Button
+                asChild
+                variant="outline"
+                className="border-hairline text-navy hover:bg-cream min-h-11 rounded-md font-semibold"
+              >
+                <a href={`/api/portal/admin/members/${member.id}/resume`}>
+                  Download resume
+                </a>
+              </Button>
+            )}
             {member.role !== "ADMIN" && (
               <AlertDialog>
                 <AlertDialogTrigger asChild>

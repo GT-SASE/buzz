@@ -785,7 +785,10 @@ function byIdDb(
       if (isHistory) return history;
       return member === undefined ? [] : [pick(member, capture.fields)];
     },
-    { users: { findFirst: () => Promise.resolve(member) } },
+    {
+      users: { findFirst: () => Promise.resolve(member) },
+      resumes: { findFirst: () => Promise.resolve(null) },
+    },
   );
 }
 

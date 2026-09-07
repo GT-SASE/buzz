@@ -11,6 +11,7 @@ import { formatMonth } from "~/app/portal/_lib/format";
 import { requireSession } from "~/app/portal/_lib/session";
 import { Card } from "~/components/ui/card";
 import { Separator } from "~/components/ui/separator";
+import { committeesPublic } from "~/data/committees";
 import { api, HydrateClient } from "~/trpc/server";
 import PortalLoading from "./loading";
 
@@ -37,6 +38,7 @@ async function DashboardBody() {
   const [home] = await Promise.all([
     api.event.home(),
     api.member.leaderboard({ limit: 10 }),
+    api.resume.mine(),
   ]);
   const { stats, attended, upcoming } = home;
 
@@ -103,17 +105,15 @@ async function DashboardBody() {
 
             <Card className="border-hairline mt-3 gap-0 rounded-lg py-0 shadow-none">
               <Link
-                href={
-                  isOfficer ? "/portal/admin/committees" : "/portal/committees"
-                }
+                href="/portal/resume"
                 className="flex min-h-11 items-center justify-between gap-4 px-5 py-5 sm:gap-6 sm:px-7"
               >
                 <span className="min-w-0">
                   <span className="font-display text-navy block text-lg font-bold">
-                    Committees
+                    Resume
                   </span>
                   <span className="text-ink-muted mt-1 block text-sm">
-                    Apply to Events, Marketing, or Treasury. Closes September 9.
+                    Upload a PDF for the member resume book.
                   </span>
                 </span>
                 <ArrowRight
@@ -122,6 +122,34 @@ async function DashboardBody() {
                 />
               </Link>
             </Card>
+
+            {(isOfficer || committeesPublic) && (
+              <Card className="border-hairline mt-3 gap-0 rounded-lg py-0 shadow-none">
+                <Link
+                  href={
+                    isOfficer
+                      ? "/portal/admin/committees"
+                      : "/portal/committees"
+                  }
+                  className="flex min-h-11 items-center justify-between gap-4 px-5 py-5 sm:gap-6 sm:px-7"
+                >
+                  <span className="min-w-0">
+                    <span className="font-display text-navy block text-lg font-bold">
+                      Committees
+                    </span>
+                    <span className="text-ink-muted mt-1 block text-sm">
+                      {isOfficer
+                        ? "Read applications and run callbacks."
+                        : "Apply to Events, Marketing, or Treasury. Closes September 9."}
+                    </span>
+                  </span>
+                  <ArrowRight
+                    aria-hidden="true"
+                    className="text-gold-ink size-5 shrink-0"
+                  />
+                </Link>
+              </Card>
+            )}
 
             <EventRows
               title="Open now"

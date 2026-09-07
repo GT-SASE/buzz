@@ -3,6 +3,7 @@ import { committeeRouter } from "./routers/committee";
 import { eventRouter } from "./routers/event";
 import { memberRouter } from "./routers/member";
 import { mentorshipRouter } from "./routers/mentorship";
+import { resumeRouter } from "./routers/resume";
 import { createCallerFactory, createTRPCRouter } from "./trpc";
 
 /**
@@ -16,6 +17,7 @@ export const appRouter = createTRPCRouter({
   event: eventRouter,
   member: memberRouter,
   mentorship: mentorshipRouter,
+  resume: resumeRouter,
 });
 
 // export type definition of API

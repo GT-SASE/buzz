@@ -394,3 +394,42 @@ export const committeeApplicationsRelations = relations(
     }),
   }),
 );
+
+/** 2 MiB. The CHECK below must stay at 2097152. */
+export const RESUME_MAX_BYTES = 2 * 1024 * 1024;
+
+/**
+ * One resume per member. The PDF bytes live in Postgres so the resume book
+ * does not depend on a separate object store.
+ *
+ * Stored as base64 text: drizzle 0.45 has no bytea helper in the callback
+ * column builder, and a 2 MiB cap keeps the row well inside typical limits.
+ */
+export const resumes = createTable(
+  "resume",
+  (d) => ({
+    userId: d
+      .varchar({ length: 255 })
+      .primaryKey()
+      .references(() => users.id, { onDelete: "cascade" }),
+    fileName: d.varchar({ length: 180 }).notNull(),
+    mimeType: d.varchar({ length: 80 }).notNull(),
+    byteSize: d.integer().notNull(),
+    fileBytes: d.text().notNull(),
+    uploadedAt: d
+      .timestamp({ withTimezone: true })
+      .$defaultFn(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  }),
+  (t) => [
+    check(
+      idx("resume_size_check"),
+      sql`${t.byteSize} > 0 and ${t.byteSize} <= 2097152`,
+    ),
+    check(idx("resume_mime_check"), sql`${t.mimeType} = 'application/pdf'`),
+  ],
+);
+
+export const resumesRelations = relations(resumes, ({ one }) => ({
+  user: one(users, { fields: [resumes.userId], references: [users.id] }),
+}));

@@ -4,7 +4,11 @@
  * Public pages import this. Interview prompts live in `committee-interviews.ts`
  * and must stay off the marketing bundle — those are for officers running
  * callbacks, not for applicants.
+ *
+ * Flip `committeesPublic` when recruiting should show on /join and the member
+ * portal. The officer inbox stays available either way.
  */
+export const committeesPublic = false;
 
 export const committeeCycle = {
   id: "fall-2026",

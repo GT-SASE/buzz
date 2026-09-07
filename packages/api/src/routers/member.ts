@@ -26,7 +26,7 @@ import { schoolYearStart } from "../periods";
 import { assertRateLimit, EXPORT_ROSTER_LIMIT } from "../rate-limit";
 import { adminProcedure, createTRPCRouter, protectedProcedure } from "../trpc";
 import type * as BuzzDbModule from "@buzz/db";
-import { eventCheckIns, events, sessions, users } from "@buzz/db";
+import { eventCheckIns, events, resumes, sessions, users } from "@buzz/db";
 
 type BuzzDb = typeof BuzzDbModule.db;
 
@@ -294,7 +294,7 @@ export const memberRouter = createTRPCRouter({
         notFound("Member");
       }
 
-      const [[totals], history] = await Promise.all([
+      const [[totals], history, resume] = await Promise.all([
         ctx.db
           .select({
             totalEvents: checkInCount,
@@ -323,6 +323,14 @@ export const memberRouter = createTRPCRouter({
           )
           .orderBy(desc(eventCheckIns.checkedInAt))
           .limit(200),
+        ctx.db.query.resumes.findFirst({
+          where: eq(resumes.userId, member.id),
+          columns: {
+            fileName: true,
+            byteSize: true,
+            uploadedAt: true,
+          },
+        }),
       ]);
 
       return {
@@ -330,6 +338,7 @@ export const memberRouter = createTRPCRouter({
         totalPoints: asInt(totals?.totalPoints),
         totalEvents: asInt(totals?.totalEvents),
         memberSince: asDate(totals?.memberSince),
+        resume: resume ?? null,
         history,
       };
     }),

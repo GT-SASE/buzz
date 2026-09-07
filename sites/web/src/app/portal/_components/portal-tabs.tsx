@@ -11,7 +11,11 @@ import { cn } from "~/lib/utils";
 export function PortalTabs({ isOfficer }: { isOfficer: boolean }) {
   const pathname = usePathname();
   const tabs = isOfficer
-    ? [{ href: "/portal", label: "My card" }, ...adminNav]
+    ? [
+        { href: "/portal", label: "My card" },
+        { href: "/portal/resume", label: "Resume" },
+        ...adminNav,
+      ]
     : portalNav;
 
   // Longest matching href wins, so a nested route lights one tab rather than

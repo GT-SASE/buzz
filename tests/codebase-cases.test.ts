@@ -11,6 +11,7 @@ import { firstParam, safeRedirectPath } from "~/app/portal/_lib/paths";
 import { codeFromScan } from "~/app/portal/(member)/check-in/scanner";
 import { stats, marqueeItems, missionPillars, programs } from "~/data/content";
 import { adminNav, portalNav, tierFor, tiers } from "~/data/portal";
+import { committeesPublic } from "~/data/committees";
 import {
   discord,
   engage,
@@ -605,13 +606,17 @@ function buildCases(): Case[] {
   add("nav/portal-check-in", () => {
     expect(portalNav.map((tab) => tab.href)).toContain("/portal/check-in");
     expect(portalNav.map((tab) => tab.label)).toContain("SASE KIN");
-    expect(portalNav.map((tab) => tab.href)).toContain("/portal/committees");
+    expect(portalNav.map((tab) => tab.href)).toContain("/portal/resume");
+    expect(portalNav.map((tab) => tab.href)).not.toContain(
+      "/portal/committees",
+    );
   });
   add("nav/admin-no-scan", () => {
     expect(adminNav.map((tab) => tab.href)).not.toContain("/portal/check-in");
     expect(adminNav.map((tab) => tab.href)).toContain(
       "/portal/admin/committees",
     );
+    expect(committeesPublic).toBe(false);
   });
   add("nav/url", () => {
     expect(site.url.startsWith("https://")).toBe(true);
