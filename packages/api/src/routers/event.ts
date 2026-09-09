@@ -793,9 +793,7 @@ export const eventRouter = createTRPCRouter({
         .select(totalsColumns)
         .from(eventCheckIns)
         .innerJoin(events, eq(events.id, eventCheckIns.eventId))
-        .where(
-          and(eq(eventCheckIns.userId, userId), isNull(events.archivedAt)),
-        );
+        .where(eq(eventCheckIns.userId, userId));
 
       return {
         eventTitle,
@@ -819,12 +817,7 @@ export const eventRouter = createTRPCRouter({
       })
       .from(eventCheckIns)
       .innerJoin(events, eq(events.id, eventCheckIns.eventId))
-      .where(
-        and(
-          eq(eventCheckIns.userId, ctx.session.user.id),
-          isNull(events.archivedAt),
-        ),
-      )
+      .where(eq(eventCheckIns.userId, ctx.session.user.id))
       .orderBy(desc(eventCheckIns.checkedInAt))
       .limit(100);
   }),
@@ -835,12 +828,7 @@ export const eventRouter = createTRPCRouter({
       .select(totalsColumns)
       .from(eventCheckIns)
       .innerJoin(events, eq(events.id, eventCheckIns.eventId))
-      .where(
-        and(
-          eq(eventCheckIns.userId, ctx.session.user.id),
-          isNull(events.archivedAt),
-        ),
-      );
+      .where(eq(eventCheckIns.userId, ctx.session.user.id));
 
     return {
       totalEvents: asInt(totals?.totalEvents),
@@ -892,16 +880,14 @@ export const eventRouter = createTRPCRouter({
         })
         .from(eventCheckIns)
         .innerJoin(events, eq(events.id, eventCheckIns.eventId))
-        .where(and(eq(eventCheckIns.userId, userId), isNull(events.archivedAt)))
+        .where(eq(eventCheckIns.userId, userId))
         .orderBy(desc(eventCheckIns.checkedInAt))
         .limit(100),
       ctx.db
         .select(totalsColumns)
         .from(eventCheckIns)
         .innerJoin(events, eq(events.id, eventCheckIns.eventId))
-        .where(
-          and(eq(eventCheckIns.userId, userId), isNull(events.archivedAt)),
-        ),
+        .where(eq(eventCheckIns.userId, userId)),
       ctx.db
         .select({
           ...publicEventColumns,

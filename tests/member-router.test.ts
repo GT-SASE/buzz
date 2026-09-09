@@ -9,7 +9,7 @@ import {
 } from "drizzle-orm";
 import { afterAll, describe, expect, it, vi } from "vitest";
 
-import { eventCheckIns, users } from "../packages/db/src/schema";
+import { eventCheckIns, events, users } from "../packages/db/src/schema";
 
 /**
  * Unit coverage for packages/api/src/routers/member.ts, driven through the
@@ -171,7 +171,7 @@ function searchPatterns(
 type Capture = {
   fields: Record<string, unknown> | undefined;
   from: unknown;
-  joins: { kind: string; table: unknown }[];
+  joins: { kind: string; table: unknown; on?: unknown }[];
   where: unknown;
   having: unknown;
   groupBy: unknown[];
@@ -235,12 +235,12 @@ function selectCapturingDb(
         capture.from = table;
         return chain;
       },
-      leftJoin: (table) => {
-        capture.joins.push({ kind: "left", table });
+      leftJoin: (table, on) => {
+        capture.joins.push({ kind: "left", table, on });
         return chain;
       },
-      innerJoin: (table) => {
-        capture.joins.push({ kind: "inner", table });
+      innerJoin: (table, on) => {
+        capture.joins.push({ kind: "inner", table, on });
         return chain;
       },
       where: (condition) => {
@@ -527,6 +527,25 @@ describe("member.list", () => {
     const asked = listDb([REGULAR, NEWCOMER], 2);
     await createCaller(adminCtx(asked.db)).member.list({ sort: "points" });
     expect(orderOf(asked.captures)).toBe(fallback);
+  });
+
+  /**
+   * Archive is a hide, not a rewind. The IBM GBM still happened after
+   * officers took it off the members' list.
+   */
+  it("counts archived events toward roster points", async () => {
+    const { db, captures } = listDb([REGULAR], 1);
+    await createCaller(adminCtx(db)).member.list({});
+
+    const attendance = captures.find(
+      (capture) => tableName(capture.from) === getTableName(eventCheckIns),
+    );
+    expect(attendance).toBeDefined();
+    const eventJoin = attendance!.joins.find(
+      (join) => tableName(join.table) === getTableName(events),
+    );
+    expect(eventJoin).toBeDefined();
+    expect(sqlText(eventJoin!.on)).not.toMatch(/archived/i);
   });
 
   /**
@@ -982,6 +1001,29 @@ describe("member.leaderboard", () => {
     );
     expect(checkInJoins.length).toBeGreaterThan(0);
     for (const join of checkInJoins) expect(join.kind).toBe("inner");
+  });
+
+  /**
+   * Archive hides an event from the calendar. Dropping those rows from the
+   * board would zero a GBM the morning after, which is exactly when people
+   * look.
+   */
+  it("counts check-ins at archived events", async () => {
+    const { db, captures } = leaderboardDb(RANKED);
+    await createCaller(memberCtx(db)).member.leaderboard({ limit: 10 });
+
+    const board = captures.find((capture) =>
+      capture.joins.some(
+        (join) => tableName(join.table) === getTableName(events),
+      ),
+    );
+    expect(board).toBeDefined();
+    const eventJoin = board!.joins.find(
+      (join) => tableName(join.table) === getTableName(events),
+    );
+    expect(eventJoin).toBeDefined();
+    expect(sqlText(eventJoin!.on)).not.toMatch(/archived/i);
+    expect(sqlText(board!.where)).not.toMatch(/archived/i);
   });
 
   /**

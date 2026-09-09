@@ -53,8 +53,8 @@ const rosterSort = z.enum(["points", "name", "recent"]);
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
 /**
- * Live (non-archived) check-ins as a Drizzle subquery. Roster aggregates join
- * this rather than CASE expressions over a LEFT JOIN to events.
+ * Attendance that still exists. Archive hides an event from the calendar and
+ * kills its code; it does not unwind points already earned.
  */
 function liveCheckInsSubquery(db: BuzzDb) {
   return db
@@ -64,10 +64,7 @@ function liveCheckInsSubquery(db: BuzzDb) {
       checkedInAt: eventCheckIns.checkedInAt,
     })
     .from(eventCheckIns)
-    .innerJoin(
-      events,
-      and(eq(events.id, eventCheckIns.eventId), isNull(events.archivedAt)),
-    )
+    .innerJoin(events, eq(events.id, eventCheckIns.eventId))
     .as("live_check_ins");
 }
 
@@ -308,9 +305,7 @@ export const memberRouter = createTRPCRouter({
           })
           .from(eventCheckIns)
           .innerJoin(events, eq(events.id, eventCheckIns.eventId))
-          .where(
-            and(eq(eventCheckIns.userId, member.id), isNull(events.archivedAt)),
-          ),
+          .where(eq(eventCheckIns.userId, member.id)),
         ctx.db
           .select({
             eventId: events.id,
@@ -323,9 +318,7 @@ export const memberRouter = createTRPCRouter({
           })
           .from(eventCheckIns)
           .innerJoin(events, eq(events.id, eventCheckIns.eventId))
-          .where(
-            and(eq(eventCheckIns.userId, member.id), isNull(events.archivedAt)),
-          )
+          .where(eq(eventCheckIns.userId, member.id))
           .orderBy(desc(eventCheckIns.checkedInAt))
           .limit(200),
         ctx.db.query.resumes
@@ -410,10 +403,7 @@ export const memberRouter = createTRPCRouter({
         })
         .from(users)
         .innerJoin(eventCheckIns, eq(eventCheckIns.userId, users.id))
-        .innerJoin(
-          events,
-          and(eq(events.id, eventCheckIns.eventId), isNull(events.archivedAt)),
-        )
+        .innerJoin(events, eq(events.id, eventCheckIns.eventId))
         .groupBy(users.id)
         .orderBy(desc(totalPoints), asc(firstCheckIn), asc(users.id));
 
