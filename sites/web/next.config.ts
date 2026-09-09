@@ -9,6 +9,7 @@ const isProd = process.env.NODE_ENV === "production";
 const config: NextConfig = {
   transpilePackages: ["@buzz/api", "@buzz/auth", "@buzz/db"],
   poweredByHeader: false,
+  agentRules: false,
   async headers() {
     const base = [
       { key: "X-Content-Type-Options", value: "nosniff" },

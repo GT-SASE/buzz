@@ -18,6 +18,11 @@ db.sqlite
 .next/
 out/
 next-env.d.ts
+AGENTS.md
+CLAUDE.md
+
+# cursor
+.cursor/
 
 # production
 build/
