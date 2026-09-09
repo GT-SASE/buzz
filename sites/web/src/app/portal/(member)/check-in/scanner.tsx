@@ -66,7 +66,10 @@ type Decoder = (
   zoom: number,
 ) => Promise<string | null>;
 
-function pinchDistance(a: Touch, b: Touch) {
+function pinchDistance(
+  a: { clientX: number; clientY: number },
+  b: { clientX: number; clientY: number },
+) {
   const dx = a.clientX - b.clientX;
   const dy = a.clientY - b.clientY;
   return Math.hypot(dx, dy);
