@@ -12,6 +12,9 @@ export const tiers = [
   { name: "Distinguished", min: 150 },
 ] as const;
 
+/** Same floors the roster cards render. Sent to `member.metrics` so the server bands on this list, not a second copy. */
+export const tierFloors = tiers.map((tier) => tier.min);
+
 /** The highest tier a total clears, plus how far the next one is. */
 export function tierFor(points: number) {
   type Band = (typeof tiers)[number];

@@ -103,7 +103,11 @@ export const memberRouter = createTRPCRouter({
               asc(users.email),
             ];
           default:
-            return [desc(totalPoints), asc(users.email)];
+            return [
+              asc(isNull(totalPoints)),
+              desc(totalPoints),
+              asc(users.email),
+            ];
         }
       })();
 

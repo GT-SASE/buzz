@@ -2,14 +2,10 @@
 
 import { Eyebrow } from "~/components/site";
 import { Skeleton } from "~/components/ui/skeleton";
-import { tiers } from "~/data/portal";
+import { tierFloors, tiers } from "~/data/portal";
 import { api, type RouterOutputs } from "~/trpc/react";
 
 type Metrics = RouterOutputs["member"]["metrics"];
-
-/** The floors the tier table is built from. Sent so the server bands on the
-    same thresholds the cards render. */
-export const tierFloors = tiers.map((tier) => tier.min);
 
 const figureGrid = "grid gap-4 sm:grid-cols-2 lg:grid-cols-4";
 
@@ -138,7 +134,7 @@ function Figures({ data }: { data: Metrics }) {
         />
         <Figure
           label="Average points"
-          value={data.averagePoints.toFixed(1)}
+          value={Number(data.averagePoints).toFixed(1)}
           note={`${data.neverCheckedIn} never checked in`}
         />
       </dl>

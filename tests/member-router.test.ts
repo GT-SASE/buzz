@@ -530,6 +530,24 @@ describe("member.list", () => {
   });
 
   /**
+   * Same NULLS LAST trap as "recent": Postgres puts nulls first on DESC, so
+   * a points sort would open on everyone who has never checked in.
+   */
+  it("sorts by points with members who never came last", async () => {
+    const { db, captures } = listDb([REGULAR, NEWCOMER], 2);
+    await createCaller(adminCtx(db)).member.list({ sort: "points" });
+
+    const order = orderOf(captures);
+    const pointsAt = order.search(/points/i);
+    const emailAt = order.search(/email/i);
+
+    expect(pointsAt).toBeGreaterThanOrEqual(0);
+    expect(emailAt).toBeGreaterThan(pointsAt);
+    expect(order.slice(0, emailAt)).toMatch(/is\s+null/i);
+    expect(order.slice(0, emailAt)).toMatch(/desc/i);
+  });
+
+  /**
    * NULLS LAST is the whole of this test. Postgres sorts nulls FIRST on a
    * descending order, so without it the roster opens with every member who has
    * never checked in — exactly backwards for a sort about recent activity.

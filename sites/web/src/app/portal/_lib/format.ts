@@ -24,12 +24,19 @@ const dateOnly = new Intl.DateTimeFormat("en-US", {
   timeZone: ZONE,
 });
 
-export function formatEventTime(value: Date) {
-  return dateAndTime.format(value);
+function asRenderableDate(value: Date | string | number) {
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
 }
 
-export function formatDate(value: Date) {
-  return dateOnly.format(value);
+export function formatEventTime(value: Date | string | number) {
+  const date = asRenderableDate(value);
+  return date ? dateAndTime.format(date) : "—";
+}
+
+export function formatDate(value: Date | string | number) {
+  const date = asRenderableDate(value);
+  return date ? dateOnly.format(date) : "—";
 }
 
 const monthAndYear = new Intl.DateTimeFormat("en-US", {
@@ -39,8 +46,9 @@ const monthAndYear = new Intl.DateTimeFormat("en-US", {
 });
 
 /** "August 2026", for the membership card. */
-export function formatMonth(value: Date) {
-  return monthAndYear.format(value);
+export function formatMonth(value: Date | string | number) {
+  const date = asRenderableDate(value);
+  return date ? monthAndYear.format(date) : "—";
 }
 
 /** For a datetime-local input, which wants "YYYY-MM-DDTHH:mm" in Atlanta time. */

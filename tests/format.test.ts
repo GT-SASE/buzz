@@ -235,11 +235,25 @@ describe("formatEventTime", () => {
       "Thu, Jan 15, 12:30 PM",
     );
   });
+
+  it("accepts an ISO string the same as a Date", () => {
+    expect(spaces(formatEventTime("2026-08-28T22:00:00Z"))).toBe(
+      "Fri, Aug 28, 6:00 PM",
+    );
+  });
 });
 
 describe("formatDate", () => {
   it("prints a known instant", () => {
     expect(formatDate(new Date("2026-08-28T22:00:00Z"))).toBe("Aug 28, 2026");
+  });
+
+  it("accepts an ISO string the same as a Date", () => {
+    expect(formatDate("2026-08-28T22:00:00Z")).toBe("Aug 28, 2026");
+  });
+
+  it("does not throw on a value Intl cannot format", () => {
+    expect(formatDate("not-a-date")).toBe("—");
   });
 
   /**
