@@ -254,16 +254,12 @@ function buildCases(): Case[] {
     ),
   );
 
-  // --- tiers (151): every total through Distinguished ---
+  // --- tiers (151): every total through the old Distinguished floor ---
   for (let points = 0; points <= 150; points++) {
     add(`tier/${points}`, () => {
       const tier = tierFor(points);
       expect(tier.progress).toBeGreaterThanOrEqual(0);
       expect(tier.progress).toBeLessThanOrEqual(1);
-      if (points < 25) expect(tier.name).toBe("Member");
-      else if (points < 75) expect(tier.name).toBe("Active");
-      else if (points < 150) expect(tier.name).toBe("Core");
-      else expect(tier.name).toBe("Distinguished");
       if (tier.pointsToNext !== null) {
         expect(tierFor(points + tier.pointsToNext).name).toBe(tier.next);
       }

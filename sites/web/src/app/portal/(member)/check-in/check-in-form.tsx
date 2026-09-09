@@ -101,7 +101,8 @@ export function CheckInForm({ initialCode }: { initialCode: string }) {
             </p>
             <p className="mt-3 text-white/70">
               {totalPoints} points across {totalEvents}{" "}
-              {totalEvents === 1 ? "event" : "events"}.
+              {totalEvents === 1 ? "event" : "events"}. Come back next time to
+              keep the streak going.
             </p>
           </AlertDescription>
         </Alert>

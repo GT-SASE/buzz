@@ -3,9 +3,8 @@
 import { useState } from "react";
 import { toast } from "sonner";
 
-import { mentorshipTierFor } from "~/data/portal";
+import { KinCard } from "~/app/portal/_components/kin-card";
 import { Alert, AlertDescription } from "~/components/ui/alert";
-import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Label } from "~/components/ui/label";
 import { Skeleton } from "~/components/ui/skeleton";
@@ -27,7 +26,7 @@ const roles = [
 
 type Signup = RouterOutputs["mentorship"]["mine"];
 
-export function MentorshipSignup() {
+export function MentorshipSignup({ name }: { name: string }) {
   const mine = api.mentorship.mine.useQuery();
 
   if (mine.isPending) {
@@ -46,10 +45,16 @@ export function MentorshipSignup() {
     );
   }
 
-  return <MentorshipSignupForm row={mine.data ?? null} />;
+  return <MentorshipSignupForm name={name} row={mine.data ?? null} />;
 }
 
-function MentorshipSignupForm({ row }: { row: Signup }) {
+function MentorshipSignupForm({
+  name,
+  row,
+}: {
+  name: string;
+  row: Signup;
+}) {
   const utils = api.useUtils();
   const [role, setRole] = useState<"mentor" | "mentee">(row?.role ?? "mentee");
   const [note, setNote] = useState(row?.note ?? "");
@@ -70,7 +75,6 @@ function MentorshipSignupForm({ row }: { row: Signup }) {
   });
 
   const locked = row?.status === "enrolled";
-  const tier = mentorshipTierFor(row?.points ?? 0);
 
   return (
     <div className="mx-auto w-full max-w-lg px-5 py-10 sm:px-6 sm:py-14">
@@ -81,31 +85,17 @@ function MentorshipSignupForm({ row }: { row: Signup }) {
         Sign up for SASE KIN.
       </h1>
       <p className="text-ink-muted text-body mt-4">
-        Event check-ins stay on your card. These points are only for kin
-        meetings — an officer adds them after you actually meet.
+        Event check-ins stay on your event card. KIN points live on their own
+        card — an officer adds them after you actually meet.
       </p>
 
-      {row && (
-        <div className="border-hairline bg-cream mt-8 rounded-lg border px-5 py-5">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <Badge
-              variant={row.status === "enrolled" ? "default" : "secondary"}
-            >
-              {row.status === "interested"
-                ? "Interested"
-                : row.status === "enrolled"
-                  ? "Enrolled"
-                  : "Withdrawn"}
-            </Badge>
-            <p className="font-display text-navy text-h3 font-bold tabular-nums">
-              {row.points} pts
-            </p>
-          </div>
+      {row && row.status !== "withdrawn" && (
+        <div className="mt-8">
+          <KinCard name={name} role={row.role} points={row.points} />
           <p className="text-ink-muted text-body-sm mt-3">
-            {row.role === "mentor" ? "Mentor" : "Mentee"}
-            {tier.pointsToNext !== null
-              ? ` · ${tier.pointsToNext} more to ${tier.next}`
-              : ` · ${tier.name}`}
+            {row.status === "interested"
+              ? "Interested — waiting for an officer to enroll you."
+              : "Enrolled in a kin group."}
           </p>
         </div>
       )}

@@ -12,6 +12,7 @@ import {
   TableRow,
 } from "~/components/ui/table";
 import { cn } from "~/lib/utils";
+import { tierFor } from "~/data/portal";
 import { api } from "~/trpc/react";
 
 const columnHeading =
@@ -44,6 +45,8 @@ function Standing({
   /** Below the visible top N, under its own divider. */
   pinned?: boolean;
 }) {
+  const rankName = tierFor(totalPoints).name;
+
   return (
     <TableRow
       className={cn(
@@ -65,6 +68,9 @@ function Standing({
       >
         {isYou && !pinned && <span className="sr-only">Your rank. </span>}
         {name}
+        <span className="text-ink-muted mt-0.5 block text-xs font-medium tracking-wide uppercase">
+          {rankName}
+        </span>
       </TableCell>
       <TableCell className="text-ink-muted text-body-sm px-0 py-4 text-right tabular-nums">
         {totalEvents}
@@ -132,6 +138,9 @@ export function Leaderboard() {
                 )}
               >
                 {row.isYou ? `${row.name} (you)` : row.name}
+                <span className="text-ink-muted ml-2 text-xs font-medium tracking-wide uppercase">
+                  {tierFor(row.totalPoints).name}
+                </span>
               </span>
             </p>
             <p className="text-navy shrink-0 font-semibold tabular-nums">

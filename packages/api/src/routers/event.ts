@@ -1,9 +1,13 @@
 import { TRPCError } from "@trpc/server";
-import { and, asc, count, desc, eq, gte, isNull } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, isNull, lt } from "drizzle-orm";
 import { z } from "zod";
 
 import { asDate, asInt, totalsColumns } from "../aggregates";
-import { pointsForArrival } from "../check-in-points";
+import {
+  consecutivePriorStreak,
+  pointsForArrival,
+  streakBonus,
+} from "../check-in-points";
 import { notFound } from "../errors";
 import { isUniqueViolation } from "../pg-errors";
 import {
@@ -52,6 +56,52 @@ async function nextArrivalPoints(
     .from(eventCheckIns)
     .where(eq(eventCheckIns.eventId, eventId));
   return pointsForArrival(base, asInt(row?.prior));
+}
+
+/**
+ * Consecutive happenings this member already has, newest first, before
+ * `startsAt`. A happening is an event that has at least one check-in — a
+ * calendar row nobody came to does not break a streak.
+ */
+async function priorStreak(
+  tx: {
+    select: (typeof import("@buzz/db").db)["select"];
+  },
+  startsAt: Date,
+  userId: string,
+) {
+  const happenings = await tx
+    .select({ id: events.id, startsAt: events.startsAt })
+    .from(events)
+    .innerJoin(eventCheckIns, eq(eventCheckIns.eventId, events.id))
+    .where(lt(events.startsAt, startsAt))
+    .groupBy(events.id)
+    .orderBy(desc(events.startsAt));
+
+  if (happenings.length === 0) return 0;
+
+  const attended = await tx
+    .select({ eventId: eventCheckIns.eventId })
+    .from(eventCheckIns)
+    .where(eq(eventCheckIns.userId, userId));
+
+  return consecutivePriorStreak(
+    attended.map((row) => row.eventId),
+    happenings.map((row) => row.id),
+  );
+}
+
+async function nextCheckInPoints(
+  tx: {
+    select: (typeof import("@buzz/db").db)["select"];
+  },
+  event: { id: string; startsAt: Date; pointsValue: number },
+  userId: string,
+) {
+  const arrival = await nextArrivalPoints(tx, event.id, event.pointsValue);
+  if (arrival === 0) return 0;
+  const prior = await priorStreak(tx, event.startsAt, userId);
+  return arrival + streakBonus(prior);
 }
 
 function newCheckInCode() {
@@ -479,11 +529,7 @@ export const eventRouter = createTRPCRouter({
             eventId: locked.id,
             userId: member.id,
             method: "manual",
-            pointsEarned: await nextArrivalPoints(
-              tx,
-              locked.id,
-              locked.pointsValue,
-            ),
+            pointsEarned: await nextCheckInPoints(tx, locked, member.id),
             actedByUserId: ctx.session.user.id,
           });
           // Honest override: officers may exceed capacity, and the counter
@@ -547,11 +593,7 @@ export const eventRouter = createTRPCRouter({
             eventId: locked.id,
             userId: officer.id,
             method: "manual",
-            pointsEarned: await nextArrivalPoints(
-              tx,
-              locked.id,
-              locked.pointsValue,
-            ),
+            pointsEarned: await nextCheckInPoints(tx, locked, officer.id),
             actedByUserId: ctx.session.user.id,
           });
           await tx
@@ -679,11 +721,7 @@ export const eventRouter = createTRPCRouter({
           assertCheckInWindow(locked.startsAt);
 
           eventTitle = locked.title;
-          pointsEarned = await nextArrivalPoints(
-            tx,
-            locked.id,
-            locked.pointsValue,
-          );
+          pointsEarned = await nextCheckInPoints(tx, locked, userId);
 
           try {
             // pointsEarned is snapshotted here and never recomputed. Re-pricing
@@ -728,11 +766,7 @@ export const eventRouter = createTRPCRouter({
           assertCheckInWindow(locked.startsAt);
 
           eventTitle = locked.title;
-          pointsEarned = await nextArrivalPoints(
-            tx,
-            locked.id,
-            locked.pointsValue,
-          );
+          pointsEarned = await nextCheckInPoints(tx, locked, userId);
 
           const existing = await tx.query.eventCheckIns.findFirst({
             where: and(

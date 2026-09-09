@@ -20,12 +20,14 @@ export default function MentorshipPage() {
 }
 
 async function MentorshipBody() {
-  await requireSession("/portal/mentorship");
+  const session = await requireSession("/portal/mentorship");
   await api.mentorship.mine();
 
   return (
     <HydrateClient>
-      <MentorshipSignup />
+      <MentorshipSignup
+        name={session.user.name ?? session.user.email ?? "Member"}
+      />
       <Toaster position="bottom-center" />
     </HydrateClient>
   );

@@ -57,19 +57,22 @@ function TierBars({ data }: { data: Metrics }) {
     <div className="border-hairline bg-paper/60 mt-8 rounded-xl border p-6 shadow-xs">
       <div className="border-hairline border-b pb-4">
         <h3 className="text-eyebrow tracking-caps text-ink-muted font-semibold uppercase">
-          Where the roster sits
+          Chapter ranks
         </h3>
         <p className="text-ink-muted text-body-sm mt-0.5">
-          Member progression across chapter point tiers.
+          Climb by showing up. Consecutive check-ins pay extra.
         </p>
       </div>
       <ul role="list" className="mt-6 grid gap-4">
-        {bands.map((band) => {
+        {bands.map((band, index) => {
           const percent = share(band.members, data.total);
           return (
             <li key={band.name}>
               <div className="flex items-baseline justify-between gap-4">
                 <p className="text-navy font-semibold">
+                  <span className="text-gold-ink mr-2 tabular-nums">
+                    {index + 1}
+                  </span>
                   {band.name}
                   <span className="text-ink-muted text-body-sm ml-2 font-normal tabular-nums">
                     {band.min}+ pts
@@ -164,7 +167,7 @@ function MetricsSkeleton() {
         <div className="border-hairline bg-paper/50 mt-8 rounded-xl border p-6">
           <Skeleton className="h-4 w-40" />
           <div className="mt-6 grid gap-4">
-            {[0, 1, 2, 3].map((band) => (
+          {[0, 1, 2, 3, 4, 5, 6, 7].map((band) => (
               <div key={band}>
                 <Skeleton className="h-4 w-32" />
                 <Skeleton className="mt-2 h-2.5 w-full" />

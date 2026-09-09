@@ -47,9 +47,13 @@ const FULL: Metrics = {
   averagePoints: 20,
   tiers: [
     { min: 0, members: 18 },
-    { min: 25, members: 14 },
-    { min: 75, members: 6 },
-    { min: 150, members: 2 },
+    { min: 15, members: 8 },
+    { min: 30, members: 6 },
+    { min: 50, members: 4 },
+    { min: 80, members: 2 },
+    { min: 120, members: 1 },
+    { min: 170, members: 1 },
+    { min: 230, members: 0 },
   ],
   since: {
     last30: new Date("2026-08-03T00:00:00.000Z"),
@@ -77,7 +81,9 @@ describe("RosterMetrics", () => {
     expect(
       screen.getByText("55% of the roster · 12 in the last 30 days"),
     ).toBeTruthy();
-    expect(screen.getByText("5")).toBeTruthy();
+    expect(
+      screen.getByText("first check-in in the last 30 days"),
+    ).toBeTruthy();
     // One decimal, so the figure does not change shape week to week.
     expect(screen.getByText("20.0")).toBeTruthy();
     expect(screen.getByText("10 never checked in")).toBeTruthy();
@@ -88,7 +94,7 @@ describe("RosterMetrics", () => {
     answer.data = FULL;
     render(<RosterMetrics />);
 
-    expect(answer.sent).toEqual([0, 25, 75, 150]);
+    expect(answer.sent).toEqual([0, 15, 30, 50, 80, 120, 170, 230]);
   });
 
   it("names each band and gives its share of the roster", () => {
@@ -96,10 +102,10 @@ describe("RosterMetrics", () => {
     render(<RosterMetrics />);
 
     expect(screen.getByText("Distinguished")).toBeTruthy();
-    expect(screen.getByText("150+ pts")).toBeTruthy();
-    // 18 of 40 in the bottom band, 2 of 40 in the top.
+    expect(screen.getByText("230+ pts")).toBeTruthy();
+    // 18 of 40 in the bottom band, 0 of 40 in the top.
     expect(screen.getByText("45%")).toBeTruthy();
-    expect(screen.getByText("5%")).toBeTruthy();
+    expect(screen.getByText("0%")).toBeTruthy();
   });
 
   /**

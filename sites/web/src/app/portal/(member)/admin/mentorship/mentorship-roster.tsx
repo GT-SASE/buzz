@@ -81,7 +81,7 @@ export function MentorshipRoster() {
   });
   const award = api.mentorship.awardPoints.useMutation({
     onSuccess: async (row) => {
-      toast.success(`Now ${row?.points ?? 0} family points.`);
+      toast.success(`Now ${row?.points ?? 0} KIN points.`);
       await utils.mentorship.list.invalidate();
     },
     onError: (error) => toast.error(error.message),

@@ -71,13 +71,14 @@ export function MemberCard({
               {totalPoints}
             </p>
             <p className="text-eyebrow tracking-caps text-ink-muted mt-2 font-semibold uppercase">
-              Points · {totalEvents} {totalEvents === 1 ? "event" : "events"}
+              Event points · {totalEvents}{" "}
+              {totalEvents === 1 ? "event" : "events"}
             </p>
           </div>
 
           {/* Foil, not a flat gold pill: the sheen is what makes it read stamped on. */}
           <Badge className="text-navy max-w-full shrink border-transparent bg-[linear-gradient(105deg,#b3a369_0%,#eaaa00_20%,#fff2c0_34%,#eaaa00_48%,#b3a369_72%,#d9c98d_100%)] px-4 py-1.5 text-xs font-bold tracking-[0.12em] whitespace-normal uppercase shadow-[inset_0_1px_0_rgb(255_255_255/0.45)] sm:tracking-[0.18em]">
-            {tier.name}
+            Rank {tier.level} · {tier.name}
           </Badge>
         </CardFooter>
       </Card>
@@ -90,7 +91,8 @@ export function MemberCard({
             className="bg-sand [&_[data-slot=progress-indicator]]:bg-gold-ink/70 h-1"
           />
           <p className="text-ink-muted text-body-sm mt-2.5">
-            {tier.pointsToNext} more to reach {tier.next}.
+            {tier.pointsToNext} more to reach {tier.next}. Come back next event
+            for a streak bonus.
           </p>
         </div>
       )}

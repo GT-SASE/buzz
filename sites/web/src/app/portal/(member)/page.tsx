@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 
 import { EventRows } from "~/app/portal/_components/event-rows";
+import { KinCard } from "~/app/portal/_components/kin-card";
 import { Leaderboard } from "~/app/portal/_components/leaderboard";
 import { MemberCard } from "~/app/portal/_components/member-card";
 import { SignOutButton } from "~/app/portal/_components/portal-ui";
@@ -35,9 +36,13 @@ async function DashboardBody() {
   const session = await requireSession("/portal");
   const isOfficer = session.user.role === "ADMIN";
 
-  const [home] = await Promise.all([
+  const [home, , kin] = await Promise.all([
     api.event.home(),
     api.member.leaderboard({ limit: 10 }),
+    api.mentorship.mine().catch((error) => {
+      console.error("KIN prefetch failed:", error);
+      return null;
+    }),
   ]);
   const { stats, attended, upcoming } = home;
 
@@ -47,14 +52,23 @@ async function DashboardBody() {
     <HydrateClient>
       <div className="max-w-content mx-auto px-5 py-10 sm:px-6 sm:py-14">
         <div className="grid gap-10 lg:grid-cols-[26rem_minmax(0,1fr)] lg:items-start lg:gap-14">
-          <MemberCard
-            name={session.user.name ?? session.user.email ?? "Member"}
-            memberSince={
-              stats.memberSince ? formatMonth(stats.memberSince) : null
-            }
-            totalPoints={stats.totalPoints}
-            totalEvents={stats.totalEvents}
-          />
+          <div className="grid gap-8">
+            <MemberCard
+              name={session.user.name ?? session.user.email ?? "Member"}
+              memberSince={
+                stats.memberSince ? formatMonth(stats.memberSince) : null
+              }
+              totalPoints={stats.totalPoints}
+              totalEvents={stats.totalEvents}
+            />
+            {kin && kin.status !== "withdrawn" && (
+              <KinCard
+                name={session.user.name ?? session.user.email ?? "Member"}
+                role={kin.role}
+                points={kin.points}
+              />
+            )}
+          </div>
 
           <div>
             <Card className="bg-navy hover:bg-navy-deep group gap-0 rounded-lg border-0 py-0 transition-colors duration-300">

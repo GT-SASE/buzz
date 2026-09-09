@@ -292,7 +292,7 @@ export function MemberDetail({ memberId }: { memberId: string }) {
               variant="outline"
               className="text-gold-ink border-gold-ink/40 text-body-sm font-semibold"
             >
-              Tier: {tier.name}
+              Rank {tier.level} · {tier.name}
             </Badge>
           </div>
           <div className="mt-4 flex flex-wrap gap-2">

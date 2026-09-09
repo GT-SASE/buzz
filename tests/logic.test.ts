@@ -5,8 +5,10 @@ import {
   checkInQrUrl,
   CHECK_IN_QR_RENDER,
 } from "~/app/portal/_components/check-in-qr";
-import { tiers, tierFor } from "~/data/portal";
+import { tiers, tierFor, mentorshipTierFor } from "~/data/portal";
 import { site } from "~/data/site";
+
+const top = tiers[tiers.length - 1]!;
 
 describe("tiers", () => {
   /**
@@ -27,31 +29,33 @@ describe("tiers", () => {
 
 describe("tierFor", () => {
   it("names the highest band the total actually clears", () => {
-    expect(tierFor(0).name).toBe("Member");
-    expect(tierFor(24).name).toBe("Member");
-    expect(tierFor(25).name).toBe("Active");
-    expect(tierFor(74).name).toBe("Active");
-    expect(tierFor(75).name).toBe("Core");
-    expect(tierFor(149).name).toBe("Core");
-    expect(tierFor(150).name).toBe("Distinguished");
+    for (let index = 0; index < tiers.length; index++) {
+      const floor = tiers[index]!;
+      expect(tierFor(floor.min).name).toBe(floor.name);
+      expect(tierFor(floor.min).level).toBe(index + 1);
+      const next = tiers[index + 1];
+      if (next) {
+        expect(tierFor(next.min - 1).name).toBe(floor.name);
+      }
+    }
   });
 
   it("points at the band above, never one already cleared", () => {
-    expect(tierFor(0).next).toBe("Active");
-    expect(tierFor(24).next).toBe("Active");
-    expect(tierFor(25).next).toBe("Core");
-    expect(tierFor(74).next).toBe("Core");
-    expect(tierFor(75).next).toBe("Distinguished");
-    expect(tierFor(149).next).toBe("Distinguished");
+    for (let index = 0; index < tiers.length - 1; index++) {
+      const floor = tiers[index]!;
+      const next = tiers[index + 1]!;
+      expect(tierFor(floor.min).next).toBe(next.name);
+      expect(tierFor(next.min - 1).next).toBe(next.name);
+    }
   });
 
   it("counts the points still owed to that next band", () => {
-    expect(tierFor(0).pointsToNext).toBe(25);
-    expect(tierFor(24).pointsToNext).toBe(1);
-    expect(tierFor(25).pointsToNext).toBe(50);
-    expect(tierFor(74).pointsToNext).toBe(1);
-    expect(tierFor(75).pointsToNext).toBe(75);
-    expect(tierFor(149).pointsToNext).toBe(1);
+    for (let index = 0; index < tiers.length - 1; index++) {
+      const floor = tiers[index]!;
+      const next = tiers[index + 1]!;
+      expect(tierFor(floor.min).pointsToNext).toBe(next.min - floor.min);
+      expect(tierFor(next.min - 1).pointsToNext).toBe(1);
+    }
   });
 
   /**
@@ -61,7 +65,7 @@ describe("tierFor", () => {
    * every individual number above still looks plausible on its own.
    */
   it("promises a promotion that earning pointsToNext actually delivers", () => {
-    for (let points = 0; points <= 160; points++) {
+    for (let points = 0; points <= top.min + 10; points++) {
       const tier = tierFor(points);
       if (tier.pointsToNext === null) {
         expect(tier.next).toBeUndefined();
@@ -73,19 +77,19 @@ describe("tierFor", () => {
   });
 
   it("runs progress from 0 at the floor of a band to just under 1 at its top", () => {
-    expect(tierFor(0).progress).toBe(0);
-    expect(tierFor(24).progress).toBeCloseTo(0.96, 10);
-    expect(tierFor(25).progress).toBe(0);
-    expect(tierFor(50).progress).toBeCloseTo(0.5, 10);
-    expect(tierFor(74).progress).toBeCloseTo(0.98, 10);
-    expect(tierFor(75).progress).toBe(0);
-    expect(tierFor(149).progress).toBeCloseTo(74 / 75, 10);
+    for (let index = 0; index < tiers.length - 1; index++) {
+      const floor = tiers[index]!;
+      const next = tiers[index + 1]!;
+      const width = next.min - floor.min;
+      expect(tierFor(floor.min).progress).toBe(0);
+      expect(tierFor(next.min - 1).progress).toBeCloseTo((width - 1) / width, 10);
+    }
   });
 
   it("stops at the top band instead of inventing another one", () => {
-    for (const points of [150, 151, 900, Number.MAX_SAFE_INTEGER]) {
+    for (const points of [top.min, top.min + 1, 900, Number.MAX_SAFE_INTEGER]) {
       const tier = tierFor(points);
-      expect(tier.name).toBe("Distinguished");
+      expect(tier.name).toBe(top.name);
       expect(tier.next).toBeUndefined();
       expect(tier.pointsToNext).toBeNull();
       expect(tier.progress).toBe(1);
@@ -97,15 +101,12 @@ describe("tierFor", () => {
    * check-in row can hand this function a total below the lowest band. It must
    * degrade to the bottom tier rather than throw on the member's own card,
    * which is the one page they cannot route around.
-   *
-   * Note what it reports today besides the name: `next` is also "Member" and
-   * `pointsToNext` is 5, i.e. "5 points to the tier you are already in".
    */
   it("does not throw on a nonsense total", () => {
     expect(() => tierFor(-5)).not.toThrow();
     expect(() => tierFor(Number.NaN)).not.toThrow();
     expect(() => tierFor(-Number.MAX_SAFE_INTEGER)).not.toThrow();
-    expect(tierFor(-5).name).toBe("Member");
+    expect(tierFor(-5).name).toBe(tiers[0]!.name);
   });
 
   /**
@@ -114,15 +115,33 @@ describe("tierFor", () => {
    * outside 0..1 is a bar drawn outside its track or a dropped declaration.
    */
   it("keeps progress inside 0..1", () => {
-    for (const points of [0, 1, 24, 25, 74, 75, 149, 150, 500]) {
+    const samples = [
+      0,
+      1,
+      ...tiers.map((tier) => tier.min),
+      top.min - 1,
+      top.min,
+      500,
+    ];
+    for (const points of samples) {
       const { progress } = tierFor(points);
       expect(progress).toBeGreaterThanOrEqual(0);
       expect(progress).toBeLessThanOrEqual(1);
     }
 
-    // `Math.min` caps the ceiling; nothing holds the floor, and below the
-    // lowest band the divisor `next.min - current.min` is 0 as well.
     expect(tierFor(-5).progress).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe("mentorshipTierFor", () => {
+  it("never shares a band with the event card", () => {
+    expect(mentorshipTierFor(0).name).toBe("Signed up");
+    expect(mentorshipTierFor(9).name).toBe("Signed up");
+    expect(mentorshipTierFor(10).name).toBe("Meeting");
+    expect(mentorshipTierFor(29).name).toBe("Meeting");
+    expect(mentorshipTierFor(30).name).toBe("Kin");
+    expect(mentorshipTierFor(0).next).toBe("Meeting");
+    expect(mentorshipTierFor(10).pointsToNext).toBe(20);
   });
 });
 
@@ -234,3 +253,4 @@ describe("codeFromScan", () => {
     expect(CHECK_IN_QR_RENDER.margin).toBeGreaterThanOrEqual(4);
   });
 });
+

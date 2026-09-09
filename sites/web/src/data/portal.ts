@@ -6,10 +6,14 @@
  * Editing the thresholds below is the whole change.
  */
 export const tiers = [
-  { name: "Member", min: 0 },
-  { name: "Active", min: 25 },
-  { name: "Core", min: 75 },
-  { name: "Distinguished", min: 150 },
+  { name: "Scout", min: 0 },
+  { name: "Member", min: 15 },
+  { name: "Regular", min: 30 },
+  { name: "Active", min: 50 },
+  { name: "Core", min: 80 },
+  { name: "Veteran", min: 120 },
+  { name: "Champion", min: 170 },
+  { name: "Distinguished", min: 230 },
 ] as const;
 
 /** Same floors the roster cards render. Sent to `member.metrics` so the server bands on this list, not a second copy. */
@@ -39,8 +43,12 @@ export function tierFor(points: number) {
   const progress =
     next && band > 0 ? (points - current.min) / band : next ? 0 : 1;
 
+  const level = tiers.findIndex((tier) => tier.name === current.name) + 1;
+
   return {
     name: current.name,
+    /** 1-based place in the table, for "Rank 3 · Regular" on the card. */
+    level,
     next: next?.name,
     pointsToNext: next ? next.min - points : null,
     /** 0-1 through the current band; 1 once the top tier is reached. */
@@ -88,9 +96,15 @@ export function mentorshipTierFor(points: number) {
       next ??= tier;
     }
   }
+  const band = next ? next.min - current.min : 0;
+  const progress =
+    next && band > 0 ? (points - current.min) / band : next ? 0 : 1;
   return {
     name: current.name,
     next: next?.name,
     pointsToNext: next ? next.min - points : null,
+    progress: Number.isFinite(progress)
+      ? Math.max(0, Math.min(1, progress))
+      : 0,
   };
 }
