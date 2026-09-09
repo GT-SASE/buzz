@@ -22,6 +22,7 @@ import {
   pointsSum,
 } from "../aggregates";
 import { notFound } from "../errors";
+import { isUndefinedTable } from "../pg-errors";
 import { schoolYearStart } from "../periods";
 import { assertRateLimit, EXPORT_ROSTER_LIMIT } from "../rate-limit";
 import { adminProcedure, createTRPCRouter, protectedProcedure } from "../trpc";
@@ -323,14 +324,19 @@ export const memberRouter = createTRPCRouter({
           )
           .orderBy(desc(eventCheckIns.checkedInAt))
           .limit(200),
-        ctx.db.query.resumes.findFirst({
-          where: eq(resumes.userId, member.id),
-          columns: {
-            fileName: true,
-            byteSize: true,
-            uploadedAt: true,
-          },
-        }),
+        ctx.db.query.resumes
+          .findFirst({
+            where: eq(resumes.userId, member.id),
+            columns: {
+              fileName: true,
+              byteSize: true,
+              uploadedAt: true,
+            },
+          })
+          .catch((error) => {
+            if (isUndefinedTable(error)) return null;
+            throw error;
+          }),
       ]);
 
       return {
@@ -378,9 +384,9 @@ export const memberRouter = createTRPCRouter({
   // ----------------------------------------------------------------- members
 
   /**
-   * Ranked by points over every member with live attendance. Ordering is done
-   * in Postgres; competition ranks (ties share a place) are applied here so we
-   * do not need window-function SQL.
+   * Ranked by points over every member with live attendance. Early check-in
+   * pays a bonus at the door, so first through is not the same 15 as the rest.
+   * Remaining ties break on who checked in earlier.
    */
   leaderboard: protectedProcedure
     .input(z.object({ limit: z.number().int().min(1).max(50).default(10) }))
@@ -388,6 +394,7 @@ export const memberRouter = createTRPCRouter({
       const userId = ctx.session.user.id;
       const totalPoints = sum(eventCheckIns.pointsEarned);
       const totalEvents = count(eventCheckIns.id);
+      const firstCheckIn = min(eventCheckIns.checkedInAt);
 
       const rows = await ctx.db
         .select({
@@ -395,6 +402,7 @@ export const memberRouter = createTRPCRouter({
           name: users.name,
           totalPoints,
           totalEvents,
+          firstCheckInAt: firstCheckIn,
         })
         .from(users)
         .innerJoin(eventCheckIns, eq(eventCheckIns.userId, users.id))
@@ -403,25 +411,16 @@ export const memberRouter = createTRPCRouter({
           and(eq(events.id, eventCheckIns.eventId), isNull(events.archivedAt)),
         )
         .groupBy(users.id)
-        .orderBy(desc(totalPoints), asc(users.name), asc(users.id));
+        .orderBy(desc(totalPoints), asc(firstCheckIn), asc(users.id));
 
-      let rank = 0;
-      let lastPoints: number | null = null;
-      const ranked = rows.map((row, index) => {
-        const points = asInt(row.totalPoints);
-        if (lastPoints === null || points !== lastPoints) {
-          rank = index + 1;
-          lastPoints = points;
-        }
-        return {
-          userId: row.userId,
-          rank,
-          name: row.name ?? "Member",
-          totalPoints: points,
-          totalEvents: asInt(row.totalEvents),
-          isYou: row.userId === userId,
-        };
-      });
+      const ranked = rows.map((row, index) => ({
+        userId: row.userId,
+        rank: index + 1,
+        name: row.name ?? "Member",
+        totalPoints: asInt(row.totalPoints),
+        totalEvents: asInt(row.totalEvents),
+        isYou: row.userId === userId,
+      }));
 
       const top = ranked
         .slice(0, input.limit)

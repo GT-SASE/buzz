@@ -31,6 +31,9 @@ export const env = createEnv({
     /** Stable Auth.js path Google always returns to. */
     AUTH_REDIRECT_PROXY_URL: z.url().optional(),
     DATABASE_URL: requirePortalSecrets ? z.url() : z.url().optional(),
+    /** Optional. Public builds still work; the test-send button fails until set. */
+    RESEND_API_KEY: z.string().min(8).optional(),
+    RESEND_FROM: z.string().min(3).optional(),
     NODE_ENV: z
       .enum(["development", "test", "production"])
       .default("development"),
@@ -46,6 +49,8 @@ export const env = createEnv({
     AUTH_URL: process.env.AUTH_URL,
     AUTH_REDIRECT_PROXY_URL: process.env.AUTH_REDIRECT_PROXY_URL,
     DATABASE_URL: process.env.DATABASE_URL,
+    RESEND_API_KEY: process.env.RESEND_API_KEY,
+    RESEND_FROM: process.env.RESEND_FROM,
     NODE_ENV: process.env.NODE_ENV,
     VERCEL_ENV: process.env.VERCEL_ENV,
   },

@@ -38,7 +38,6 @@ async function DashboardBody() {
   const [home] = await Promise.all([
     api.event.home(),
     api.member.leaderboard({ limit: 10 }),
-    api.resume.mine(),
   ]);
   const { stats, attended, upcoming } = home;
 

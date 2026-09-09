@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 
 import { notFound } from "../errors";
+import { isUndefinedTable } from "../pg-errors";
 import { assertRateLimit, RESUME_UPLOAD_LIMIT } from "../rate-limit";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { resumes } from "@buzz/db";
@@ -14,16 +15,21 @@ const metadataSelect = {
 
 export const resumeRouter = createTRPCRouter({
   mine: protectedProcedure.query(async ({ ctx }) => {
-    const row = await ctx.db.query.resumes.findFirst({
-      where: eq(resumes.userId, ctx.session.user.id),
-      columns: {
-        fileName: true,
-        mimeType: true,
-        byteSize: true,
-        uploadedAt: true,
-      },
-    });
-    return row ?? null;
+    try {
+      const row = await ctx.db.query.resumes.findFirst({
+        where: eq(resumes.userId, ctx.session.user.id),
+        columns: {
+          fileName: true,
+          mimeType: true,
+          byteSize: true,
+          uploadedAt: true,
+        },
+      });
+      return row ?? null;
+    } catch (error) {
+      if (isUndefinedTable(error)) return null;
+      throw error;
+    }
   }),
 
   remove: protectedProcedure.mutation(async ({ ctx }) => {

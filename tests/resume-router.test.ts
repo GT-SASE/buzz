@@ -60,6 +60,19 @@ describe("resume.mine", () => {
     });
     expect(result).not.toHaveProperty("fileBytes");
   });
+
+  it("returns null when the resume table has not been created yet", async () => {
+    resetRateLimits();
+    const db = {
+      query: {
+        resumes: {
+          findFirst: () => Promise.reject({ code: "42P01" }),
+        },
+      },
+    };
+
+    await expect(createCaller(memberCtx(db)).resume.mine()).resolves.toBeNull();
+  });
 });
 
 describe("resume.remove", () => {

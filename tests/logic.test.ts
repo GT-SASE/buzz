@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import { codeFromScan } from "~/app/portal/(member)/check-in/scanner";
-import { checkInQrUrl } from "~/app/portal/_components/check-in-qr";
+import {
+  checkInQrUrl,
+  CHECK_IN_QR_RENDER,
+} from "~/app/portal/_components/check-in-qr";
 import { tiers, tierFor } from "~/data/portal";
 import { site } from "~/data/site";
 
@@ -224,5 +227,10 @@ describe("codeFromScan", () => {
     expect(checkInQrUrl(site.url, "ABCD2345")).toBe(
       `${site.url}/portal/check-in#code=ABCD2345`,
     );
+    expect(CHECK_IN_QR_RENDER.color).toEqual({
+      dark: "#000000ff",
+      light: "#ffffffff",
+    });
+    expect(CHECK_IN_QR_RENDER.margin).toBeGreaterThanOrEqual(4);
   });
 });

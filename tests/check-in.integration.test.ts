@@ -290,8 +290,8 @@ describe.skipIf(!process.env.DATABASE_URL)("check-in", () => {
         const caller = callerFor(statsMember);
         const result = await caller.event.checkIn({ code: code.snapshot });
 
-        expect(result.pointsEarned).toBe(10);
-        expect(result.totalPoints).toBe(10);
+        expect(result.pointsEarned).toBe(15);
+        expect(result.totalPoints).toBe(15);
         expect(result.totalEvents).toBe(1);
 
         // `sum()` and `count()` come back from postgres as strings without the
@@ -319,14 +319,14 @@ describe.skipIf(!process.env.DATABASE_URL)("check-in", () => {
             eq(eventCheckIns.userId, statsMember.id),
           ),
         });
-        expect(row?.pointsEarned).toBe(10);
+        expect(row?.pointsEarned).toBe(15);
 
         const stats = await callerFor(statsMember).event.myStats();
-        expect(stats.totalPoints).toBe(10);
+        expect(stats.totalPoints).toBe(15);
         expect(stats.totalEvents).toBe(1);
 
         const mine = await callerFor(statsMember).event.myEvents();
-        expect(mine.find((e) => e.id === id.snapshot)?.pointsEarned).toBe(10);
+        expect(mine.find((e) => e.id === id.snapshot)?.pointsEarned).toBe(15);
       },
       SLOW,
     );
@@ -337,7 +337,7 @@ describe.skipIf(!process.env.DATABASE_URL)("check-in", () => {
         const result = await callerFor(extraMember).event.checkIn({
           code: code.snapshot,
         });
-        expect(result.pointsEarned).toBe(50);
+        expect(result.pointsEarned).toBe(54);
       },
       SLOW,
     );
@@ -372,7 +372,7 @@ describe.skipIf(!process.env.DATABASE_URL)("check-in", () => {
       async () => {
         const caller = callerFor(gateMember);
         const first = await caller.event.checkIn({ code: code.duplicate });
-        expect(first.pointsEarned).toBe(5);
+        expect(first.pointsEarned).toBe(10);
 
         expect(
           await errorCode(caller.event.checkIn({ code: code.duplicate })),
@@ -385,7 +385,7 @@ describe.skipIf(!process.env.DATABASE_URL)("check-in", () => {
         expect((await readEvent(id.duplicate))?.currentCheckIns).toBe(0);
 
         const stats = await caller.event.myStats();
-        expect(stats.totalPoints).toBe(5);
+        expect(stats.totalPoints).toBe(10);
         expect(stats.totalEvents).toBe(1);
       },
       SLOW,
@@ -417,7 +417,7 @@ describe.skipIf(!process.env.DATABASE_URL)("check-in", () => {
         const result = await callerFor(gateMember).event.checkIn({
           code: code.fresh,
         });
-        expect(result.pointsEarned).toBe(10);
+        expect(result.pointsEarned).toBe(15);
       },
       SLOW,
     );
@@ -458,7 +458,7 @@ describe.skipIf(!process.env.DATABASE_URL)("check-in", () => {
         const admitted = await callerFor(gateMember).event.checkIn({
           code: code.capped,
         });
-        expect(admitted.pointsEarned).toBe(10);
+        expect(admitted.pointsEarned).toBe(15);
 
         expect(
           await errorCode(

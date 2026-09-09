@@ -45,7 +45,8 @@ export function codeFromScan(raw: string): string | null {
 const SCAN_INTERVAL_MS = 100;
 
 /** Frames are decoded at this long edge. jsQR is ~4x slower at 1080p. */
-const DECODE_EDGE = 720;
+const DECODE_EDGE = 960;
+const MAX_ZOOM = 4;
 
 interface DetectedBarcode {
   rawValue: string;
@@ -60,7 +61,20 @@ interface BarcodeDetectorCtor {
   getSupportedFormats?: () => Promise<string[]>;
 }
 
-type Decoder = (video: HTMLVideoElement) => Promise<string | null>;
+type Decoder = (
+  video: HTMLVideoElement,
+  zoom: number,
+) => Promise<string | null>;
+
+function pinchDistance(a: Touch, b: Touch) {
+  const dx = a.clientX - b.clientX;
+  const dy = a.clientY - b.clientY;
+  return Math.hypot(dx, dy);
+}
+
+function clampZoom(value: number) {
+  return Math.min(MAX_ZOOM, Math.max(1, value));
+}
 
 /** Hardware decode where it exists — Android Chrome, Edge, recent Safari. */
 async function nativeDecoder(): Promise<Decoder | null> {
@@ -78,9 +92,32 @@ async function nativeDecoder(): Promise<Decoder | null> {
     probe.width = 8;
     probe.height = 8;
     await detector.detect(probe);
-    return async (video) => (await detector.detect(video))[0]?.rawValue ?? null;
+    return async (video, zoom) => {
+      // Native detect reads the whole frame. A zoomed crop is decoded by jsQR.
+      if (zoom > 1.05) return null;
+      return (await detector.detect(video))[0]?.rawValue ?? null;
+    };
   } catch {
     return null;
+  }
+}
+
+function binarize(data: Uint8ClampedArray) {
+  let min = 255;
+  let max = 0;
+  for (let i = 0; i < data.length; i += 4) {
+    const y = (data[i]! * 54 + data[i + 1]! * 183 + data[i + 2]! * 19) >> 8;
+    data[i] = y;
+    if (y < min) min = y;
+    if (y > max) max = y;
+  }
+  const range = Math.max(1, max - min);
+  for (let i = 0; i < data.length; i += 4) {
+    const stretched = ((data[i]! - min) * 255) / range;
+    const v = stretched > 127 ? 255 : 0;
+    data[i] = v;
+    data[i + 1] = v;
+    data[i + 2] = v;
   }
 }
 
@@ -90,18 +127,42 @@ async function jsQrDecoder(): Promise<Decoder> {
   const context = canvas.getContext("2d", { willReadFrequently: true });
   if (!context) throw new Error("no-2d-context");
 
-  return (video) => {
-    const edge = Math.max(video.videoWidth, video.videoHeight);
+  return (video, zoom) => {
+    const vw = video.videoWidth;
+    const vh = video.videoHeight;
+    if (vw < 8 || vh < 8) return Promise.resolve(null);
+
+    const cropW = vw / zoom;
+    const cropH = vh / zoom;
+    const sx = (vw - cropW) / 2;
+    const sy = (vh - cropH) / 2;
+    const edge = Math.max(cropW, cropH);
     const scale = edge > DECODE_EDGE ? DECODE_EDGE / edge : 1;
-    canvas.width = Math.round(video.videoWidth * scale);
-    canvas.height = Math.round(video.videoHeight * scale);
-    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    canvas.width = Math.max(1, Math.round(cropW * scale));
+    canvas.height = Math.max(1, Math.round(cropH * scale));
+    context.drawImage(
+      video,
+      sx,
+      sy,
+      cropW,
+      cropH,
+      0,
+      0,
+      canvas.width,
+      canvas.height,
+    );
 
     const frame = context.getImageData(0, 0, canvas.width, canvas.height);
     const found = jsQR(frame.data, frame.width, frame.height, {
+      inversionAttempts: "attemptBoth",
+    });
+    if (found?.data) return Promise.resolve(found.data);
+
+    binarize(frame.data);
+    const stark = jsQR(frame.data, frame.width, frame.height, {
       inversionAttempts: "dontInvert",
     });
-    return Promise.resolve(found?.data ?? null);
+    return Promise.resolve(stark?.data ?? null);
   };
 }
 
@@ -121,7 +182,16 @@ export function Scanner({
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const timerRef = useRef<number | null>(null);
+  const zoomRef = useRef(1);
+  const pinchRef = useRef<number | null>(null);
   const [live, setLive] = useState(false);
+  const [zoom, setZoom] = useState(1);
+
+  const bumpZoom = (next: number) => {
+    const value = clampZoom(next);
+    zoomRef.current = value;
+    setZoom(value);
+  };
 
   // Held in refs so an inline callback from the caller cannot restart the
   // camera on every render.
@@ -163,20 +233,29 @@ export function Scanner({
       try {
         // Held separately from the pair so a rejected decoder still releases a
         // camera the member already granted.
-        const [decoder] = await Promise.all([
-          (async () => (await nativeDecoder()) ?? (await jsQrDecoder()))(),
+        const [native, fallback] = await Promise.all([
+          nativeDecoder(),
+          jsQrDecoder(),
           navigator.mediaDevices
             .getUserMedia({
               video: {
                 facingMode: { ideal: "environment" },
-                width: { ideal: 1280 },
-                height: { ideal: 1280 },
+                width: { ideal: 1920 },
+                height: { ideal: 1080 },
               },
             })
             .then((granted) => {
               stream = granted;
             }),
         ]);
+
+        const decoder: Decoder = async (video, zoom) => {
+          if (native) {
+            const hit = await native(video, zoom);
+            if (hit) return hit;
+          }
+          return fallback(video, zoom);
+        };
 
         const video = videoRef.current;
         if (!stream || !video || cancelled()) {
@@ -185,6 +264,17 @@ export function Scanner({
         }
 
         streamRef.current = stream;
+        const track = stream.getVideoTracks()[0];
+        const capabilities = track?.getCapabilities?.() as
+          | { torch?: boolean }
+          | undefined;
+        if (track && capabilities?.torch) {
+          await track
+            .applyConstraints({
+              advanced: [{ torch: false } as MediaTrackConstraintSet],
+            })
+            .catch(() => undefined);
+        }
         video.srcObject = stream;
         video.setAttribute("playsinline", "true");
         video.setAttribute("webkit-playsinline", "true");
@@ -199,7 +289,7 @@ export function Scanner({
           if (video.readyState >= video.HAVE_CURRENT_DATA) {
             let raw: string | null = null;
             try {
-              raw = await decoder(video);
+              raw = await decoder(video, zoomRef.current);
             } catch {
               // A dropped frame. The next one is 100ms away.
             }
@@ -251,7 +341,29 @@ export function Scanner({
 
   return (
     <div>
-      <div className="bg-navy relative mx-auto aspect-square w-full max-w-[min(22rem,calc(100dvh-14rem))] overflow-hidden rounded-lg">
+      <div
+        className="bg-navy relative mx-auto aspect-square w-full max-w-[min(22rem,calc(100dvh-14rem))] touch-none overflow-hidden rounded-lg"
+        onTouchStart={(event) => {
+          if (event.touches.length !== 2) {
+            pinchRef.current = null;
+            return;
+          }
+          pinchRef.current = pinchDistance(
+            event.touches[0]!,
+            event.touches[1]!,
+          );
+        }}
+        onTouchMove={(event) => {
+          if (event.touches.length !== 2 || pinchRef.current === null) return;
+          event.preventDefault();
+          const distance = pinchDistance(event.touches[0]!, event.touches[1]!);
+          bumpZoom(zoomRef.current * (distance / pinchRef.current));
+          pinchRef.current = distance;
+        }}
+        onTouchEnd={() => {
+          pinchRef.current = null;
+        }}
+      >
         {/* Labelled rather than hidden: a screen reader user still has to know
             the camera is live and what it is pointed at. The status line below
             is the same element's description. */}
@@ -263,6 +375,7 @@ export function Scanner({
           aria-label="Camera viewfinder for scanning the check-in QR code"
           aria-describedby="scanner-status"
           className="h-full w-full object-cover"
+          style={{ transform: `scale(${zoom})` }}
         />
 
         <div
@@ -288,9 +401,14 @@ export function Scanner({
         className={live ? "sr-only" : "text-ink-muted text-body-sm mt-3"}
       >
         {live
-          ? "Camera is scanning the check-in code."
+          ? "Camera is scanning the check-in code. Pinch to zoom."
           : "Starting the camera..."}
       </p>
+      {live && (
+        <p className="text-ink-muted text-body-sm mt-3 text-center">
+          Pinch to zoom in on the QR.
+        </p>
+      )}
     </div>
   );
 }

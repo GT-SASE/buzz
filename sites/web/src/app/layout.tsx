@@ -61,6 +61,10 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: "#003057",
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 5,
+  userScalable: true,
 };
 
 const sans = Bricolage_Grotesque({

@@ -477,7 +477,7 @@ export function EventAttendance({ eventId }: { eventId: string }) {
               <div className="mt-4 flex justify-center">
                 <CheckInQr
                   code={event.checkInCode}
-                  className="size-48 rounded-lg p-2 sm:size-52"
+                  className="size-48 rounded-lg bg-white p-3 sm:size-52"
                 />
               </div>
             ) : (

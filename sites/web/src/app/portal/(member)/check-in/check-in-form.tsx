@@ -264,7 +264,8 @@ export function CheckInForm({ initialCode }: { initialCode: string }) {
           Scan the QR code.
         </CardTitle>
         <CardDescription className="text-ink-muted text-body-sm">
-          It is on the screen at the front of the room.
+          It is on the screen at the front of the room. Pinch the camera to zoom
+          if you are far back.
         </CardDescription>
       </CardHeader>
 

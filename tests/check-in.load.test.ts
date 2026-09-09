@@ -21,6 +21,8 @@ const { and, eq } =
 const { createCaller } = await import("../packages/api/src/root");
 const { db, eventCheckIns, events, users } =
   await import("../packages/db/src/index");
+const { pointsForArrival } =
+  await import("../packages/api/src/check-in-points");
 
 /**
  * A whole room checking in at once.
@@ -190,7 +192,7 @@ describe.skipIf(!HAS_DB)("a room scanning at once", () => {
     expect(after?.currentCheckIns).toBe(seats);
   }, 120_000);
 
-  it("credits every member exactly the event's points, under load", async () => {
+  it("credits early arrivals a bonus and everyone else the event value, under load", async () => {
     const event = await makeEvent(null);
 
     await Promise.all(
@@ -205,7 +207,11 @@ describe.skipIf(!HAS_DB)("a room scanning at once", () => {
       .where(eq(eventCheckIns.eventId, event.id));
 
     expect(rows).toHaveLength(ROOM);
-    expect(rows.every((r) => r.pointsEarned === 7)).toBe(true);
+    const earned = rows.map((row) => row.pointsEarned).sort((a, b) => b - a);
+    const expected = Array.from({ length: ROOM }, (_, index) =>
+      pointsForArrival(7, index),
+    ).sort((a, b) => b - a);
+    expect(earned).toEqual(expected);
   }, 120_000);
 
   it("counts one row when the same member's phone fires repeatedly", async () => {

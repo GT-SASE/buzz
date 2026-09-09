@@ -7,9 +7,18 @@
  * unbounded walk hangs the request thread rather than failing.
  */
 export function isUniqueViolation(error: unknown) {
+  return hasPgCode(error, "23505");
+}
+
+/** Relation does not exist — usually a migration that has not been applied. */
+export function isUndefinedTable(error: unknown) {
+  return hasPgCode(error, "42P01");
+}
+
+function hasPgCode(error: unknown, code: string) {
   for (let cursor: unknown = error, depth = 0; cursor && depth < 5; depth++) {
     if (typeof cursor !== "object") break;
-    if ((cursor as { code?: string }).code === "23505") return true;
+    if ((cursor as { code?: string }).code === code) return true;
     cursor = (cursor as { cause?: unknown }).cause;
   }
   return false;

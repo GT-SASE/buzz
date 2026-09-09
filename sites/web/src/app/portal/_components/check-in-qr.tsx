@@ -11,6 +11,18 @@ export function checkInQrUrl(origin: string, code: string) {
   return `${origin}/portal/check-in#code=${code}`;
 }
 
+/**
+ * True black on white, with a wide quiet zone. Navy-on-cream on a projector
+ * washes out under room lights and phones refuse the code until the lights
+ * go off.
+ */
+export const CHECK_IN_QR_RENDER = {
+  errorCorrectionLevel: "M" as const,
+  margin: 4,
+  width: 1024,
+  color: { dark: "#000000ff", light: "#ffffffff" },
+};
+
 export function CheckInQr({
   code,
   className,
@@ -28,12 +40,7 @@ export function CheckInQr({
 
     void (async () => {
       const { toDataURL } = await import("qrcode");
-      const png = await toDataURL(url, {
-        errorCorrectionLevel: "H",
-        margin: 1,
-        width: 1024,
-        color: { dark: "#003057ff", light: "#fdfaf4ff" },
-      });
+      const png = await toDataURL(url, CHECK_IN_QR_RENDER);
       if (!cancelled) setQr(png);
     })();
 
@@ -55,7 +62,7 @@ export function CheckInQr({
     <img
       src={qr}
       alt={label}
-      className={cn("bg-paper object-contain", className)}
+      className={cn("bg-white object-contain", className)}
     />
   );
 }

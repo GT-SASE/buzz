@@ -1,26 +1,46 @@
 import { committees, type PublicCommitteeId } from "./committees";
 
-/**
- * Prompts for the callback after someone applies. Taken from the chapter's
- * interview sheet. Marketing is the only committee with written questions so
- * far; Events and Treasury still use the shared openers plus the role brief.
- */
+export type InterviewQuestion = {
+  id: string;
+  prompt: string;
+};
 
-export const sharedInterviewQuestions = [
-  "Introduction — tell me about yourself.",
-  "Weekly time commitment to this role.",
-] as const;
+/**
+ * Prompts from the chapter interview sheet. Shared openers run once;
+ * committee-specific questions follow the role they applied for.
+ */
+export const sharedInterviewQuestions: readonly InterviewQuestion[] = [
+  {
+    id: "intro",
+    prompt: "Introduction — tell me about yourself.",
+  },
+  {
+    id: "time",
+    prompt: "Weekly time commitment to this role.",
+  },
+];
 
 export const committeeInterviewQuestions: Record<
   PublicCommitteeId,
-  readonly string[]
+  readonly InterviewQuestion[]
 > = {
   events: [],
   marketing: [
-    "What creative ideas do you have to increase our reach on campus?",
-    "Do you have any prior experience in marketing?",
+    {
+      id: "marketing-ideas",
+      prompt: "What creative ideas do you have to increase our reach on campus?",
+    },
+    {
+      id: "marketing-experience",
+      prompt: "Do you have any prior experience in marketing?",
+    },
   ],
-  treasury: [],
+  treasury: [
+    {
+      id: "other-committees",
+      prompt: "Would you be interested in joining any of the other committees?",
+    },
+  ],
 };
 
 export function interviewScript(ids: PublicCommitteeId[]) {

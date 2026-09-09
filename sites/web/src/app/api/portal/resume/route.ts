@@ -7,6 +7,7 @@ import {
   resumeDownloadHeaders,
   RESUME_UPLOAD_LIMIT,
   takeToken,
+  isUndefinedTable,
 } from "@buzz/api";
 import { auth } from "@buzz/auth";
 import { db, resumes } from "@buzz/db";
@@ -43,9 +44,17 @@ export async function GET() {
     return jsonError("Sign in to download your resume.", 401);
   }
 
-  const row = await db.query.resumes.findFirst({
-    where: eq(resumes.userId, session.user.id),
-  });
+  let row;
+  try {
+    row = await db.query.resumes.findFirst({
+      where: eq(resumes.userId, session.user.id),
+    });
+  } catch (error) {
+    if (isUndefinedTable(error)) {
+      return jsonError("Resume not found.", 404);
+    }
+    throw error;
+  }
 
   if (!row) {
     return jsonError("Resume not found.", 404);
@@ -85,26 +94,33 @@ export async function POST(req: NextRequest) {
   }
 
   const now = new Date();
-  await db
-    .insert(resumes)
-    .values({
-      userId: session.user.id,
-      fileName: parsed.fileName,
-      mimeType: parsed.mimeType,
-      byteSize: parsed.byteSize,
-      fileBytes: parsed.fileBytes,
-      uploadedAt: now,
-    })
-    .onConflictDoUpdate({
-      target: resumes.userId,
-      set: {
+  try {
+    await db
+      .insert(resumes)
+      .values({
+        userId: session.user.id,
         fileName: parsed.fileName,
         mimeType: parsed.mimeType,
         byteSize: parsed.byteSize,
         fileBytes: parsed.fileBytes,
         uploadedAt: now,
-      },
-    });
+      })
+      .onConflictDoUpdate({
+        target: resumes.userId,
+        set: {
+          fileName: parsed.fileName,
+          mimeType: parsed.mimeType,
+          byteSize: parsed.byteSize,
+          fileBytes: parsed.fileBytes,
+          uploadedAt: now,
+        },
+      });
+  } catch (error) {
+    if (isUndefinedTable(error)) {
+      return jsonError("Resume storage is not ready yet.", 503);
+    }
+    throw error;
+  }
 
   return Response.json({
     fileName: parsed.fileName,

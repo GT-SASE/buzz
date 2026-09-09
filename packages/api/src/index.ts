@@ -8,3 +8,4 @@ export {
   RESUME_MIME,
 } from "./resume";
 export { takeToken, RESUME_UPLOAD_LIMIT } from "./rate-limit";
+export { isUndefinedTable } from "./pg-errors";

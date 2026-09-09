@@ -3,6 +3,7 @@ import { and, asc, count, desc, eq, gte, isNull } from "drizzle-orm";
 import { z } from "zod";
 
 import { asDate, asInt, totalsColumns } from "../aggregates";
+import { pointsForArrival } from "../check-in-points";
 import { notFound } from "../errors";
 import { isUniqueViolation } from "../pg-errors";
 import {
@@ -34,6 +35,24 @@ const TWO_YEARS_MS = 2 * 365.25 * 24 * 60 * 60 * 1000;
  */
 const CODE_ALPHABET = "23456789ABCDEFGHJKMNPQRSTVWXYZ";
 const CODE_LENGTH = 8;
+
+/**
+ * How many people are already in, then the spicy stamp. Called under the event
+ * row lock so two phones cannot both read "first".
+ */
+async function nextArrivalPoints(
+  tx: {
+    select: (typeof import("@buzz/db").db)["select"];
+  },
+  eventId: string,
+  base: number,
+) {
+  const [row] = await tx
+    .select({ prior: count() })
+    .from(eventCheckIns)
+    .where(eq(eventCheckIns.eventId, eventId));
+  return pointsForArrival(base, asInt(row?.prior));
+}
 
 function newCheckInCode() {
   const alphabetLen = CODE_ALPHABET.length;
@@ -460,7 +479,11 @@ export const eventRouter = createTRPCRouter({
             eventId: locked.id,
             userId: member.id,
             method: "manual",
-            pointsEarned: locked.pointsValue,
+            pointsEarned: await nextArrivalPoints(
+              tx,
+              locked.id,
+              locked.pointsValue,
+            ),
             actedByUserId: ctx.session.user.id,
           });
           // Honest override: officers may exceed capacity, and the counter
@@ -524,7 +547,11 @@ export const eventRouter = createTRPCRouter({
             eventId: locked.id,
             userId: officer.id,
             method: "manual",
-            pointsEarned: locked.pointsValue,
+            pointsEarned: await nextArrivalPoints(
+              tx,
+              locked.id,
+              locked.pointsValue,
+            ),
             actedByUserId: ctx.session.user.id,
           });
           await tx
@@ -652,7 +679,11 @@ export const eventRouter = createTRPCRouter({
           assertCheckInWindow(locked.startsAt);
 
           eventTitle = locked.title;
-          pointsEarned = locked.pointsValue;
+          pointsEarned = await nextArrivalPoints(
+            tx,
+            locked.id,
+            locked.pointsValue,
+          );
 
           try {
             // pointsEarned is snapshotted here and never recomputed. Re-pricing
@@ -661,7 +692,7 @@ export const eventRouter = createTRPCRouter({
               eventId: locked.id,
               userId,
               method: "code",
-              pointsEarned: locked.pointsValue,
+              pointsEarned,
             });
           } catch (error) {
             // The unique constraint is the arbiter of a double tap, not a read
@@ -697,7 +728,11 @@ export const eventRouter = createTRPCRouter({
           assertCheckInWindow(locked.startsAt);
 
           eventTitle = locked.title;
-          pointsEarned = locked.pointsValue;
+          pointsEarned = await nextArrivalPoints(
+            tx,
+            locked.id,
+            locked.pointsValue,
+          );
 
           const existing = await tx.query.eventCheckIns.findFirst({
             where: and(
@@ -731,7 +766,7 @@ export const eventRouter = createTRPCRouter({
               eventId: locked.id,
               userId,
               method: "code",
-              pointsEarned: locked.pointsValue,
+              pointsEarned,
             });
           } catch (error) {
             if (isUniqueViolation(error)) {

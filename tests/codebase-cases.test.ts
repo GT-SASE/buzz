@@ -23,7 +23,10 @@ import {
 import { breadcrumbSchema, eventSchema, jsonLd, pageMetadata } from "~/lib/seo";
 import { cn } from "~/lib/utils";
 import { asDate, asInt } from "../packages/api/src/aggregates";
-import { isUniqueViolation } from "../packages/api/src/pg-errors";
+import {
+  isUniqueViolation,
+  isUndefinedTable,
+} from "../packages/api/src/pg-errors";
 import { resetRateLimits, takeToken } from "../packages/api/src/rate-limit";
 
 /**
@@ -389,9 +392,10 @@ function buildCases(): Case[] {
     ).toBe(false),
   );
   for (const code of ["23503", "42P01", "42703", "28000", "40001"]) {
-    add(`pg/other/${code}`, () =>
-      expect(isUniqueViolation({ code })).toBe(false),
-    );
+    add(`pg/other/${code}`, () => {
+      expect(isUniqueViolation({ code })).toBe(false);
+      expect(isUndefinedTable({ code })).toBe(code === "42P01");
+    });
   }
   add("pg/null", () => expect(isUniqueViolation(null)).toBe(false));
   add("pg/undefined", () => expect(isUniqueViolation(undefined)).toBe(false));

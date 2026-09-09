@@ -241,7 +241,7 @@ function ApplicationBody({
             </p>
             <ol className="text-ink text-body-sm mt-2 grid list-decimal gap-2 pl-5">
               {block.questions.map((question) => (
-                <li key={question}>{question}</li>
+                <li key={question.id}>{question.prompt}</li>
               ))}
             </ol>
           </div>

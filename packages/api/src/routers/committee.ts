@@ -12,7 +12,7 @@ import {
   isCommitteeCycleOpen,
 } from "../committee-cycle";
 import { notFound } from "../errors";
-import { isUniqueViolation } from "../pg-errors";
+import { isUndefinedTable, isUniqueViolation } from "../pg-errors";
 import {
   assertRateLimit,
   COMMITTEE_APPLY_LIMIT,
@@ -62,12 +62,18 @@ const applicationSelect = {
 export const committeeRouter = createTRPCRouter({
   mine: protectedProcedure.query(async ({ ctx }) => {
     const now = new Date();
-    const row = await ctx.db.query.committeeApplications.findFirst({
-      where: and(
-        eq(committeeApplications.userId, ctx.session.user.id),
-        eq(committeeApplications.cycle, COMMITTEE_CYCLE_ID),
-      ),
-    });
+    let row;
+    try {
+      row = await ctx.db.query.committeeApplications.findFirst({
+        where: and(
+          eq(committeeApplications.userId, ctx.session.user.id),
+          eq(committeeApplications.cycle, COMMITTEE_CYCLE_ID),
+        ),
+      });
+    } catch (error) {
+      if (!isUndefinedTable(error)) throw error;
+      row = undefined;
+    }
 
     const application = row
       ? (({ officerNotes: _notes, ...safe }) => safe)(row)
@@ -171,17 +177,22 @@ export const committeeRouter = createTRPCRouter({
   }),
 
   list: adminProcedure.query(async ({ ctx }) => {
-    return ctx.db
-      .select({
-        ...applicationSelect,
-        officerNotes: committeeApplications.officerNotes,
-        name: users.name,
-        email: users.email,
-      })
-      .from(committeeApplications)
-      .innerJoin(users, eq(users.id, committeeApplications.userId))
-      .where(eq(committeeApplications.cycle, COMMITTEE_CYCLE_ID))
-      .orderBy(desc(committeeApplications.submittedAt));
+    try {
+      return await ctx.db
+        .select({
+          ...applicationSelect,
+          officerNotes: committeeApplications.officerNotes,
+          name: users.name,
+          email: users.email,
+        })
+        .from(committeeApplications)
+        .innerJoin(users, eq(users.id, committeeApplications.userId))
+        .where(eq(committeeApplications.cycle, COMMITTEE_CYCLE_ID))
+        .orderBy(desc(committeeApplications.submittedAt));
+    } catch (error) {
+      if (isUndefinedTable(error)) return [];
+      throw error;
+    }
   }),
 
   byId: adminProcedure

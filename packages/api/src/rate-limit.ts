@@ -125,3 +125,8 @@ export const RESUME_UPLOAD_LIMIT = {
   limit: 8,
   intervalMs: 60_000,
 } as const;
+
+export const MAIL_TEST_LIMIT = {
+  limit: 8,
+  intervalMs: 60_000,
+} as const;

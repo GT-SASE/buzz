@@ -1,7 +1,11 @@
 import { eq } from "drizzle-orm";
 import type { NextRequest } from "next/server";
 
-import { decodeResumeBytes, resumeDownloadHeaders } from "@buzz/api";
+import {
+  decodeResumeBytes,
+  isUndefinedTable,
+  resumeDownloadHeaders,
+} from "@buzz/api";
 import { auth } from "@buzz/auth";
 import { db, resumes } from "@buzz/db";
 
@@ -29,9 +33,17 @@ export async function GET(
     return jsonError("Resume not found.", 404);
   }
 
-  const row = await db.query.resumes.findFirst({
-    where: eq(resumes.userId, id),
-  });
+  let row;
+  try {
+    row = await db.query.resumes.findFirst({
+      where: eq(resumes.userId, id),
+    });
+  } catch (error) {
+    if (isUndefinedTable(error)) {
+      return jsonError("Resume not found.", 404);
+    }
+    throw error;
+  }
 
   if (!row) {
     return jsonError("Resume not found.", 404);

@@ -841,10 +841,9 @@ describe("member.byId", () => {
 // ------------------------------------------------------- member.leaderboard
 
 /**
- * A ranking the database would produce: two members tied on 30 points share
- * rank 2, and the next member is rank 4 rather than 3. Every row carries the
- * columns a leak would come from, so a query that selects them shows up in
- * the privacy test rather than passing for want of the data.
+ * A ranking the database would produce after ordering by points, then
+ * earliest check-in. Equal points stay equal; places are 1, 2, 3 so the
+ * board is not a row of ones.
  */
 const RANKED = [
   {
@@ -872,7 +871,7 @@ const RANKED = [
     name: "Mary Jackson",
     email: "mary@gatech.edu",
     image: null,
-    rank: 2,
+    rank: 3,
     totalPoints: 30,
     totalEvents: 4,
     isYou: false,
@@ -917,23 +916,32 @@ function leaderboardDb(ranked: Record<string, unknown>[]) {
 
 describe("member.leaderboard", () => {
   /**
-   * Competition ranks in the router (ties share a place; the next place is
-   * skipped). Ordering is Postgres; ranking is applied after the fetch so we
-   * do not need window-function SQL.
+   * Places are 1, 2, 3 even when two members have the same points. First
+   * check-in is only a sort key — it does not add points.
    */
-  it("shares a rank between ties and skips the rank they used up", async () => {
+  it("gives each place once when points are tied", async () => {
     const { db, captures } = leaderboardDb(RANKED);
     const result = await createCaller(memberCtx(db)).member.leaderboard({
       limit: 4,
     });
 
-    expect(result.top.map((row) => row.rank)).toEqual([1, 2, 2, 4]);
+    expect(result.top.map((row) => row.rank)).toEqual([1, 2, 3, 4]);
+    expect(result.top[1]?.totalPoints).toBe(result.top[2]?.totalPoints);
 
-    // No window function in the query — ranks are derived from the ordered rows.
     const ranking = fieldTexts(captures).filter((text) =>
       /rank\(\)|row_number\(\)/i.test(text),
     );
     expect(ranking).toEqual([]);
+
+    const board = captures.find((capture) =>
+      capture.joins.some(
+        (join) => tableName(join.table) === getTableName(eventCheckIns),
+      ),
+    );
+    expect(board).toBeDefined();
+    const order = board!.orderBy.map(sqlText).join(", ");
+    expect(order).toMatch(/points/i);
+    expect(order).toMatch(/checkedInAt/i);
   });
 
   it("reports no standing for a member who has never checked in", async () => {
@@ -970,7 +978,7 @@ describe("member.leaderboard", () => {
 
     expect(result.top).toHaveLength(3);
     expect(result.top.map((row) => row.name)).not.toContain(CALLER_ROW.name);
-    // Competition rank over the stub set: 40,30,30,20,6 → places 1,2,2,4,5.
+    // Ordered 40, 30, 30, 20, 6 → places 1, 2, 3, 4, 5.
     expect(result.you).toEqual({ rank: 5, totalPoints: 6, totalEvents: 2 });
   });
 

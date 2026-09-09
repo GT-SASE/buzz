@@ -7,6 +7,7 @@ import { Section } from "~/components/site";
 import { HydrateClient, api } from "~/trpc/server";
 import { Attendance } from "./attendance";
 import { AdminEvents } from "./admin-events";
+import { ChapterMailTest } from "./chapter-mail-test";
 import AdminLoading from "./loading";
 import { Overview } from "./overview";
 
@@ -25,6 +26,7 @@ async function AdminEventsBody() {
     api.chapter.overview(),
     api.chapter.attendance({ period: "semester" }),
     api.event.listAll({ limit: 200, offset: 0 }),
+    api.mail.configured(),
   ]);
 
   return (
@@ -36,6 +38,10 @@ async function AdminEventsBody() {
       />
 
       <Overview />
+
+      <Section size="sm">
+        <ChapterMailTest />
+      </Section>
 
       <Attendance />
 
