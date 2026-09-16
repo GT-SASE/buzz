@@ -106,7 +106,7 @@ describe("tierFor", () => {
     expect(() => tierFor(-5)).not.toThrow();
     expect(() => tierFor(Number.NaN)).not.toThrow();
     expect(() => tierFor(-Number.MAX_SAFE_INTEGER)).not.toThrow();
-    expect(tierFor(-5).name).toBe(tiers[0]!.name);
+    expect(tierFor(-5).name).toBe(tiers[0].name);
   });
 
   /**

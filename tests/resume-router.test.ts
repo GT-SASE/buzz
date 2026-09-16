@@ -66,7 +66,10 @@ describe("resume.mine", () => {
     const db = {
       query: {
         resumes: {
-          findFirst: () => Promise.reject({ code: "42P01" }),
+          findFirst: () =>
+            Promise.reject(
+              Object.assign(new Error("undefined_table"), { code: "42P01" }),
+            ),
         },
       },
     };

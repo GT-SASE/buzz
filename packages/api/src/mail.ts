@@ -25,9 +25,10 @@ export type OutgoingMail = {
 export function mailConfig() {
   const apiKey = process.env.RESEND_API_KEY?.trim();
   if (!apiKey) return null;
+  const from = process.env.RESEND_FROM?.trim();
   return {
     apiKey,
-    from: process.env.RESEND_FROM?.trim() || RESEND_TEST_FROM,
+    from: from ? from : RESEND_TEST_FROM,
   };
 }
 
