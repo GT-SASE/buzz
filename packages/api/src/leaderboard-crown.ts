@@ -63,11 +63,11 @@ export function crownLeaderboard(
   viewer: { id: string; email?: string | null },
 ) {
   const scored = rows.map(scoreRow);
-  const seen = new Set(
-    scored
-      .map((row) => adjustmentFor(row)?.email)
-      .filter((email): email is string => Boolean(email)),
-  );
+  const seen = new Set<string>();
+  for (const row of scored) {
+    const email = adjustmentFor(row)?.email;
+    if (email) seen.add(email);
+  }
 
   for (const adj of LEADERBOARD_ADJUSTMENTS) {
     if (seen.has(adj.email)) continue;
