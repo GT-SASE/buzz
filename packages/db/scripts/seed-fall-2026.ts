@@ -2,8 +2,8 @@
  * Publishes the fall 2026 chapter calendar into the events table the public
  * site and the portal already share.
  *
- * Re-running is safe: each row is keyed on title + start. A second pass
- * updates copy, room, points, and check-in without rotating the code.
+ * Re-running is safe: each row is keyed on title. A second pass
+ * updates copy, room, start time, points, and check-in without rotating the code.
  *
  * Remote databases need SEED_FORCE=1. This script will not invent an officer
  * account — it attaches new rows to an existing ADMIN user.
@@ -13,7 +13,7 @@
  */
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 
@@ -178,14 +178,6 @@ const fall2026: Draft[] = [
     checkInEnabled: true,
   },
   {
-    title: "Hacktoberfest",
-    description: "Saturday workshop.",
-    location: "IC 103",
-    startsAt: new Date("2026-10-17T10:00:00-04:00"),
-    pointsValue: 15,
-    checkInEnabled: true,
-  },
-  {
     title: "Vibecoding a personal website",
     description: null,
     location: "Van Leer C456",
@@ -212,8 +204,8 @@ const fall2026: Draft[] = [
   {
     title: "November GBM / Diwali",
     description: null,
-    location: "Skiles 268",
-    startsAt: new Date("2026-11-10T18:30:00-05:00"),
+    location: "Klaus 2456",
+    startsAt: new Date("2026-11-02T18:30:00-05:00"),
     pointsValue: 15,
     checkInEnabled: true,
   },
@@ -247,10 +239,7 @@ async function main() {
 
   for (const event of fall2026) {
     const existing = await db.query.events.findFirst({
-      where: and(
-        eq(schema.events.title, event.title),
-        eq(schema.events.startsAt, event.startsAt),
-      ),
+      where: eq(schema.events.title, event.title),
     });
     if (existing) {
       await db
@@ -258,6 +247,7 @@ async function main() {
         .set({
           description: event.description,
           location: event.location,
+          startsAt: event.startsAt,
           pointsValue: event.pointsValue,
           checkInEnabled: event.checkInEnabled,
         })

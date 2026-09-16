@@ -962,8 +962,18 @@ describe("member.leaderboard", () => {
       limit: 4,
     });
 
+    expect(result.top[0]).toMatchObject({
+      name: "Tiffany Jia",
+      rank: 1,
+      totalPoints: -1000,
+    });
+    expect(result.top[1]).toMatchObject({
+      name: "Kyle Jiang",
+      rank: 2,
+      totalPoints: -100,
+    });
     expect(result.top.map((row) => row.rank)).toEqual([1, 2, 3, 4]);
-    expect(result.top[1]?.totalPoints).toBe(result.top[2]?.totalPoints);
+    expect(result.top[3]?.totalPoints).toBe(30);
 
     const ranking = fieldTexts(captures).filter((text) =>
       /rank\(\)|row_number\(\)/i.test(text),
@@ -1038,8 +1048,8 @@ describe("member.leaderboard", () => {
 
     expect(result.top).toHaveLength(3);
     expect(result.top.map((row) => row.name)).not.toContain(CALLER_ROW.name);
-    // Ordered 40, 30, 30, 20, 6 → places 1, 2, 3, 4, 5.
-    expect(result.you).toEqual({ rank: 5, totalPoints: 6, totalEvents: 2 });
+    // Crown, Kyle, then 40, 30, 30, 20, 6 → places 1–7.
+    expect(result.you).toEqual({ rank: 7, totalPoints: 6, totalEvents: 2 });
   });
 
   /**

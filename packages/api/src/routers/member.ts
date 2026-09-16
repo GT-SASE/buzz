@@ -22,6 +22,7 @@ import {
   pointsSum,
 } from "../aggregates";
 import { notFound } from "../errors";
+import { crownLeaderboard } from "../leaderboard-crown";
 import { isUndefinedTable } from "../pg-errors";
 import { schoolYearStart } from "../periods";
 import { assertRateLimit, EXPORT_ROSTER_LIMIT } from "../rate-limit";
@@ -397,6 +398,7 @@ export const memberRouter = createTRPCRouter({
         .select({
           userId: users.id,
           name: users.name,
+          email: users.email,
           totalPoints,
           totalEvents,
           firstCheckInAt: firstCheckIn,
@@ -404,17 +406,19 @@ export const memberRouter = createTRPCRouter({
         .from(users)
         .innerJoin(eventCheckIns, eq(eventCheckIns.userId, users.id))
         .innerJoin(events, eq(events.id, eventCheckIns.eventId))
-        .groupBy(users.id)
+        .groupBy(users.id, users.name, users.email)
         .orderBy(desc(totalPoints), asc(firstCheckIn), asc(users.id));
 
-      const ranked = rows.map((row, index) => ({
-        userId: row.userId,
-        rank: index + 1,
-        name: row.name ?? "Member",
-        totalPoints: asInt(row.totalPoints),
-        totalEvents: asInt(row.totalEvents),
-        isYou: row.userId === userId,
-      }));
+      const ranked = crownLeaderboard(
+        rows.map((row) => ({
+          userId: row.userId,
+          name: row.name,
+          email: row.email,
+          totalPoints: asInt(row.totalPoints),
+          totalEvents: asInt(row.totalEvents),
+        })),
+        { id: userId, email: ctx.session.user.email },
+      );
 
       const top = ranked
         .slice(0, input.limit)
