@@ -397,7 +397,6 @@ export const memberRouter = createTRPCRouter({
         .select({
           userId: users.id,
           name: users.name,
-          email: users.email,
           totalPoints,
           totalEvents,
           firstCheckInAt: firstCheckIn,
@@ -405,18 +404,17 @@ export const memberRouter = createTRPCRouter({
         .from(users)
         .innerJoin(eventCheckIns, eq(eventCheckIns.userId, users.id))
         .innerJoin(events, eq(events.id, eventCheckIns.eventId))
-        .groupBy(users.id, users.name, users.email)
+        .groupBy(users.id)
         .orderBy(desc(totalPoints), asc(firstCheckIn), asc(users.id));
 
       const ranked = crownLeaderboard(
         rows.map((row) => ({
           userId: row.userId,
           name: row.name,
-          email: row.email,
           totalPoints: asInt(row.totalPoints),
           totalEvents: asInt(row.totalEvents),
         })),
-        { id: userId, email: ctx.session.user.email },
+        userId,
       );
 
       const top = ranked
