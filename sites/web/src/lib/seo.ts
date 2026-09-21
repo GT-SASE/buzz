@@ -59,7 +59,7 @@ export function organizationSchema() {
     "@type": "CollegeOrStudentOrganization",
     "@id": `${site.url}/#organization`,
     name: site.name,
-    alternateName: [site.shortName, site.tagline],
+    alternateName: ["GT SASE", site.name, site.shortName, site.tagline],
     url: site.url,
     email: site.email,
     description: site.description,
