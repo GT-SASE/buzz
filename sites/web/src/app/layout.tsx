@@ -12,12 +12,14 @@ export const metadata: Metadata = {
   // Makes every relative canonical/OG URL in a page's metadata absolute.
   metadataBase: new URL(site.url),
   title: {
-    default: `${site.name} — ${site.tagline}`,
-    template: `%s · ${site.shortName}`,
+    default: `GT SASE — SASE at Georgia Tech`,
+    template: `%s · GT SASE`,
   },
-  description: site.description,
-  applicationName: site.name,
+  description: `GT SASE (SASE at Georgia Tech) — ${site.description.replace("The Georgia Tech chapter of the Society of Asian Scientists and Engineers — ", "")}`,
+  applicationName: "GT SASE",
   keywords: [
+    "GT SASE",
+    "SASE at Georgia Tech",
     site.theme,
     "SASE",
     "SASE Georgia Tech",
@@ -45,17 +47,17 @@ export const metadata: Metadata = {
     },
   },
   openGraph: {
-    title: `${site.name} — ${site.tagline}`,
-    description: site.description,
+    title: `GT SASE — SASE at Georgia Tech`,
+    description: `GT SASE (SASE at Georgia Tech) — ${site.description.replace("The Georgia Tech chapter of the Society of Asian Scientists and Engineers — ", "")}`,
     url: site.url,
-    siteName: site.name,
+    siteName: "GT SASE",
     locale: "en_US",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: `${site.name} — ${site.tagline}`,
-    description: site.description,
+    title: `GT SASE — SASE at Georgia Tech`,
+    description: `GT SASE (SASE at Georgia Tech) — ${site.description.replace("The Georgia Tech chapter of the Society of Asian Scientists and Engineers — ", "")}`,
   },
 };
 
