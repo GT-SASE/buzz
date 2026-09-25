@@ -121,6 +121,11 @@ describe("committee.mine", () => {
 });
 
 describe("committee.submit", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(COMMITTEE_CYCLE_CLOSES_AT.getTime() - 24 * 60 * 60 * 1000);
+  });
+
   it("inserts a first-time treasury application", async () => {
     const inserted: unknown[] = [];
     const db = {

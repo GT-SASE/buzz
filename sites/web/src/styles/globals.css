@@ -305,7 +305,7 @@
       .reveal {
         animation: rise linear both;
         animation-timeline: view();
-        animation-range: entry 0% cover 24%;
+        animation-range: entry 0% entry 10rem;
       }
 
       /* Opacity only: these grids sit inside a `.reveal` block that already
@@ -313,22 +313,22 @@
       .stagger > * {
         animation: fade-in linear both;
         animation-timeline: view();
-        animation-range: entry 0% cover 20%;
+        animation-range: entry 0% entry 8rem;
       }
       .stagger > *:nth-child(2) {
-        animation-range: entry 5% cover 25%;
+        animation-range: entry 1rem entry 9rem;
       }
       .stagger > *:nth-child(3) {
-        animation-range: entry 10% cover 30%;
+        animation-range: entry 2rem entry 10rem;
       }
       .stagger > *:nth-child(4) {
-        animation-range: entry 13% cover 33%;
+        animation-range: entry 3rem entry 11rem;
       }
       .stagger > *:nth-child(5) {
-        animation-range: entry 16% cover 36%;
+        animation-range: entry 4rem entry 12rem;
       }
       .stagger > *:nth-child(n + 6) {
-        animation-range: entry 19% cover 39%;
+        animation-range: entry 5rem entry 13rem;
       }
 
       .line-mask > span {

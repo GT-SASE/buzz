@@ -458,7 +458,8 @@ describe.skipIf(!process.env.DATABASE_URL)("check-in", () => {
         const admitted = await callerFor(gateMember).event.checkIn({
           code: code.capped,
         });
-        expect(admitted.pointsEarned).toBe(15);
+        // 10 base, +5 for first in, +3 streak from the 23-hour-old event.
+        expect(admitted.pointsEarned).toBe(18);
 
         expect(
           await errorCode(

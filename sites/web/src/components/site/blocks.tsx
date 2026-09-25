@@ -25,9 +25,7 @@ export function BoardRow({ member }: { member: BoardMember }) {
           </h3>
           <p className="text-ink-muted text-body-sm mt-1 flex flex-wrap items-center gap-2">
             {member.name ? (
-              <>
-                {member.name} · {member.major}
-              </>
+              [member.name, member.major].filter(Boolean).join(" · ")
             ) : (
               <>
                 {member.major}

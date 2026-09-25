@@ -52,8 +52,7 @@ function logTRPCError({
   path: string | undefined;
   error: { code: string; message: string; cause?: unknown; stack?: string };
   ctx:
-    | { session?: { user?: { id?: string; role?: string } } | null }
-    | undefined;
+    { session?: { user?: { id?: string; role?: string } } | null } | undefined;
 }) {
   const expected = EXPECTED_CODES.has(error.code);
   const cause = error.cause;

@@ -69,7 +69,7 @@ export function KinCard({
             </p>
           </div>
 
-          <Badge className="text-navy max-w-full shrink border-transparent bg-gold-bright px-4 py-1.5 text-xs font-bold tracking-[0.12em] whitespace-normal uppercase sm:tracking-[0.18em]">
+          <Badge className="text-navy bg-gold-bright max-w-full shrink border-transparent px-4 py-1.5 text-xs font-bold tracking-[0.12em] whitespace-normal uppercase sm:tracking-[0.18em]">
             {tier.name}
           </Badge>
         </CardFooter>

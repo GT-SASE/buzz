@@ -81,9 +81,7 @@ describe("RosterMetrics", () => {
     expect(
       screen.getByText("55% of the roster · 12 in the last 30 days"),
     ).toBeTruthy();
-    expect(
-      screen.getByText("first check-in in the last 30 days"),
-    ).toBeTruthy();
+    expect(screen.getByText("first check-in in the last 30 days")).toBeTruthy();
     // One decimal, so the figure does not change shape week to week.
     expect(screen.getByText("20.0")).toBeTruthy();
     expect(screen.getByText("10 never checked in")).toBeTruthy();

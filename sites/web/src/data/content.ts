@@ -6,7 +6,7 @@
  * database the officer tools write to, via `~/data/chapter-events`, so this
  * module is pure data again.
  *
- * Board roster and contact-facing facts are taken from the chapter's public
+ * Contact-facing facts are taken from the chapter's public
  * site (sites.gatech.edu/gtsase). Sponsors stay empty until partners sign.
  */
 
@@ -142,15 +142,12 @@ export type BoardMember = {
   /** Omitted while the seat is unannounced — render the role on its own. */
   name?: string;
   role: string;
-  major: string;
+  major?: string;
   /** Per-role aliases when the chapter creates them. */
   email?: string;
 };
 
-/**
- * Current executive board as published on sites.gatech.edu/gtsase/about-us.
- * Co-roles share a title; the UI keys rows by name.
- */
+/** 2026–2027 executive board. Co-roles share a title; the UI keys rows by name. */
 export const board: BoardMember[] = [
   {
     name: "Alex Liu",
@@ -159,39 +156,19 @@ export const board: BoardMember[] = [
   },
   {
     name: "Aamogh Sawant",
-    role: "Vice President",
+    role: "Internal Vice President",
     major: "B.S. Computer Science 2027",
-  },
-  {
-    name: "Kim Thai",
-    role: "External Vice President",
-    major: "B.S. Electrical Engineering 2027",
-  },
-  {
-    name: "Julia Moy",
-    role: "Secretary",
-    major: "B.S. Materials Science and Engineering 2028",
   },
   {
     name: "Nathan Pothuganti",
-    role: "Secretary",
+    role: "External Vice President",
     major: "B.S. Computer Science 2028",
   },
-  {
-    name: "Akhil Gopal",
-    role: "Event Co-Director",
-    major: "B.S. Computer Science and Math 2028",
-  },
-  {
-    name: "Iris Song",
-    role: "Event Co-Director",
-    major: "B.S. Computer Engineering 2027",
-  },
-  {
-    name: "Kevin Zhang",
-    role: "Event Co-Director",
-    major: "B.S. Computer Science 2027",
-  },
+  { name: "Karthik", role: "Secretary" },
+  { name: "Kyle", role: "Treasurer" },
+  { name: "Arianna", role: "Events Director" },
+  { name: "Adithya", role: "Events Director" },
+  { name: "Akhilesh", role: "Events Director" },
   {
     name: "Tiffany Jia",
     role: "Marketing Director",

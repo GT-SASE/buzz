@@ -167,7 +167,7 @@ function MetricsSkeleton() {
         <div className="border-hairline bg-paper/50 mt-8 rounded-xl border p-6">
           <Skeleton className="h-4 w-40" />
           <div className="mt-6 grid gap-4">
-          {[0, 1, 2, 3, 4, 5, 6, 7].map((band) => (
+            {[0, 1, 2, 3, 4, 5, 6, 7].map((band) => (
               <div key={band}>
                 <Skeleton className="h-4 w-32" />
                 <Skeleton className="mt-2 h-2.5 w-full" />

@@ -82,7 +82,10 @@ describe("tierFor", () => {
       const next = tiers[index + 1]!;
       const width = next.min - floor.min;
       expect(tierFor(floor.min).progress).toBe(0);
-      expect(tierFor(next.min - 1).progress).toBeCloseTo((width - 1) / width, 10);
+      expect(tierFor(next.min - 1).progress).toBeCloseTo(
+        (width - 1) / width,
+        10,
+      );
     }
   });
 
@@ -253,4 +256,3 @@ describe("codeFromScan", () => {
     expect(CHECK_IN_QR_RENDER.margin).toBeGreaterThanOrEqual(4);
   });
 });
-
