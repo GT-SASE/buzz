@@ -97,13 +97,16 @@ describe.skipIf(!HAS_DB)("a room scanning at once", () => {
     }
   }, 60_000);
 
-  async function makeEvent(maxCheckIns: number | null) {
+  async function makeEvent(
+    maxCheckIns: number | null,
+    startsAt = new Date(Date.now() + 3_600_000),
+  ) {
     const checkInCode = code();
     const [row] = await db
       .insert(events)
       .values({
         title: `${TAG} event`,
-        startsAt: new Date(Date.now() + 3_600_000),
+        startsAt,
         pointsValue: 7,
         checkInCode,
         maxCheckIns,
@@ -193,7 +196,8 @@ describe.skipIf(!HAS_DB)("a room scanning at once", () => {
   }, 120_000);
 
   it("credits early arrivals a bonus and everyone else the event value, under load", async () => {
-    const event = await makeEvent(null);
+    // Starts before this file's other events, so nobody carries a streak into it.
+    const event = await makeEvent(null, new Date(Date.now() - 3_600_000));
 
     await Promise.all(
       memberIds.map((id) =>
