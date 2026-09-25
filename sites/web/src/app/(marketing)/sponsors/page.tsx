@@ -2,11 +2,8 @@ import { Check } from "lucide-react";
 
 import { Button, Card, Eyebrow, PageHeader, Section } from "~/components/site";
 import { JsonLd } from "~/components/site/json-ld";
-import { Badge } from "~/components/ui/badge";
 import {
-  CardAction,
   CardContent,
-  CardDescription,
   CardFooter,
   CardHeader,
   CardTitle,
@@ -86,17 +83,12 @@ export default function SponsorsPage() {
                   <CardTitle className="text-eyebrow tracking-masthead text-gold-ink font-semibold uppercase">
                     {tier.tier}
                   </CardTitle>
-                  <CardAction>
-                    <Badge
-                      variant={i === 0 ? "default" : "secondary"}
-                      className="font-display text-body-sm px-3 py-1 font-bold"
-                    >
-                      {tier.amount}
-                    </Badge>
-                  </CardAction>
-                  <CardDescription>
-                    {tier.perks.length} inclusions
-                  </CardDescription>
+                  <p className="font-display text-navy text-h2 mt-3 font-bold tracking-tight">
+                    {tier.amount}
+                  </p>
+                  <p className="text-eyebrow tracking-caps text-ink-muted border-hairline mt-4 border-t pt-4 font-semibold uppercase">
+                    Includes
+                  </p>
                 </CardHeader>
                 <CardContent className="flex-1">
                   <ul
@@ -117,7 +109,8 @@ export default function SponsorsPage() {
                 <CardFooter>
                   <Button
                     href={`mailto:${site.email}?subject=${encodeURIComponent(`${tier.tier} tier sponsorship`)}`}
-                    variant="outline"
+                    variant={i === 0 ? "primary" : "outline"}
+                    className={i === 0 ? "w-full justify-center" : undefined}
                   >
                     Start with {tier.tier}
                   </Button>
