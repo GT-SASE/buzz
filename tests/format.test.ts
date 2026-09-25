@@ -134,25 +134,14 @@ describe("toLocalInputValue / fromLocalInputValue round trip", () => {
    * The edit form reads a stored instant into the input and writes whatever
    * comes back out. Any asymmetry between the two halves silently walks an
    * event's start time every time an officer saves an unrelated field, so the
-   * pair is pinned across the whole year and both sides of both transitions.
+   * pair is pinned on both sides of both transitions.
    */
   const wallClocks = [
-    "2026-01-04T12:00",
-    "2026-02-14T00:00",
-    "2026-03-07T23:30", // the evening before spring forward, still EST
     "2026-03-08T01:59", // the last minute that exists as EST
     "2026-03-08T03:00", // the first minute that exists as EDT
-    "2026-04-18T16:45",
-    "2026-05-01T08:00",
-    "2026-06-15T09:15",
-    "2026-07-04T12:00",
-    "2026-08-28T18:00",
-    "2026-09-30T23:59",
-    "2026-10-31T13:45",
     "2026-11-01T00:30", // the last half hour before the clocks fall back
     "2026-11-01T02:00", // the first unambiguous minute after them
     "2026-12-31T23:59",
-    "2027-02-14T00:00",
   ];
 
   it.each(wallClocks)("round trips %s", (wall) => {

@@ -48,13 +48,7 @@ export function MentorshipSignup({ name }: { name: string }) {
   return <MentorshipSignupForm name={name} row={mine.data ?? null} />;
 }
 
-function MentorshipSignupForm({
-  name,
-  row,
-}: {
-  name: string;
-  row: Signup;
-}) {
+function MentorshipSignupForm({ name, row }: { name: string; row: Signup }) {
   const utils = api.useUtils();
   const [role, setRole] = useState<"mentor" | "mentee">(row?.role ?? "mentee");
   const [note, setNote] = useState(row?.note ?? "");

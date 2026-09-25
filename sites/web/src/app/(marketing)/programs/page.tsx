@@ -27,6 +27,7 @@ export default function ProgramsPage() {
       />
 
       <Section size="sm">
+        <h2 className="sr-only">Programs</h2>
         <Accordion
           type="single"
           collapsible

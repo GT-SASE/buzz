@@ -25,14 +25,14 @@ import {
 import { navCta, navGroups, site } from "~/data/site";
 import { cn } from "~/lib/utils";
 
-/** Nav rows, minus Join — the CTA is that action, and it now opens the portal. */
+/** Nav rows, minus Join — the CTA is that link. */
 const groups = navGroups.filter((group) => group.href !== "/join");
 
 /** "/events#past" -> "/events" so aria-current only marks the real route. */
 const toPath = (href: string) => href.split("#")[0];
 
 const linkBase =
-  "text-eyebrow tracking-caps relative flex items-center gap-2 px-2.5 py-3 font-semibold uppercase transition lg:px-2 xl:px-3";
+  "text-eyebrow tracking-caps relative flex items-center gap-2 px-2.5 py-3 font-semibold uppercase transition xl:px-3";
 
 export function SiteNav() {
   const [open, setOpen] = useState(false);
@@ -73,7 +73,7 @@ export function SiteNav() {
           <Wordmark tone="dark" />
         </Link>
 
-        <ul className="hidden items-center lg:flex">
+        <ul className="hidden items-center xl:flex">
           {groups.map((group) => {
             const active =
               pathname === group.href ||
@@ -152,7 +152,6 @@ export function SiteNav() {
             >
               <Link
                 href={navCta.href}
-                prefetch={false}
                 aria-current={pathname === navCta.href ? "page" : undefined}
               >
                 {navCta.label}
@@ -167,7 +166,7 @@ export function SiteNav() {
               variant="ghost"
               size="icon"
               aria-label="Open menu"
-              className="text-navy -mr-2 size-11 rounded-none lg:hidden"
+              className="text-navy -mr-2 size-11 rounded-none xl:hidden"
             >
               <Menu className="size-6" />
             </Button>
@@ -198,7 +197,7 @@ export function SiteNav() {
               asChild
               className="text-eyebrow tracking-caps bg-navy hover:bg-navy-deep h-auto w-full rounded-md px-6 py-4 font-semibold text-white uppercase"
             >
-              <Link href={navCta.href} prefetch={false}>
+              <Link href={navCta.href} onClick={() => setOpen(false)}>
                 {navCta.label}
               </Link>
             </Button>
@@ -208,6 +207,7 @@ export function SiteNav() {
                 <div key={group.href} className="border-hairline border-b py-3">
                   <Link
                     href={group.href}
+                    onClick={() => setOpen(false)}
                     aria-current={pathname === group.href ? "page" : undefined}
                     className="font-display text-navy text-h3 block py-3 font-bold"
                   >
@@ -219,6 +219,7 @@ export function SiteNav() {
                         <li key={item.href}>
                           <Link
                             href={item.href}
+                            onClick={() => setOpen(false)}
                             aria-current={
                               toPath(item.href) === pathname &&
                               !item.href.includes("#")

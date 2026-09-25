@@ -9,10 +9,7 @@ type BoardRow = {
   totalEvents: number;
 };
 
-export function crownLeaderboard(
-  rows: BoardRow[],
-  viewerId: string,
-) {
+export function crownLeaderboard(rows: BoardRow[], viewerId: string) {
   const named = rows.map((row) => ({
     userId: row.userId,
     name: row.name ?? "Member",

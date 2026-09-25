@@ -35,7 +35,7 @@ import {
   stats,
 } from "~/data/content";
 import { galleryPhotos, homePhotos } from "~/data/photos-home";
-import { site } from "~/data/site";
+import { discord, site } from "~/data/site";
 import { pageMetadata } from "~/lib/seo";
 
 // The hero and calendar band read the live event table, so a prerendered build
@@ -323,7 +323,7 @@ export default async function Home() {
             <p className="text-ink-muted text-body">
               {nextUp
                 ? "Nothing else is on the books past the meeting above yet. Instagram gets new dates first."
-                : "The calendar for next semester goes up before classes start. Instagram gets it first."}
+                : "No dates are posted right now. Instagram gets new ones first."}
             </p>
             <div className="mt-5">
               <TextLink href="/events#past">Past events</TextLink>
@@ -403,6 +403,16 @@ export default async function Home() {
             >
               Ask us anything
             </Button>
+            {discord && (
+              <Button
+                href={discord.href}
+                variant="outline"
+                external
+                className="w-full justify-center sm:w-auto"
+              >
+                Join the {discord.label}
+              </Button>
+            )}
           </div>
         </div>
       </section>

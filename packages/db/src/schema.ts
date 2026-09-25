@@ -319,11 +319,7 @@ export const mentorshipEnrollmentsRelations = relations(
 
 export type CommitteeId = "events" | "marketing" | "treasury";
 export type CommitteeApplicationStatus =
-  | "submitted"
-  | "interviewing"
-  | "accepted"
-  | "declined"
-  | "withdrawn";
+  "submitted" | "interviewing" | "accepted" | "declined" | "withdrawn";
 
 /**
  * One committee application per member per recruiting cycle.
