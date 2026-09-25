@@ -4,6 +4,9 @@ import { TextLink } from "~/components/site/actions";
 import { ThemeBadge, Wordmark } from "~/components/site/brand";
 import { navGroups, site } from "~/data/site";
 
+/** Discord already sits under Connect as the invite itself. */
+const explore = navGroups.filter((group) => group.href !== "/discord");
+
 // On this ground the near-black --rule would be invisible, so the column
 // weight has to come from white instead.
 const column = "border-t-2 border-white/25 pt-6";
@@ -39,7 +42,7 @@ export function SiteFooter() {
           <div className={column}>
             <h2 className={columnLabel}>Explore</h2>
             <ul className="text-body-sm mt-2 divide-y divide-white/10">
-              {navGroups.map((group) => (
+              {explore.map((group) => (
                 <li key={group.href}>
                   <Link href={group.href} className={footerLink}>
                     {group.label}
@@ -88,12 +91,8 @@ export function SiteFooter() {
         <div className="text-eyebrow tracking-caps mt-16 flex flex-col gap-4 border-t-2 border-white/20 pt-8 text-white/50 uppercase lg:flex-row lg:items-center lg:justify-between">
           <p>{site.name}</p>
           <p>Georgia Institute of Technology · Atlanta, GA</p>
-          {/* No prefetch: /portal is dynamic and reads the session, so
-              prefetching would fire an authenticated server render every time
-              the footer scrolled into view, on every page. */}
           <Link
-            href="/portal"
-            prefetch={false}
+            href="/join"
             className="inline-flex min-h-11 items-center py-3 font-semibold transition hover:text-white"
           >
             Join SASE

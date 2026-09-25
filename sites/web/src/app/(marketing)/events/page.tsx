@@ -10,7 +10,7 @@ import { JsonLd } from "~/components/site/json-ld";
 import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert";
 import { Badge } from "~/components/ui/badge";
 import { getChapterEvents, type PublicEvent } from "~/data/chapter-events";
-import { instagram } from "~/data/site";
+import { discord, instagram } from "~/data/site";
 import { breadcrumbSchema, eventSchema, pageMetadata } from "~/lib/seo";
 
 // Hourly: an event published in the portal appears without a deploy.
@@ -62,9 +62,9 @@ function ArchiveRow({ event }: { event: PublicEvent }) {
         )}
       </div>
       <div className="min-w-0">
-        <h3 className="font-display text-navy text-h3 font-bold">
+        <h4 className="font-display text-navy text-h3 font-bold">
           {event.title}
-        </h3>
+        </h4>
         {event.description && (
           <p className="text-ink-muted text-body mt-2 leading-relaxed break-words">
             {event.description}
@@ -118,13 +118,17 @@ export default async function EventsPage() {
         ) : (
           <EmptyState title="Nothing scheduled yet.">
             <p>
-              The calendar is empty on purpose — dates go up here as soon as the
-              board has rooms confirmed. Announcements go out on the feeds
-              first.
+              Dates go up here as soon as the board has rooms confirmed.
+              Announcements go out on the feeds first.
             </p>
             {instagram && (
               <TextLink href={instagram.href} external>
                 Follow on {instagram.label}
+              </TextLink>
+            )}
+            {discord && (
+              <TextLink href={discord.href} external>
+                Join the {discord.label}
               </TextLink>
             )}
           </EmptyState>
@@ -182,6 +186,11 @@ export default async function EventsPage() {
           {instagram && (
             <Button href={instagram.href} variant="ghost" external>
               Follow on {instagram.label}
+            </Button>
+          )}
+          {discord && (
+            <Button href={discord.href} variant="ghost" external>
+              Join the {discord.label}
             </Button>
           )}
         </CtaPanel>

@@ -129,7 +129,14 @@ describe("cn", () => {
 describe("site map and navigation", () => {
   it("lists every public page and no portal page", () => {
     const urls = sitemap().map((entry) => entry.url);
-    for (const path of ["/join", "/events", "/about", "/board", "/contact"]) {
+    for (const path of [
+      "/join",
+      "/events",
+      "/about",
+      "/board",
+      "/contact",
+      "/discord",
+    ]) {
       expect(urls).toContain(`${site.url}${path}`);
     }
     expect(urls).toContain(site.url);
@@ -141,7 +148,7 @@ describe("site map and navigation", () => {
       expect(group.href.startsWith("/")).toBe(true);
       expect(group.href.includes("/portal")).toBe(false);
     }
-    expect(navCta.href).toBe("/portal");
+    expect(navCta.href).toBe("/join");
   });
 
   it("links socials over https and has no trailing slash on the site URL", () => {
