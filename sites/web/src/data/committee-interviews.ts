@@ -28,7 +28,8 @@ export const committeeInterviewQuestions: Record<
   marketing: [
     {
       id: "marketing-ideas",
-      prompt: "What creative ideas do you have to increase our reach on campus?",
+      prompt:
+        "What creative ideas do you have to increase our reach on campus?",
     },
     {
       id: "marketing-experience",

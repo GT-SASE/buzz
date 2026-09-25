@@ -269,8 +269,7 @@ export function Scanner({
         streamRef.current = stream;
         const track = stream.getVideoTracks()[0];
         const capabilities = track?.getCapabilities?.() as
-          | { torch?: boolean }
-          | undefined;
+          { torch?: boolean } | undefined;
         if (track && capabilities?.torch) {
           await track
             .applyConstraints({

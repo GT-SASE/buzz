@@ -19,16 +19,16 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@vercel/functions": "^3.9.5",
-    "drizzle-orm": "^0.45.2",
+    "@vercel/functions": "^3.9.9",
+    "drizzle-orm": "^0.45.3",
     "next-auth": "5.0.0-beta.32",
     "pg": "^8.23.0",
     "postgres": "^3.4.9"
   },
   "devDependencies": {
-    "@types/node": "^25.6.2",
+    "@types/node": "^26.6.2",
     "@types/pg": "^8.23.1",
-    "drizzle-kit": "^0.31.10",
+    "drizzle-kit": "^0.31.11",
     "typescript-7": "npm:typescript@^7.0.0"
   }
 }

@@ -68,6 +68,7 @@ export default tseslint.config(
       "@typescript-eslint/no-explicit-any": "off",
       "@typescript-eslint/no-empty-object-type": "off",
       "@typescript-eslint/no-empty-function": "off",
+      "react-hooks/set-state-in-effect": "off",
     },
   },
   {
@@ -75,5 +76,14 @@ export default tseslint.config(
     // pull the Next app into root `tsc` without image-module decls).
     files: ["tests/**/*.tsx"],
     extends: [tseslint.configs.disableTypeChecked],
+  },
+  {
+    // Next's bundled Babel parser ships a scope manager without `addGlobals`,
+    // which ESLint 10 calls on every file.
+    files: ["**/*.{js,mjs,cjs,jsx}"],
+    languageOptions: {
+      parser: tseslint.parser,
+      parserOptions: { projectService: false },
+    },
   },
 );
