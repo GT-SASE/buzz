@@ -15,7 +15,7 @@ import { site } from "~/data/site";
 import { breadcrumbSchema, pageMetadata } from "~/lib/seo";
 
 export const metadata = pageMetadata({
-  title: "Board",
+  title: "Board | SASE at Georgia Tech",
   description:
     "The elected executive board of SASE at Georgia Tech, what each officer handles, and how to reach them.",
   path: "/board",

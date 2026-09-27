@@ -5,7 +5,14 @@ import { marqueeItems, programs } from "~/data/content";
 import { adminNav, portalNav } from "~/data/portal";
 import { committeesPublic } from "~/data/committees";
 import { navCta, navGroups, site } from "~/data/site";
-import { breadcrumbSchema, eventSchema, jsonLd, pageMetadata } from "~/lib/seo";
+import {
+  breadcrumbSchema,
+  eventSchema,
+  googleSiteVerification,
+  jsonLd,
+  pageMetadata,
+  shareImage,
+} from "~/lib/seo";
 import { cn } from "~/lib/utils";
 import { asDate, asInt } from "../packages/api/src/aggregates";
 import {
@@ -77,18 +84,34 @@ describe("seo", () => {
     const meta = pageMetadata({ title: "Title", description: "d", path: "/" });
     expect(meta.title).toEqual({ absolute: "Title" });
     expect(meta.alternates?.canonical).toBe(site.url);
+    expect(meta.openGraph?.title).toBe("Title");
+    expect(meta.twitter).toMatchObject({ title: "Title" });
   });
 
-  it("gives an inner page its canonical URL and branded OG title", () => {
+  it("uses one title for the document, Open Graph, and Twitter", () => {
+    const title = "Join SASE at Georgia Tech";
     const meta = pageMetadata({
-      title: "Page",
+      title,
       description: "d",
       path: "/join",
     });
-    expect(meta.title).toBe("Page");
+    expect(meta.title).toEqual({ absolute: title });
     expect(meta.alternates?.canonical).toBe(`${site.url}/join`);
     expect(meta.openGraph?.url).toBe(`${site.url}/join`);
-    expect(meta.openGraph?.title).toBe(`Page · ${site.shortName}`);
+    expect(meta.openGraph?.title).toBe(title);
+    expect(meta.twitter).toMatchObject({
+      card: "summary_large_image",
+      title,
+    });
+    expect(meta.openGraph?.images).toEqual([shareImage]);
+    expect(shareImage.url).toBe(`${site.url}/opengraph-image`);
+    expect(meta.twitter?.images).toEqual([`${site.url}/opengraph-image`]);
+  });
+
+  it("emits a Google verification tag only when a token is set", () => {
+    expect(googleSiteVerification(undefined)).toBeUndefined();
+    expect(googleSiteVerification("")).toBeUndefined();
+    expect(googleSiteVerification("abc123")).toEqual({ google: "abc123" });
   });
 
   it("adds a Place to an event only when it has a location", () => {
@@ -141,6 +164,9 @@ describe("site map and navigation", () => {
     }
     expect(urls).toContain(site.url);
     expect(urls.some((url) => url.includes("/portal"))).toBe(false);
+    expect(sitemap().every((entry) => entry.lastModified === undefined)).toBe(
+      true,
+    );
   });
 
   it("keeps the public nav on public pages", () => {

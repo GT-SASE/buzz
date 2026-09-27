@@ -6,7 +6,7 @@ import { discord } from "~/data/site";
 import { breadcrumbSchema, pageMetadata } from "~/lib/seo";
 
 export const metadata = pageMetadata({
-  title: "Discord",
+  title: "Discord | SASE at Georgia Tech",
   description:
     "Join the SASE at Georgia Tech Discord for weekly meeting rooms, project team channels, conference ride shares, and quick answers from the board.",
   path: "/discord",

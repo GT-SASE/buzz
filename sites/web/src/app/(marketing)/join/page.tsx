@@ -20,7 +20,7 @@ import { discord, engage, instagram, site } from "~/data/site";
 import { breadcrumbSchema, pageMetadata } from "~/lib/seo";
 
 export const metadata = pageMetadata({
-  title: "Join",
+  title: "Join SASE at Georgia Tech",
   description:
     "How to join SASE at Georgia Tech in three steps. Membership is free — no application, no dues, and no major requirement.",
   path: "/join",

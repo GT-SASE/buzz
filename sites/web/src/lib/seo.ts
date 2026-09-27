@@ -3,9 +3,23 @@ import type { Metadata } from "next";
 import { site } from "~/data/site";
 
 /**
- * Per-page metadata. Every page gets its own title, description, canonical URL
- * and Open Graph entry — a shared root-level OG block makes every share card on
- * every page identical, which is what the site had before.
+ * Share image served by `app/opengraph-image.tsx`. A page that sets its own
+ * `openGraph` object replaces the layout's resolved tags, so the file-based
+ * image never reaches the document unless this URL is set explicitly.
+ * Absolute: link-preview crawlers do not resolve a relative image path.
+ */
+export const shareImage = {
+  url: `${site.url}/opengraph-image`,
+  width: 1200,
+  height: 630,
+  alt: `${site.name} — ${site.tagline}`,
+  type: "image/png",
+} as const;
+
+/**
+ * Per-page metadata. `title` is the full document title. It is absolute so the
+ * root layout's portal suffix (`%s · GT SASE`) stays off the public pages, and
+ * the same string is used for the Open Graph and Twitter titles.
  *
  * `path` is the route, leading slash, no trailing slash ("/board", "/" for home).
  */
@@ -19,30 +33,38 @@ export function pageMetadata({
   path: string;
 }): Metadata {
   const url = path === "/" ? site.url : `${site.url}${path}`;
-  // The template in the root layout appends the chapter name to every child
-  // title; openGraph.title does not inherit it, so it is spelled out here.
-  const fullTitle = path === "/" ? title : `${title} · ${site.shortName}`;
 
   return {
-    // The root layout's title template appends the chapter name to every child
-    // title. The homepage title already carries it, so it opts out.
-    title: path === "/" ? { absolute: title } : title,
+    title: { absolute: title },
     description,
     alternates: { canonical: url },
     openGraph: {
-      title: fullTitle,
+      title,
       description,
       url,
       siteName: site.name,
       locale: "en_US",
       type: "website",
+      images: [shareImage],
     },
     twitter: {
       card: "summary_large_image",
-      title: fullTitle,
+      title,
       description,
+      images: [shareImage.url],
     },
   };
+}
+
+/**
+ * Google Search Console HTML-tag verification. Pass
+ * `NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION`. An empty value emits no tag.
+ */
+export function googleSiteVerification(
+  token: string | undefined,
+): Metadata["verification"] {
+  if (!token) return undefined;
+  return { google: token };
 }
 
 /** Serialises JSON-LD for a <script type="application/ld+json"> tag. */
