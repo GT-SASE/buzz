@@ -71,6 +71,7 @@ export const portalNav = [
   { href: "/portal/check-in", label: "Check in" },
   { href: "/portal/mentorship", label: "SASE KIN" },
   { href: "/portal/resume", label: "Resume" },
+  { href: "/portal/elections", label: "Elections" },
 ] as const;
 
 export const adminNav = [
@@ -78,6 +79,7 @@ export const adminNav = [
   { href: "/portal/admin/members", label: "Members" },
   { href: "/portal/admin/mentorship", label: "SASE KIN" },
   { href: "/portal/admin/committees", label: "Committees" },
+  { href: "/portal/admin/elections", label: "Elections" },
 ] as const;
 
 /** Mentorship points only. Event attendance has its own card and tiers. */

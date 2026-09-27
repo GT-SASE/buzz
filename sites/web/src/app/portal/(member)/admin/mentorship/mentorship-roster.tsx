@@ -21,6 +21,7 @@ import {
   TableRow,
 } from "~/components/ui/table";
 import { cn } from "~/lib/utils";
+import { semesterLabel } from "@buzz/api/terms";
 import { api, type RouterOutputs } from "~/trpc/react";
 
 type Row = RouterOutputs["mentorship"]["list"][number];
@@ -116,15 +117,15 @@ function RowActions({
 }
 
 export function MentorshipRoster({
-  year,
+  semester,
   readOnly,
 }: {
-  year: string;
+  semester: string;
   readOnly: boolean;
 }) {
   const utils = api.useUtils();
-  const listing = api.mentorship.list.useQuery({ year });
-  const groups = api.mentorship.groups.useQuery({ year });
+  const listing = api.mentorship.list.useQuery({ semester });
+  const groups = api.mentorship.groups.useQuery({ semester });
   const assign = api.mentorship.assignGroup.useMutation({
     onSuccess: async () => {
       toast.success("Group updated.");
@@ -171,7 +172,7 @@ export function MentorshipRoster({
     return (
       <p className="text-ink-muted text-body">
         {readOnly
-          ? `Nobody signed up in ${year}.`
+          ? `Nobody signed up in ${semesterLabel(semester)}.`
           : "Nobody has signed up yet this year. Members use SASE KIN in the portal."}
       </p>
     );

@@ -12,7 +12,7 @@ import { formatMonth } from "~/app/portal/_lib/format";
 import { requireSession } from "~/app/portal/_lib/session";
 import { Card } from "~/components/ui/card";
 import { Separator } from "~/components/ui/separator";
-import { committeeCycle, committeesPublic } from "~/data/committees";
+import { getCommitteeRecruiting } from "~/data/committee-recruiting";
 import { api, HydrateClient } from "~/trpc/server";
 import PortalLoading from "./loading";
 
@@ -36,7 +36,7 @@ async function DashboardBody() {
   const session = await requireSession("/portal");
   const isOfficer = session.user.role === "ADMIN";
 
-  const [home, , kin, kinGroup] = await Promise.all([
+  const [home, , kin, kinGroup, recruiting] = await Promise.all([
     api.event.home(),
     api.member.leaderboard({ limit: 10 }),
     api.mentorship.mine().catch((error) => {
@@ -44,6 +44,7 @@ async function DashboardBody() {
       return null;
     }),
     api.mentorship.myGroup().catch(() => null),
+    getCommitteeRecruiting(),
   ]);
   const { stats, attended, upcoming } = home;
 
@@ -121,6 +122,26 @@ async function DashboardBody() {
 
             <Card className="border-hairline mt-3 gap-0 rounded-lg py-0 shadow-none">
               <Link
+                href="/portal/elections"
+                className="flex min-h-11 items-center justify-between gap-4 px-5 py-5 sm:gap-6 sm:px-7"
+              >
+                <span className="min-w-0">
+                  <span className="font-display text-navy block text-lg font-bold">
+                    Elections
+                  </span>
+                  <span className="text-ink-muted mt-1 block text-sm">
+                    Run for the board or vote for next year&apos;s officers.
+                  </span>
+                </span>
+                <ArrowRight
+                  aria-hidden="true"
+                  className="text-gold-ink size-5 shrink-0"
+                />
+              </Link>
+            </Card>
+
+            <Card className="border-hairline mt-3 gap-0 rounded-lg py-0 shadow-none">
+              <Link
                 href="/portal/resume"
                 className="flex min-h-11 items-center justify-between gap-4 px-5 py-5 sm:gap-6 sm:px-7"
               >
@@ -139,7 +160,7 @@ async function DashboardBody() {
               </Link>
             </Card>
 
-            {(isOfficer || committeesPublic) && (
+            {(isOfficer || recruiting?.open) && (
               <Card className="border-hairline mt-3 gap-0 rounded-lg py-0 shadow-none">
                 <Link
                   href={
@@ -156,7 +177,7 @@ async function DashboardBody() {
                     <span className="text-ink-muted mt-1 block text-sm">
                       {isOfficer
                         ? "Read applications and run callbacks."
-                        : `Apply to Events, Marketing, or Treasury. Closes ${committeeCycle.closesLabel}.`}
+                        : `Apply to Events, Marketing, or Treasury. Closes ${recruiting?.closesLabel}.`}
                     </span>
                   </span>
                   <ArrowRight

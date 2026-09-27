@@ -30,6 +30,7 @@ import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { Skeleton } from "~/components/ui/skeleton";
 import { Textarea } from "~/components/ui/textarea";
+import { semesterLabel } from "@buzz/api/terms";
 import { api, type RouterOutputs } from "~/trpc/react";
 
 type Group = RouterOutputs["mentorship"]["groups"][number];
@@ -219,14 +220,14 @@ function DeleteGroup({ group }: { group: Group }) {
 }
 
 export function KinGroupManager({
-  year,
+  semester,
   readOnly,
 }: {
-  year: string;
+  semester: string;
   readOnly: boolean;
 }) {
   const refresh = useRefresh();
-  const groups = api.mentorship.groups.useQuery({ year });
+  const groups = api.mentorship.groups.useQuery({ semester });
   const award = api.mentorship.awardGroupPoints.useMutation({
     onSuccess: async ({ awarded }) => {
       toast.success(
@@ -261,8 +262,8 @@ export function KinGroupManager({
       {all.length === 0 ? (
         <p className="text-ink-muted text-body mt-4">
           {readOnly
-            ? `No groups in ${year}.`
-            : "No groups yet this year. Create one and members can join it from SASE KIN."}
+            ? `No groups in ${semesterLabel(semester)}.`
+            : "No groups yet this semester. Create one and members can join it from SASE KIN."}
         </p>
       ) : (
         <ul className="mt-5 grid gap-4 md:grid-cols-2">

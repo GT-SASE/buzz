@@ -273,8 +273,9 @@ export type MentorshipStatus = "interested" | "enrolled" | "withdrawn";
  * A kin group. Officers create them; members join an open one themselves or
  * an officer places them. Null capacity means uncapped.
  *
- * Groups belong to one school year (`2026-2027`). Last year's groups stay as
- * history; members only ever see the current year's.
+ * Groups belong to one semester (`fall-2026`), so every Fall and Spring gets
+ * a fresh set. `year` is the school year that semester falls in, kept for
+ * filtering. Past semesters stay as history.
  */
 export const kinGroups = createTable(
   "kin_group",
@@ -284,6 +285,7 @@ export const kinGroups = createTable(
       .primaryKey()
       .$defaultFn(() => crypto.randomUUID()),
     year: d.varchar({ length: 9 }).notNull(),
+    semester: d.varchar({ length: 16 }).notNull(),
     name: d.varchar({ length: 80 }).notNull(),
     description: d.varchar({ length: 600 }),
     capacity: d.integer(),
@@ -295,10 +297,11 @@ export const kinGroups = createTable(
     updatedAt: d.timestamp({ withTimezone: true }).$onUpdate(() => new Date()),
   }),
   (t) => [
-    uniqueIndex(idx("kin_group_year_name_idx")).on(
-      t.year,
+    uniqueIndex(idx("kin_group_semester_name_idx")).on(
+      t.semester,
       sql`lower(${t.name})`,
     ),
+    index(idx("kin_group_year_idx")).on(t.year),
     check(
       idx("kin_group_capacity_check"),
       sql`${t.capacity} is null or ${t.capacity} > 0`,
@@ -311,8 +314,9 @@ export const kinGroups = createTable(
  * attendance — a coffee with your little does not count as a GBM, and a GBM
  * does not count as a family meeting.
  *
- * One row per member per school year, so every fall starts from a fresh
- * signup and zero KIN points while last year's row stays as history.
+ * One row per member per school year: role and KIN points carry from Fall
+ * into Spring, and every August starts fresh. Which group someone is in is
+ * per semester and lives in `kinMemberships`.
  */
 export const mentorshipEnrollments = createTable(
   "mentorship_enrollment",
@@ -330,9 +334,6 @@ export const mentorshipEnrollments = createTable(
       .default("interested"),
     note: d.varchar({ length: 400 }),
     points: d.integer().notNull().default(0),
-    groupId: d.varchar({ length: 255 }).references(() => kinGroups.id, {
-      onDelete: "set null",
-    }),
     enrolledAt: d.timestamp({ withTimezone: true }),
     createdAt: d
       .timestamp({ withTimezone: true })
@@ -344,7 +345,6 @@ export const mentorshipEnrollments = createTable(
     primaryKey({ columns: [t.userId, t.year] }),
     index(idx("mentorship_status_idx")).on(t.status),
     index(idx("mentorship_year_idx")).on(t.year),
-    index(idx("mentorship_group_idx")).on(t.groupId),
     check(idx("mentorship_role_check"), sql`${t.role} in ('mentor', 'mentee')`),
     check(
       idx("mentorship_status_check"),
@@ -361,15 +361,50 @@ export const mentorshipEnrollmentsRelations = relations(
       fields: [mentorshipEnrollments.userId],
       references: [users.id],
     }),
-    group: one(kinGroups, {
-      fields: [mentorshipEnrollments.groupId],
-      references: [kinGroups.id],
-    }),
   }),
 );
 
+/**
+ * One member in one kin group for one semester. The primary key keeps a
+ * member to a single group per semester. `points` is what they earned with
+ * this group, for semester standings; the yearly total stays on the
+ * enrollment row.
+ */
+export const kinMemberships = createTable(
+  "kin_membership",
+  (d) => ({
+    userId: d
+      .varchar({ length: 255 })
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    semester: d.varchar({ length: 16 }).notNull(),
+    groupId: d
+      .varchar({ length: 255 })
+      .notNull()
+      .references(() => kinGroups.id, { onDelete: "cascade" }),
+    points: d.integer().notNull().default(0),
+    joinedAt: d
+      .timestamp({ withTimezone: true })
+      .$defaultFn(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  }),
+  (t) => [
+    primaryKey({ columns: [t.userId, t.semester] }),
+    index(idx("kin_membership_group_idx")).on(t.groupId),
+    check(idx("kin_membership_points_check"), sql`${t.points} >= 0`),
+  ],
+);
+
 export const kinGroupsRelations = relations(kinGroups, ({ many }) => ({
-  members: many(mentorshipEnrollments),
+  members: many(kinMemberships),
+}));
+
+export const kinMembershipsRelations = relations(kinMemberships, ({ one }) => ({
+  group: one(kinGroups, {
+    fields: [kinMemberships.groupId],
+    references: [kinGroups.id],
+  }),
+  user: one(users, { fields: [kinMemberships.userId], references: [users.id] }),
 }));
 
 export type CommitteeId = "events" | "marketing" | "treasury";
@@ -484,3 +519,144 @@ export const resumes = createTable(
 export const resumesRelations = relations(resumes, ({ one }) => ({
   user: one(users, { fields: [resumes.userId], references: [users.id] }),
 }));
+
+/**
+ * One committee recruiting window per semester, keyed `fall-2026`. Officers
+ * open it and pick the close date in the portal; applications are accepted
+ * while now is before `closesAt`. Closing early sets `closesAt` to now.
+ */
+export const committeeCycles = createTable("committee_cycle", (d) => ({
+  id: d.varchar({ length: 32 }).primaryKey(),
+  closesAt: d.timestamp({ withTimezone: true }).notNull(),
+  createdById: d.varchar({ length: 255 }).references(() => users.id, {
+    onDelete: "set null",
+  }),
+  createdAt: d
+    .timestamp({ withTimezone: true })
+    .$defaultFn(() => /* @__PURE__ */ new Date())
+    .notNull(),
+  updatedAt: d.timestamp({ withTimezone: true }).$onUpdate(() => new Date()),
+}));
+
+export type ElectionPhase = "nominating" | "voting" | "closed" | "published";
+export type CandidateStatus = "pending" | "approved" | "rejected";
+
+/**
+ * A yearly officer election. Officers move it through the phases by hand:
+ * nominating (members run), voting (approved candidates only), closed (counts
+ * visible to officers), published (counts visible to members).
+ */
+export const elections = createTable(
+  "election",
+  (d) => ({
+    id: d
+      .varchar({ length: 255 })
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    year: d.varchar({ length: 9 }).notNull(),
+    title: d.varchar({ length: 120 }).notNull(),
+    phase: d
+      .varchar({ length: 16 })
+      .$type<ElectionPhase>()
+      .notNull()
+      .default("nominating"),
+    createdById: d.varchar({ length: 255 }).references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: d
+      .timestamp({ withTimezone: true })
+      .$defaultFn(() => /* @__PURE__ */ new Date())
+      .notNull(),
+    updatedAt: d.timestamp({ withTimezone: true }).$onUpdate(() => new Date()),
+  }),
+  (t) => [
+    index(idx("election_year_idx")).on(t.year),
+    check(
+      idx("election_phase_check"),
+      sql`${t.phase} in ('nominating', 'voting', 'closed', 'published')`,
+    ),
+  ],
+);
+
+export const electionPositions = createTable(
+  "election_position",
+  (d) => ({
+    id: d
+      .varchar({ length: 255 })
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    electionId: d
+      .varchar({ length: 255 })
+      .notNull()
+      .references(() => elections.id, { onDelete: "cascade" }),
+    title: d.varchar({ length: 80 }).notNull(),
+    sortOrder: d.integer().notNull().default(0),
+  }),
+  (t) => [index(idx("election_position_election_idx")).on(t.electionId)],
+);
+
+export const electionCandidates = createTable(
+  "election_candidate",
+  (d) => ({
+    id: d
+      .varchar({ length: 255 })
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    positionId: d
+      .varchar({ length: 255 })
+      .notNull()
+      .references(() => electionPositions.id, { onDelete: "cascade" }),
+    userId: d
+      .varchar({ length: 255 })
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    statement: d.varchar({ length: 1000 }).notNull(),
+    status: d
+      .varchar({ length: 16 })
+      .$type<CandidateStatus>()
+      .notNull()
+      .default("pending"),
+    createdAt: d
+      .timestamp({ withTimezone: true })
+      .$defaultFn(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  }),
+  (t) => [
+    unique(idx("election_candidate_unique")).on(t.positionId, t.userId),
+    check(
+      idx("election_candidate_status_check"),
+      sql`${t.status} in ('pending', 'approved', 'rejected')`,
+    ),
+  ],
+);
+
+/**
+ * One ballot per voter per position; the primary key is what refuses a
+ * second vote. No query may return voterId alongside candidateId — officers
+ * see counts, never who voted for whom.
+ */
+export const electionVotes = createTable(
+  "election_vote",
+  (d) => ({
+    positionId: d
+      .varchar({ length: 255 })
+      .notNull()
+      .references(() => electionPositions.id, { onDelete: "cascade" }),
+    voterId: d
+      .varchar({ length: 255 })
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    candidateId: d
+      .varchar({ length: 255 })
+      .notNull()
+      .references(() => electionCandidates.id, { onDelete: "cascade" }),
+    castAt: d
+      .timestamp({ withTimezone: true })
+      .$defaultFn(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  }),
+  (t) => [
+    primaryKey({ columns: [t.positionId, t.voterId] }),
+    index(idx("election_vote_candidate_idx")).on(t.candidateId),
+  ],
+);

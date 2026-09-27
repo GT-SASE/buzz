@@ -29,10 +29,10 @@ type Signup = RouterOutputs["mentorship"]["mine"];
 
 export function MentorshipSignup({
   name,
-  year,
+  term,
 }: {
   name: string;
-  year: string;
+  term: string;
 }) {
   const mine = api.mentorship.mine.useQuery();
 
@@ -53,17 +53,17 @@ export function MentorshipSignup({
   }
 
   return (
-    <MentorshipSignupForm name={name} year={year} row={mine.data ?? null} />
+    <MentorshipSignupForm name={name} term={term} row={mine.data ?? null} />
   );
 }
 
 function MentorshipSignupForm({
   name,
-  year,
+  term,
   row,
 }: {
   name: string;
-  year: string;
+  term: string;
   row: Signup;
 }) {
   const utils = api.useUtils();
@@ -91,7 +91,7 @@ function MentorshipSignupForm({
   return (
     <div className="mx-auto w-full max-w-lg px-5 py-10 sm:px-6 sm:py-14">
       <p className="text-eyebrow tracking-caps text-gold-ink font-semibold uppercase">
-        SASE KIN · {year}
+        SASE KIN · {term}
       </p>
       <h1 className="font-display text-navy text-h2 mt-3 font-bold tracking-tight">
         Find your kin.
@@ -99,7 +99,8 @@ function MentorshipSignupForm({
       <p className="text-ink-muted text-body mt-4">
         Sign up as a mentor or mentee, then join a kin group below. KIN points
         live on their own card — an officer adds them after your group meets.
-        Signups, groups, and points start fresh every school year.
+        Groups change every semester. Your signup and KIN points last the whole
+        school year.
       </p>
 
       {row && row.status !== "withdrawn" && (
@@ -211,7 +212,7 @@ function MentorshipSignupForm({
         </Alert>
       )}
 
-      <KinGroups year={year} signedUp={!!row && row.status !== "withdrawn"} />
+      <KinGroups term={term} signedUp={!!row && row.status !== "withdrawn"} />
     </div>
   );
 }

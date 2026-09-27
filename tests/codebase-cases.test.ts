@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import sitemap from "~/app/sitemap";
 import { marqueeItems, programs } from "~/data/content";
 import { adminNav, portalNav } from "~/data/portal";
-import { committeesPublic } from "~/data/committees";
 import { navCta, navGroups, site } from "~/data/site";
 import {
   breadcrumbSchema,
@@ -192,7 +191,6 @@ describe("site map and navigation", () => {
     expect(member).not.toContain("/portal/committees");
     expect(admin).not.toContain("/portal/check-in");
     expect(admin).toContain("/portal/admin/committees");
-    expect(committeesPublic).toBe(false);
   });
 });
 

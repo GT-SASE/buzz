@@ -1,17 +1,5 @@
 import { z } from "zod";
 
-/**
- * Fall 2026 committee recruiting. The Google Form closes Wednesday 9/9 at
- * midnight Atlanta time — this is that same instant, so a late submit here
- * cannot sneak in after the chapter already told people the window was over.
- *
- * 9 Sep 2026 is a Wednesday. "Midnight" is the start of Thursday in
- * America/New_York, which is 04:00 UTC during EDT.
- */
-export const COMMITTEE_CYCLE_ID = "fall-2026";
-
-export const COMMITTEE_CYCLE_CLOSES_AT = new Date("2026-09-10T04:00:00.000Z");
-
 export const COMMITTEE_IDS = ["events", "marketing", "treasury"] as const;
 export type CommitteeId = (typeof COMMITTEE_IDS)[number];
 
@@ -31,8 +19,9 @@ export const LOCKED_COMMITTEE_STATUSES = [
   "declined",
 ] as const;
 
-export function isCommitteeCycleOpen(now: Date) {
-  return now.getTime() < COMMITTEE_CYCLE_CLOSES_AT.getTime();
+/** A cycle takes applications until its close instant, exclusive. */
+export function isCommitteeCycleOpen(closesAt: Date, now: Date) {
+  return now.getTime() < closesAt.getTime();
 }
 
 export function isCommitteeApplicationLocked(

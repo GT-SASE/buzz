@@ -182,10 +182,35 @@ themselves. Officers create groups at `/portal/admin/mentorship`, can make one i
 cap its seats, place anyone in any group, and award KIN points to one member or a whole group
 after a meeting. KIN points are a separate ledger from event points.
 
-Everything is scoped to a school year (`2026-2027`, rolling over on August 1st, Atlanta time):
-groups carry a `year`, and a signup row is keyed on `(userId, year)`. A new school year starts
-with no signup, no group, and zero KIN points. Past years stay in the database and officers can
-browse them read-only from the year picker.
+Terms come from `packages/api/src/terms.ts` (Atlanta time): the school year is `2026-2027`
+and rolls over August 1st; semesters are `fall-2026` (Aug–Dec) and `spring-2027` (Jan–Jul).
+
+Groups are per **semester**: each Fall and Spring gets a new set, and a member's seat lives in
+`buzz_kin_membership`, keyed on `(userId, semester)`. The signup (role, note) and KIN points are
+per **school year**, keyed on `(userId, year)`, so points carry from Fall into Spring and reset
+in August. Each seat also tracks the points earned with that group, which is what group
+standings sum. Officers browse past semesters read-only from the semester picker.
+
+## Committee recruiting
+
+One recruiting cycle per semester, stored in `buzz_committee_cycle` with the semester id.
+Officers open this semester's cycle at `/portal/admin/committees` and choose the close date;
+they can move the date or close early. While a cycle is open, `/join` and the member dashboard
+advertise it and `/portal/committees` accepts applications. Nothing in code changes per
+semester.
+
+## Officer elections
+
+Yearly, at `/portal/elections` (members) and `/portal/admin/elections` (officers). An officer
+creates the election with its positions and moves it through the phases by hand:
+
+1. **Nominating**: members run for a position with a short statement; officers approve or reject.
+2. **Voting**: approved candidates only. A member can vote if they have at least one event
+   check-in this school year. One vote per position, enforced by the table's primary key.
+3. **Closed**: officers see the counts.
+4. **Published**: members see the counts too.
+
+Ballots are secret: no endpoint returns who voted for whom.
 
 ## The roster
 

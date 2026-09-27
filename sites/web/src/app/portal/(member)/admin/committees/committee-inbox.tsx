@@ -17,11 +17,7 @@ import {
   TableHeader,
   TableRow,
 } from "~/components/ui/table";
-import {
-  committeeCycle,
-  committees,
-  selectedCommitteeIds,
-} from "~/data/committees";
+import { committees, selectedCommitteeIds } from "~/data/committees";
 import { cn } from "~/lib/utils";
 import { api, type RouterOutputs } from "~/trpc/react";
 
@@ -63,8 +59,8 @@ function StatusBadge({ status }: { status: Row["status"] }) {
   );
 }
 
-export function CommitteeInbox() {
-  const listing = api.committee.list.useQuery();
+export function CommitteeInbox({ cycle }: { cycle: string }) {
+  const listing = api.committee.list.useQuery({ cycle });
   const [exporting, setExporting] = useState(false);
   const [exportStatus, setExportStatus] = useState("");
   const utils = api.useUtils();
@@ -89,10 +85,10 @@ export function CommitteeInbox() {
     setExportStatus("Preparing the export...");
     try {
       const { rows: exported, truncated } =
-        await utils.committee.exportCycle.fetch(undefined, { staleTime: 0 });
+        await utils.committee.exportCycle.fetch({ cycle }, { staleTime: 0 });
 
       downloadCsv(
-        `sase-committee-applications-${committeeCycle.id}.csv`,
+        `sase-committee-applications-${cycle}.csv`,
         toCsv([
           [
             "Name",
