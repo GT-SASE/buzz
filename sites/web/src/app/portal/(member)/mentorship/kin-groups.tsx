@@ -16,10 +16,10 @@ function seatsLabel(group: Group) {
 
 export function KinGroups({
   signedUp,
-  year,
+  term,
 }: {
   signedUp: boolean;
-  year: string;
+  term: string;
 }) {
   const utils = api.useUtils();
   const groups = api.mentorship.groups.useQuery();
@@ -131,7 +131,7 @@ export function KinGroups({
         >
           {mine ? "All kin groups" : "Pick a kin group"}
           <span className="text-ink-muted ml-2 text-base font-semibold">
-            {year}
+            {term}
           </span>
         </h2>
         <p className="text-ink-muted text-body-sm mt-2">

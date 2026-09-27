@@ -125,3 +125,8 @@ export const RESUME_UPLOAD_LIMIT = {
   limit: 8,
   intervalMs: 60_000,
 } as const;
+
+export const ELECTION_ACTION_LIMIT = {
+  limit: 20,
+  intervalMs: 60_000,
+} as const;

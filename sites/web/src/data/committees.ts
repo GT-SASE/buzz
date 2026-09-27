@@ -1,22 +1,12 @@
 /**
- * Fall 2026 committee recruiting copy.
+ * Committee recruiting copy.
  *
- * Public pages import this. Interview prompts live in `committee-interviews.ts`
- * and must stay off the marketing bundle — those are for officers running
- * callbacks, not for applicants.
- *
- * Flip `committeesPublic` when recruiting should show on /join and the member
- * portal. The officer inbox stays available either way.
+ * Public pages import this. Whether recruiting is open, and until when, is
+ * set by officers in the portal and read from `committee-recruiting.ts`.
+ * Interview prompts live in `committee-interviews.ts` and must stay off the
+ * marketing bundle.
  */
-export const committeesPublic = false;
-
-export const committeeCycle = {
-  id: "fall-2026",
-  label: "Fall 2026",
-  /** Display string. The portal enforces the actual instant. */
-  closesLabel: "Wednesday, September 9 at midnight",
-  discordHref: "https://discord.gg/CsZAfd37zS",
-} as const;
+export const committeeDiscordHref = "https://discord.gg/CsZAfd37zS";
 
 export const committeeExpectations = [
   "Bi-monthly meetings",

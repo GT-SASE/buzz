@@ -89,6 +89,9 @@ describe("mentorship.expressInterest", () => {
         mentorshipEnrollments: {
           findFirst: () => Promise.resolve(undefined),
         },
+        kinMemberships: {
+          findFirst: () => Promise.resolve(undefined),
+        },
       },
       insert: () => ({
         values: (row: unknown) => ({
@@ -117,7 +120,7 @@ describe("mentorship.expressInterest", () => {
     expect(result).toMatchObject({ role: "mentee", status: "interested" });
   });
 
-  it("refuses to rewrite an enrolled row", async () => {
+  it("refuses to change role while in a group this semester", async () => {
     const db = {
       query: {
         mentorshipEnrollments: {
@@ -126,6 +129,10 @@ describe("mentorship.expressInterest", () => {
               userId: "member-1",
               status: "enrolled",
             }),
+        },
+        kinMemberships: {
+          findFirst: () =>
+            Promise.resolve({ userId: "member-1", groupId: "g1" }),
         },
       },
       insert: () => {
@@ -176,6 +183,9 @@ describe("mentorship.setStatus", () => {
         },
       }),
     };
+    Object.assign(db, {
+      transaction: (run: (tx: typeof db) => Promise<unknown>) => run(db),
+    });
 
     await createCaller(adminCtx(db)).mentorship.setStatus({
       userId: "member-1",
@@ -208,8 +218,8 @@ describe("kin group officer procedures", () => {
       caller.mentorship.assignGroup({ userId: "member-2", groupId: "g1" }),
     awardGroupPoints: (caller: ReturnType<typeof createCaller>) =>
       caller.mentorship.awardGroupPoints({ groupId: "g1", points: 5 }),
-    years: (caller: ReturnType<typeof createCaller>) =>
-      caller.mentorship.years(),
+    semesters: (caller: ReturnType<typeof createCaller>) =>
+      caller.mentorship.semesters(),
   };
 
   for (const [name, call] of Object.entries(cases)) {

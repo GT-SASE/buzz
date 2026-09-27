@@ -10,8 +10,6 @@ vi.mock("../packages/auth/src/index.ts", () => ({
 vi.stubEnv("NODE_ENV", "production");
 const { createCaller } = await import("../packages/api/src/root");
 const { resetRateLimits } = await import("../packages/api/src/rate-limit");
-const { COMMITTEE_CYCLE_CLOSES_AT } =
-  await import("../packages/api/src/committee-cycle");
 vi.unstubAllEnvs();
 
 type Ctx = Parameters<typeof createCaller>[0];
@@ -60,6 +58,17 @@ const unreachableDb = new Proxy(
   },
 );
 
+const CLOSES_AT = new Date("2026-09-10T04:00:00.000Z");
+
+/** The `select().from().where()` chain the router uses to read a cycle. */
+function cycleSelect(rows: unknown[]) {
+  return () => ({
+    from: () => ({
+      where: () => Promise.resolve(rows),
+    }),
+  });
+}
+
 const treasuryInput = {
   discordHandle: "samanyu",
   wantsEvents: false,
@@ -97,6 +106,7 @@ describe("committee.setStatus", () => {
 describe("committee.mine", () => {
   it("omits officer notes from the member payload", async () => {
     const db = {
+      select: cycleSelect([{ id: "fall-2026", closesAt: CLOSES_AT }]),
       query: {
         committeeApplications: {
           findFirst: () =>
@@ -118,17 +128,29 @@ describe("committee.mine", () => {
     });
     expect(result.application).not.toHaveProperty("officerNotes");
   });
+
+  it("reports no cycle when officers have not opened one", async () => {
+    const db = {
+      select: cycleSelect([]),
+      query: {
+        committeeApplications: { findFirst: () => Promise.resolve(undefined) },
+      },
+    };
+    const result = await createCaller(memberCtx(db)).committee.mine();
+    expect(result).toMatchObject({ cycle: null, closesAt: null, open: false });
+  });
 });
 
 describe("committee.submit", () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    vi.setSystemTime(COMMITTEE_CYCLE_CLOSES_AT.getTime() - 24 * 60 * 60 * 1000);
+    vi.setSystemTime(CLOSES_AT.getTime() - 24 * 60 * 60 * 1000);
   });
 
   it("inserts a first-time treasury application", async () => {
     const inserted: unknown[] = [];
     const db = {
+      select: cycleSelect([{ id: "fall-2026", closesAt: CLOSES_AT }]),
       query: {
         committeeApplications: {
           findFirst: () => Promise.resolve(undefined),
@@ -162,6 +184,7 @@ describe("committee.submit", () => {
 
   it("refuses to rewrite a row already in review", async () => {
     const db = {
+      select: cycleSelect([{ id: "fall-2026", closesAt: CLOSES_AT }]),
       query: {
         committeeApplications: {
           findFirst: () =>
@@ -186,14 +209,25 @@ describe("committee.submit", () => {
   });
 
   it("refuses after the cycle closes", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(COMMITTEE_CYCLE_CLOSES_AT);
+    vi.setSystemTime(CLOSES_AT);
+    const db = {
+      select: cycleSelect([{ id: "fall-2026", closesAt: CLOSES_AT }]),
+    };
 
     const error = await rejection(
-      createCaller(memberCtx(unreachableDb)).committee.submit(treasuryInput),
+      createCaller(memberCtx(db)).committee.submit(treasuryInput),
     );
     expect(error.code).toBe("BAD_REQUEST");
     expect(error.message).toMatch(/closed/i);
+  });
+
+  it("refuses when no cycle is open this semester", async () => {
+    const error = await rejection(
+      createCaller(memberCtx({ select: cycleSelect([]) })).committee.submit(
+        treasuryInput,
+      ),
+    );
+    expect(error.code).toBe("BAD_REQUEST");
   });
 });
 
@@ -252,4 +286,29 @@ describe("committee.setStatus", () => {
 
     expect(sets[0]).toMatchObject({ status: "interviewing" });
   });
+});
+
+describe("committee cycle officer procedures", () => {
+  const cases = {
+    cycles: (caller: ReturnType<typeof createCaller>) =>
+      caller.committee.cycles(),
+    openCycle: (caller: ReturnType<typeof createCaller>) =>
+      caller.committee.openCycle({ closesAt: new Date("2099-01-01") }),
+    setCycleCloses: (caller: ReturnType<typeof createCaller>) =>
+      caller.committee.setCycleCloses({
+        id: "fall-2026",
+        closesAt: new Date(),
+      }),
+    exportCycle: (caller: ReturnType<typeof createCaller>) =>
+      caller.committee.exportCycle({ cycle: "fall-2026" }),
+  };
+
+  for (const [name, call] of Object.entries(cases)) {
+    it(`${name} refuses a MEMBER session before touching the database`, async () => {
+      const error = await rejection(
+        call(createCaller(memberCtx(unreachableDb))),
+      );
+      expect(error.code).toBe("FORBIDDEN");
+    });
+  }
 });

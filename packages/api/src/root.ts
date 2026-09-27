@@ -1,4 +1,5 @@
 import { chapterRouter } from "./routers/chapter";
+import { electionRouter } from "./routers/election";
 import { committeeRouter } from "./routers/committee";
 import { eventRouter } from "./routers/event";
 import { memberRouter } from "./routers/member";
@@ -14,6 +15,7 @@ import { createCallerFactory, createTRPCRouter } from "./trpc";
 export const appRouter = createTRPCRouter({
   chapter: chapterRouter,
   committee: committeeRouter,
+  election: electionRouter,
   event: eventRouter,
   member: memberRouter,
   mentorship: mentorshipRouter,

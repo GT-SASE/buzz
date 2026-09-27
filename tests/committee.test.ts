@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  COMMITTEE_CYCLE_CLOSES_AT,
   committeeAnswerFields,
   committeeApplySchema,
   isCommitteeApplicationLocked,
@@ -9,17 +8,19 @@ import {
 } from "../packages/api/src/committee-cycle";
 
 describe("isCommitteeCycleOpen", () => {
-  it("is open the morning of the close date in Atlanta", () => {
-    expect(isCommitteeCycleOpen(new Date("2026-09-09T15:00:00.000Z"))).toBe(
-      true,
-    );
+  const closesAt = new Date("2026-09-10T04:00:00.000Z");
+
+  it("is open before the close instant", () => {
+    expect(
+      isCommitteeCycleOpen(closesAt, new Date("2026-09-09T15:00:00.000Z")),
+    ).toBe(true);
+    expect(
+      isCommitteeCycleOpen(closesAt, new Date(closesAt.getTime() - 1)),
+    ).toBe(true);
   });
 
-  it("closes at the instant Thursday starts in Atlanta", () => {
-    expect(isCommitteeCycleOpen(COMMITTEE_CYCLE_CLOSES_AT)).toBe(false);
-    expect(
-      isCommitteeCycleOpen(new Date(COMMITTEE_CYCLE_CLOSES_AT.getTime() - 1)),
-    ).toBe(true);
+  it("closes at the close instant, exclusive", () => {
+    expect(isCommitteeCycleOpen(closesAt, closesAt)).toBe(false);
   });
 });
 

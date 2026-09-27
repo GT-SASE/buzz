@@ -11,11 +11,11 @@ import { Label } from "~/components/ui/label";
 import { Skeleton } from "~/components/ui/skeleton";
 import { Textarea } from "~/components/ui/textarea";
 import {
-  committeeCycle,
+  committeeDiscordHref,
   committeeExpectations,
   committees,
 } from "~/data/committees";
-import { formatDate } from "~/app/portal/_lib/format";
+import { formatDate, formatEventTime } from "~/app/portal/_lib/format";
 import { api, type RouterOutputs } from "~/trpc/react";
 
 type Mine = RouterOutputs["committee"]["mine"];
@@ -101,12 +101,29 @@ function CommitteeApplyFields({ data }: { data: Mine }) {
   });
 
   const canEdit = data.open && !locked;
-  const closes = formatDate(data.closesAt);
+
+  if (!data.cycle || !data.closesAt) {
+    return (
+      <div className="mx-auto w-full max-w-lg px-5 py-10 sm:px-6 sm:py-14">
+        <p className="text-eyebrow tracking-caps text-gold-ink font-semibold uppercase">
+          {data.label}
+        </p>
+        <h1 className="font-display text-navy text-h2 mt-3 font-bold tracking-tight">
+          Not recruiting right now.
+        </h1>
+        <p className="text-ink-muted text-body mt-4">
+          Committees for Events, Marketing, and Treasury recruit once a
+          semester. Applications open here when the board announces them — watch
+          the Discord.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto w-full max-w-lg px-5 py-10 sm:px-6 sm:py-14">
       <p className="text-eyebrow tracking-caps text-gold-ink font-semibold uppercase">
-        {committeeCycle.label}
+        {data.label}
       </p>
       <h1 className="font-display text-navy text-h2 mt-3 font-bold tracking-tight">
         {data.open ? "Apply to a committee." : "Committee applications."}
@@ -115,7 +132,7 @@ function CommitteeApplyFields({ data }: { data: Mine }) {
         Membership stays free and open. This is only for Events, Marketing, or
         Treasury.{" "}
         {data.open
-          ? `Closes ${committeeCycle.closesLabel}. We will reach out afterwards to schedule a call.`
+          ? `Closes ${formatEventTime(data.closesAt)}. We will reach out afterwards to schedule a call.`
           : "Recruiting for this cycle is over."}
       </p>
 
@@ -141,7 +158,7 @@ function CommitteeApplyFields({ data }: { data: Mine }) {
 
       {!data.open && (
         <p className="text-ink-muted text-body-sm mt-8">
-          This cycle closed {closes}.{" "}
+          This cycle closed {formatDate(data.closesAt)}.{" "}
           {row
             ? "Your answers are still on file."
             : "The next recruiting cycle will open here."}
@@ -201,7 +218,7 @@ function CommitteeApplyFields({ data }: { data: Mine }) {
           <p className="text-ink-muted text-body-sm mt-1.5">
             We will use a Discord channel for the committee.{" "}
             <a
-              href={committeeCycle.discordHref}
+              href={committeeDiscordHref}
               target="_blank"
               rel="noopener noreferrer"
               className="text-navy decoration-gold font-semibold underline decoration-2 underline-offset-4"

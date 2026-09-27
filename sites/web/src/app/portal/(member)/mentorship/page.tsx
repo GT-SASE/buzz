@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
-import { kinYear } from "@buzz/api";
+import { semester, semesterLabel } from "@buzz/api";
 import { requireSession } from "~/app/portal/_lib/session";
 import { Toaster } from "~/components/ui/sonner";
 import { HydrateClient, api } from "~/trpc/server";
@@ -32,7 +32,7 @@ async function MentorshipBody() {
     <HydrateClient>
       <MentorshipSignup
         name={session.user.name ?? session.user.email ?? "Member"}
-        year={kinYear(new Date())}
+        term={semesterLabel(semester(new Date()))}
       />
       <Toaster position="bottom-center" />
     </HydrateClient>
