@@ -45,7 +45,7 @@ export default function BoardPage() {
         size="sm"
         eyebrow="Leadership"
         title="Executive board."
-        lead="Elected each spring. Every role is open to any Georgia Tech student."
+        lead="Elected each spring by members in the portal. Every role is open to any Georgia Tech student."
       >
         {openSeats > 0 && (
           <Alert

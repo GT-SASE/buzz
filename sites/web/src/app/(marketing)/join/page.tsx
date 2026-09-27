@@ -10,12 +10,8 @@ import {
 } from "~/components/ui/accordion";
 import { Badge } from "~/components/ui/badge";
 import { meeting } from "~/data/content";
-import {
-  committeeCycle,
-  committeeExpectations,
-  committees,
-  committeesPublic,
-} from "~/data/committees";
+import { getCommitteeRecruiting } from "~/data/committee-recruiting";
+import { committeeExpectations, committees } from "~/data/committees";
 import { discord, engage, instagram, site } from "~/data/site";
 import { breadcrumbSchema, pageMetadata } from "~/lib/seo";
 
@@ -107,7 +103,11 @@ function StepLinks({ links }: { links: StepLink[] }) {
   );
 }
 
-export default function JoinPage() {
+export const revalidate = 3600;
+
+export default async function JoinPage() {
+  const recruiting = await getCommitteeRecruiting();
+
   return (
     <>
       <JsonLd data={breadcrumbSchema("Join", "/join")} />
@@ -174,11 +174,11 @@ export default function JoinPage() {
         </ol>
       </Section>
 
-      {committeesPublic && (
+      {recruiting?.open && (
         <Section
           eyebrow="Committees"
           title="Want to help run the chapter?"
-          lead={`Events, Marketing, and Treasury are recruiting for ${committeeCycle.label}. Membership is still free and does not need this form. Applications close ${committeeCycle.closesLabel}.`}
+          lead={`Events, Marketing, and Treasury are recruiting for ${recruiting.label}. Membership is still free and does not need this form. Applications close ${recruiting.closesLabel}.`}
         >
           <div className="grid gap-x-12 gap-y-10 md:grid-cols-3">
             {committees.map((committee) => (

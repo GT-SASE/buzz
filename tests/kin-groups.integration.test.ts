@@ -7,11 +7,11 @@ vi.mock("../packages/auth/src/index.ts", () => ({
   signOut: async () => undefined,
 }));
 
-const { db, kinGroups, mentorshipEnrollments, users } =
+const { db, kinGroups, kinMemberships, mentorshipEnrollments, users } =
   await import("../packages/db/src/index");
 const { createCaller } = await import("../packages/api/src/root");
 const { resetRateLimits } = await import("../packages/api/src/rate-limit");
-const { kinYear } = await import("../packages/api/src/kin-year");
+const { schoolYear, semester } = await import("../packages/api/src/terms");
 const { inArray } =
   await import("../packages/db/node_modules/drizzle-orm/index.js");
 
@@ -81,7 +81,8 @@ describe.skipIf(!process.env.DATABASE_URL)("kin groups", () => {
     });
     groupIds.push(created!.id);
     expect(created).toMatchObject({
-      year: kinYear(new Date()),
+      year: schoolYear(new Date()),
+      semester: semester(new Date()),
       description: null,
     });
 
@@ -162,7 +163,7 @@ describe.skipIf(!process.env.DATABASE_URL)("kin groups", () => {
     });
   });
 
-  it("rejects a duplicate group name in the same year", async () => {
+  it("rejects a duplicate group name in the same semester", async () => {
     expect(
       await errorCode(
         callerFor(officer).mentorship.createGroup({
@@ -174,24 +175,54 @@ describe.skipIf(!process.env.DATABASE_URL)("kin groups", () => {
     ).toBe("CONFLICT");
   });
 
+  it("keeps groups per semester and points per school year", async () => {
+    const now = new Date();
+    const otherTerm = semester(now).startsWith("fall")
+      ? `spring-${Number(schoolYear(now).slice(5))}`
+      : `fall-${schoolYear(now).slice(0, 4)}`;
+    const [past] = await db
+      .insert(kinGroups)
+      .values({
+        name: `Other term ${suffix}`,
+        year: schoolYear(now),
+        semester: otherTerm,
+      })
+      .returning();
+    groupIds.push(past!.id);
+    await db
+      .insert(kinMemberships)
+      .values({ userId: officer.id, semester: otherTerm, groupId: past!.id });
+
+    const current = await callerFor(officer).mentorship.groups();
+    expect(current.some((group) => group.id === past!.id)).toBe(false);
+    const other = await callerFor(officer).mentorship.groups({
+      semester: otherTerm,
+    });
+    expect(other.find((group) => group.id === past!.id)).toBeTruthy();
+    expect(await callerFor(officer).mentorship.semesters()).toContain(
+      otherTerm,
+    );
+
+    const before = await callerFor(mentor).mentorship.mine();
+    expect(before?.year).toBe(schoolYear(now));
+    expect(before?.points).toBeGreaterThan(0);
+  });
+
   it("starts a new school year from scratch", async () => {
-    const lastYear = "2019-2020";
     await db.insert(mentorshipEnrollments).values({
       userId: mentor.id,
-      year: lastYear,
+      year: "2019-2020",
       role: "mentor",
       status: "enrolled",
       points: 40,
     });
 
-    const current = await callerFor(mentor).mentorship.mine();
-    expect(current?.year).toBe(kinYear(new Date()));
-
     const history = await callerFor(officer).mentorship.list({
-      year: lastYear,
+      semester: "spring-2020",
     });
     expect(history.find((row) => row.userId === mentor.id)?.points).toBe(40);
-    expect(await callerFor(officer).mentorship.years()).toContain(lastYear);
+    const current = await callerFor(mentor).mentorship.mine();
+    expect(current?.year).toBe(schoolYear(new Date()));
   });
 
   it("returns deleted group members to signed up", async () => {

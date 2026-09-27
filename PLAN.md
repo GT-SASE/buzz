@@ -1,6 +1,6 @@
 # Next steps
 
-Updated after the SASE KIN groups pass (27 Sep 2026). Phases **0–5** are in
+Updated after the semesters and elections pass (27 Sep 2026). Phases **0–5** are in
 the tree. Gates: `pnpm check` (lint + typecheck + format + vitest). CI runs the
 same with a Postgres 16 service and `drizzle-kit migrate`.
 
@@ -21,6 +21,20 @@ is an ops or board task that has to happen in a console, not in this repo.
    registered; sign in on the canonical domain, or set `AUTH_URL`.
 
 ---
+
+## Done (semesters and elections, Sep 2026)
+
+- `terms.ts`: school year (Aug 1) and semester (Fall Aug–Dec, Spring Jan–Jul).
+- SASE KIN groups per semester via `buzz_kin_membership`; signup and KIN points
+  stay yearly.
+- Committee recruiting per semester via `buzz_committee_cycle`, opened and
+  closed by officers in the portal. `committeesPublic` and the hardcoded
+  Fall 2026 dates are gone. `/join` revalidates hourly and on officer edits.
+- Yearly officer elections: nominate, approve, vote (members with a check-in
+  this school year), close, publish. Secret ballot.
+- Migration `0004` backfills `semester` on existing groups, moves any group
+  assignments into memberships before dropping `groupId`, and seeds the
+  `fall-2026` committee cycle. Verified on a copy of the 0003 state.
 
 ## Done (SASE KIN groups + cleanup, Sep 2026)
 
