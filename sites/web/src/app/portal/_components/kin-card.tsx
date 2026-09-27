@@ -21,10 +21,12 @@ export function KinCard({
   name,
   role,
   points,
+  groupName,
 }: {
   name: string;
   role: "mentor" | "mentee";
   points: number;
+  groupName?: string | null;
 }) {
   const tier = mentorshipTierFor(points);
 
@@ -55,7 +57,7 @@ export function KinCard({
             {name}
           </p>
           <p className="text-eyebrow tracking-caps mt-1.5 font-semibold text-white/60 uppercase">
-            Separate from event points
+            {groupName ?? "Separate from event points"}
           </p>
         </CardContent>
 

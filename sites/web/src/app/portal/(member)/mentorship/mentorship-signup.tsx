@@ -10,12 +10,13 @@ import { Label } from "~/components/ui/label";
 import { Skeleton } from "~/components/ui/skeleton";
 import { Textarea } from "~/components/ui/textarea";
 import { api, type RouterOutputs } from "~/trpc/react";
+import { KinGroups } from "./kin-groups";
 
 const roles = [
   {
     value: "mentee" as const,
     title: "Mentee",
-    body: "First- or second-year looking for an upperclassman in your corner.",
+    body: "Looking for an upperclassman in your corner.",
   },
   {
     value: "mentor" as const,
@@ -26,7 +27,13 @@ const roles = [
 
 type Signup = RouterOutputs["mentorship"]["mine"];
 
-export function MentorshipSignup({ name }: { name: string }) {
+export function MentorshipSignup({
+  name,
+  year,
+}: {
+  name: string;
+  year: string;
+}) {
   const mine = api.mentorship.mine.useQuery();
 
   if (mine.isPending) {
@@ -45,11 +52,22 @@ export function MentorshipSignup({ name }: { name: string }) {
     );
   }
 
-  return <MentorshipSignupForm name={name} row={mine.data ?? null} />;
+  return (
+    <MentorshipSignupForm name={name} year={year} row={mine.data ?? null} />
+  );
 }
 
-function MentorshipSignupForm({ name, row }: { name: string; row: Signup }) {
+function MentorshipSignupForm({
+  name,
+  year,
+  row,
+}: {
+  name: string;
+  year: string;
+  row: Signup;
+}) {
   const utils = api.useUtils();
+  const myGroup = api.mentorship.myGroup.useQuery();
   const [role, setRole] = useState<"mentor" | "mentee">(row?.role ?? "mentee");
   const [note, setNote] = useState(row?.note ?? "");
 
@@ -73,31 +91,40 @@ function MentorshipSignupForm({ name, row }: { name: string; row: Signup }) {
   return (
     <div className="mx-auto w-full max-w-lg px-5 py-10 sm:px-6 sm:py-14">
       <p className="text-eyebrow tracking-caps text-gold-ink font-semibold uppercase">
-        SASE KIN
+        SASE KIN · {year}
       </p>
       <h1 className="font-display text-navy text-h2 mt-3 font-bold tracking-tight">
-        Sign up for SASE KIN.
+        Find your kin.
       </h1>
       <p className="text-ink-muted text-body mt-4">
-        Event check-ins stay on your event card. KIN points live on their own
-        card — an officer adds them after you actually meet.
+        Sign up as a mentor or mentee, then join a kin group below. KIN points
+        live on their own card — an officer adds them after your group meets.
+        Signups, groups, and points start fresh every school year.
       </p>
 
       {row && row.status !== "withdrawn" && (
         <div className="mt-8">
-          <KinCard name={name} role={row.role} points={row.points} />
+          <KinCard
+            name={name}
+            role={row.role}
+            points={row.points}
+            groupName={myGroup.data?.name}
+          />
           <p className="text-ink-muted text-body-sm mt-3">
             {row.status === "interested"
-              ? "Interested — waiting for an officer to enroll you."
-              : "Enrolled in a kin group."}
+              ? "Signed up — pick a kin group below."
+              : row.groupId
+                ? "In a kin group."
+                : "Enrolled — an officer will place you in a group."}
           </p>
         </div>
       )}
 
       {locked ? (
         <p className="text-ink-muted text-body-sm mt-8">
-          An officer enrolled you. If that should change, ask them — you cannot
-          withdraw from here once you are in a kin group.
+          {row.groupId
+            ? "Leave your kin group below to change your role or withdraw."
+            : "An officer enrolled you. Ask them if that should change."}
         </p>
       ) : (
         <form
@@ -157,7 +184,11 @@ function MentorshipSignupForm({ name, row }: { name: string; row: Signup }) {
             disabled={enroll.isPending}
             className="bg-navy hover:bg-navy-deep h-12 w-full rounded-md font-semibold text-white sm:w-auto"
           >
-            {enroll.isPending ? "Saving..." : "I'm interested"}
+            {enroll.isPending
+              ? "Saving..."
+              : row && row.status !== "withdrawn"
+                ? "Update signup"
+                : "Sign up"}
           </Button>
         </form>
       )}
@@ -179,6 +210,8 @@ function MentorshipSignupForm({ name, row }: { name: string; row: Signup }) {
           <AlertDescription>{enroll.error.message}</AlertDescription>
         </Alert>
       )}
+
+      <KinGroups year={year} signedUp={!!row && row.status !== "withdrawn"} />
     </div>
   );
 }

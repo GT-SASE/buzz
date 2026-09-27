@@ -17,7 +17,11 @@ import {
   TableHeader,
   TableRow,
 } from "~/components/ui/table";
-import { selectedCommitteeIds, committees } from "~/data/committees";
+import {
+  committeeCycle,
+  committees,
+  selectedCommitteeIds,
+} from "~/data/committees";
 import { cn } from "~/lib/utils";
 import { api, type RouterOutputs } from "~/trpc/react";
 
@@ -88,7 +92,7 @@ export function CommitteeInbox() {
         await utils.committee.exportCycle.fetch(undefined, { staleTime: 0 });
 
       downloadCsv(
-        "sase-committee-applications-fall-2026.csv",
+        `sase-committee-applications-${committeeCycle.id}.csv`,
         toCsv([
           [
             "Name",

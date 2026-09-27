@@ -4,6 +4,13 @@ import { toast } from "sonner";
 
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "~/components/ui/select";
 import { Skeleton } from "~/components/ui/skeleton";
 import {
   Table,
@@ -17,6 +24,45 @@ import { cn } from "~/lib/utils";
 import { api, type RouterOutputs } from "~/trpc/react";
 
 type Row = RouterOutputs["mentorship"]["list"][number];
+type Group = RouterOutputs["mentorship"]["groups"][number];
+
+const NO_GROUP = "none";
+
+function GroupPicker({
+  row,
+  groups,
+  busy,
+  onAssign,
+}: {
+  row: Row;
+  groups: Group[];
+  busy: boolean;
+  onAssign: (groupId: string | null) => void;
+}) {
+  if (row.status === "withdrawn") return null;
+  return (
+    <Select
+      value={row.groupId ?? NO_GROUP}
+      disabled={busy || groups.length === 0}
+      onValueChange={(value) => onAssign(value === NO_GROUP ? null : value)}
+    >
+      <SelectTrigger
+        aria-label={`Kin group for ${row.name ?? row.email}`}
+        className="h-auto min-h-11 w-full min-w-40 text-sm md:w-44"
+      >
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value={NO_GROUP}>No group</SelectItem>
+        {groups.map((group) => (
+          <SelectItem key={group.id} value={group.id}>
+            {group.name}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
 
 function RowActions({
   row,
@@ -69,13 +115,33 @@ function RowActions({
   );
 }
 
-export function MentorshipRoster() {
+export function MentorshipRoster({
+  year,
+  readOnly,
+}: {
+  year: string;
+  readOnly: boolean;
+}) {
   const utils = api.useUtils();
-  const listing = api.mentorship.list.useQuery();
+  const listing = api.mentorship.list.useQuery({ year });
+  const groups = api.mentorship.groups.useQuery({ year });
+  const assign = api.mentorship.assignGroup.useMutation({
+    onSuccess: async () => {
+      toast.success("Group updated.");
+      await Promise.all([
+        utils.mentorship.list.invalidate(),
+        utils.mentorship.groups.invalidate(),
+      ]);
+    },
+    onError: (error) => toast.error(error.message),
+  });
   const setStatus = api.mentorship.setStatus.useMutation({
     onSuccess: async () => {
       toast.success("Updated.");
-      await utils.mentorship.list.invalidate();
+      await Promise.all([
+        utils.mentorship.list.invalidate(),
+        utils.mentorship.groups.invalidate(),
+      ]);
     },
     onError: (error) => toast.error(error.message),
   });
@@ -104,25 +170,44 @@ export function MentorshipRoster() {
   if (rows.length === 0) {
     return (
       <p className="text-ink-muted text-body">
-        Nobody has signed up yet. Members use SASE KIN in the portal.
+        {readOnly
+          ? `Nobody signed up in ${year}.`
+          : "Nobody has signed up yet this year. Members use SASE KIN in the portal."}
       </p>
     );
   }
 
-  const busy = setStatus.isPending || award.isPending;
-  const actions = (row: Row) => (
-    <RowActions
-      row={row}
-      busy={busy}
-      onEnroll={() =>
-        setStatus.mutate({ userId: row.userId, status: "enrolled" })
-      }
-      onAward={() => award.mutate({ userId: row.userId, points: 5 })}
-      onRemove={() =>
-        setStatus.mutate({ userId: row.userId, status: "withdrawn" })
-      }
-    />
-  );
+  const busy = setStatus.isPending || award.isPending || assign.isPending;
+  const groupList = groups.data ?? [];
+  const groupName = (row: Row) =>
+    groupList.find((group) => group.id === row.groupId)?.name ?? "No group";
+  const picker = (row: Row) =>
+    readOnly ? (
+      <span className="text-navy text-body-sm font-medium">
+        {groupName(row)}
+      </span>
+    ) : (
+      <GroupPicker
+        row={row}
+        groups={groupList}
+        busy={busy}
+        onAssign={(groupId) => assign.mutate({ userId: row.userId, groupId })}
+      />
+    );
+  const actions = (row: Row) =>
+    readOnly ? null : (
+      <RowActions
+        row={row}
+        busy={busy}
+        onEnroll={() =>
+          setStatus.mutate({ userId: row.userId, status: "enrolled" })
+        }
+        onAward={() => award.mutate({ userId: row.userId, points: 5 })}
+        onRemove={() =>
+          setStatus.mutate({ userId: row.userId, status: "withdrawn" })
+        }
+      />
+    );
 
   return (
     <>
@@ -163,7 +248,8 @@ export function MentorshipRoster() {
                 {row.note}
               </p>
             )}
-            <div className="border-hairline mt-4 border-t pt-3">
+            <div className="border-hairline mt-4 grid gap-3 border-t pt-3">
+              {picker(row)}
               {actions(row)}
             </div>
           </li>
@@ -183,6 +269,9 @@ export function MentorshipRoster() {
                 </TableHead>
                 <TableHead className="text-ink-muted font-semibold">
                   Status
+                </TableHead>
+                <TableHead className="text-ink-muted font-semibold">
+                  Group
                 </TableHead>
                 <TableHead className="text-ink-muted font-semibold">
                   Points
@@ -228,6 +317,7 @@ export function MentorshipRoster() {
                       {row.status}
                     </Badge>
                   </TableCell>
+                  <TableCell>{picker(row)}</TableCell>
                   <TableCell className="text-navy font-bold tabular-nums">
                     {row.points}
                   </TableCell>

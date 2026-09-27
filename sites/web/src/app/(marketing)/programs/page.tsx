@@ -72,7 +72,7 @@ export default function ProgramsPage() {
                       href="/portal/mentorship"
                       className="w-full justify-center sm:w-auto"
                     >
-                      Sign up for SASE KIN
+                      Join a SASE KIN group
                     </Button>
                   )}
                 </div>
