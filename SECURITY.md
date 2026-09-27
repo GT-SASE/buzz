@@ -28,8 +28,8 @@ hours, and there is no bounty programme.
 
 - Check-in codes shared by members with each other. Rotation exists for this;
   the officer tools regenerate a code and revoke a photographed slide.
-- The public site (`/`, `/about`, `/events`, …). It reads no session and no
-  database, and is meant to be fully public.
+- The public site (`/`, `/about`, `/events`, …). It reads no session, only the
+  public event calendar, and is meant to be fully public.
 - Any Google account being able to sign in and become a member. That is a
   product decision, documented in `PLAN.md`, not an oversight.
 - Rate limits being per-instance rather than global. Known and documented in

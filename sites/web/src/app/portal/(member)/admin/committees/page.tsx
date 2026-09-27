@@ -3,6 +3,7 @@ import { Suspense } from "react";
 
 import { PortalHeader } from "~/app/portal/_components/portal-ui";
 import { Section, TextLink } from "~/components/site";
+import { isCommitteeCycleOpen } from "@buzz/api";
 import { committeeCycle } from "~/data/committees";
 import { HydrateClient, api } from "~/trpc/server";
 import AdminLoading from "../loading";
@@ -32,8 +33,10 @@ async function AdminCommitteesBody() {
         <CommitteeInbox />
         <p className="text-ink-muted text-body-sm mt-8">
           Applicants use{" "}
-          <TextLink href="/portal/committees">this form</TextLink>. Closes{" "}
-          {committeeCycle.closesLabel}.
+          <TextLink href="/portal/committees">this form</TextLink>.{" "}
+          {isCommitteeCycleOpen(new Date())
+            ? `Closes ${committeeCycle.closesLabel}.`
+            : "This cycle is closed."}
         </p>
       </Section>
     </HydrateClient>
