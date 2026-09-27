@@ -12,7 +12,7 @@ import { formatMonth } from "~/app/portal/_lib/format";
 import { requireSession } from "~/app/portal/_lib/session";
 import { Card } from "~/components/ui/card";
 import { Separator } from "~/components/ui/separator";
-import { committeesPublic } from "~/data/committees";
+import { committeeCycle, committeesPublic } from "~/data/committees";
 import { api, HydrateClient } from "~/trpc/server";
 import PortalLoading from "./loading";
 
@@ -105,8 +105,9 @@ async function DashboardBody() {
                     SASE KIN
                   </span>
                   <span className="text-ink-muted mt-1 block text-sm">
-                    Sign up as a mentor or mentee. KIN points stay off your
-                    event card.
+                    {isOfficer
+                      ? "Run this year's kin groups."
+                      : "Sign up and join a kin group for this school year."}
                   </span>
                 </span>
                 <ArrowRight
@@ -153,7 +154,7 @@ async function DashboardBody() {
                     <span className="text-ink-muted mt-1 block text-sm">
                       {isOfficer
                         ? "Read applications and run callbacks."
-                        : "Apply to Events, Marketing, or Treasury. Closes September 9."}
+                        : `Apply to Events, Marketing, or Treasury. Closes ${committeeCycle.closesLabel}.`}
                     </span>
                   </span>
                   <ArrowRight

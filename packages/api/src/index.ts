@@ -9,3 +9,5 @@ export {
 } from "./resume";
 export { takeToken, RESUME_UPLOAD_LIMIT } from "./rate-limit";
 export { isUndefinedTable } from "./pg-errors";
+export { kinYear } from "./kin-year";
+export { isCommitteeCycleOpen } from "./committee-cycle";
