@@ -70,7 +70,7 @@ const faqs = [
   },
   {
     q: "What if I join mid-semester?",
-    a: "Come anyway. Mentorship pairings and project teams have rolling spots most semesters.",
+    a: "Come anyway. You can join a SASE KIN group any time during the school year, and project teams have rolling spots most semesters.",
   },
 ] as const;
 

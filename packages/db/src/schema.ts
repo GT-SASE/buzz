@@ -270,17 +270,58 @@ export type MentorshipRole = "mentor" | "mentee";
 export type MentorshipStatus = "interested" | "enrolled" | "withdrawn";
 
 /**
+ * A kin group. Officers create them; members join an open one themselves or
+ * an officer places them. Null capacity means uncapped.
+ *
+ * Groups belong to one school year (`2026-2027`). Last year's groups stay as
+ * history; members only ever see the current year's.
+ */
+export const kinGroups = createTable(
+  "kin_group",
+  (d) => ({
+    id: d
+      .varchar({ length: 255 })
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    year: d.varchar({ length: 9 }).notNull(),
+    name: d.varchar({ length: 80 }).notNull(),
+    description: d.varchar({ length: 600 }),
+    capacity: d.integer(),
+    isOpen: d.boolean().notNull().default(true),
+    createdAt: d
+      .timestamp({ withTimezone: true })
+      .$defaultFn(() => /* @__PURE__ */ new Date())
+      .notNull(),
+    updatedAt: d.timestamp({ withTimezone: true }).$onUpdate(() => new Date()),
+  }),
+  (t) => [
+    uniqueIndex(idx("kin_group_year_name_idx")).on(
+      t.year,
+      sql`lower(${t.name})`,
+    ),
+    check(
+      idx("kin_group_capacity_check"),
+      sql`${t.capacity} is null or ${t.capacity} > 0`,
+    ),
+  ],
+);
+
+/**
  * Mentor-family signup. Points here are a separate ledger from event
  * attendance — a coffee with your little does not count as a GBM, and a GBM
  * does not count as a family meeting.
+ *
+ * One row per member per school year, so every fall starts from a fresh
+ * signup and zero KIN points while last year's row stays as history.
  */
 export const mentorshipEnrollments = createTable(
   "mentorship_enrollment",
   (d) => ({
     userId: d
       .varchar({ length: 255 })
-      .primaryKey()
+      .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
+    year: d.varchar({ length: 9 }).notNull(),
     role: d.varchar({ length: 16 }).$type<MentorshipRole>().notNull(),
     status: d
       .varchar({ length: 16 })
@@ -289,6 +330,9 @@ export const mentorshipEnrollments = createTable(
       .default("interested"),
     note: d.varchar({ length: 400 }),
     points: d.integer().notNull().default(0),
+    groupId: d.varchar({ length: 255 }).references(() => kinGroups.id, {
+      onDelete: "set null",
+    }),
     enrolledAt: d.timestamp({ withTimezone: true }),
     createdAt: d
       .timestamp({ withTimezone: true })
@@ -297,7 +341,10 @@ export const mentorshipEnrollments = createTable(
     updatedAt: d.timestamp({ withTimezone: true }).$onUpdate(() => new Date()),
   }),
   (t) => [
+    primaryKey({ columns: [t.userId, t.year] }),
     index(idx("mentorship_status_idx")).on(t.status),
+    index(idx("mentorship_year_idx")).on(t.year),
+    index(idx("mentorship_group_idx")).on(t.groupId),
     check(idx("mentorship_role_check"), sql`${t.role} in ('mentor', 'mentee')`),
     check(
       idx("mentorship_status_check"),
@@ -314,8 +361,16 @@ export const mentorshipEnrollmentsRelations = relations(
       fields: [mentorshipEnrollments.userId],
       references: [users.id],
     }),
+    group: one(kinGroups, {
+      fields: [mentorshipEnrollments.groupId],
+      references: [kinGroups.id],
+    }),
   }),
 );
+
+export const kinGroupsRelations = relations(kinGroups, ({ many }) => ({
+  members: many(mentorshipEnrollments),
+}));
 
 export type CommitteeId = "events" | "marketing" | "treasury";
 export type CommitteeApplicationStatus =

@@ -4,8 +4,9 @@ import { Suspense } from "react";
 import { PortalHeader } from "~/app/portal/_components/portal-ui";
 import { Section, TextLink } from "~/components/site";
 import { HydrateClient, api } from "~/trpc/server";
+import { kinYear } from "@buzz/api";
 import AdminLoading from "../loading";
-import { MentorshipRoster } from "./mentorship-roster";
+import { KinAdmin } from "./kin-admin";
 
 export const metadata: Metadata = { title: "SASE KIN" };
 
@@ -18,17 +19,22 @@ export default function AdminMentorshipPage() {
 }
 
 async function AdminMentorshipBody() {
-  await api.mentorship.list();
+  const currentYear = kinYear(new Date());
+  await Promise.all([
+    api.mentorship.list({ year: currentYear }),
+    api.mentorship.groups({ year: currentYear }),
+    api.mentorship.years(),
+  ]);
 
   return (
     <HydrateClient>
       <PortalHeader
         eyebrow="SASE KIN"
         title="Kin groups"
-        body="Enroll people who signed up. KIN points are separate from event check-ins — tap +5 after a meeting."
+        body="Groups and signups reset every school year. Set up groups, place people who signed up, and tap +5 after a meeting."
       />
       <Section size="sm">
-        <MentorshipRoster />
+        <KinAdmin currentYear={currentYear} />
         <p className="text-ink-muted text-body-sm mt-8">
           Officers who want a family of their own can{" "}
           <TextLink href="/portal/mentorship">sign up here</TextLink>.

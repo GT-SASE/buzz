@@ -186,3 +186,38 @@ describe("mentorship.setStatus", () => {
     expect((sets[0] as { enrolledAt: Date }).enrolledAt).toBeInstanceOf(Date);
   });
 });
+
+describe("kin group officer procedures", () => {
+  const cases = {
+    createGroup: (caller: ReturnType<typeof createCaller>) =>
+      caller.mentorship.createGroup({
+        name: "Hive",
+        capacity: null,
+        isOpen: true,
+      }),
+    updateGroup: (caller: ReturnType<typeof createCaller>) =>
+      caller.mentorship.updateGroup({
+        id: "g1",
+        name: "Hive",
+        capacity: null,
+        isOpen: true,
+      }),
+    deleteGroup: (caller: ReturnType<typeof createCaller>) =>
+      caller.mentorship.deleteGroup({ id: "g1" }),
+    assignGroup: (caller: ReturnType<typeof createCaller>) =>
+      caller.mentorship.assignGroup({ userId: "member-2", groupId: "g1" }),
+    awardGroupPoints: (caller: ReturnType<typeof createCaller>) =>
+      caller.mentorship.awardGroupPoints({ groupId: "g1", points: 5 }),
+    years: (caller: ReturnType<typeof createCaller>) =>
+      caller.mentorship.years(),
+  };
+
+  for (const [name, call] of Object.entries(cases)) {
+    it(`${name} refuses a MEMBER session before touching the database`, async () => {
+      const error = await rejection(
+        call(createCaller(memberCtx(unreachableDb))),
+      );
+      expect(error.code).toBe("FORBIDDEN");
+    });
+  }
+});

@@ -72,9 +72,9 @@ export const programs = [
     slug: "mentorship",
     icon: "compass",
     title: "SASE KIN",
-    body: "Kin groups pairing first-years with upperclassmen and alumni in industry.",
+    body: "Small kin groups of underclassmen and upperclassmen, new every school year.",
     detail:
-      "Every member who signs up is placed in a SASE KIN group: a small cluster of first- and second-years matched with upperclassmen, and where possible an alum in industry. Kin set their own rhythm — coffee between classes, resume passes before a deadline, someone to text when a semester goes sideways.",
+      "Sign up in the member portal as a mentor or mentee, then join a SASE KIN group: a small cluster of underclassmen and upperclassmen, some with an alum in industry. Groups start fresh every school year. Kin set their own rhythm — coffee between classes, resume passes before a deadline, someone to text when a semester goes sideways.",
   },
   {
     slug: "technical-projects",
@@ -123,8 +123,8 @@ export const firstMonth = [
   },
   {
     when: "Week two",
-    title: "Get placed in SASE KIN",
-    body: "A small group of first- and second-years matched with upperclassmen, and where possible an alum in industry.",
+    title: "Join a SASE KIN group",
+    body: "Sign up in the member portal and pick a small group of underclassmen and upperclassmen to meet with all year.",
   },
   {
     when: "Week three",
