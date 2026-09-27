@@ -7,7 +7,8 @@
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./trpc": "./src/trpc.ts"
+    "./trpc": "./src/trpc.ts",
+    "./terms": "./src/terms.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

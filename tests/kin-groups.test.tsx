@@ -71,7 +71,7 @@ describe("KinGroups", () => {
       group({ id: "g2", name: "Full House", capacity: 2 }),
       group({ id: "g3", name: "Roots", isOpen: false }),
     ];
-    render(<KinGroups signedUp year="2026-2027" />);
+    render(<KinGroups signedUp term="Fall 2026" />);
 
     fireEvent.click(screen.getByRole("button", { name: "Join Honeycomb" }));
     expect(state.joined).toEqual(["g1"]);
@@ -81,12 +81,12 @@ describe("KinGroups", () => {
     expect(screen.queryByRole("button", { name: /Join Roots/ })).toBe(null);
     expect(screen.getByText("Full")).toBeTruthy();
     expect(screen.getByText("Invite-only")).toBeTruthy();
-    expect(screen.getByText("2026-2027")).toBeTruthy();
+    expect(screen.getByText("Fall 2026")).toBeTruthy();
   });
 
   it("hides Join until the member has signed up", () => {
     state.groups = [group({})];
-    render(<KinGroups signedUp={false} year="2026-2027" />);
+    render(<KinGroups signedUp={false} term="Fall 2026" />);
     expect(screen.queryByRole("button", { name: /Join/ })).toBe(null);
     expect(screen.getByText(/Sign up above first/)).toBeTruthy();
   });
@@ -107,7 +107,7 @@ describe("KinGroups", () => {
         },
       ],
     };
-    render(<KinGroups signedUp year="2026-2027" />);
+    render(<KinGroups signedUp term="Fall 2026" />);
     expect(
       screen
         .getByRole("link", { name: "mina@example.com" })
