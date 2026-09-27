@@ -13,9 +13,9 @@ import { discord, instagram, site } from "~/data/site";
 import { breadcrumbSchema, pageMetadata } from "~/lib/seo";
 
 export const metadata = pageMetadata({
-  title: "Contact",
+  title: "Contact | SASE at Georgia Tech",
   description:
-    "How to reach SASE at Georgia Tech: general body meetings for prospective members, Discord and the mailing list for members, and sponsorship contacts for companies.",
+    "How to reach SASE at Georgia Tech: general body meetings for prospective members, Discord, the mailing list, and sponsorship contacts for companies.",
   path: "/contact",
 });
 

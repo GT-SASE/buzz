@@ -14,7 +14,7 @@ import { site } from "~/data/site";
 import { breadcrumbSchema, pageMetadata } from "~/lib/seo";
 
 export const metadata = pageMetadata({
-  title: "Sponsors",
+  title: "Sponsors | SASE at Georgia Tech",
   description:
     "Sponsor SASE at Georgia Tech and recruit from hundreds of Georgia Tech engineering, computing, science, and business students. Tiers, perks, and how to start.",
   path: "/sponsors",
