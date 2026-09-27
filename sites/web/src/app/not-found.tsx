@@ -1,6 +1,13 @@
+import type { Metadata } from "next";
+
 import { Button } from "~/components/site";
 import { SiteFooter } from "~/components/site/site-footer";
 import { SiteNav } from "~/components/site/site-nav";
+
+export const metadata: Metadata = {
+  title: "Page not found",
+  robots: { index: false },
+};
 
 /** Global 404: outside (marketing), so it mounts the public chrome itself. */
 export default function NotFound() {

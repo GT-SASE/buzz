@@ -1,7 +1,7 @@
 # Next steps
 
-Updated after the operability pass (16 Aug 2026). Phases **0–5** are in the
-tree. Gates: `pnpm check` (lint + typecheck + format + vitest). CI runs the
+Updated after the SASE KIN groups pass (27 Sep 2026). Phases **0–5** are in
+the tree. Gates: `pnpm check` (lint + typecheck + format + vitest). CI runs the
 same with a Postgres 16 service and `drizzle-kit migrate`.
 
 **No code work is left on the launch path.** Everything under "Remaining" below
@@ -21,6 +21,28 @@ is an ops or board task that has to happen in a console, not in this repo.
    registered; sign in on the canonical domain, or set `AUTH_URL`.
 
 ---
+
+## Done (SASE KIN groups + cleanup, Sep 2026)
+
+- **Kin groups.** `buzz_kin_group` table; members join open groups with seats
+  left (group row locked `FOR UPDATE` so the last seat cannot be taken twice),
+  leave them, and see their group's members and emails. Officers create, edit,
+  delete, place anyone (ignoring open/capacity), and award +5 to a whole group.
+  Group standings on the member page.
+- **Yearly.** Groups and signups carry a school `year` (`kinYear()`, Aug 1
+  rollover). Signup primary key is now `(userId, year)`, so each fall starts
+  clean; past years are read-only in the officer year picker.
+- **Migration `0003`** also creates `buzz_committee_application` and
+  `buzz_resume`, which were in the schema but in no committed migration — a
+  fresh database (CI, a new preview) had neither table. Every statement is
+  guarded (`IF NOT EXISTS` / `duplicate_object`) because production already
+  has both from untracked migrations. Existing signups are backfilled to
+  `2026-2027`. Verified against a copy of the 0002 state, applied twice.
+- Committee copy no longer says "Closes September 9" after the cycle closed;
+  the CSV filename follows `committeeCycle.id`.
+- Marketing copy describes KIN as sign up, then join a group, every year.
+- Removed unused `@radix-ui/react-{checkbox,collapsible,switch,tooltip}` and
+  the unused `publicProcedure`.
 
 ## Done (operability pass, Aug 2026)
 
@@ -121,7 +143,7 @@ is an ops or board task that has to happen in a console, not in this repo.
 - CI: `concurrency` group so stale runs cancel (main exempt — its history is what
   the deploy tracks), `timeout-minutes: 20`, `permissions: contents: read`, and
   the Node version read from `.nvmrc` instead of being duplicated in the workflow.
-- `.nvmrc` + `engines.node` so local, CI and Vercel agree on Node 22.
+- `.nvmrc` + `engines.node` so local, CI and Vercel agree on Node 24.
 - `.gitattributes` pinning the checkout to LF. Without it a contributor on
   Windows gets CRLF and `pnpm check` fails locally on files they never opened.
 - `.github/dependabot.yml` — weekly grouped npm PRs, monthly actions. `next-auth`
@@ -186,8 +208,8 @@ is an ops or board task that has to happen in a console, not in this repo.
 Business queries in `packages/api` use the Drizzle query builder
 (`count` / `sum` / `min` / `max`, `eq` / `and` / `isNull` / `gte` / `lt`,
 `desc` / `asc`, subqueries via `.as()`, `for("update")`). No hand-written
-`sql\`...\`` templates for roster, chapter overview, check-in, or leaderboard
-logic. Remaining `sql` fragments live only in `packages/db/src/schema.ts` for
+`sql\`...\``templates for roster, chapter overview, check-in, or leaderboard
+logic. Remaining`sql`fragments live only in`packages/db/src/schema.ts` for
 DDL helpers (`lower(email)` index, CHECK constraints).
 
 ### Marketing content (from sites.gatech.edu/gtsase)
@@ -232,6 +254,7 @@ DDL helpers (`lower(email)` index, CHECK constraints).
 
    The link happens on that account's first sign-in. Until then the row exists
    but has no session.
+
 3. ~~**Clear the seed rows.**~~ **Done, 16 Aug 2026.** `officer@dev.local`,
    `member@dev.local`, the three seeded events (`TASTE234`, `SASEGT26`,
    `WKSHP789`) and their two check-ins were removed in one transaction, after a
