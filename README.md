@@ -45,9 +45,10 @@ Next 16.3 only resolves `postcss.config.{js,mjs,json}`.
 ## Two halves
 
 The public site (`/`, `/about`, `/programs`, `/events`, `/join`, `/board`, `/sponsors`,
-`/contact`) is fully prerendered and touches neither the database nor the session. It stays
-that way on purpose — the root layout mounts no client providers, so those pages ship no
-React Query and no tRPC client.
+`/contact`, `/discord`) never reads the session. `/` and `/events` read the event calendar
+from the database through a cached query (`src/data/chapter-events.ts`) and render an empty
+calendar when `DATABASE_URL` is unset. The root layout mounts no client providers, so those
+pages ship no React Query and no tRPC client.
 
 The member portal (`/portal/**`) is the dynamic half. It reads the session and the database
 on every request, mounts the tRPC client in its own layout, and is excluded from search
@@ -56,7 +57,7 @@ indexing in two places (`robots.ts` and the portal layout's metadata).
 ## Setup
 
 The public site needs no environment at all — it builds and deploys with an
-empty environment, because none of its pages read the session or the database.
+empty environment, and the calendar is simply empty without a database.
 Everything below is what turns the **portal** on.
 
 1. Copy `.env.example` to `.env` at the repo root and fill it in. Next.js does
@@ -169,10 +170,22 @@ A member's total is one aggregate query over their own check-ins. Tiers are deri
 that total at render time — they live in `src/data/portal.ts` and changing them needs no
 migration.
 
-The dashboard leaderboard ranks members by that same total, with SQL `rank()`, so ties
-share a place. It shows names and totals only — never an email, an id, or a photo — and
+The dashboard leaderboard ranks members by that same total, with competition ranks computed
+in app code (`packages/api/src/leaderboard-crown.ts`), so ties share a place. It shows names and totals only — never an email, an id, or a photo — and
 there is no opt-out column, so if the board wants members to be able to hide, that needs a
 migration.
+
+## SASE KIN
+
+Members sign up at `/portal/mentorship` as a mentor or mentee, then join an open kin group
+themselves. Officers create groups at `/portal/admin/mentorship`, can make one invite-only,
+cap its seats, place anyone in any group, and award KIN points to one member or a whole group
+after a meeting. KIN points are a separate ledger from event points.
+
+Everything is scoped to a school year (`2026-2027`, rolling over on August 1st, Atlanta time):
+groups carry a `year`, and a signup row is keyed on `(userId, year)`. A new school year starts
+with no signup, no group, and zero KIN points. Past years stay in the database and officers can
+browse them read-only from the year picker.
 
 ## The roster
 

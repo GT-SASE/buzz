@@ -109,12 +109,14 @@ function CommitteeApplyFields({ data }: { data: Mine }) {
         {committeeCycle.label}
       </p>
       <h1 className="font-display text-navy text-h2 mt-3 font-bold tracking-tight">
-        Apply to a committee.
+        {data.open ? "Apply to a committee." : "Committee applications."}
       </h1>
       <p className="text-ink-muted text-body mt-4">
         Membership stays free and open. This is only for Events, Marketing, or
-        Treasury. Closes {committeeCycle.closesLabel}. We will reach out
-        afterwards to schedule a call.
+        Treasury.{" "}
+        {data.open
+          ? `Closes ${committeeCycle.closesLabel}. We will reach out afterwards to schedule a call.`
+          : "Recruiting for this cycle is over."}
       </p>
 
       {row && (
