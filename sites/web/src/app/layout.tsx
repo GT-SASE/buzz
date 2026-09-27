@@ -6,16 +6,30 @@ import { SpeedInsights } from "@vercel/speed-insights/next";
 import { Bricolage_Grotesque, Fraunces, IBM_Plex_Mono } from "next/font/google";
 
 import { site } from "~/data/site";
-import { jsonLd, organizationSchema } from "~/lib/seo";
+import { env } from "~/env";
+import {
+  googleSiteVerification,
+  jsonLd,
+  organizationSchema,
+  shareImage,
+} from "~/lib/seo";
+
+const defaultTitle = `${site.name} — ${site.tagline}`;
+const defaultDescription = `${site.name} — ${site.description.replace("The Georgia Tech chapter of the Society of Asian Scientists and Engineers — ", "")}`;
+const googleVerification = googleSiteVerification(
+  env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION,
+);
 
 export const metadata: Metadata = {
   // Makes every relative canonical/OG URL in a page's metadata absolute.
   metadataBase: new URL(site.url),
   title: {
-    default: `GT SASE — SASE at Georgia Tech`,
+    default: defaultTitle,
+    // Portal pages pass a short title and pick up this suffix. Public pages
+    // set an absolute title in `pageMetadata` instead.
     template: `%s · GT SASE`,
   },
-  description: `GT SASE (SASE at Georgia Tech) — ${site.description.replace("The Georgia Tech chapter of the Society of Asian Scientists and Engineers — ", "")}`,
+  description: defaultDescription,
   applicationName: "GT SASE",
   keywords: [
     "GT SASE",
@@ -47,18 +61,21 @@ export const metadata: Metadata = {
     },
   },
   openGraph: {
-    title: `GT SASE — SASE at Georgia Tech`,
-    description: `GT SASE (SASE at Georgia Tech) — ${site.description.replace("The Georgia Tech chapter of the Society of Asian Scientists and Engineers — ", "")}`,
+    title: defaultTitle,
+    description: defaultDescription,
     url: site.url,
-    siteName: "GT SASE",
+    siteName: site.name,
     locale: "en_US",
     type: "website",
+    images: [shareImage],
   },
   twitter: {
     card: "summary_large_image",
-    title: `GT SASE — SASE at Georgia Tech`,
-    description: `GT SASE (SASE at Georgia Tech) — ${site.description.replace("The Georgia Tech chapter of the Society of Asian Scientists and Engineers — ", "")}`,
+    title: defaultTitle,
+    description: defaultDescription,
+    images: [shareImage.url],
   },
+  ...(googleVerification ? { verification: googleVerification } : {}),
 };
 
 export const viewport: Viewport = {

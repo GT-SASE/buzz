@@ -10,7 +10,7 @@ import { programs } from "~/data/content";
 import { breadcrumbSchema, pageMetadata } from "~/lib/seo";
 
 export const metadata = pageMetadata({
-  title: "Programs",
+  title: "Programs | SASE at Georgia Tech",
   description:
     "Six standing programs at SASE Georgia Tech: professional development, SASE KIN, technical projects, community service, socials, and national conferences.",
   path: "/programs",

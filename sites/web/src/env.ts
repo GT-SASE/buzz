@@ -37,7 +37,14 @@ export const env = createEnv({
     VERCEL_ENV: z.enum(["production", "preview", "development"]).optional(),
   },
 
-  client: {},
+  client: {
+    /**
+     * Google Search Console HTML-tag token. Optional. When set, the root
+     * layout emits `metadata.verification.google`. Leave unset until Search
+     * Console issues a token — do not commit one.
+     */
+    NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION: z.string().min(1).optional(),
+  },
 
   runtimeEnv: {
     AUTH_SECRET: process.env.AUTH_SECRET,
@@ -48,6 +55,8 @@ export const env = createEnv({
     DATABASE_URL: process.env.DATABASE_URL,
     NODE_ENV: process.env.NODE_ENV,
     VERCEL_ENV: process.env.VERCEL_ENV,
+    NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION:
+      process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION,
   },
   skipValidation: !!process.env.SKIP_ENV_VALIDATION,
   emptyStringAsUndefined: true,

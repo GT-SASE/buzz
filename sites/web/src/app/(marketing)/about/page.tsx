@@ -14,9 +14,9 @@ import { photos } from "~/data/photos";
 import { breadcrumbSchema, pageMetadata } from "~/lib/seo";
 
 export const metadata = pageMetadata({
-  title: "About",
+  title: "About | SASE at Georgia Tech",
   description:
-    "SASE at Georgia Tech is the campus chapter of the Society of Asian Scientists and Engineers. Our mission, how the chapter is run, and what a year here looks like.",
+    "SASE at Georgia Tech is the campus chapter of the Society of Asian Scientists and Engineers. Our mission, how the chapter is run, and what a year looks like.",
   path: "/about",
 });
 

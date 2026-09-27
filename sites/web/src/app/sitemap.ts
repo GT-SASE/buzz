@@ -25,12 +25,10 @@ const routes = [
 ] as const;
 
 export default function sitemap(): MetadataRoute.Sitemap {
-  // Static export: this is build time, which is when the content last changed.
-  const lastModified = new Date();
-
+  // No lastModified. These routes have no per-page content date, and stamping
+  // `new Date()` made every URL look edited at build time.
   return routes.map((route) => ({
     url: route.path === "/" ? site.url : `${site.url}${route.path}`,
-    lastModified,
     changeFrequency: route.changeFrequency,
     priority: route.priority,
   }));
