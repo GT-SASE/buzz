@@ -67,6 +67,7 @@ function MentorshipSignupForm({
   row: Signup;
 }) {
   const utils = api.useUtils();
+  const myGroup = api.mentorship.myGroup.useQuery();
   const [role, setRole] = useState<"mentor" | "mentee">(row?.role ?? "mentee");
   const [note, setNote] = useState(row?.note ?? "");
 
@@ -103,7 +104,12 @@ function MentorshipSignupForm({
 
       {row && row.status !== "withdrawn" && (
         <div className="mt-8">
-          <KinCard name={name} role={row.role} points={row.points} />
+          <KinCard
+            name={name}
+            role={row.role}
+            points={row.points}
+            groupName={myGroup.data?.name}
+          />
           <p className="text-ink-muted text-body-sm mt-3">
             {row.status === "interested"
               ? "Signed up — pick a kin group below."

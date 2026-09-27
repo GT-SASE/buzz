@@ -36,13 +36,14 @@ async function DashboardBody() {
   const session = await requireSession("/portal");
   const isOfficer = session.user.role === "ADMIN";
 
-  const [home, , kin] = await Promise.all([
+  const [home, , kin, kinGroup] = await Promise.all([
     api.event.home(),
     api.member.leaderboard({ limit: 10 }),
     api.mentorship.mine().catch((error) => {
       console.error("KIN prefetch failed:", error);
       return null;
     }),
+    api.mentorship.myGroup().catch(() => null),
   ]);
   const { stats, attended, upcoming } = home;
 
@@ -66,6 +67,7 @@ async function DashboardBody() {
                 name={session.user.name ?? session.user.email ?? "Member"}
                 role={kin.role}
                 points={kin.points}
+                groupName={kinGroup?.name}
               />
             )}
           </div>
