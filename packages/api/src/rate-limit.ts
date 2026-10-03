@@ -130,3 +130,8 @@ export const ELECTION_ACTION_LIMIT = {
   limit: 20,
   intervalMs: 60_000,
 } as const;
+
+export const RSVP_LIMIT = {
+  limit: 20,
+  intervalMs: 60_000,
+} as const;

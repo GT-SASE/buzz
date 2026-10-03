@@ -59,6 +59,7 @@ export function BoardRow({ member }: { member: BoardMember }) {
  */
 export function EventCard({
   event,
+  children,
 }: {
   event: {
     title: string;
@@ -67,6 +68,8 @@ export function EventCard({
     description: string | null;
     reminder?: boolean;
   };
+  /** Links under the card, pinned to its bottom edge. */
+  children?: React.ReactNode;
 }) {
   return (
     <Card className="flex h-full flex-col">
@@ -91,6 +94,9 @@ export function EventCard({
       )}
       {event.description && (
         <p className="text-ink-muted text-body-sm mt-4">{event.description}</p>
+      )}
+      {children && (
+        <div className="mt-auto flex flex-wrap gap-x-6 pt-4">{children}</div>
       )}
     </Card>
   );

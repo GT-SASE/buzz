@@ -54,15 +54,15 @@ function CheckInStatus({
       className={cn(
         "text-eyebrow tracking-caps gap-2.5 px-4 py-1.5 font-semibold uppercase",
         open
-          ? "bg-gold-bright/15 text-gold-bright border-gold-bright/45"
-          : "border-white/25 text-white/70",
+          ? "bg-gold-bright/15 text-gold-ink border-gold-bright/45"
+          : "border-hairline text-ink-muted",
       )}
     >
       <span
         aria-hidden="true"
         className={cn(
           "size-2.5 rounded-full",
-          open ? "bg-gold-bright" : "border border-white/60",
+          open ? "bg-gold-bright" : "border-ink-muted border",
         )}
       />
       {open
@@ -331,7 +331,7 @@ export function EventAttendance({ eventId }: { eventId: string }) {
     );
   }
 
-  const { event, roster, rosterTotal, isPast, notYetOpen, opensAt } =
+  const { event, roster, rosterTotal, isPast, notYetOpen, opensAt, rsvps } =
     detail.data;
 
   // The same facts the check-in procedure tests before it lets anyone in, so
@@ -506,6 +506,28 @@ export function EventAttendance({ eventId }: { eventId: string }) {
                 pts awarded per attendee
               </span>
             </div>
+          </div>
+
+          <div className="border-hairline bg-paper/80 rounded-xl border p-5 shadow-xs sm:col-span-2">
+            <span className="text-eyebrow tracking-caps text-ink-muted text-xs font-semibold uppercase">
+              RSVPs
+            </span>
+            <span className="font-display text-navy mt-4 block text-3xl font-bold tabular-nums sm:text-4xl">
+              {rsvps.length}
+            </span>
+            {rsvps.length > 0 ? (
+              <ul className="text-ink-muted text-body-sm mt-3 flex flex-wrap gap-x-4 gap-y-1">
+                {rsvps.map((row) => (
+                  <li key={row.userId} className="break-all">
+                    {row.name ?? row.email}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-ink-muted text-body-sm mt-1">
+                Nobody has RSVPed yet.
+              </p>
+            )}
           </div>
         </div>
       </div>
