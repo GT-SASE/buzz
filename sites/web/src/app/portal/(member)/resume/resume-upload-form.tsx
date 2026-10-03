@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
+import { ConfirmDialog } from "~/app/portal/_components/confirm-dialog";
 import { formatDate } from "~/app/portal/_lib/format";
 import { Alert, AlertDescription } from "~/components/ui/alert";
 import { Button } from "~/components/ui/button";
@@ -151,15 +152,22 @@ function ResumeFields({ row }: { row: Mine }) {
       </form>
 
       {row && (
-        <Button
-          type="button"
-          variant="ghost"
-          disabled={remove.isPending}
-          onClick={() => remove.mutate()}
-          className="text-ink-muted mt-4 h-11 px-0"
+        <ConfirmDialog
+          title="Remove your resume?"
+          body="It comes out of the member resume book. Upload it again any time."
+          action="Remove"
+          danger
+          onConfirm={() => remove.mutate()}
         >
-          Remove resume
-        </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            disabled={remove.isPending}
+            className="text-ink-muted mt-4 h-11 px-0"
+          >
+            {remove.isPending ? "Removing..." : "Remove resume"}
+          </Button>
+        </ConfirmDialog>
       )}
 
       {error && (

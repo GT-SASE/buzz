@@ -3,7 +3,7 @@
 import { CameraOffIcon, OctagonXIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { toast } from "sonner";
 
 import { checkInPath, signInPath } from "~/app/portal/_lib/paths";
@@ -32,24 +32,47 @@ function codeFromHash() {
   );
 }
 
+const noSubscribe = () => () => undefined;
+
+/** Drops `?code=` and `#code=` so a refresh or a shared link cannot re-use it. */
+function clearCodeFromUrl() {
+  window.history.replaceState(null, "", window.location.pathname);
+}
+
 export function CheckInForm({ initialCode }: { initialCode: string }) {
   const router = useRouter();
   const utils = api.useUtils();
 
-  /** Set when a QR arrives in the URL, which needs a tap before it fires. */
-  const [confirm, setConfirm] = useState(() =>
-    (codeFromHash() || initialCode).toUpperCase(),
+  /**
+   * The server cannot see `#code=`, so nothing below renders until the browser
+   * can read it: otherwise hydration mismatches and the scanner flashes (and
+   * asks for the camera) before the "QR scanned" card replaces it.
+   */
+  const hydrated = useSyncExternalStore(
+    noSubscribe,
+    () => true,
+    () => false,
   );
+  const hashCode = useSyncExternalStore(noSubscribe, codeFromHash, () => "");
+  const [dismissed, setDismissed] = useState(false);
+  /** Set when a QR arrives in the URL, which needs a tap before it fires. */
+  const confirm = dismissed ? "" : (hashCode || initialCode).toUpperCase();
+  const dismiss = () => {
+    clearCodeFromUrl();
+    setDismissed(true);
+  };
   /** Why the camera is not on screen, when it could not be started. */
   const [cameraNote, setCameraNote] = useState<string | null>(null);
 
-  // Prefer the fragment (`#code=`) so the bearer never hits the server as a
-  // query string. Strip either form after the initial read so a refresh or a
-  // shared link cannot re-use it.
+  // A `?code=` is already in `initialCode`, so it can leave the address bar
+  // now. A `#code=` is read from the URL itself and goes when it is used.
   useEffect(() => {
-    const { hash, search } = window.location;
-    if (!hash.includes("code=") && !search.includes("code=")) return;
-    window.history.replaceState(null, "", window.location.pathname);
+    if (!window.location.search.includes("code=")) return;
+    window.history.replaceState(
+      null,
+      "",
+      window.location.pathname + window.location.hash,
+    );
   }, []);
 
   const checkIn = api.event.checkIn.useMutation({
@@ -68,9 +91,9 @@ export function CheckInForm({ initialCode }: { initialCode: string }) {
       ]);
       router.refresh();
     },
-    onError: (error) => {
+    onError: (error, variables) => {
       if (error.data?.code === "UNAUTHORIZED") {
-        router.push(signInPath(checkInPath(confirm || undefined)));
+        router.push(signInPath(checkInPath(variables.code)));
         return;
       }
       toast.error("Not checked in", { description: error.message });
@@ -79,8 +102,23 @@ export function CheckInForm({ initialCode }: { initialCode: string }) {
 
   const submit = (code: string) => {
     if (checkIn.isPending) return;
+    clearCodeFromUrl();
     checkIn.mutate({ code });
   };
+
+  if (!hydrated) {
+    return (
+      <Card className="border-hairline bg-paper rounded-lg">
+        <CardContent
+          role="status"
+          className="grid justify-items-center gap-4 py-14 text-center"
+        >
+          <Spinner className="text-gold-bright size-8" />
+          <span className="sr-only">Loading check-in.</span>
+        </CardContent>
+      </Card>
+    );
+  }
 
   if (checkIn.data) {
     const { eventTitle, pointsEarned, totalPoints, totalEvents } = checkIn.data;
@@ -170,7 +208,7 @@ export function CheckInForm({ initialCode }: { initialCode: string }) {
         <Button
           size="lg"
           onClick={() => {
-            setConfirm("");
+            dismiss();
             checkIn.reset();
           }}
           className="bg-gold-bright text-navy hover:bg-gold mt-5 h-auto min-h-12 w-full rounded-md py-6 text-base font-semibold"
@@ -209,7 +247,7 @@ export function CheckInForm({ initialCode }: { initialCode: string }) {
           <div className="mt-6 flex justify-center">
             <Button
               variant="ghost"
-              onClick={() => setConfirm("")}
+              onClick={dismiss}
               className="text-ink-muted hover:text-navy hover:bg-cream text-body-sm min-h-11 rounded-md font-semibold"
             >
               Scan a different QR
