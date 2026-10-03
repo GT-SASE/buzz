@@ -126,15 +126,23 @@ function normalizeCode(input: string) {
   return input.toUpperCase().replace(/[^A-Z0-9]/g, "");
 }
 
+function checkInNotYetOpen(startsAt: Date, now: number) {
+  return startsAt.getTime() - CHECK_IN_GRACE_MS > now;
+}
+
+function checkInClosed(startsAt: Date, now: number) {
+  return startsAt.getTime() < now - CHECK_IN_WINDOW_MS;
+}
+
 function assertCheckInWindow(startsAt: Date) {
   const now = Date.now();
-  if (startsAt.getTime() - CHECK_IN_GRACE_MS > now) {
+  if (checkInNotYetOpen(startsAt, now)) {
     throw new TRPCError({
       code: "BAD_REQUEST",
       message: "Check-in has not opened yet.",
     });
   }
-  if (startsAt.getTime() < now - CHECK_IN_WINDOW_MS) {
+  if (checkInClosed(startsAt, now)) {
     throw new TRPCError({
       code: "BAD_REQUEST",
       message: "Check-in for this event has closed.",
@@ -368,7 +376,11 @@ export const eventRouter = createTRPCRouter({
       // The officer screen shows whether the door is open. Without this it can
       // only see `checkInEnabled` and would keep advertising a code that
       // `checkIn` has already started refusing on the 24-hour window alone.
-      const isPast = event.startsAt.getTime() < Date.now() - CHECK_IN_WINDOW_MS;
+      const now = Date.now();
+      const isPast = checkInClosed(event.startsAt, now);
+      // Same for the other end: an officer can turn check-in on hours early.
+      const notYetOpen = checkInNotYetOpen(event.startsAt, now);
+      const opensAt = new Date(event.startsAt.getTime() - CHECK_IN_GRACE_MS);
 
       return {
         event,
@@ -378,6 +390,8 @@ export const eventRouter = createTRPCRouter({
             ? rosterCount.total
             : Number(rosterCount?.total ?? 0),
         isPast,
+        notYetOpen,
+        opensAt,
       };
     }),
 
@@ -941,9 +955,18 @@ export const eventRouter = createTRPCRouter({
     ]);
 
     const [row] = totals;
+    const now = Date.now();
     return {
       attended,
-      upcoming,
+      // `checkInOpen` is what `checkIn` will accept right now: an officer can
+      // turn check-in on hours before the window opens.
+      upcoming: upcoming.map((event) => ({
+        ...event,
+        checkInOpen:
+          event.checkInEnabled &&
+          !checkInNotYetOpen(event.startsAt, now) &&
+          !checkInClosed(event.startsAt, now),
+      })),
       stats: {
         totalEvents: asInt(row?.totalEvents),
         totalPoints: asInt(row?.totalPoints),

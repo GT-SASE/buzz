@@ -65,7 +65,7 @@ export function MemberCard({
           )}
         </CardContent>
 
-        <CardFooter className="relative mt-8 flex-col items-start gap-4 px-5 pb-6 sm:flex-row sm:items-end sm:justify-between sm:gap-5 sm:px-8 sm:pb-8">
+        <CardFooter className="relative mt-8 flex-col items-start gap-4 px-5 pb-6 sm:px-8 sm:pb-8">
           <div>
             <p className="font-display text-navy text-5xl leading-none font-bold tabular-nums">
               {totalPoints}

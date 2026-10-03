@@ -293,7 +293,7 @@ export function KinGroupManager({
                 <div className="border-hairline mt-4 flex flex-wrap gap-2 border-t pt-3">
                   <ConfirmDialog
                     title={`Give everyone in ${group.name} 5 KIN points?`}
-                    body={`Adds 5 points to each of the ${group.memberCount} members. There is no undo.`}
+                    body={`Adds 5 points to ${group.memberCount === 1 ? "its 1 member" : `each of its ${group.memberCount} members`}. There is no undo.`}
                     action="Award points"
                     onConfirm={() =>
                       award.mutate({ groupId: group.id, points: 5 })

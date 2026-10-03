@@ -40,7 +40,7 @@ import { cn } from "~/lib/utils";
 import { api, type RouterOutputs } from "~/trpc/react";
 
 type RosterRow = RouterOutputs["event"]["getById"]["roster"][number];
-type DoorState = "open" | "closed" | "archived";
+type DoorState = "open" | "scheduled" | "closed" | "archived";
 
 const columnHeading =
   "text-eyebrow tracking-caps text-ink-muted h-auto py-3 font-semibold uppercase";
@@ -49,7 +49,13 @@ const columnHeading =
  * The door, as a state rather than a sentence. A filled disc and a hollow one
  * differ without relying on colour.
  */
-function CheckInStatus({ state }: { state: DoorState }) {
+function CheckInStatus({
+  state,
+  opensAt,
+}: {
+  state: DoorState;
+  opensAt: Date;
+}) {
   const open = state === "open";
 
   return (
@@ -71,9 +77,11 @@ function CheckInStatus({ state }: { state: DoorState }) {
       />
       {open
         ? "Check-in open"
-        : state === "archived"
-          ? "Archived"
-          : "Check-in closed"}
+        : state === "scheduled"
+          ? `Opens ${formatEventTime(opensAt)}`
+          : state === "archived"
+            ? "Archived"
+            : "Check-in closed"}
     </Badge>
   );
 }
@@ -344,15 +352,18 @@ export function EventAttendance({ eventId }: { eventId: string }) {
     );
   }
 
-  const { event, roster, rosterTotal, isPast } = detail.data;
+  const { event, roster, rosterTotal, isPast, notYetOpen, opensAt } =
+    detail.data;
 
-  // The same three facts the check-in procedure tests before it lets anyone in,
-  // so the panel cannot advertise a door the server has already shut.
+  // The same facts the check-in procedure tests before it lets anyone in, so
+  // the panel cannot advertise a door the server would refuse.
   const state: DoorState = event.archivedAt
     ? "archived"
-    : event.checkInEnabled && !isPast
-      ? "open"
-      : "closed";
+    : !event.checkInEnabled || isPast
+      ? "closed"
+      : notYetOpen
+        ? "scheduled"
+        : "open";
 
   const overCapacity =
     event.maxCheckIns != null && event.currentCheckIns > event.maxCheckIns;
@@ -401,7 +412,7 @@ export function EventAttendance({ eventId }: { eventId: string }) {
             <h1 className="font-display text-navy text-h2 font-bold tracking-tight text-balance">
               {event.title}
             </h1>
-            <CheckInStatus state={state} />
+            <CheckInStatus state={state} opensAt={opensAt} />
           </div>
           <p className="text-ink-muted text-body mt-2">
             {formatEventTime(event.startsAt)}
@@ -410,7 +421,7 @@ export function EventAttendance({ eventId }: { eventId: string }) {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {state === "open" && (
+          {(state === "open" || state === "scheduled") && (
             <Button
               asChild
               className="bg-navy hover:bg-navy-deep min-h-10 rounded-lg px-4 font-semibold text-white shadow-xs"
@@ -473,7 +484,7 @@ export function EventAttendance({ eventId }: { eventId: string }) {
             <Eyebrow tone="onNavy" rule={false}>
               Check-in QR
             </Eyebrow>
-            {state === "open" ? (
+            {state === "open" || state === "scheduled" ? (
               <div className="mt-4 flex justify-center">
                 <CheckInQr
                   code={event.checkInCode}

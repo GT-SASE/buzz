@@ -50,11 +50,12 @@ async function DashboardBody() {
   const hasApplication = !!committee?.application;
   const { stats, attended, upcoming } = home;
 
-  const open = upcoming.filter((event) => event.checkInEnabled);
+  const open = upcoming.filter((event) => event.checkInOpen);
 
   return (
     <HydrateClient>
       <div className="max-w-content mx-auto px-5 py-10 sm:px-6 sm:py-14">
+        <h1 className="sr-only">My card</h1>
         <div className="grid gap-10 lg:grid-cols-[26rem_minmax(0,1fr)] lg:items-start lg:gap-14">
           <div className="grid gap-8">
             <MemberCard

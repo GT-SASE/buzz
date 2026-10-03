@@ -6,6 +6,7 @@ import { useEffect } from "react";
 
 import { CheckInQr } from "~/app/portal/_components/check-in-qr";
 import { Honeycomb } from "~/app/portal/_components/honeycomb";
+import { formatEventTime } from "~/app/portal/_lib/format";
 import { Badge } from "~/components/ui/badge";
 import { api } from "~/trpc/react";
 
@@ -65,12 +66,13 @@ export function PresentScreen({ eventId }: { eventId: string }) {
 
   const event = detail.data?.event;
 
-  // The same three facts `event.checkIn` tests, so the wall cannot advertise a
-  // QR the door has already started refusing.
+  // The same facts `event.checkIn` tests, so the wall cannot advertise a QR
+  // the door would refuse.
   const open =
     event?.archivedAt === null &&
     event.checkInEnabled &&
-    detail.data?.isPast === false;
+    detail.data?.isPast === false &&
+    detail.data.notYetOpen === false;
 
   const closed = detail.data !== undefined && !open;
 
@@ -95,14 +97,18 @@ export function PresentScreen({ eventId }: { eventId: string }) {
         {closed ? (
           <div className="text-center">
             <p className="font-display text-[clamp(2.5rem,6vw,6rem)] leading-none font-bold text-white">
-              Check-in is closed.
+              {detail.data?.notYetOpen && event?.checkInEnabled
+                ? "Check-in opens soon."
+                : "Check-in is closed."}
             </p>
             <p className="mt-8 text-[clamp(1.125rem,1.8vw,2rem)] font-semibold text-white/75">
               {event?.archivedAt
                 ? "This event is archived. This QR will not admit anyone."
-                : detail.data?.isPast
-                  ? "Check-in closed automatically 24 hours after this event started."
-                  : "Check-in is closed. This QR will not admit anyone."}
+                : detail.data?.notYetOpen && event?.checkInEnabled
+                  ? `The QR appears here at ${formatEventTime(detail.data.opensAt)}.`
+                  : detail.data?.isPast
+                    ? "Check-in closed automatically 24 hours after this event started."
+                    : "Check-in is closed. This QR will not admit anyone."}
             </p>
           </div>
         ) : event ? (
