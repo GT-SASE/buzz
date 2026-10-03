@@ -11,7 +11,7 @@ import {
 import { Progress } from "~/components/ui/progress";
 import { tierFor } from "~/data/portal";
 import { site } from "~/data/site";
-import { HexMark } from "~/components/site/hive";
+import { SaseMark } from "~/components/site/hive";
 import { Honeycomb } from "./honeycomb";
 
 /**
@@ -50,7 +50,7 @@ export function MemberCard({
             {site.shortName} Member
           </CardDescription>
           <CardAction>
-            <HexMark className="h-11 w-11 text-xs" />
+            <SaseMark className="h-11 w-11" />
           </CardAction>
         </CardHeader>
 
