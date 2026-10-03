@@ -100,5 +100,8 @@ export const navGroups: NavGroup[] = [
   { label: "Join", href: "/join", items: [] },
 ];
 
+/** Membership is a portal account, so joining is signing in. */
+export const joinHref = "/portal/signin?from=%2Fportal";
+
 /** The one high-emphasis call to action in the site chrome. */
-export const navCta = { label: "Join SASE", href: "/join" } as const;
+export const navCta = { label: "Join SASE", href: joinHref } as const;

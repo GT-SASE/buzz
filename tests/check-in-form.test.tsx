@@ -157,7 +157,9 @@ describe("CheckInForm", () => {
       data: { code: "UNAUTHORIZED" },
     });
 
-    expect(push).toHaveBeenCalledWith("/portal/signin?from=/portal/check-in");
+    expect(push).toHaveBeenCalledWith(
+      `/portal/signin?from=${encodeURIComponent("/portal/check-in?code=ABCD2345")}`,
+    );
     expect(toastError).not.toHaveBeenCalled();
   });
 });
