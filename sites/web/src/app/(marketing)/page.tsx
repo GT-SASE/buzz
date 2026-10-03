@@ -14,7 +14,6 @@ import {
   Section,
   StatValue,
   TextLink,
-  ThemeBadge,
 } from "~/components/site";
 import { JsonLd } from "~/components/site/json-ld";
 import { Badge } from "~/components/ui/badge";
@@ -74,8 +73,7 @@ export default async function Home() {
 
       <section className="px-5 sm:px-6">
         <div className="max-w-content mx-auto">
-          <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 pt-6 pb-2 sm:pt-8 sm:pb-3">
-            <ThemeBadge />
+          <div className="flex justify-end pt-6 pb-2 sm:pt-8 sm:pb-3">
             <span className="text-eyebrow tracking-masthead text-ink-muted font-semibold uppercase">
               2026&ndash;2027
             </span>

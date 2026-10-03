@@ -34,7 +34,6 @@ export const metadata: Metadata = {
   keywords: [
     "GT SASE",
     "SASE at Georgia Tech",
-    site.theme,
     "SASE",
     "SASE Georgia Tech",
     "Society of Asian Scientists and Engineers",
