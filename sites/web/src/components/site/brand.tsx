@@ -1,15 +1,13 @@
 import { Avatar, AvatarFallback } from "~/components/ui/avatar";
-import { HexMark } from "~/components/site/hive";
+import { SaseMark } from "~/components/site/hive";
 import { site } from "~/data/site";
 import { cn } from "~/lib/utils";
 
-/** GT + SASE lockup. Nav uses tone="dark", footer tone="light". */
+/** SASE emblem + chapter name. Nav uses tone="dark", footer tone="light". */
 export function Wordmark({ tone }: { tone: "light" | "dark" }) {
   return (
     <span className="flex items-center gap-3">
-      <HexMark
-        className={tone === "light" ? "bg-gold-bright text-navy" : undefined}
-      />
+      <SaseMark tile={tone === "light"} />
       <span className="flex flex-col leading-none">
         <span
           className={cn(
