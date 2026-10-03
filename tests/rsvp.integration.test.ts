@@ -1,4 +1,12 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 
 // Same harness as check-in.integration.test.ts: stub next-auth, import by path.
 vi.mock("../packages/auth/src/index.ts", () => ({
@@ -6,6 +14,27 @@ vi.mock("../packages/auth/src/index.ts", () => ({
   handlers: {},
   signIn: async () => undefined,
   signOut: async () => undefined,
+}));
+
+/** Captures what would be emailed instead of talking to Gmail. */
+const sent = vi.hoisted(
+  () => [] as { to: string; method: string; content: string }[],
+);
+vi.mock("nodemailer", () => ({
+  default: {
+    createTransport: () => ({
+      sendMail: async (message: {
+        to: string;
+        icalEvent: { method: string; content: string };
+      }) => {
+        sent.push({
+          to: message.to,
+          method: message.icalEvent.method,
+          content: message.icalEvent.content,
+        });
+      },
+    }),
+  },
 }));
 
 const { db, eventRsvps, events, users } =
@@ -134,6 +163,43 @@ describe.skipIf(!process.env.DATABASE_URL)("event RSVP", () => {
     await caller.event.cancelRsvp({ eventId: id.future });
     const after = await caller.event.upcoming();
     expect(after.find((row) => row.id === id.future)?.rsvpedAt).toBeNull();
+  });
+
+  describe("calendar emails", () => {
+    afterEach(() => vi.unstubAllEnvs());
+
+    it("sends an invite on RSVP and a cancellation for the same entry on cancel, once each", async () => {
+      vi.stubEnv("GMAIL_USER", "chapter@example.com");
+      vi.stubEnv("GMAIL_APP_PASSWORD", "app-password");
+      sent.length = 0;
+      const caller = callerFor(member);
+
+      expect((await caller.event.rsvp({ eventId: id.future })).invited).toBe(
+        true,
+      );
+      await caller.event.rsvp({ eventId: id.future });
+      expect(
+        (await caller.event.cancelRsvp({ eventId: id.future })).uninvited,
+      ).toBe(true);
+      await caller.event.cancelRsvp({ eventId: id.future });
+
+      expect(sent.map((mail) => mail.method)).toEqual(["REQUEST", "CANCEL"]);
+      expect(sent.every((mail) => mail.to === member.email)).toBe(true);
+      const uid = (content: string) => /UID:(.*)/.exec(content)?.[1];
+      expect(uid(sent[1]!.content)).toBe(uid(sent[0]!.content));
+      expect(sent[0]!.content).toContain("SUMMARY:vitest rsvp future");
+    });
+
+    it("still saves the RSVP when Gmail is not configured", async () => {
+      vi.stubEnv("GMAIL_USER", "");
+      vi.stubEnv("GMAIL_APP_PASSWORD", "");
+      sent.length = 0;
+      const caller = callerFor(member);
+      const result = await caller.event.rsvp({ eventId: id.future });
+      expect(result).toMatchObject({ rsvped: true, invited: false });
+      expect(sent).toHaveLength(0);
+      await caller.event.cancelRsvp({ eventId: id.future });
+    });
   });
 
   it("refuses events that have started or are archived, and signed-out callers", async () => {
