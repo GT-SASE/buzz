@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 
+import { signInPath } from "~/app/portal/_lib/paths";
 import { auth } from "@buzz/auth";
 
 /**
@@ -15,7 +16,7 @@ import { auth } from "@buzz/auth";
 export async function requireSession(from: string) {
   const session = await auth();
   if (!session?.user) {
-    redirect(`/portal/signin?from=${encodeURIComponent(from)}`);
+    redirect(signInPath(from));
   }
   return session;
 }

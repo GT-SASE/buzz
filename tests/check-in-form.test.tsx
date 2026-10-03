@@ -102,6 +102,7 @@ vi.mock("~/app/portal/(member)/check-in/scanner", async (importOriginal) => {
 });
 
 import { CheckInForm } from "~/app/portal/(member)/check-in/check-in-form";
+import { checkInPath, signInPath } from "~/app/portal/_lib/paths";
 
 describe("CheckInForm", () => {
   afterEach(() => {
@@ -157,7 +158,7 @@ describe("CheckInForm", () => {
       data: { code: "UNAUTHORIZED" },
     });
 
-    expect(push).toHaveBeenCalledWith("/portal/signin?from=/portal/check-in");
+    expect(push).toHaveBeenCalledWith(signInPath(checkInPath("ABCD2345")));
     expect(toastError).not.toHaveBeenCalled();
   });
 });

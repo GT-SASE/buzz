@@ -3,8 +3,8 @@
 import { toast } from "sonner";
 
 import { Badge } from "~/components/ui/badge";
+import { Action } from "~/app/portal/_components/controls";
 import { ConfirmDialog } from "~/app/portal/_components/confirm-dialog";
-import { Button } from "~/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -82,26 +82,15 @@ function RowActions({
   return (
     <div className="flex flex-wrap gap-2 md:justify-end">
       {row.status !== "enrolled" && (
-        <Button
-          size="sm"
-          className="min-h-11"
-          disabled={busy}
-          onClick={onEnroll}
-        >
+        <Action tone="solid" disabled={busy} onClick={onEnroll}>
           Enroll
-        </Button>
+        </Action>
       )}
       {row.status === "enrolled" && (
         <>
-          <Button
-            size="sm"
-            variant="outline"
-            className="min-h-11"
-            disabled={busy}
-            onClick={onAward}
-          >
+          <Action tone="quiet" disabled={busy} onClick={onAward}>
             +5 pts
-          </Button>
+          </Action>
           <ConfirmDialog
             title={`Remove ${row.name ?? row.email} from SASE KIN?`}
             body="They come off the roster and out of their kin group. They can sign up again from the portal."
@@ -109,14 +98,9 @@ function RowActions({
             danger
             onConfirm={onRemove}
           >
-            <Button
-              size="sm"
-              variant="ghost"
-              className="min-h-11"
-              disabled={busy}
-            >
+            <Action tone="quiet" disabled={busy}>
               Remove
-            </Button>
+            </Action>
           </ConfirmDialog>
         </>
       )}

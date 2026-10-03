@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 
 import { firstParam } from "~/app/portal/_lib/paths";
-import { requireSession } from "~/app/portal/_lib/session";
 import { Toaster } from "~/components/ui/sonner";
+import { auth } from "@buzz/auth";
 import { CheckInForm } from "./check-in-form";
+import { SignInRedirect } from "./signin-redirect";
 
 export const metadata: Metadata = {
   title: "Check in",
@@ -12,20 +13,22 @@ export const metadata: Metadata = {
 export default async function CheckInPage({
   searchParams,
 }: {
-  // Legacy `?code=` still accepted for signed-out OAuth round-trips. New QR
-  // links use `#code=` and are read client-side.
+  // QR links use `#code=`, read client-side. `?code=` is how that code survives
+  // the sign-in round-trip (see SignInRedirect).
   searchParams: Promise<{ code?: string | string[] }>;
 }) {
   const code = firstParam((await searchParams).code);
 
-  // Carried through sign-in so a member who scanned a poster while signed out
-  // lands back here with the code intact (query only — fragments are stripped
-  // by the OAuth redirect).
-  await requireSession(
-    code
-      ? `/portal/check-in?code=${encodeURIComponent(code)}`
-      : "/portal/check-in",
-  );
+  // Signed out: hand off to sign-in from the browser, which can still read the
+  // `#code=` a scanned QR carries and keep it through Google's round-trip.
+  const session = await auth();
+  if (!session?.user) {
+    return (
+      <div className="mx-auto w-full max-w-md px-5 py-6 sm:px-6 sm:py-14">
+        <SignInRedirect />
+      </div>
+    );
+  }
 
   // No masthead. This is a task done standing up in a room, usually one-handed.
   return (

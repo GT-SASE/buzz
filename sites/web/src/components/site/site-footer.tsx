@@ -2,7 +2,7 @@ import Link from "next/link";
 
 import { TextLink } from "~/components/site/actions";
 import { ThemeBadge, Wordmark } from "~/components/site/brand";
-import { navGroups, site } from "~/data/site";
+import { joinHref, navGroups, site } from "~/data/site";
 
 /** Discord already sits under Connect as the invite itself. */
 const explore = navGroups.filter((group) => group.href !== "/discord");
@@ -92,7 +92,7 @@ export function SiteFooter() {
           <p>{site.name}</p>
           <p>Georgia Institute of Technology · Atlanta, GA</p>
           <Link
-            href="/join"
+            href={joinHref}
             className="inline-flex min-h-11 items-center py-3 font-semibold transition hover:text-white"
           >
             Join SASE

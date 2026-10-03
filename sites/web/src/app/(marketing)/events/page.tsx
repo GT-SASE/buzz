@@ -10,7 +10,7 @@ import { JsonLd } from "~/components/site/json-ld";
 import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert";
 import { Badge } from "~/components/ui/badge";
 import { getChapterEvents, type PublicEvent } from "~/data/chapter-events";
-import { discord, instagram } from "~/data/site";
+import { discord, instagram, joinHref } from "~/data/site";
 import { breadcrumbSchema, eventSchema, pageMetadata } from "~/lib/seo";
 
 // Hourly: an event published in the portal appears without a deploy.
@@ -180,7 +180,7 @@ export default async function EventsPage() {
           title="Room announcements go out weekly."
           body="Dates and rooms shift during the semester. The feed carries every update first, and members get the calendar in their inbox."
         >
-          <Button href="/join" variant="solid">
+          <Button href={joinHref} variant="solid">
             Become a member
           </Button>
           {instagram && (
