@@ -266,6 +266,29 @@ export const eventCheckInsRelations = relations(eventCheckIns, ({ one }) => ({
   user: one(users, { fields: [eventCheckIns.userId], references: [users.id] }),
 }));
 
+/** A member saying they plan to come. Separate from check-in, which is proof. */
+export const eventRsvps = createTable(
+  "event_rsvp",
+  (d) => ({
+    eventId: d
+      .varchar({ length: 255 })
+      .notNull()
+      .references(() => events.id, { onDelete: "cascade" }),
+    userId: d
+      .varchar({ length: 255 })
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    createdAt: d
+      .timestamp({ withTimezone: true })
+      .$defaultFn(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  }),
+  (t) => [
+    primaryKey({ columns: [t.eventId, t.userId] }),
+    index(idx("event_rsvp_user_idx")).on(t.userId),
+  ],
+);
+
 export type MentorshipRole = "mentor" | "mentee";
 export type MentorshipStatus = "interested" | "enrolled" | "withdrawn";
 

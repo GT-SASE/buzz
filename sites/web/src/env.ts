@@ -31,6 +31,9 @@ export const env = createEnv({
     /** Stable Auth.js path Google always returns to. */
     AUTH_REDIRECT_PROXY_URL: z.url().optional(),
     DATABASE_URL: requirePortalSecrets ? z.url() : z.url().optional(),
+    /** RSVP calendar invites. Optional: without them RSVPs save, no email. */
+    GMAIL_USER: z.email().optional(),
+    GMAIL_APP_PASSWORD: z.string().min(1).optional(),
     NODE_ENV: z
       .enum(["development", "test", "production"])
       .default("development"),
@@ -53,6 +56,8 @@ export const env = createEnv({
     AUTH_URL: process.env.AUTH_URL,
     AUTH_REDIRECT_PROXY_URL: process.env.AUTH_REDIRECT_PROXY_URL,
     DATABASE_URL: process.env.DATABASE_URL,
+    GMAIL_USER: process.env.GMAIL_USER,
+    GMAIL_APP_PASSWORD: process.env.GMAIL_APP_PASSWORD,
     NODE_ENV: process.env.NODE_ENV,
     VERCEL_ENV: process.env.VERCEL_ENV,
     NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION:
