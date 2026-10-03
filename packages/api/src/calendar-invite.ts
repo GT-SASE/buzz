@@ -77,6 +77,7 @@ function mailer() {
   if (!user || !pass) return null;
   return {
     user,
+    replyTo: process.env.MAIL_REPLY_TO,
     transport: nodemailer.createTransport({
       service: "gmail",
       auth: { user, pass },
@@ -99,6 +100,7 @@ export async function sendCalendarInvite(
   try {
     await mail.transport.sendMail({
       from: { name: SENDER_NAME, address: mail.user },
+      replyTo: mail.replyTo,
       to: attendee,
       subject:
         method === "REQUEST"
