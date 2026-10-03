@@ -44,7 +44,7 @@ export function MemberCard({
 
         <CardHeader className="relative px-5 pt-6 sm:px-8 sm:pt-8">
           <CardTitle className="font-display text-navy text-lg leading-none font-bold tracking-tight">
-            {site.theme}
+            {site.portalName}
           </CardTitle>
           <CardDescription className="text-eyebrow tracking-caps text-gold-ink font-semibold uppercase">
             {site.shortName} Member
