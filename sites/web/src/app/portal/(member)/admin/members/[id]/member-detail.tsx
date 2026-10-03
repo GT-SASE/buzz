@@ -5,17 +5,7 @@ import Link from "next/link";
 import { EmptyState } from "~/app/portal/_components/portal-ui";
 import { formatDate, formatMonth } from "~/app/portal/_lib/format";
 import { Eyebrow, InitialDisc } from "~/components/site";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "~/components/ui/alert-dialog";
+import { ConfirmDialog } from "~/app/portal/_components/confirm-dialog";
 import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
@@ -308,53 +298,43 @@ export function MemberDetail({ memberId }: { memberId: string }) {
               </Button>
             )}
             {member.role !== "ADMIN" && (
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button
-                    type="button"
-                    disabled={promote.isPending}
-                    className="bg-navy hover:bg-navy-deep min-h-11 rounded-md font-semibold text-white"
-                  >
-                    {promote.isPending ? "Promoting..." : "Make officer"}
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>
-                      Make {displayName} an officer?
-                    </AlertDialogTitle>
-                    <AlertDialogDescription>
-                      They will see the officer tools the next time they load
-                      the portal. This does not take officer access away from
-                      anyone else.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction
-                      onClick={() => promote.mutate({ userId: member.id })}
-                    >
-                      Yes, make officer
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
+              <ConfirmDialog
+                title={`Make ${displayName} an officer?`}
+                body="They will see the officer tools the next time they load the portal. This does not take officer access away from anyone else."
+                action="Yes, make officer"
+                onConfirm={() => promote.mutate({ userId: member.id })}
+              >
+                <Button
+                  type="button"
+                  disabled={promote.isPending}
+                  className="bg-navy hover:bg-navy-deep min-h-11 rounded-md font-semibold text-white"
+                >
+                  {promote.isPending ? "Promoting..." : "Make officer"}
+                </Button>
+              </ConfirmDialog>
             )}
-            <Button
-              type="button"
-              variant="outline"
-              disabled={revoke.isPending}
-              onClick={() => revoke.mutate({ userId: member.id })}
-              className="border-hairline text-navy hover:bg-cream min-h-11 rounded-md font-semibold"
+            <ConfirmDialog
+              title={`Sign ${displayName} out everywhere?`}
+              body="Every device they are signed in on is signed out. They can sign back in with Google."
+              action="Revoke sessions"
+              danger
+              onConfirm={() => revoke.mutate({ userId: member.id })}
             >
-              {revoke.isPending
-                ? "Revoking sessions..."
-                : revoke.isSuccess
-                  ? revoke.data.revoked === 0
-                    ? "No sessions to revoke"
-                    : `Revoked ${revoke.data.revoked} session${revoke.data.revoked === 1 ? "" : "s"}`
-                  : "Revoke all sessions"}
-            </Button>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={revoke.isPending}
+                className="border-hairline text-navy hover:bg-cream min-h-11 rounded-md font-semibold"
+              >
+                {revoke.isPending
+                  ? "Revoking sessions..."
+                  : revoke.isSuccess
+                    ? revoke.data.revoked === 0
+                      ? "No sessions to revoke"
+                      : `Revoked ${revoke.data.revoked} session${revoke.data.revoked === 1 ? "" : "s"}`
+                    : "Revoke all sessions"}
+              </Button>
+            </ConfirmDialog>
           </div>
           {promote.error && (
             <p className="text-destructive text-body-sm mt-2">
