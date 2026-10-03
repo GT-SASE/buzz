@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 import { TextLink } from "~/components/site/actions";
-import { ThemeBadge, Wordmark } from "~/components/site/brand";
+import { Wordmark } from "~/components/site/brand";
 import { joinHref, navGroups, site } from "~/data/site";
 
 /** Discord already sits under Connect as the invite itself. */
@@ -24,9 +24,6 @@ export function SiteFooter() {
         <div className="grid gap-x-12 gap-y-14 sm:grid-cols-2 md:grid-cols-[1.6fr_1fr_1fr_1.4fr]">
           <div className={`${column} sm:col-span-2 md:col-span-1`}>
             <Wordmark tone="light" />
-            <div className="mt-6">
-              <ThemeBadge tone="light" />
-            </div>
             <p className="text-body-sm mt-6 max-w-sm leading-relaxed">
               {site.description}
             </p>

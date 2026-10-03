@@ -76,31 +76,6 @@ export default function OpengraphImage() {
             </div>
           </div>
         </div>
-
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            border: "2px solid rgba(179,163,105,0.55)",
-            borderRadius: 999,
-            padding: "12px 26px 12px 20px",
-            fontSize: 24,
-            fontWeight: 700,
-            color: "#003057",
-          }}
-        >
-          <div
-            style={{
-              width: 12,
-              height: 12,
-              backgroundColor: "#eaaa00",
-              marginRight: 12,
-              clipPath:
-                "polygon(50% 5%, 94% 27.5%, 94% 72.5%, 50% 95%, 6% 72.5%, 6% 27.5%)",
-            }}
-          />
-          {site.theme}
-        </div>
       </div>
 
       <div style={{ display: "flex", flexDirection: "column" }}>

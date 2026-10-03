@@ -1,6 +1,5 @@
 import { Avatar, AvatarFallback } from "~/components/ui/avatar";
 import { SaseMark } from "~/components/site/hive";
-import { site } from "~/data/site";
 import { cn } from "~/lib/utils";
 
 /** SASE emblem + chapter name. Nav uses tone="dark", footer tone="light". */
@@ -25,29 +24,6 @@ export function Wordmark({ tone }: { tone: "light" | "dark" }) {
         >
           Georgia Tech
         </span>
-      </span>
-    </span>
-  );
-}
-
-/**
- * The chapter theme as a lockup. A badge rather than a heading so it can sit
- * beside the real headline without competing for the page's one h1.
- */
-export function ThemeBadge({ tone = "dark" }: { tone?: "dark" | "light" }) {
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-2.5",
-        tone === "dark" ? "text-navy" : "text-white",
-      )}
-    >
-      <span
-        aria-hidden="true"
-        className="hex-face bg-gold-bright size-2.5 shrink-0"
-      />
-      <span className="font-display text-body-sm font-bold tracking-tight">
-        {site.theme}
       </span>
     </span>
   );

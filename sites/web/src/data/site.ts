@@ -19,7 +19,8 @@ export const site = {
    * The chapter theme. Rendered as a lockup in the hero, the footer, and the
    * share card — not as the site title, which stays searchable.
    */
-  theme: "Buzz by SASE",
+  /** The member portal's name. */
+  portalName: "Buzz",
   description:
     "The Georgia Tech chapter of the Society of Asian Scientists and Engineers — preparing Asian heritage students for success in the global business world.",
   /**
