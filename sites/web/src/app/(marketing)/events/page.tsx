@@ -11,6 +11,7 @@ import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert";
 import { Badge } from "~/components/ui/badge";
 import { getChapterEvents, type PublicEvent } from "~/data/chapter-events";
 import { discord, instagram, joinHref } from "~/data/site";
+import { googleCalendarUrl } from "~/lib/calendar";
 import { breadcrumbSchema, eventSchema, pageMetadata } from "~/lib/seo";
 
 // Hourly: an event published in the portal appears without a deploy.
@@ -112,7 +113,14 @@ export default async function EventsPage() {
         {upcoming.length > 0 ? (
           <div className="stagger grid gap-x-10 gap-y-12 sm:grid-cols-2 lg:grid-cols-3">
             {upcoming.map((event) => (
-              <EventCard key={event.id} event={event} />
+              <EventCard key={event.id} event={event}>
+                {!event.reminder && (
+                  <TextLink href="/portal/events">RSVP</TextLink>
+                )}
+                <TextLink href={googleCalendarUrl(event)} external>
+                  Add to Google Calendar
+                </TextLink>
+              </EventCard>
             ))}
           </div>
         ) : (

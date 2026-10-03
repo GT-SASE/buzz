@@ -3,6 +3,7 @@ import { and, asc, count, desc, eq, gte, isNull, lt } from "drizzle-orm";
 import { z } from "zod";
 
 import { asDate, asInt, totalsColumns } from "../aggregates";
+import { sendCalendarInvite } from "../calendar-invite";
 import {
   consecutivePriorStreak,
   pointsForArrival,
@@ -16,9 +17,10 @@ import {
   EXPORT_ATTENDANCE_LIMIT,
   MANUAL_CHECK_IN_LIMIT,
   REGENERATE_CODE_LIMIT,
+  RSVP_LIMIT,
 } from "../rate-limit";
 import { adminProcedure, createTRPCRouter, protectedProcedure } from "../trpc";
-import { eventCheckIns, events, users, type db } from "@buzz/db";
+import { eventCheckIns, eventRsvps, events, users, type db } from "@buzz/db";
 
 /**
  * How long after an event starts the door stays open. The member-facing list
@@ -351,7 +353,7 @@ export const eventRouter = createTRPCRouter({
         notFound("Event");
       }
 
-      const [roster, [rosterCount]] = await Promise.all([
+      const [roster, [rosterCount], rsvps] = await Promise.all([
         ctx.db
           .select({
             userId: eventCheckIns.userId,
@@ -371,6 +373,17 @@ export const eventRouter = createTRPCRouter({
           .select({ total: count() })
           .from(eventCheckIns)
           .where(eq(eventCheckIns.eventId, event.id)),
+        ctx.db
+          .select({
+            userId: eventRsvps.userId,
+            name: users.name,
+            email: users.email,
+            createdAt: eventRsvps.createdAt,
+          })
+          .from(eventRsvps)
+          .innerJoin(users, eq(users.id, eventRsvps.userId))
+          .where(eq(eventRsvps.eventId, event.id))
+          .orderBy(asc(eventRsvps.createdAt)),
       ]);
 
       // The officer screen shows whether the door is open. Without this it can
@@ -392,6 +405,7 @@ export const eventRouter = createTRPCRouter({
         isPast,
         notYetOpen,
         opensAt,
+        rsvps,
       };
     }),
 
@@ -885,14 +899,85 @@ export const eventRouter = createTRPCRouter({
     };
   }),
 
-  /** What is still open, marked with whether this member has already been. */
-  upcoming: protectedProcedure.query(async ({ ctx }) => {
-    const cutoff = new Date(Date.now() - CHECK_IN_WINDOW_MS);
+  /** Say you plan to come. Only before the event starts; repeats are no-ops. */
+  rsvp: protectedProcedure
+    .input(z.object({ eventId: z.string().min(1) }))
+    .mutation(async ({ ctx, input }) => {
+      assertRateLimit(`rsvp:${ctx.session.user.id}`, RSVP_LIMIT);
+      const event = await ctx.db.query.events.findFirst({
+        where: eq(events.id, input.eventId),
+        columns: {
+          id: true,
+          title: true,
+          description: true,
+          location: true,
+          startsAt: true,
+          archivedAt: true,
+        },
+      });
+      if (!event || event.archivedAt) notFound("Event");
+      if (event.startsAt.getTime() <= Date.now()) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "This event has already started.",
+        });
+      }
+      const [added] = await ctx.db
+        .insert(eventRsvps)
+        .values({ eventId: event.id, userId: ctx.session.user.id })
+        .onConflictDoNothing()
+        .returning({ eventId: eventRsvps.eventId });
+      const email = ctx.session.user.email;
+      const invited =
+        added && email
+          ? await sendCalendarInvite("REQUEST", event, email)
+          : false;
+      return { eventId: event.id, rsvped: true, invited };
+    }),
 
-    return ctx.db
+  cancelRsvp: protectedProcedure
+    .input(z.object({ eventId: z.string().min(1) }))
+    .mutation(async ({ ctx, input }) => {
+      assertRateLimit(`rsvp:${ctx.session.user.id}`, RSVP_LIMIT);
+      const [removed] = await ctx.db
+        .delete(eventRsvps)
+        .where(
+          and(
+            eq(eventRsvps.eventId, input.eventId),
+            eq(eventRsvps.userId, ctx.session.user.id),
+          ),
+        )
+        .returning({ eventId: eventRsvps.eventId });
+      const event =
+        removed &&
+        (await ctx.db.query.events.findFirst({
+          where: eq(events.id, input.eventId),
+          columns: {
+            id: true,
+            title: true,
+            description: true,
+            location: true,
+            startsAt: true,
+          },
+        }));
+      const email = ctx.session.user.email;
+      const uninvited =
+        event && email
+          ? await sendCalendarInvite("CANCEL", event, email)
+          : false;
+      return { eventId: input.eventId, rsvped: false, uninvited };
+    }),
+
+  /** What is still open, marked with whether this member has been or RSVPed. */
+  upcoming: protectedProcedure.query(async ({ ctx }) => {
+    const now = Date.now();
+    const cutoff = new Date(now - CHECK_IN_WINDOW_MS);
+
+    const rows = await ctx.db
       .select({
         ...publicEventColumns,
         attendedAt: eventCheckIns.checkedInAt,
+        rsvpedAt: eventRsvps.createdAt,
       })
       .from(events)
       .leftJoin(
@@ -902,9 +987,21 @@ export const eventRouter = createTRPCRouter({
           eq(eventCheckIns.userId, ctx.session.user.id),
         ),
       )
+      .leftJoin(
+        eventRsvps,
+        and(
+          eq(eventRsvps.eventId, events.id),
+          eq(eventRsvps.userId, ctx.session.user.id),
+        ),
+      )
       .where(and(isNull(events.archivedAt), gte(events.startsAt, cutoff)))
       .orderBy(asc(events.startsAt))
       .limit(20);
+    // RSVPs close at the start time; the list keeps an event a day longer.
+    return rows.map((row) => ({
+      ...row,
+      rsvpOpen: row.startsAt.getTime() > now,
+    }));
   }),
 
   /**
@@ -940,6 +1037,7 @@ export const eventRouter = createTRPCRouter({
         .select({
           ...publicEventColumns,
           attendedAt: eventCheckIns.checkedInAt,
+          rsvpedAt: eventRsvps.createdAt,
         })
         .from(events)
         .leftJoin(
@@ -948,6 +1046,10 @@ export const eventRouter = createTRPCRouter({
             eq(eventCheckIns.eventId, events.id),
             eq(eventCheckIns.userId, userId),
           ),
+        )
+        .leftJoin(
+          eventRsvps,
+          and(eq(eventRsvps.eventId, events.id), eq(eventRsvps.userId, userId)),
         )
         .where(and(isNull(events.archivedAt), gte(events.startsAt, cutoff)))
         .orderBy(asc(events.startsAt))

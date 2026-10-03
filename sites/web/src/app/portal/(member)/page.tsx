@@ -101,6 +101,26 @@ async function DashboardBody() {
 
             <Card className="border-hairline mt-3 gap-0 rounded-lg py-0 shadow-none">
               <Link
+                href="/portal/events"
+                className="flex min-h-11 items-center justify-between gap-4 px-5 py-5 sm:gap-6 sm:px-7"
+              >
+                <span className="min-w-0">
+                  <span className="font-display text-navy block text-lg font-bold">
+                    Upcoming events
+                  </span>
+                  <span className="text-ink-muted mt-1 block text-sm">
+                    RSVP for what is coming up.
+                  </span>
+                </span>
+                <ArrowRight
+                  aria-hidden="true"
+                  className="text-gold-ink size-5 shrink-0"
+                />
+              </Link>
+            </Card>
+
+            <Card className="border-hairline mt-3 gap-0 rounded-lg py-0 shadow-none">
+              <Link
                 href={
                   isOfficer ? "/portal/admin/mentorship" : "/portal/mentorship"
                 }
