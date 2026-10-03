@@ -5,7 +5,7 @@ import { toast } from "sonner";
 
 import { Action } from "~/app/portal/_components/controls";
 import {
-  formatEventTime,
+  formatDeadline,
   fromLocalInputValue,
   toLocalInputValue,
 } from "~/app/portal/_lib/format";
@@ -92,7 +92,13 @@ function OpenCycle({ label }: { label: string }) {
   );
 }
 
-function CycleSettings({ cycle }: { cycle: Cycle }) {
+function CycleSettings({
+  cycle,
+  readOnly,
+}: {
+  cycle: Cycle;
+  readOnly: boolean;
+}) {
   const refresh = useRefresh();
   const [closes, setCloses] = useState(() => toLocalInputValue(cycle.closesAt));
   const update = api.committee.setCycleCloses.useMutation({
@@ -110,69 +116,74 @@ function CycleSettings({ cycle }: { cycle: Cycle }) {
           {cycle.open ? "Open" : "Closed"}
         </Badge>
         <p className="text-ink-muted text-body-sm">
-          {cycle.open ? "Closes" : "Closed"} {formatEventTime(cycle.closesAt)}
+          {cycle.open ? "Closes" : "Closed"} {formatDeadline(cycle.closesAt)}
         </p>
+        {readOnly && (
+          <p className="text-ink-muted text-body-sm">Past cycle — read only.</p>
+        )}
       </div>
-      <form
-        className="mt-4 grid gap-4 sm:grid-cols-[1fr_auto] sm:items-end"
-        onSubmit={(event) => {
-          event.preventDefault();
-          update.mutate({
-            id: cycle.id,
-            closesAt: fromLocalInputValue(closes),
-          });
-        }}
-      >
-        <div className="grid gap-2">
-          <Label htmlFor={`closes-${cycle.id}`}>
-            Close date (Atlanta time)
-          </Label>
-          <Input
-            id={`closes-${cycle.id}`}
-            type="datetime-local"
-            required
-            value={closes}
-            onChange={(event) => setCloses(event.target.value)}
-            className="text-base tabular-nums"
-          />
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Action type="submit" tone="solid" disabled={update.isPending}>
-            Save date
-          </Action>
-          {cycle.open && (
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Action tone="danger" disabled={update.isPending}>
-                  Close now
-                </Action>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>
-                    Close {cycle.label} applications now?
-                  </AlertDialogTitle>
-                  <AlertDialogDescription>
-                    Members can no longer apply or edit. You can reopen by
-                    setting a later close date.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction
-                    onClick={() =>
-                      update.mutate({ id: cycle.id, closesAt: new Date() })
-                    }
-                    className="bg-destructive hover:bg-destructive/90 text-white"
-                  >
-                    Close applications
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-          )}
-        </div>
-      </form>
+      {!readOnly && (
+        <form
+          className="mt-4 grid gap-4 sm:grid-cols-[1fr_auto] sm:items-end"
+          onSubmit={(event) => {
+            event.preventDefault();
+            update.mutate({
+              id: cycle.id,
+              closesAt: fromLocalInputValue(closes),
+            });
+          }}
+        >
+          <div className="grid gap-2">
+            <Label htmlFor={`closes-${cycle.id}`}>
+              Close date (Atlanta time)
+            </Label>
+            <Input
+              id={`closes-${cycle.id}`}
+              type="datetime-local"
+              required
+              value={closes}
+              onChange={(event) => setCloses(event.target.value)}
+              className="text-base tabular-nums"
+            />
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Action type="submit" tone="solid" disabled={update.isPending}>
+              Save date
+            </Action>
+            {cycle.open && (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Action tone="danger" disabled={update.isPending}>
+                    Close now
+                  </Action>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>
+                      Close {cycle.label} applications now?
+                    </AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Members can no longer apply or edit. You can reopen by
+                      setting a later close date.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={() =>
+                        update.mutate({ id: cycle.id, closesAt: new Date() })
+                      }
+                      className="bg-destructive hover:bg-destructive/90 text-white"
+                    >
+                      Close applications
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
+          </div>
+        </form>
+      )}
     </div>
   );
 }
@@ -201,14 +212,15 @@ export function CommitteeAdmin() {
           <Select value={selectedId} onValueChange={setPicked}>
             <SelectTrigger
               id="committee-cycle"
-              className="h-auto min-h-11 w-48"
+              className="h-auto min-h-11 w-64"
             >
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               {data.cycles.map((cycle) => (
                 <SelectItem key={cycle.id} value={cycle.id}>
-                  {cycle.label} · {cycle.applications}
+                  {cycle.label} · {cycle.applications}{" "}
+                  {cycle.applications === 1 ? "application" : "applications"}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -224,7 +236,11 @@ export function CommitteeAdmin() {
 
       {selected && (
         <div className="mb-8">
-          <CycleSettings key={selected.id} cycle={selected} />
+          <CycleSettings
+            key={`${selected.id}:${new Date(selected.closesAt).getTime()}`}
+            cycle={selected}
+            readOnly={selected.id !== data.current}
+          />
         </div>
       )}
 

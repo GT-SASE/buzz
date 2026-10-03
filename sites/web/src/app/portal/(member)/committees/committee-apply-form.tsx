@@ -15,7 +15,8 @@ import {
   committeeExpectations,
   committees,
 } from "~/data/committees";
-import { formatDate, formatEventTime } from "~/app/portal/_lib/format";
+import { ConfirmDialog } from "~/app/portal/_components/confirm-dialog";
+import { formatDate, formatDeadline } from "~/app/portal/_lib/format";
 import { api, type RouterOutputs } from "~/trpc/react";
 
 type Mine = RouterOutputs["committee"]["mine"];
@@ -84,13 +85,13 @@ function CommitteeApplyFields({ data }: { data: Mine }) {
   const [treasuryWhy, setTreasuryWhy] = useState(row?.treasuryWhy ?? "");
   const [otherOrgs, setOtherOrgs] = useState(row?.otherOrgs ?? "");
   const [comments, setComments] = useState(row?.comments ?? "");
+  const pickedCommittee = wantsEvents || wantsMarketing || wantsTreasury;
 
   const apply = api.committee.submit.useMutation({
     onSuccess: async () => {
       toast.success("Application saved.");
       await utils.committee.mine.invalidate();
     },
-    onError: (error) => toast.error(error.message),
   });
   const withdraw = api.committee.withdraw.useMutation({
     onSuccess: async () => {
@@ -132,7 +133,7 @@ function CommitteeApplyFields({ data }: { data: Mine }) {
         Membership stays free and open. This is only for Events, Marketing, or
         Treasury.{" "}
         {data.open
-          ? `Closes ${formatEventTime(data.closesAt)}. We will reach out afterwards to schedule a call.`
+          ? `Closes ${formatDeadline(data.closesAt)}. We will reach out afterwards to schedule a call.`
           : "Recruiting for this cycle is over."}
       </p>
 
@@ -391,7 +392,7 @@ function CommitteeApplyFields({ data }: { data: Mine }) {
         {canEdit && (
           <Button
             type="submit"
-            disabled={apply.isPending}
+            disabled={apply.isPending || !pickedCommittee}
             className="bg-navy hover:bg-navy-deep h-12 w-full rounded-md font-semibold text-white sm:w-auto"
           >
             {apply.isPending
@@ -404,15 +405,22 @@ function CommitteeApplyFields({ data }: { data: Mine }) {
       </form>
 
       {canEdit && row?.status === "submitted" && (
-        <Button
-          type="button"
-          variant="ghost"
-          disabled={withdraw.isPending}
-          onClick={() => withdraw.mutate()}
-          className="text-ink-muted mt-4 h-11 px-0"
+        <ConfirmDialog
+          title="Withdraw your application?"
+          body="Officers will no longer review it. You can submit again while applications are open."
+          action="Withdraw"
+          danger
+          onConfirm={() => withdraw.mutate()}
         >
-          Withdraw application
-        </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            disabled={withdraw.isPending}
+            className="text-ink-muted mt-4 h-11 px-0"
+          >
+            {withdraw.isPending ? "Withdrawing..." : "Withdraw application"}
+          </Button>
+        </ConfirmDialog>
       )}
 
       {apply.error && (

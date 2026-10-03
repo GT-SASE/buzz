@@ -122,7 +122,7 @@ function ApplicationBody({
             <h1 className="font-display text-navy text-h2 font-bold tracking-tight">
               {row.name ?? row.email}
             </h1>
-            <p className="text-ink-muted text-body-sm mt-2">
+            <p className="text-ink-muted text-body-sm mt-2 break-all">
               {row.email}
               <span aria-hidden="true"> · </span>
               {row.discordHandle}

@@ -25,22 +25,16 @@ export function Action({
   children,
   tone = "quiet",
   type = "button",
-  disabled = false,
-  onClick,
   className,
-}: {
-  children: React.ReactNode;
+  ...props
+}: Omit<React.ComponentProps<typeof Button>, "type" | "variant"> & {
   tone?: keyof typeof actionTones;
   type?: "button" | "submit";
-  disabled?: boolean;
-  onClick?: () => void;
-  className?: string;
 }) {
   return (
     <Button
+      {...props}
       type={type}
-      disabled={disabled}
-      onClick={onClick}
       variant="ghost"
       className={cn(
         "h-auto min-h-11 rounded-full px-5 py-2.5 text-sm font-semibold transition duration-200 disabled:cursor-not-allowed disabled:opacity-45",

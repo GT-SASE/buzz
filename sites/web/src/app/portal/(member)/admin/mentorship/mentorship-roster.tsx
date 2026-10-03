@@ -3,6 +3,7 @@
 import { toast } from "sonner";
 
 import { Badge } from "~/components/ui/badge";
+import { ConfirmDialog } from "~/app/portal/_components/confirm-dialog";
 import { Button } from "~/components/ui/button";
 import {
   Select,
@@ -101,15 +102,22 @@ function RowActions({
           >
             +5 pts
           </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="min-h-11"
-            disabled={busy}
-            onClick={onRemove}
+          <ConfirmDialog
+            title={`Remove ${row.name ?? row.email} from SASE KIN?`}
+            body="They come off the roster and out of their kin group. They can sign up again from the portal."
+            action="Remove"
+            danger
+            onConfirm={onRemove}
           >
-            Remove
-          </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="min-h-11"
+              disabled={busy}
+            >
+              Remove
+            </Button>
+          </ConfirmDialog>
         </>
       )}
     </div>
@@ -178,7 +186,11 @@ export function MentorshipRoster({
     );
   }
 
-  const busy = setStatus.isPending || award.isPending || assign.isPending;
+  const busy = (row: Row) =>
+    [setStatus, award, assign].some(
+      (mutation) =>
+        mutation.isPending && mutation.variables?.userId === row.userId,
+    );
   const groupList = groups.data ?? [];
   const groupName = (row: Row) =>
     groupList.find((group) => group.id === row.groupId)?.name ?? "No group";
@@ -191,7 +203,7 @@ export function MentorshipRoster({
       <GroupPicker
         row={row}
         groups={groupList}
-        busy={busy}
+        busy={busy(row)}
         onAssign={(groupId) => assign.mutate({ userId: row.userId, groupId })}
       />
     );
@@ -199,7 +211,7 @@ export function MentorshipRoster({
     readOnly ? null : (
       <RowActions
         row={row}
-        busy={busy}
+        busy={busy(row)}
         onEnroll={() =>
           setStatus.mutate({ userId: row.userId, status: "enrolled" })
         }

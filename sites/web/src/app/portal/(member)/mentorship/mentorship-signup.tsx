@@ -52,6 +52,14 @@ export function MentorshipSignup({
     );
   }
 
+  if (mine.error) {
+    return (
+      <p className="text-destructive mx-auto max-w-lg px-5 py-10">
+        {mine.error.message}
+      </p>
+    );
+  }
+
   return (
     <MentorshipSignupForm name={name} term={term} row={mine.data ?? null} />
   );
@@ -76,7 +84,6 @@ function MentorshipSignupForm({
       toast.success("You're on the list.");
       await utils.mentorship.mine.invalidate();
     },
-    onError: (error) => toast.error(error.message),
   });
   const withdraw = api.mentorship.withdraw.useMutation({
     onSuccess: async () => {
