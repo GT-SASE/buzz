@@ -2,6 +2,7 @@
 
 import { toast } from "sonner";
 
+import { ConfirmDialog } from "~/app/portal/_components/confirm-dialog";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
@@ -9,7 +10,7 @@ import { api, type RouterOutputs } from "~/trpc/react";
 
 type Group = RouterOutputs["mentorship"]["groups"][number];
 
-function seatsLabel(group: Group) {
+export function seatsLabel(group: Group) {
   if (group.capacity === null) return `${group.memberCount} in group`;
   return `${group.memberCount} of ${group.capacity} seats`;
 }
@@ -57,8 +58,12 @@ export function KinGroups({
     );
   }
 
-  if (groups.error) {
-    return <p className="text-destructive mt-12">{groups.error.message}</p>;
+  if (groups.error || myGroup.error) {
+    return (
+      <p className="text-destructive mt-12">
+        {(groups.error ?? myGroup.error)?.message}
+      </p>
+    );
   }
 
   const mine = myGroup.data ?? null;
@@ -112,15 +117,22 @@ export function KinGroups({
               </li>
             ))}
           </ul>
-          <Button
-            type="button"
-            variant="ghost"
-            disabled={busy}
-            onClick={() => leave.mutate()}
-            className="text-ink-muted mt-3 h-11 px-0"
+          <ConfirmDialog
+            title={`Leave ${mine.name}?`}
+            body="Your seat opens up for someone else, so you may not get it back if the group fills."
+            action="Leave group"
+            danger
+            onConfirm={() => leave.mutate()}
           >
-            Leave this group
-          </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={busy}
+              className="text-ink-muted mt-3 h-11 px-0"
+            >
+              {leave.isPending ? "Leaving..." : "Leave this group"}
+            </Button>
+          </ConfirmDialog>
         </section>
       )}
 

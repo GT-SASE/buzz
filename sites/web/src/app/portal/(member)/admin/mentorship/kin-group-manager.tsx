@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { ConfirmDialog } from "~/app/portal/_components/confirm-dialog";
+import { seatsLabel } from "~/app/portal/(member)/mentorship/kin-groups";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -286,9 +288,7 @@ export function KinGroupManager({
                 </p>
               )}
               <p className="text-ink-muted text-body-sm mt-3">
-                {group.memberCount}
-                {group.capacity !== null ? ` of ${group.capacity}` : ""} members
-                ·{" "}
+                {seatsLabel(group)} ·{" "}
                 <span className="text-navy font-semibold tabular-nums">
                   {group.points} pts
                 </span>
@@ -300,17 +300,23 @@ export function KinGroupManager({
               )}
               {!readOnly && (
                 <div className="border-hairline mt-4 flex flex-wrap gap-2 border-t pt-3">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="min-h-11"
-                    disabled={award.isPending || group.memberCount === 0}
-                    onClick={() =>
+                  <ConfirmDialog
+                    title={`Give everyone in ${group.name} 5 KIN points?`}
+                    body={`Adds 5 points to each of the ${group.memberCount} members. There is no undo.`}
+                    action="Award points"
+                    onConfirm={() =>
                       award.mutate({ groupId: group.id, points: 5 })
                     }
                   >
-                    +5 whole group
-                  </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="min-h-11"
+                      disabled={award.isPending || group.memberCount === 0}
+                    >
+                      +5 whole group
+                    </Button>
+                  </ConfirmDialog>
                   <GroupDialog group={group} />
                   <DeleteGroup group={group} />
                 </div>

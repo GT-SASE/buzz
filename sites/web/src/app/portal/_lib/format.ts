@@ -29,9 +29,44 @@ function asRenderableDate(value: Date | string | number) {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
+const dateTimeAndYear = new Intl.DateTimeFormat("en-US", {
+  weekday: "short",
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
+  timeZone: ZONE,
+});
+
+const yearOnly = new Intl.DateTimeFormat("en-US", {
+  year: "numeric",
+  timeZone: ZONE,
+});
+
 export function formatEventTime(value: Date | string | number) {
   const date = asRenderableDate(value);
-  return date ? dateAndTime.format(date) : "—";
+  if (!date) return "—";
+  return yearOnly.format(date) === yearOnly.format(new Date())
+    ? dateAndTime.format(date)
+    : dateTimeAndYear.format(date);
+}
+
+const deadline = new Intl.DateTimeFormat("en-US", {
+  weekday: "short",
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
+  timeZoneName: "short",
+  timeZone: ZONE,
+});
+
+/** "Fri, May 1, 2026, 5:00 PM EDT", for close dates next to "(Atlanta time)" inputs. */
+export function formatDeadline(value: Date | string | number) {
+  const date = asRenderableDate(value);
+  return date ? deadline.format(date) : "—";
 }
 
 export function formatDate(value: Date | string | number) {

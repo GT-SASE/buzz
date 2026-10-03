@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 export const metadata: Metadata = {
-  title: "Member portal",
+  title: { default: "Member portal", template: "%s · GT SASE" },
   // robots.txt only asks crawlers not to fetch these; this asks them not to
   // index one they reached some other way. Both are needed.
   robots: { index: false, follow: false },

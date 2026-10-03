@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { ConfirmDialog } from "~/app/portal/_components/confirm-dialog";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Label } from "~/components/ui/label";
@@ -62,15 +63,22 @@ function RunForPosition({ position }: { position: Position }) {
         <p className="text-ink-muted text-body-sm mt-2 italic">
           {position.mine.statement}
         </p>
-        <Button
-          type="button"
-          variant="ghost"
-          disabled={withdraw.isPending}
-          onClick={() => withdraw.mutate({ candidateId: position.mine!.id })}
-          className="text-ink-muted mt-1 h-11 px-0"
+        <ConfirmDialog
+          title={`Withdraw from ${position.title}?`}
+          body="Your nomination and statement come off the ballot. You can run again while nominations are open."
+          action="Withdraw"
+          danger
+          onConfirm={() => withdraw.mutate({ candidateId: position.mine!.id })}
         >
-          Withdraw my nomination
-        </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            disabled={withdraw.isPending}
+            className="text-ink-muted mt-1 h-11 px-0"
+          >
+            {withdraw.isPending ? "Withdrawing..." : "Withdraw my nomination"}
+          </Button>
+        </ConfirmDialog>
       </div>
     );
   }
@@ -154,14 +162,13 @@ function Ballot({
   }
 
   const voted = position.myVote;
+  const chosen = position.candidates.find(
+    (candidate) => candidate.id === choice,
+  );
   return (
     <form
       className="mt-3 grid gap-3"
-      onSubmit={(event) => {
-        event.preventDefault();
-        if (choice)
-          vote.mutate({ positionId: position.id, candidateId: choice });
-      }}
+      onSubmit={(event) => event.preventDefault()}
     >
       <fieldset className="grid gap-3" disabled={!!voted || !eligible}>
         <legend className="sr-only">Vote for {position.title}</legend>
@@ -195,13 +202,23 @@ function Ballot({
         </p>
       ) : (
         eligible && (
-          <Button
-            type="submit"
-            disabled={!choice || vote.isPending}
-            className="bg-navy hover:bg-navy-deep min-h-11 w-full text-white sm:w-auto"
+          <ConfirmDialog
+            title={`Vote for ${chosen?.name ?? "this candidate"}?`}
+            body={`This is your ${position.title} vote. Ballots are final and secret, so it cannot be changed.`}
+            action="Cast vote"
+            onConfirm={() => {
+              if (choice)
+                vote.mutate({ positionId: position.id, candidateId: choice });
+            }}
           >
-            {vote.isPending ? "Voting..." : `Cast vote for ${position.title}`}
-          </Button>
+            <Button
+              type="button"
+              disabled={!choice || vote.isPending}
+              className="bg-navy hover:bg-navy-deep min-h-11 w-full text-white sm:w-auto"
+            >
+              {vote.isPending ? "Voting..." : `Cast vote for ${position.title}`}
+            </Button>
+          </ConfirmDialog>
         )
       )}
     </form>
@@ -209,6 +226,14 @@ function Ballot({
 }
 
 function Results({ position }: { position: Position }) {
+  if (position.candidates.length === 0) {
+    return (
+      <p className="text-ink-muted text-body-sm mt-3">
+        Nobody ran for this position.
+      </p>
+    );
+  }
+
   const sorted = [...position.candidates].sort(
     (a, b) => (b.votes ?? 0) - (a.votes ?? 0),
   );
@@ -272,27 +297,32 @@ function ElectionCard({
         </p>
       )}
 
-      <div className="mt-4 grid gap-6">
-        {election.positions.map((position) => (
-          <div key={position.id}>
-            <h3 className="text-navy font-semibold">{position.title}</h3>
-            {election.phase === "nominating" && (
-              <>
-                {position.candidates.length > 0 && (
-                  <p className="text-ink-muted text-body-sm mt-1">
-                    Running: {position.candidates.map((c) => c.name).join(", ")}
-                  </p>
-                )}
-                <RunForPosition position={position} />
-              </>
-            )}
-            {election.phase === "voting" && (
-              <Ballot position={position} eligible={eligible} />
-            )}
-            {election.phase === "published" && <Results position={position} />}
-          </div>
-        ))}
-      </div>
+      {election.phase !== "closed" && (
+        <div className="mt-4 grid gap-6">
+          {election.positions.map((position) => (
+            <div key={position.id}>
+              <h3 className="text-navy font-semibold">{position.title}</h3>
+              {election.phase === "nominating" && (
+                <>
+                  {position.candidates.length > 0 && (
+                    <p className="text-ink-muted text-body-sm mt-1">
+                      Running:{" "}
+                      {position.candidates.map((c) => c.name).join(", ")}
+                    </p>
+                  )}
+                  <RunForPosition position={position} />
+                </>
+              )}
+              {election.phase === "voting" && (
+                <Ballot position={position} eligible={eligible} />
+              )}
+              {election.phase === "published" && (
+                <Results position={position} />
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </section>
   );
 }
