@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { signInPath } from "~/app/portal/_lib/paths";
 import sitemap from "~/app/sitemap";
 import { marqueeItems, programs } from "~/data/content";
 import { adminNav, portalNav } from "~/data/portal";
@@ -173,7 +174,7 @@ describe("site map and navigation", () => {
       expect(group.href.startsWith("/")).toBe(true);
       expect(group.href.includes("/portal")).toBe(false);
     }
-    expect(navCta.href).toBe("/join");
+    expect(navCta.href).toBe(signInPath("/portal"));
   });
 
   it("links socials over https and has no trailing slash on the site URL", () => {

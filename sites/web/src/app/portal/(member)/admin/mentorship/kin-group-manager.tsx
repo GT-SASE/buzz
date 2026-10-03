@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { Action } from "~/app/portal/_components/controls";
 import { ConfirmDialog } from "~/app/portal/_components/confirm-dialog";
 import { seatsLabel } from "~/app/portal/(member)/mentorship/kin-groups";
 import {
@@ -17,7 +18,6 @@ import {
   AlertDialogTrigger,
 } from "~/components/ui/alert-dialog";
 import { Badge } from "~/components/ui/badge";
-import { Button } from "~/components/ui/button";
 import {
   Dialog,
   DialogClose,
@@ -134,13 +134,13 @@ function GroupForm({ group, onDone }: { group?: Group; onDone: () => void }) {
       </label>
       <DialogFooter className="mt-2 gap-2 sm:gap-2">
         <DialogClose asChild>
-          <Button type="button" variant="outline" className="min-h-11">
+          <Action tone="quiet" type="button">
             Cancel
-          </Button>
+          </Action>
         </DialogClose>
-        <Button type="submit" disabled={pending} className="min-h-11">
+        <Action tone="primary" type="submit" disabled={pending}>
           {pending ? "Saving..." : group ? "Save changes" : "Create group"}
-        </Button>
+        </Action>
       </DialogFooter>
     </form>
   );
@@ -152,13 +152,9 @@ function GroupDialog({ group }: { group?: Group }) {
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         {group ? (
-          <Button size="sm" variant="ghost" className="min-h-11">
-            Edit
-          </Button>
+          <Action tone="quiet">Edit</Action>
         ) : (
-          <Button className="bg-navy hover:bg-navy-deep min-h-11 text-white">
-            New kin group
-          </Button>
+          <Action tone="solid">New kin group</Action>
         )}
       </DialogTrigger>
       <DialogContent>
@@ -189,14 +185,9 @@ function DeleteGroup({ group }: { group: Group }) {
   return (
     <AlertDialog>
       <AlertDialogTrigger asChild>
-        <Button
-          size="sm"
-          variant="ghost"
-          className="text-destructive min-h-11"
-          disabled={remove.isPending}
-        >
+        <Action tone="danger" disabled={remove.isPending}>
           Delete
-        </Button>
+        </Action>
       </AlertDialogTrigger>
       <AlertDialogContent>
         <AlertDialogHeader>
@@ -308,14 +299,12 @@ export function KinGroupManager({
                       award.mutate({ groupId: group.id, points: 5 })
                     }
                   >
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="min-h-11"
+                    <Action
+                      tone="quiet"
                       disabled={award.isPending || group.memberCount === 0}
                     >
                       +5 whole group
-                    </Button>
+                    </Action>
                   </ConfirmDialog>
                   <GroupDialog group={group} />
                   <DeleteGroup group={group} />

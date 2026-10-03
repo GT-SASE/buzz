@@ -48,7 +48,6 @@ export const metadata: Metadata = {
   creator: site.name,
   publisher: site.name,
   category: "education",
-  icons: [{ rel: "icon", url: "/favicon.ico" }],
   robots: {
     index: true,
     follow: true,

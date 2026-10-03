@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
+import { checkInPath, signInPath } from "~/app/portal/_lib/paths";
 import { Honeycomb } from "~/app/portal/_components/honeycomb";
 import { Eyebrow } from "~/components/site";
 import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert";
@@ -43,9 +44,11 @@ export function CheckInForm({ initialCode }: { initialCode: string }) {
   const [cameraNote, setCameraNote] = useState<string | null>(null);
 
   // Prefer the fragment (`#code=`) so the bearer never hits the server as a
-  // query string. Strip it after the initial read so a refresh cannot re-share.
+  // query string. Strip either form after the initial read so a refresh or a
+  // shared link cannot re-use it.
   useEffect(() => {
-    if (!window.location.hash.includes("code=")) return;
+    const { hash, search } = window.location;
+    if (!hash.includes("code=") && !search.includes("code=")) return;
     window.history.replaceState(null, "", window.location.pathname);
   }, []);
 
@@ -67,7 +70,7 @@ export function CheckInForm({ initialCode }: { initialCode: string }) {
     },
     onError: (error) => {
       if (error.data?.code === "UNAUTHORIZED") {
-        router.push("/portal/signin?from=/portal/check-in");
+        router.push(signInPath(checkInPath(confirm || undefined)));
         return;
       }
       toast.error("Not checked in", { description: error.message });

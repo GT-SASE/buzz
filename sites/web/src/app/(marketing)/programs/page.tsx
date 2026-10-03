@@ -7,6 +7,7 @@ import {
   AccordionTrigger,
 } from "~/components/ui/accordion";
 import { programs } from "~/data/content";
+import { joinHref } from "~/data/site";
 import { breadcrumbSchema, pageMetadata } from "~/lib/seo";
 
 export const metadata = pageMetadata({
@@ -88,7 +89,7 @@ export default function ProgramsPage() {
         title="Pick one and show up."
         lead="Every program starts at a general body meeting."
       >
-        <Button href="/join" className="w-full justify-center sm:w-auto">
+        <Button href={joinHref} className="w-full justify-center sm:w-auto">
           Join SASE
         </Button>
       </Section>
