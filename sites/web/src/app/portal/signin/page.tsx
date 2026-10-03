@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { signInWithGoogle } from "~/app/portal/_components/auth-actions";
 import { checkInPath, safeRedirectPath } from "~/app/portal/_lib/paths";
 import { Eyebrow, Honeycomb } from "~/components/site";
+import { site } from "~/data/site";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader } from "~/components/ui/card";
 import { auth } from "@buzz/auth";
@@ -33,7 +34,7 @@ export default async function SignInPage({
       <Honeycomb className="text-gold/20 pointer-events-none absolute inset-0 h-full w-full" />
       <Card className="border-hairline bg-paper relative mx-auto w-full max-w-md rounded-xl">
         <CardHeader>
-          <Eyebrow tone="gold">Buzz by SASE</Eyebrow>
+          <Eyebrow tone="gold">{site.portalName}</Eyebrow>
           <h1 className="font-display text-navy text-h2 mt-5 font-bold tracking-tight text-balance">
             {checkingIn ? "Sign in to check in." : "Become a member."}
           </h1>
