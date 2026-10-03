@@ -124,6 +124,7 @@ describe.skipIf(!process.env.DATABASE_URL)("check-in", () => {
     raceDuplicate: randomCode(),
     spaced: randomCode(),
     editable: randomCode(),
+    early: randomCode(),
   };
   const allCodes = Object.values(code);
 
@@ -240,6 +241,14 @@ describe.skipIf(!process.env.DATABASE_URL)("check-in", () => {
           pointsValue: 10,
           checkInCode: code.editable,
           maxCheckIns: 25,
+          createdById: admin.id,
+        },
+        {
+          title: "vitest early",
+          // Turned on by an officer, but five hours before the door opens.
+          startsAt: new Date(now + 5 * 60 * 60 * 1000),
+          pointsValue: 10,
+          checkInCode: code.early,
           createdById: admin.id,
         },
       ])
@@ -650,6 +659,20 @@ describe.skipIf(!process.env.DATABASE_URL)("check-in", () => {
   });
 
   describe("member-facing output", () => {
+    it("only marks an event open in home when checkIn would accept it", async () => {
+      const caller = callerFor(extraMember);
+      const home = await caller.event.home();
+      const open = (key: keyof typeof id) =>
+        home.upcoming.find((row) => row.id === id[key])?.checkInOpen;
+
+      expect(open("snapshot")).toBe(true);
+      expect(open("disabled")).toBe(false);
+      expect(open("early")).toBe(false);
+      await expect(caller.event.checkIn({ code: code.early })).rejects.toThrow(
+        "Check-in has not opened yet.",
+      );
+    });
+
     /**
      * `checkInCode` is a bearer credential: whoever reads one can check in from
      * anywhere. It leaks the moment somebody selects a whole event row into a

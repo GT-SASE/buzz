@@ -11,7 +11,10 @@ const { mutate, toastError, mutation, cameraFail } = vi.hoisted(() => {
     data: unknown;
     error: { message: string; data?: { code: string } } | undefined;
     onError:
-      | ((error: { message: string; data?: { code: string } }) => void)
+      | ((
+          error: { message: string; data?: { code: string } },
+          variables: { code: string },
+        ) => void)
       | undefined;
   } = {
     isPending: false,
@@ -64,10 +67,10 @@ vi.mock("~/trpc/react", () => ({
     event: {
       checkIn: {
         useMutation: (opts: {
-          onError?: (error: {
-            message: string;
-            data?: { code: string };
-          }) => void;
+          onError?: (
+            error: { message: string; data?: { code: string } },
+            variables: { code: string },
+          ) => void;
         }) => {
           mutation.onError = opts.onError;
           return {
@@ -148,15 +151,26 @@ describe("CheckInForm", () => {
     expect(mutate).toHaveBeenCalledWith({ code: "ABCD2345" });
   });
 
+  it("reads a scanned #code= and clears it from the address bar once used", async () => {
+    const user = userEvent.setup();
+    window.history.replaceState(null, "", "/portal/check-in#code=ABCD2345");
+    render(<CheckInForm initialCode="" />);
+
+    expect(screen.getByText("Check in to this event?")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Check in" }));
+    expect(mutate).toHaveBeenCalledWith({ code: "ABCD2345" });
+    expect(window.location.hash).toBe("");
+  });
+
   it("sends an expired session back to sign-in", async () => {
     const user = userEvent.setup();
     render(<CheckInForm initialCode="ABCD2345" />);
 
     await user.click(screen.getByRole("button", { name: "Check in" }));
-    mutation.onError?.({
-      message: "Unauthorized",
-      data: { code: "UNAUTHORIZED" },
-    });
+    mutation.onError?.(
+      { message: "Unauthorized", data: { code: "UNAUTHORIZED" } },
+      { code: "ABCD2345" },
+    );
 
     expect(push).toHaveBeenCalledWith(signInPath(checkInPath("ABCD2345")));
     expect(toastError).not.toHaveBeenCalled();
