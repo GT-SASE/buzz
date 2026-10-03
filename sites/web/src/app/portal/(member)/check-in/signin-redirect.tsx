@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 
+import { checkInPath, signInPath } from "~/app/portal/_lib/paths";
 import { Spinner } from "~/components/ui/spinner";
 import { codeFromScan } from "./scanner";
 
@@ -13,10 +14,7 @@ import { codeFromScan } from "./scanner";
 export function SignInRedirect() {
   useEffect(() => {
     const code = codeFromScan(window.location.href);
-    const from = code
-      ? `/portal/check-in?code=${encodeURIComponent(code)}`
-      : "/portal/check-in";
-    window.location.replace(`/portal/signin?from=${encodeURIComponent(from)}`);
+    window.location.replace(signInPath(checkInPath(code ?? undefined)));
   }, []);
 
   return (

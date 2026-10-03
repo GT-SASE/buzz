@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
+import { checkInPath, signInPath } from "~/app/portal/_lib/paths";
 import { Honeycomb } from "~/app/portal/_components/honeycomb";
 import { Eyebrow } from "~/components/site";
 import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert";
@@ -69,10 +70,7 @@ export function CheckInForm({ initialCode }: { initialCode: string }) {
     },
     onError: (error) => {
       if (error.data?.code === "UNAUTHORIZED") {
-        const from = confirm
-          ? `/portal/check-in?code=${encodeURIComponent(confirm)}`
-          : "/portal/check-in";
-        router.push(`/portal/signin?from=${encodeURIComponent(from)}`);
+        router.push(signInPath(checkInPath(confirm || undefined)));
         return;
       }
       toast.error("Not checked in", { description: error.message });

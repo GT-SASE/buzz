@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
 import { signInWithGoogle } from "~/app/portal/_components/auth-actions";
-import { safeRedirectPath } from "~/app/portal/_lib/paths";
+import { checkInPath, safeRedirectPath } from "~/app/portal/_lib/paths";
 import { Eyebrow, Honeycomb } from "~/components/site";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader } from "~/components/ui/card";
@@ -20,7 +20,7 @@ export default async function SignInPage({
 }) {
   const { from: rawFrom } = await searchParams;
   const from = safeRedirectPath(rawFrom);
-  const checkingIn = from.startsWith("/portal/check-in");
+  const checkingIn = from.startsWith(checkInPath());
   const session = await auth();
 
   // Already signed in: honour where they were headed.

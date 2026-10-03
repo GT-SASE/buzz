@@ -55,3 +55,19 @@ export function safeRedirectPath(value: string | string[] | undefined) {
   if (path.startsWith("//") || path.startsWith("/\\")) return "/portal";
   return path;
 }
+
+/** Sign-in, returning to `from` afterwards. */
+export function signInPath(from: string) {
+  return `/portal/signin?from=${encodeURIComponent(from)}`;
+}
+
+/**
+ * Check-in with a code in the query. QR links use `#code=` instead, but a
+ * fragment does not survive the OAuth round-trip, so this is what `from`
+ * carries through sign-in.
+ */
+export function checkInPath(code?: string) {
+  return code
+    ? `/portal/check-in?code=${encodeURIComponent(code)}`
+    : "/portal/check-in";
+}
