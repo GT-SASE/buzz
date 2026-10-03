@@ -9,7 +9,7 @@ import {
   CardTitle,
 } from "~/components/ui/card";
 import { Progress } from "~/components/ui/progress";
-import { HexMark } from "~/components/site/hive";
+import { SaseMark } from "~/components/site/hive";
 import { mentorshipTierFor } from "~/data/portal";
 import { Honeycomb } from "./honeycomb";
 
@@ -48,7 +48,7 @@ export function KinCard({
             {role === "mentor" ? "Mentor" : "Mentee"}
           </CardDescription>
           <CardAction>
-            <HexMark className="bg-gold-bright text-navy h-11 w-11 text-xs" />
+            <SaseMark tile className="h-11 w-11" />
           </CardAction>
         </CardHeader>
 
