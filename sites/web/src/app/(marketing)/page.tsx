@@ -117,7 +117,7 @@ export default async function Home() {
                 photo={homePhotos.conventionDelegation}
                 priority
                 sizes="(min-width: 1024px) 42vw, 100vw"
-                className="aspect-[4/3] lg:aspect-[4/5]"
+                className="aspect-[4/3]"
               />
               <Card className="mt-6 sm:mt-10">
                 <Eyebrow tone="muted" rule={false}>
