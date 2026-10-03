@@ -1,6 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { inviteIcs } from "../packages/api/src/calendar-invite";
+import {
+  inviteIcs,
+  sendCalendarInvite,
+} from "../packages/api/src/calendar-invite";
 
 const event = {
   id: "evt-1",
@@ -47,5 +50,26 @@ describe("calendar invite", () => {
     expect(sequence(cancelled)).toBeGreaterThan(sequence(sent));
     expect(cancelled).toContain("METHOD:CANCEL");
     expect(cancelled).toContain("STATUS:CANCELLED");
+  });
+
+  describe("sending", () => {
+    afterEach(() => vi.unstubAllEnvs());
+
+    it("skips quietly when Gmail is not configured", async () => {
+      vi.stubEnv("GMAIL_USER", "");
+      vi.stubEnv("GMAIL_APP_PASSWORD", "");
+      expect(
+        await sendCalendarInvite("REQUEST", event, "member@example.com"),
+      ).toBe(false);
+    });
+
+    it("returns false instead of throwing when Gmail rejects the login", async () => {
+      vi.stubEnv("GMAIL_USER", "not-a-real-account@example.invalid");
+      vi.stubEnv("GMAIL_APP_PASSWORD", "wrong");
+      vi.spyOn(console, "error").mockImplementation(() => undefined);
+      expect(
+        await sendCalendarInvite("CANCEL", event, "member@example.com"),
+      ).toBe(false);
+    }, 30_000);
   });
 });

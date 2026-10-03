@@ -77,7 +77,8 @@ function mailer() {
   if (!user || !pass) return null;
   return {
     user,
-    replyTo: process.env.MAIL_REPLY_TO,
+    replyTo:
+      process.env.MAIL_REPLY_TO === "" ? undefined : process.env.MAIL_REPLY_TO,
     transport: nodemailer.createTransport({
       service: "gmail",
       auth: { user, pass },
