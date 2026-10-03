@@ -18,7 +18,7 @@ import {
   REGENERATE_CODE_LIMIT,
 } from "../rate-limit";
 import { adminProcedure, createTRPCRouter, protectedProcedure } from "../trpc";
-import { eventCheckIns, events, users } from "@buzz/db";
+import { eventCheckIns, events, users, type db } from "@buzz/db";
 
 /**
  * How long after an event starts the door stays open. The member-facing list
@@ -46,7 +46,7 @@ const CODE_LENGTH = 8;
  */
 async function nextArrivalPoints(
   tx: {
-    select: (typeof import("@buzz/db").db)["select"];
+    select: (typeof db)["select"];
   },
   eventId: string,
   base: number,
@@ -65,7 +65,7 @@ async function nextArrivalPoints(
  */
 async function priorStreak(
   tx: {
-    select: (typeof import("@buzz/db").db)["select"];
+    select: (typeof db)["select"];
   },
   startsAt: Date,
   userId: string,
@@ -93,7 +93,7 @@ async function priorStreak(
 
 async function nextCheckInPoints(
   tx: {
-    select: (typeof import("@buzz/db").db)["select"];
+    select: (typeof db)["select"];
   },
   event: { id: string; startsAt: Date; pointsValue: number },
   userId: string,
