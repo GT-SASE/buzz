@@ -251,9 +251,9 @@ function ElectionPanel({
     <li className="border-hairline bg-paper/80 rounded-xl border p-5 shadow-xs sm:p-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="font-display text-navy text-lg font-bold">
+          <h2 className="font-display text-navy text-lg font-bold">
             {election.title}
-          </p>
+          </h2>
           <p className="text-ink-muted text-body-sm">{election.year}</p>
         </div>
         <Badge variant="secondary">{phaseLabel[election.phase]}</Badge>

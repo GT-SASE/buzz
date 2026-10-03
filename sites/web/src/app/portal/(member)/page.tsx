@@ -36,7 +36,7 @@ async function DashboardBody() {
   const session = await requireSession("/portal");
   const isOfficer = session.user.role === "ADMIN";
 
-  const [home, , kin, kinGroup, recruiting] = await Promise.all([
+  const [home, , kin, kinGroup, recruiting, committee] = await Promise.all([
     api.event.home(),
     api.member.leaderboard({ limit: 10 }),
     api.mentorship.mine().catch((error) => {
@@ -45,7 +45,9 @@ async function DashboardBody() {
     }),
     api.mentorship.myGroup().catch(() => null),
     getCommitteeRecruiting(),
+    isOfficer ? null : api.committee.mine().catch(() => null),
   ]);
+  const hasApplication = !!committee?.application;
   const { stats, attended, upcoming } = home;
 
   const open = upcoming.filter((event) => event.checkInEnabled);
@@ -109,8 +111,8 @@ async function DashboardBody() {
                   </span>
                   <span className="text-ink-muted mt-1 block text-sm">
                     {isOfficer
-                      ? "Run this year's kin groups."
-                      : "Sign up and join a kin group for this school year."}
+                      ? "Run this semester's kin groups."
+                      : "Sign up and join a kin group this semester."}
                   </span>
                 </span>
                 <ArrowRight
@@ -160,7 +162,7 @@ async function DashboardBody() {
               </Link>
             </Card>
 
-            {(isOfficer || recruiting?.open) && (
+            {(isOfficer || !!recruiting?.open || hasApplication) && (
               <Card className="border-hairline mt-3 gap-0 rounded-lg py-0 shadow-none">
                 <Link
                   href={
@@ -177,7 +179,9 @@ async function DashboardBody() {
                     <span className="text-ink-muted mt-1 block text-sm">
                       {isOfficer
                         ? "Read applications and run callbacks."
-                        : `Apply to Events, Marketing, or Treasury. Closes ${recruiting?.closesLabel}.`}
+                        : recruiting?.open
+                          ? `Apply to Events, Marketing, or Treasury. Closes ${recruiting.closesLabel}.`
+                          : "Check the status of your application."}
                     </span>
                   </span>
                   <ArrowRight
