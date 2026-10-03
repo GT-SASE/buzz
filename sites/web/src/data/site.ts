@@ -9,6 +9,8 @@
  * (sites.gatech.edu/gtsase). Swap `url` if the chapter registers its own domain.
  */
 
+import { signInPath } from "../app/portal/_lib/paths";
+
 export const site = {
   name: "SASE at Georgia Tech",
   shortName: "SASE GT",
@@ -101,7 +103,7 @@ export const navGroups: NavGroup[] = [
 ];
 
 /** Membership is a portal account, so joining is signing in. */
-export const joinHref = "/portal/signin?from=%2Fportal";
+export const joinHref = signInPath("/portal");
 
 /** The one high-emphasis call to action in the site chrome. */
 export const navCta = { label: "Join SASE", href: joinHref } as const;
