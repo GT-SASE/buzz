@@ -6,17 +6,6 @@ import { toast } from "sonner";
 import { Action } from "~/app/portal/_components/controls";
 import { ConfirmDialog } from "~/app/portal/_components/confirm-dialog";
 import { seatsLabel } from "~/app/portal/(member)/mentorship/kin-groups";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "~/components/ui/alert-dialog";
 import { Badge } from "~/components/ui/badge";
 import {
   Dialog,
@@ -183,32 +172,21 @@ function DeleteGroup({ group }: { group: Group }) {
   });
 
   return (
-    <AlertDialog>
-      <AlertDialogTrigger asChild>
-        <Action tone="danger" disabled={remove.isPending}>
-          Delete
-        </Action>
-      </AlertDialogTrigger>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Delete {group.name}?</AlertDialogTitle>
-          <AlertDialogDescription>
-            {group.memberCount > 0
-              ? `${group.memberCount} ${group.memberCount === 1 ? "member goes" : "members go"} back to signed up. Their KIN points stay.`
-              : "Nobody is in this group."}
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction
-            onClick={() => remove.mutate({ id: group.id })}
-            className="bg-destructive hover:bg-destructive/90 text-white"
-          >
-            Delete group
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+    <ConfirmDialog
+      title={`Delete ${group.name}?`}
+      body={
+        group.memberCount > 0
+          ? `${group.memberCount} ${group.memberCount === 1 ? "member goes" : "members go"} back to signed up. Their KIN points stay.`
+          : "Nobody is in this group."
+      }
+      action="Delete group"
+      danger
+      onConfirm={() => remove.mutate({ id: group.id })}
+    >
+      <Action tone="danger" disabled={remove.isPending}>
+        Delete
+      </Action>
+    </ConfirmDialog>
   );
 }
 

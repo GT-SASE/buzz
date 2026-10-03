@@ -3,18 +3,8 @@
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { ConfirmDialog } from "~/app/portal/_components/confirm-dialog";
 import { Action } from "~/app/portal/_components/controls";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "~/components/ui/alert-dialog";
 import { Badge } from "~/components/ui/badge";
 import {
   Dialog,
@@ -174,32 +164,17 @@ function Confirm({
   danger?: boolean;
 }) {
   return (
-    <AlertDialog>
-      <AlertDialogTrigger asChild>
-        <Action tone={danger ? "danger" : "quiet"} disabled={disabled}>
-          {trigger}
-        </Action>
-      </AlertDialogTrigger>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>{title}</AlertDialogTitle>
-          <AlertDialogDescription>{body}</AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction
-            onClick={onConfirm}
-            className={
-              danger
-                ? "bg-destructive hover:bg-destructive/90 text-white"
-                : undefined
-            }
-          >
-            {action}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+    <ConfirmDialog
+      title={title}
+      body={body}
+      action={action}
+      danger={danger}
+      onConfirm={onConfirm}
+    >
+      <Action tone={danger ? "danger" : "quiet"} disabled={disabled}>
+        {trigger}
+      </Action>
+    </ConfirmDialog>
   );
 }
 
