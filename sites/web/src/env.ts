@@ -31,10 +31,13 @@ export const env = createEnv({
     /** Stable Auth.js path Google always returns to. */
     AUTH_REDIRECT_PROXY_URL: z.url().optional(),
     DATABASE_URL: requirePortalSecrets ? z.url() : z.url().optional(),
-    /** RSVP calendar invites. Optional: without them RSVPs save, no email. */
-    GMAIL_USER: z.email().optional(),
-    GMAIL_APP_PASSWORD: z.string().min(1).optional(),
-    MAIL_REPLY_TO: z.email().optional(),
+    /**
+     * RSVP calendar invites. Loose on purpose: a missing or wrong value only
+     * means no email, never a failed build.
+     */
+    GMAIL_USER: z.string().optional(),
+    GMAIL_APP_PASSWORD: z.string().optional(),
+    MAIL_REPLY_TO: z.string().optional(),
     NODE_ENV: z
       .enum(["development", "test", "production"])
       .default("development"),
