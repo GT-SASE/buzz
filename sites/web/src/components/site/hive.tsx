@@ -1,3 +1,4 @@
+import Image from "next/image";
 import { cn } from "~/lib/utils";
 
 const RADIUS = 26;
@@ -46,22 +47,29 @@ export function Honeycomb({ className = "" }: { className?: string }) {
   );
 }
 
-/** GT lockup cell. The one shape the rest of the site is cut from. */
-export function HexMark({
-  children = "GT",
+/** The SASE emblem. `tile` sets it on white so it reads on navy and ink. */
+export function SaseMark({
+  tile = false,
   className,
 }: {
-  children?: React.ReactNode;
+  tile?: boolean;
   className?: string;
 }) {
   return (
     <span
       className={cn(
-        "hex-face bg-navy text-gold-bright font-display inline-grid size-10 shrink-0 place-items-center text-sm font-bold",
+        "inline-grid size-10 shrink-0 place-items-center",
+        tile && "rounded-lg bg-white p-1",
         className,
       )}
     >
-      {children}
+      <Image
+        src="/brand/sase-emblem.png"
+        alt=""
+        width={80}
+        height={80}
+        className="h-full w-full object-contain"
+      />
     </span>
   );
 }
