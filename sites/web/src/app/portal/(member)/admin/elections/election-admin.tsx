@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { Action } from "~/app/portal/_components/controls";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -15,7 +16,6 @@ import {
   AlertDialogTrigger,
 } from "~/components/ui/alert-dialog";
 import { Badge } from "~/components/ui/badge";
-import { Button } from "~/components/ui/button";
 import {
   Dialog,
   DialogClose,
@@ -96,9 +96,7 @@ function CreateElection() {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button className="bg-navy hover:bg-navy-deep min-h-11 text-white">
-          New election
-        </Button>
+        <Action tone="solid">New election</Action>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
@@ -144,17 +142,13 @@ function CreateElection() {
           </div>
           <DialogFooter className="gap-2 sm:gap-2">
             <DialogClose asChild>
-              <Button type="button" variant="outline" className="min-h-11">
+              <Action tone="quiet" type="button">
                 Cancel
-              </Button>
+              </Action>
             </DialogClose>
-            <Button
-              type="submit"
-              disabled={create.isPending}
-              className="min-h-11"
-            >
+            <Action tone="primary" type="submit" disabled={create.isPending}>
               {create.isPending ? "Creating..." : "Create election"}
-            </Button>
+            </Action>
           </DialogFooter>
         </form>
       </DialogContent>
@@ -182,14 +176,9 @@ function Confirm({
   return (
     <AlertDialog>
       <AlertDialogTrigger asChild>
-        <Button
-          size="sm"
-          variant={danger ? "ghost" : "outline"}
-          className={danger ? "text-destructive min-h-11" : "min-h-11"}
-          disabled={disabled}
-        >
+        <Action tone={danger ? "danger" : "quiet"} disabled={disabled}>
           {trigger}
-        </Button>
+        </Action>
       </AlertDialogTrigger>
       <AlertDialogContent>
         <AlertDialogHeader>
@@ -316,9 +305,8 @@ function ElectionPanel({
                       {!readOnly && election.phase === "nominating" && (
                         <div className="mt-2 flex flex-wrap gap-2">
                           {candidate.status !== "approved" && (
-                            <Button
-                              size="sm"
-                              className="min-h-11"
+                            <Action
+                              tone="solid"
                               disabled={busy}
                               onClick={() =>
                                 review.mutate({
@@ -328,13 +316,11 @@ function ElectionPanel({
                               }
                             >
                               Approve
-                            </Button>
+                            </Action>
                           )}
                           {candidate.status !== "rejected" && (
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="min-h-11"
+                            <Action
+                              tone="quiet"
                               disabled={busy}
                               onClick={() =>
                                 review.mutate({
@@ -344,7 +330,7 @@ function ElectionPanel({
                               }
                             >
                               Reject
-                            </Button>
+                            </Action>
                           )}
                         </div>
                       )}

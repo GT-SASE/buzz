@@ -12,7 +12,7 @@ import { Badge } from "~/components/ui/badge";
 import { meeting } from "~/data/content";
 import { getCommitteeRecruiting } from "~/data/committee-recruiting";
 import { committeeExpectations, committees } from "~/data/committees";
-import { discord, engage, instagram, site } from "~/data/site";
+import { discord, engage, instagram, joinHref, site } from "~/data/site";
 import { breadcrumbSchema, pageMetadata } from "~/lib/seo";
 
 export const metadata = pageMetadata({
@@ -130,15 +130,15 @@ export default async function JoinPage() {
 
       <section className="px-5 pt-12 sm:px-6">
         <div className="max-w-content mx-auto flex flex-col items-stretch gap-4 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-8 sm:gap-y-4">
-          <Button href="/events" className="w-full justify-center sm:w-auto">
-            Find the next meeting
+          <Button href={joinHref} className="w-full justify-center sm:w-auto">
+            Become a member
           </Button>
           <Button
-            href="/portal"
+            href="/events"
             variant="outline"
             className="w-full justify-center sm:w-auto"
           >
-            Check in
+            Find the next meeting
           </Button>
         </div>
       </section>

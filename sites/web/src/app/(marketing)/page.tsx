@@ -35,7 +35,7 @@ import {
   stats,
 } from "~/data/content";
 import { galleryPhotos, homePhotos } from "~/data/photos-home";
-import { discord, site } from "~/data/site";
+import { discord, joinHref, site } from "~/data/site";
 import { pageMetadata } from "~/lib/seo";
 
 // The hero and calendar band read the live event table, so a prerendered build
@@ -99,7 +99,7 @@ export default async function Home() {
               </p>
               <div className="mt-8 flex flex-col items-stretch gap-4 sm:mt-10 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-8 sm:gap-y-5">
                 <Button
-                  href="/join"
+                  href={joinHref}
                   className="w-full justify-center sm:w-auto"
                 >
                   Become a member
@@ -393,7 +393,7 @@ export default async function Home() {
             </p>
           </div>
           <div className="mt-10 flex flex-col items-stretch gap-4 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-8 sm:gap-y-5">
-            <Button href="/join" className="w-full justify-center sm:w-auto">
+            <Button href={joinHref} className="w-full justify-center sm:w-auto">
               Join SASE GT
             </Button>
             <Button

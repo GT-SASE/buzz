@@ -43,9 +43,11 @@ export function CheckInForm({ initialCode }: { initialCode: string }) {
   const [cameraNote, setCameraNote] = useState<string | null>(null);
 
   // Prefer the fragment (`#code=`) so the bearer never hits the server as a
-  // query string. Strip it after the initial read so a refresh cannot re-share.
+  // query string. Strip either form after the initial read so a refresh or a
+  // shared link cannot re-use it.
   useEffect(() => {
-    if (!window.location.hash.includes("code=")) return;
+    const { hash, search } = window.location;
+    if (!hash.includes("code=") && !search.includes("code=")) return;
     window.history.replaceState(null, "", window.location.pathname);
   }, []);
 
@@ -67,7 +69,10 @@ export function CheckInForm({ initialCode }: { initialCode: string }) {
     },
     onError: (error) => {
       if (error.data?.code === "UNAUTHORIZED") {
-        router.push("/portal/signin?from=/portal/check-in");
+        const from = confirm
+          ? `/portal/check-in?code=${encodeURIComponent(confirm)}`
+          : "/portal/check-in";
+        router.push(`/portal/signin?from=${encodeURIComponent(from)}`);
         return;
       }
       toast.error("Not checked in", { description: error.message });
