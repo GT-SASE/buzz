@@ -69,6 +69,7 @@ export function tierFor(points: number) {
 export const portalNav = [
   { href: "/portal", label: "My card" },
   { href: "/portal/check-in", label: "Check in" },
+  { href: "/portal/events", label: "Events" },
   { href: "/portal/mentorship", label: "SASE KIN" },
   { href: "/portal/resume", label: "Resume" },
   { href: "/portal/elections", label: "Elections" },

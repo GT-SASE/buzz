@@ -178,7 +178,7 @@ const fall2026: Draft[] = [
     checkInEnabled: true,
   },
   {
-    title: "Vibecoding a personal website",
+    title: "SASExSpaceXAI",
     description: null,
     location: "Van Leer C456",
     startsAt: new Date("2026-10-20T18:00:00-04:00"),

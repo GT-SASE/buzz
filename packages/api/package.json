@@ -8,7 +8,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./trpc": "./src/trpc.ts",
-    "./terms": "./src/terms.ts"
+    "./terms": "./src/terms.ts",
+    "./event-length": "./src/event-length.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
@@ -18,11 +19,13 @@
     "@buzz/db": "workspace:*",
     "@trpc/server": "^11.19.0",
     "drizzle-orm": "^0.45.3",
+    "nodemailer": "^10.0.14",
     "superjson": "^2.2.6",
     "zod": "^4.6.5"
   },
   "devDependencies": {
     "@types/node": "^26.6.2",
+    "@types/nodemailer": "^8.0.2",
     "typescript-7": "npm:typescript@^7.0.0"
   }
 }

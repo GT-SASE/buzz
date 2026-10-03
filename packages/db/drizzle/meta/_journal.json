@@ -36,6 +36,13 @@
       "when": 1790549455707,
       "tag": "0004_wonderful_ravenous",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1791053407867,
+      "tag": "0005_event_rsvp",
+      "breakpoints": true
     }
   ]
 }
