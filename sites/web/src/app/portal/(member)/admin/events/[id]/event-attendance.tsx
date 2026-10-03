@@ -10,17 +10,7 @@ import { EmptyState } from "~/app/portal/_components/portal-ui";
 import { downloadCsv, toCsv } from "~/app/portal/_lib/csv";
 import { formatEventTime } from "~/app/portal/_lib/format";
 import { Eyebrow } from "~/components/site";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "~/components/ui/alert-dialog";
+import { ConfirmDialog } from "~/app/portal/_components/confirm-dialog";
 import { Alert, AlertDescription } from "~/components/ui/alert";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
@@ -98,34 +88,23 @@ function RemoveCheckIn({
   onRemove: () => void;
 }) {
   return (
-    <AlertDialog>
-      <AlertDialogTrigger asChild>
-        <Button
-          variant="ghost"
-          disabled={removing}
-          className="text-ink-muted hover:text-destructive text-body-sm min-h-11 font-semibold"
-        >
-          Remove
-        </Button>
-      </AlertDialogTrigger>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Remove {name}?</AlertDialogTitle>
-          <AlertDialogDescription>
-            Their check-in and the {points} points it earned are taken back.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction
-            className="bg-destructive hover:bg-destructive/90 text-white"
-            onClick={onRemove}
-          >
-            Yes, remove
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+    <ConfirmDialog
+      title={<>Remove {name}?</>}
+      body={
+        <>Their check-in and the {points} points it earned are taken back.</>
+      }
+      action="Yes, remove"
+      danger
+      onConfirm={onRemove}
+    >
+      <Button
+        variant="ghost"
+        disabled={removing}
+        className="text-ink-muted hover:text-destructive text-body-sm min-h-11 font-semibold"
+      >
+        Remove
+      </Button>
+    </ConfirmDialog>
   );
 }
 
@@ -432,36 +411,21 @@ export function EventAttendance({ eventId }: { eventId: string }) {
             </Button>
           )}
 
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button
-                variant="outline"
-                disabled={rotate.isPending}
-                className="border-hairline text-navy hover:bg-cream min-h-10 rounded-lg px-4 font-semibold"
-              >
-                {rotate.isPending ? "Rotating..." : "Rotate QR"}
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Replace the QR on screen?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  Every slide, poster and photograph of the current QR stops
-                  working the moment you do this, and the old one cannot be
-                  brought back.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction
-                  className="bg-destructive hover:bg-destructive/90 text-white"
-                  onClick={() => rotate.mutate({ id: event.id })}
-                >
-                  Yes, rotate
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+          <ConfirmDialog
+            title="Replace the QR on screen?"
+            body="Every slide, poster and photograph of the current QR stops working the moment you do this, and the old one cannot be brought back."
+            action="Yes, rotate"
+            danger
+            onConfirm={() => rotate.mutate({ id: event.id })}
+          >
+            <Button
+              variant="outline"
+              disabled={rotate.isPending}
+              className="border-hairline text-navy hover:bg-cream min-h-10 rounded-lg px-4 font-semibold"
+            >
+              {rotate.isPending ? "Rotating..." : "Rotate QR"}
+            </Button>
+          </ConfirmDialog>
 
           {rosterTotal > 0 && (
             <Button

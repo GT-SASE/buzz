@@ -9,17 +9,7 @@ import {
   fromLocalInputValue,
   toLocalInputValue,
 } from "~/app/portal/_lib/format";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "~/components/ui/alert-dialog";
+import { ConfirmDialog } from "~/app/portal/_components/confirm-dialog";
 import { Badge } from "~/components/ui/badge";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
@@ -151,35 +141,19 @@ function CycleSettings({
               Save date
             </Action>
             {cycle.open && (
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Action tone="danger" disabled={update.isPending}>
-                    Close now
-                  </Action>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>
-                      Close {cycle.label} applications now?
-                    </AlertDialogTitle>
-                    <AlertDialogDescription>
-                      Members can no longer apply or edit. You can reopen by
-                      setting a later close date.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction
-                      onClick={() =>
-                        update.mutate({ id: cycle.id, closesAt: new Date() })
-                      }
-                      className="bg-destructive hover:bg-destructive/90 text-white"
-                    >
-                      Close applications
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
+              <ConfirmDialog
+                title={`Close ${cycle.label} applications now?`}
+                body="Members can no longer apply or edit. You can reopen by setting a later close date."
+                action="Close applications"
+                danger
+                onConfirm={() =>
+                  update.mutate({ id: cycle.id, closesAt: new Date() })
+                }
+              >
+                <Action tone="danger" disabled={update.isPending}>
+                  Close now
+                </Action>
+              </ConfirmDialog>
             )}
           </div>
         </form>

@@ -21,9 +21,9 @@ export function ConfirmDialog({
   danger = false,
 }: {
   children: React.ReactElement;
-  title: string;
+  title: React.ReactNode;
   body: React.ReactNode;
-  action: string;
+  action: React.ReactNode;
   onConfirm: () => void;
   danger?: boolean;
 }) {

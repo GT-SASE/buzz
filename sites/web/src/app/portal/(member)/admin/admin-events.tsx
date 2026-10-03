@@ -10,19 +10,9 @@ import {
   toLocalInputValue,
 } from "~/app/portal/_lib/format";
 import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "~/components/ui/alert-dialog";
+import { ConfirmDialog } from "~/app/portal/_components/confirm-dialog";
 import { Badge } from "~/components/ui/badge";
-import { Button, buttonVariants } from "~/components/ui/button";
+import { Button } from "~/components/ui/button";
 import {
   Dialog,
   DialogClose,
@@ -424,43 +414,26 @@ function EventActions({ event }: { event: AdminEvent }) {
 
       {/* Archiving is reversible on purpose: an event with attendance is
           chapter history and must never be deletable from this screen. */}
-      <AlertDialog>
-        <AlertDialogTrigger asChild>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="text-ink-muted hover:bg-cream hover:text-navy h-9 min-h-9 rounded-md font-semibold"
-            disabled={archive.isPending}
-          >
-            {archived ? "Restore" : "Archive"}
-          </Button>
-        </AlertDialogTrigger>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {archived ? "Restore this event?" : "Archive this event?"}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {archived
-                ? `"${event.title}" goes back on the members' list and its code works again.`
-                : `"${event.title}" keeps its ${event.attendees} recorded check-ins, but members stop seeing it and its code stops working.`}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              className={cn(
-                !archived && buttonVariants({ variant: "destructive" }),
-              )}
-              onClick={() =>
-                archive.mutate({ id: event.id, archived: !archived })
-              }
-            >
-              {archived ? "Yes, restore" : "Yes, archive"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmDialog
+        title={archived ? "Restore this event?" : "Archive this event?"}
+        body={
+          archived
+            ? `"${event.title}" goes back on the members' list and its code works again.`
+            : `"${event.title}" keeps its ${event.attendees} recorded check-ins, but members stop seeing it and its code stops working.`
+        }
+        action={archived ? "Yes, restore" : "Yes, archive"}
+        danger={!archived}
+        onConfirm={() => archive.mutate({ id: event.id, archived: !archived })}
+      >
+        <Button
+          size="sm"
+          variant="ghost"
+          className="text-ink-muted hover:bg-cream hover:text-navy h-9 min-h-9 rounded-md font-semibold"
+          disabled={archive.isPending}
+        >
+          {archived ? "Restore" : "Archive"}
+        </Button>
+      </ConfirmDialog>
     </div>
   );
 }
