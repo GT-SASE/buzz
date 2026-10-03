@@ -34,6 +34,7 @@ export const env = createEnv({
     /** RSVP calendar invites. Optional: without them RSVPs save, no email. */
     GMAIL_USER: z.email().optional(),
     GMAIL_APP_PASSWORD: z.string().min(1).optional(),
+    MAIL_REPLY_TO: z.email().optional(),
     NODE_ENV: z
       .enum(["development", "test", "production"])
       .default("development"),
@@ -58,6 +59,7 @@ export const env = createEnv({
     DATABASE_URL: process.env.DATABASE_URL,
     GMAIL_USER: process.env.GMAIL_USER,
     GMAIL_APP_PASSWORD: process.env.GMAIL_APP_PASSWORD,
+    MAIL_REPLY_TO: process.env.MAIL_REPLY_TO,
     NODE_ENV: process.env.NODE_ENV,
     VERCEL_ENV: process.env.VERCEL_ENV,
     NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION:
