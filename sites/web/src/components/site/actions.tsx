@@ -10,18 +10,18 @@ function isRouterHref(href: string, external: boolean) {
 }
 
 /**
- * Hex cells and ruled links, not pills — the hive system's two action
- * shapes, layered onto the Watermelon Button so it keeps the shared focus ring,
- * disabled handling, and icon sizing.
+ * The lanyard system's two action shapes: a pill for the one primary action,
+ * a word on a rule for everything quieter. Layered onto the Watermelon Button
+ * so it keeps the shared focus ring, disabled handling, and icon sizing.
  */
 const actionVariants = {
   /** The one primary action on a light ground. Invisible on navy — use `solid`. */
   primary: "bg-navy text-white hover:bg-navy-deep",
   /** The same weight on a navy ground. */
   solid: "bg-gold-bright text-navy hover:bg-gold",
-  /** The quiet action: a word on a rule that thickens on hover. No box. */
+  /** The quiet action: a word on a gold rule that darkens on hover. No box. */
   outline:
-    "text-navy border-b-2 border-navy/30 hover:border-navy rounded-none bg-transparent px-0 pb-1.5 -mb-1.5 hover:bg-transparent",
+    "text-navy border-b-2 border-gold-bright hover:border-navy rounded-none bg-transparent px-0 pb-1.5 -mb-1.5 hover:bg-transparent",
   /** The same, on a navy ground. */
   ghost:
     "text-white border-b-2 border-white/35 hover:border-gold-bright hover:text-gold-bright rounded-none bg-transparent px-0 pb-1.5 -mb-1.5 hover:bg-transparent",
@@ -61,8 +61,8 @@ export function Button({
       variant="ghost"
       size="lg"
       className={cn(
-        "group text-eyebrow tracking-caps h-auto gap-3 font-semibold uppercase transition duration-200 max-sm:min-w-0 max-sm:shrink max-sm:whitespace-normal",
-        boxed ? "rounded-md px-7 py-4" : "min-h-11 items-end py-3",
+        "group text-body h-auto gap-3 font-bold [font-stretch:112%] transition duration-200 max-sm:min-w-0 max-sm:shrink max-sm:whitespace-normal",
+        boxed ? "rounded-full px-7 py-4" : "min-h-11 items-end py-3",
         actionVariants[variant],
         className,
       )}

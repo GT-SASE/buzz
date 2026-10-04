@@ -18,7 +18,9 @@ export function BoardRow({ member }: { member: BoardMember }) {
       )}
     >
       <div className="flex flex-wrap items-center gap-x-5 gap-y-3 px-4 py-5 sm:px-6">
-        {member.name && <InitialDisc label={member.name} />}
+        {member.name && (
+          <InitialDisc label={member.name} photo={member.photo} />
+        )}
         <div className="min-w-0 flex-1">
           <h3 className="font-display text-navy text-h3 font-bold">
             {member.role}

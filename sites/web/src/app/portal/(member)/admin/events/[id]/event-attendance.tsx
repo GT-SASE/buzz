@@ -5,7 +5,6 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { CheckInQr } from "~/app/portal/_components/check-in-qr";
-import { Honeycomb } from "~/app/portal/_components/honeycomb";
 import { EmptyState } from "~/app/portal/_components/portal-ui";
 import { downloadCsv, toCsv } from "~/app/portal/_lib/csv";
 import { formatEventTime } from "~/app/portal/_lib/format";
@@ -442,8 +441,7 @@ export function EventAttendance({ eventId }: { eventId: string }) {
       {/* Overview Grid: QR Preview & Quick Metrics */}
       <div className="mt-8 grid gap-6 md:grid-cols-[auto_1fr]">
         {/* Preview of the wall QR */}
-        <div className="bg-navy navy-wash border-navy-deep relative flex flex-col justify-between overflow-hidden rounded-xl border p-6 text-white md:w-80">
-          <Honeycomb className="text-gold-bright/[0.13] absolute inset-0 h-full w-full" />
+        <div className="bg-navy border-navy-deep relative flex flex-col justify-between overflow-hidden rounded-xl border p-6 text-white md:w-80">
           <div className="relative">
             <Eyebrow tone="onNavy" rule={false}>
               Check-in QR

@@ -167,6 +167,8 @@ function ApplicationBody({
             value={row.marketingConnections}
           />
           <Answer label="Why Treasury?" value={row.treasuryWhy} />
+          <Answer label="Why the website team?" value={row.websiteWhy} />
+          <Answer label="Things they have built" value={row.websiteLinks} />
           <Answer label="Other orgs this year" value={row.otherOrgs} />
           <Answer label="Anything else" value={row.comments} />
         </div>

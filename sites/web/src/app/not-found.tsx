@@ -28,11 +28,11 @@ export default function NotFound() {
         <section className="flex min-h-[60vh] items-center px-5 py-20 sm:px-6">
           <div className="max-w-content mx-auto w-full">
             {/* gold-ink, not gold: real text at display size, not decoration. */}
-            <p className="font-display text-gold-ink text-hero optical-left font-bold">
+            <p className="font-display text-gold-ink text-hero font-bold">
               404
             </p>
             <div className="rule-heavy mt-10 grid gap-x-16 gap-y-6 pt-8 lg:grid-cols-[1.35fr_1fr] lg:items-end">
-              <h1 className="font-display text-navy text-h2 optical-left font-bold tracking-tight text-balance">
+              <h1 className="font-display text-navy text-h2 font-bold tracking-tight text-balance">
                 This page took the Tech Trolley somewhere else.
               </h1>
               <p className="text-lead text-ink-muted max-w-measure lg:pb-2">

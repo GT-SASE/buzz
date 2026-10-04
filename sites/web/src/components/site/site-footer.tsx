@@ -18,7 +18,7 @@ const footerLink = "block py-3 transition hover:text-white";
 
 export function SiteFooter() {
   return (
-    <footer className="bg-ink text-white/65">
+    <footer className="bg-navy text-white/70">
       <div className="bg-gold-bright h-0.5" />
       <div className="max-w-content mx-auto px-5 py-16 sm:px-6">
         <div className="grid gap-x-12 gap-y-14 sm:grid-cols-2 md:grid-cols-[1.6fr_1fr_1fr_1.4fr]">

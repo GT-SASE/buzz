@@ -3,7 +3,7 @@ import "~/styles/globals.css";
 import type { Metadata, Viewport } from "next";
 import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
-import { Bricolage_Grotesque, Fraunces, IBM_Plex_Mono } from "next/font/google";
+import { Archivo, IBM_Plex_Mono } from "next/font/google";
 
 import { site } from "~/data/site";
 import { env } from "~/env";
@@ -84,18 +84,11 @@ export const viewport: Viewport = {
   userScalable: true,
 };
 
-const sans = Bricolage_Grotesque({
+// One family. Headings use its width axis (see .font-display in globals.css).
+const sans = Archivo({
   subsets: ["latin"],
-  variable: "--font-bricolage",
-  display: "swap",
-});
-
-// Bold only: every `font-display` element on the site is also `font-bold`, and
-// the full variable face costs several times this for weights nothing renders.
-const display = Fraunces({
-  subsets: ["latin"],
-  variable: "--font-display",
-  weight: ["700"],
+  variable: "--font-archivo",
+  axes: ["wdth"],
   display: "swap",
 });
 
@@ -122,7 +115,7 @@ export default function RootLayout({
     <html
       lang="en"
       data-scroll-behavior="smooth"
-      className={`${sans.variable} ${display.variable} ${mono.variable}`}
+      className={`${sans.variable} ${mono.variable}`}
     >
       <body className="text-ink bg-paper flex min-h-screen flex-col antialiased">
         <script
