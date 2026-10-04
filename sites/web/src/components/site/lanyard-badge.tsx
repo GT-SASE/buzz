@@ -59,8 +59,8 @@ export function LanyardBadge({
           <p className="text-ink-muted text-[0.8125rem] font-semibold">
             Hello, my name is
           </p>
-          <p className="font-display text-navy mt-1 text-[2.125rem] leading-tight font-bold">
-            You, probably.
+          <p className="font-display text-navy mt-1 text-[1.75rem] leading-tight font-bold text-balance">
+            The newest SASE member.
           </p>
         </div>
         <ul className="flex flex-wrap gap-2 px-5 pt-3">
