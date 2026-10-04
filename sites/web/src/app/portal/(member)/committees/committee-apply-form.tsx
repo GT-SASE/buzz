@@ -114,7 +114,7 @@ function CommitteeApplyFields({ data }: { data: Mine }) {
         </h1>
         <p className="text-ink-muted text-body mt-4">
           Committees for Events, Marketing, and Treasury recruit once a
-          semester. Applications open here when the board announces them — watch
+          semester. Applications open here when the board announces them. Watch
           the Discord.
         </p>
       </div>
@@ -168,8 +168,8 @@ function CommitteeApplyFields({ data }: { data: Mine }) {
 
       {locked && (
         <p className="text-ink-muted text-body-sm mt-8">
-          An officer has this in review. If something should change, ask them —
-          you cannot edit from here once a callback is underway.
+          An officer has this in review. If something should change, ask them.
+          You cannot edit from here once a callback is underway.
         </p>
       )}
 

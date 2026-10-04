@@ -109,7 +109,7 @@ function CycleSettings({
           {cycle.open ? "Closes" : "Closed"} {formatDeadline(cycle.closesAt)}
         </p>
         {readOnly && (
-          <p className="text-ink-muted text-body-sm">Past cycle — read only.</p>
+          <p className="text-ink-muted text-body-sm">Past cycle, read only.</p>
         )}
       </div>
       {!readOnly && (

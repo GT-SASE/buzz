@@ -41,7 +41,6 @@ export default function ContactPage() {
     <>
       <JsonLd data={breadcrumbSchema("Contact", "/contact")} />
       <PageHeader
-        eyebrow="Contact"
         title="Reach the chapter."
         body="Three ways in, depending on who you are. Everything here goes to the executive board."
       />

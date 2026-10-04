@@ -28,9 +28,8 @@ export default function BoardPage() {
     <>
       <JsonLd data={breadcrumbSchema("Board", "/board")} />
       <PageHeader
-        eyebrow="Leadership"
         title="Meet the board."
-        body="The students who run SASE GT. Reach out to any of us — we would rather answer a question than have you guess."
+        body="The students who run SASE GT. Reach out to any of us. We would rather answer a question than have you guess."
       />
 
       <Section size="sm">
@@ -43,7 +42,6 @@ export default function BoardPage() {
 
       <Section
         size="sm"
-        eyebrow="Leadership"
         title="Executive board."
         lead="Elected each spring by members in the portal. Every role is open to any Georgia Tech student."
       >
@@ -60,7 +58,7 @@ export default function BoardPage() {
             <AlertDescription className="text-ink-muted text-body-sm gap-3 leading-relaxed">
               <p>
                 {openSeats} of {board.length} roles have no name announced yet.
-                Those rows are open seats, not missing data — every one of them
+                Those rows are open seats, not missing data. Every one of them
                 is a position a Georgia Tech student can run for.
               </p>
               <TextLink href="/join">Get involved</TextLink>
@@ -69,7 +67,7 @@ export default function BoardPage() {
         )}
 
         {/* A roster, not a grid of empty headshot frames. */}
-        <ul role="list" className="stagger border-hairline border-t">
+        <ul role="list" className="border-hairline border-t">
           {board.map((member) => (
             <BoardRow key={member.name ?? member.role} member={member} />
           ))}

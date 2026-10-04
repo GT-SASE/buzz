@@ -12,7 +12,7 @@ export const committeeExpectations = [
   "Bi-monthly meetings",
   "Plan one full event with the rest of the committee",
   "Use Discord as the main channel and reply within 48 hours",
-  "Attend at least two events or hangouts each month — flexible with notice",
+  "Attend at least two events or hangouts each month (flexible with notice)",
   "About 2–4 hours a week",
 ] as const;
 
@@ -33,7 +33,7 @@ export const committees = [
     id: "marketing" as const,
     title: "Marketing Committee",
     blurb:
-      "Help grow the chapter — connecting with other classes, clubs, and organizations on campus, and spreading the word about SASE at GT.",
+      "Help grow the chapter by connecting with other classes, clubs, and organizations on campus, and spreading the word about SASE at GT.",
     responsibilities: [
       "Graphic design",
       "Posting on Discord and Instagram",

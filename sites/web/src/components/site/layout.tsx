@@ -51,26 +51,11 @@ export function Eyebrow({
 }
 
 /** Comb header at the top of every interior page. One per page. */
-export function PageHeader({
-  eyebrow,
-  title,
-  body,
-}: {
-  eyebrow: string;
-  title: string;
-  body: string;
-}) {
+export function PageHeader({ title, body }: { title: string; body: string }) {
   return (
     <header className="relative overflow-hidden px-5 pt-8 pb-10 sm:px-6 sm:pt-14 sm:pb-20">
       <Honeycomb className="text-gold/25 pointer-events-none absolute -top-6 -right-8 hidden h-52 w-[26rem] sm:block" />
-      <div className="max-w-content rise relative mx-auto">
-        <p className="text-eyebrow tracking-masthead text-ink-muted flex items-center gap-2.5 pb-4 font-semibold uppercase">
-          <span
-            aria-hidden="true"
-            className="hex-face bg-gold-bright size-2.5 shrink-0"
-          />
-          {eyebrow}
-        </p>
+      <div className="max-w-content relative mx-auto">
         <div className="rule-heavy grid gap-x-16 gap-y-6 pt-8 lg:grid-cols-[1.35fr_1fr] lg:items-end">
           <h1 className="font-display text-navy text-h1 optical-left font-bold tracking-tight text-balance">
             {title}
@@ -128,7 +113,7 @@ export function Section({
   const hasHeader = [eyebrow, title, lead].some(Boolean);
 
   const header = hasHeader ? (
-    <div className="reveal hang mb-10 sm:mb-14">
+    <div className="hang mb-10 sm:mb-14">
       {number && (
         <span
           aria-hidden="true"
@@ -185,12 +170,12 @@ export function Section({
         {split ? (
           <div className="lg:grid lg:grid-cols-[minmax(0,20rem)_1fr] lg:gap-16">
             {header}
-            <div className="reveal">{children}</div>
+            <div>{children}</div>
           </div>
         ) : (
           <>
             {header}
-            <div className="reveal">{children}</div>
+            <div>{children}</div>
           </>
         )}
       </div>

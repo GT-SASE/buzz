@@ -39,7 +39,6 @@ async function AdminMembersBody() {
   const body = (
     <>
       <PortalHeader
-        eyebrow="Roster"
         title="Roster"
         body="Who has signed in, what they have earned, when they last came."
       />

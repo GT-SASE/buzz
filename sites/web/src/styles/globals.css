@@ -153,35 +153,6 @@
   --container-wide: 88rem;
 }
 
-@keyframes rise {
-  from {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
-@keyframes fade-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-@keyframes line-rise {
-  from {
-    transform: translateY(105%);
-  }
-  to {
-    transform: none;
-  }
-}
-
 @keyframes marquee {
   from {
     transform: translateX(0);
@@ -191,27 +162,7 @@
   }
 }
 
-/* Registering the type is what makes a custom property animatable at all. */
-@property --count {
-  syntax: "<integer>";
-  initial-value: 0;
-  inherits: false;
-}
-
-@keyframes count-up {
-  from {
-    --count: 0;
-  }
-  to {
-    --count: var(--to);
-  }
-}
-
 @layer utilities {
-  .rise {
-    animation: rise 0.8s cubic-bezier(0.22, 1, 0.36, 1) both;
-  }
-
   /* The comb edge. Gold, not ink — the newspaper rule is gone. */
   .rule-heavy {
     border-top: 2px solid var(--gold);
@@ -263,30 +214,6 @@
     }
   }
 
-  .line-mask {
-    display: block;
-    overflow: hidden;
-    /* Descenders would otherwise be clipped by the overflow. */
-    padding-bottom: 0.2em;
-    margin-bottom: -0.2em;
-  }
-
-  .line-mask > span {
-    display: block;
-  }
-
-  /* Renders its number through a counter so the value can be animated. The
-     resting value is the real one. Always pair with a visually-hidden real
-     number — generated content is not reliably announced. */
-  .count-up {
-    --count: var(--to);
-    counter-reset: num var(--count);
-  }
-
-  .count-up::after {
-    content: counter(num);
-  }
-
   .marquee-track {
     display: flex;
     width: max-content;
@@ -302,51 +229,6 @@
      scroll-driven timelines exist. */
   @media (prefers-reduced-motion: no-preference) {
     @supports (animation-timeline: view()) {
-      .reveal {
-        animation: rise linear both;
-        animation-timeline: view();
-        animation-range: entry 0% entry 10rem;
-      }
-
-      /* Opacity only: these grids sit inside a `.reveal` block that already
-         carries the rise, and two nested transforms compound. */
-      .stagger > * {
-        animation: fade-in linear both;
-        animation-timeline: view();
-        animation-range: entry 0% entry 8rem;
-      }
-      .stagger > *:nth-child(2) {
-        animation-range: entry 1rem entry 9rem;
-      }
-      .stagger > *:nth-child(3) {
-        animation-range: entry 2rem entry 10rem;
-      }
-      .stagger > *:nth-child(4) {
-        animation-range: entry 3rem entry 11rem;
-      }
-      .stagger > *:nth-child(5) {
-        animation-range: entry 4rem entry 12rem;
-      }
-      .stagger > *:nth-child(n + 6) {
-        animation-range: entry 5rem entry 13rem;
-      }
-
-      .line-mask > span {
-        animation: line-rise 0.95s cubic-bezier(0.22, 1, 0.36, 1) both;
-      }
-      .line-mask:nth-child(2) > span {
-        animation-delay: 0.11s;
-      }
-      .line-mask:nth-child(3) > span {
-        animation-delay: 0.22s;
-      }
-
-      .count-up {
-        animation: count-up linear both;
-        animation-timeline: view();
-        animation-range: entry 20% cover 34%;
-      }
-
       .marquee-track {
         animation: marquee 38s linear infinite;
       }

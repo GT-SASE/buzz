@@ -22,7 +22,7 @@ export const site = {
   /** The member portal's name. */
   portalName: "Buzz",
   description:
-    "The Georgia Tech chapter of the Society of Asian Scientists and Engineers — preparing Asian heritage students for success in the global business world.",
+    "The Georgia Tech chapter of the Society of Asian Scientists and Engineers. We prepare Asian heritage students for success in the global business world.",
   /**
    * Canonical origin, no trailing slash. Every canonical URL, the sitemap,
    * robots.txt, and the OG image URLs are built from this.

@@ -104,14 +104,13 @@ export default async function EventsPage() {
         <JsonLd key={event.id} data={eventSchema(event)} />
       ))}
       <PageHeader
-        eyebrow="Calendar"
         title="Events."
         body="General body meetings, workshops, socials, and conferences. Open to all Georgia Tech students unless noted."
       />
 
-      <Section eyebrow="Upcoming" title="On the calendar now.">
+      <Section title="On the calendar now.">
         {upcoming.length > 0 ? (
-          <div className="stagger grid gap-x-10 gap-y-12 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-x-10 gap-y-12 sm:grid-cols-2 lg:grid-cols-3">
             {upcoming.map((event) => (
               <EventCard key={event.id} event={event}>
                 {!event.reminder && (
@@ -149,12 +148,7 @@ export default async function EventsPage() {
 
       {/* The site nav links straight to #past, so the section renders even when
           the live archive is empty rather than dropping the anchor. */}
-      <Section
-        id="past"
-        eyebrow="Archive"
-        title="What we have run."
-        tone="cream"
-      >
+      <Section id="past" title="What we have run." tone="cream">
         {past.length > 0 ? (
           <div className="space-y-14">
             {groupByYear(past).map((group) => (

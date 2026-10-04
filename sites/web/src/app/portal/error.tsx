@@ -39,7 +39,7 @@ export default function PortalShellError({
             <AlertDescription>
               <p>
                 This is usually temporary. Nothing about your account has
-                changed — try again, or come back in a minute.
+                changed. Try again, or come back in a minute.
               </p>
             </AlertDescription>
           </Alert>
