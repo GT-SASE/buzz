@@ -22,7 +22,7 @@ export default function MarketingError({
   }, [error]);
 
   return (
-    <section className="bg-cream paper-wash flex min-h-[50vh] items-center px-5 py-20 sm:px-6">
+    <section className="bg-cream flex min-h-[50vh] items-center px-5 py-20 sm:px-6">
       <div className="border-hairline bg-paper mx-auto w-full max-w-lg rounded-lg border p-8 sm:p-10">
         <h1 className="font-display text-navy text-h2 font-bold tracking-tight text-balance">
           This page could not load.

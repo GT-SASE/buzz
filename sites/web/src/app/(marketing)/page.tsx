@@ -7,13 +7,13 @@ import {
   EventCard,
   Icon,
   Marquee,
-  PhotoFrame,
   PhotoMosaic,
   PillarGrid,
   Section,
   TextLink,
 } from "~/components/site";
 import { JsonLd } from "~/components/site/json-ld";
+import { LanyardBadge } from "~/components/site/lanyard-badge";
 import { Badge } from "~/components/ui/badge";
 import {
   Card as UiCard,
@@ -34,6 +34,7 @@ import {
 import { galleryPhotos, homePhotos } from "~/data/photos-home";
 import { discord, joinHref, site } from "~/data/site";
 import { pageMetadata } from "~/lib/seo";
+import { schoolYear } from "@buzz/api/terms";
 
 // The hero and calendar band read the live event table, so a prerendered build
 // would otherwise pin this page to whatever the calendar held at deploy time.
@@ -70,85 +71,53 @@ export default async function Home() {
       />
 
       <section className="px-5 sm:px-6">
-        <div className="max-w-content mx-auto">
-          <div className="flex justify-end pt-6 pb-2 sm:pt-8 sm:pb-3">
-            <span className="text-eyebrow tracking-masthead text-ink-muted font-semibold uppercase">
-              2026&ndash;2027
-            </span>
+        <div className="max-w-content mx-auto grid items-start gap-x-16 gap-y-12 pt-10 pb-16 lg:grid-cols-[1.15fr_0.85fr] lg:pt-20 lg:pb-24">
+          <div>
+            <h1 className="font-display text-navy text-hero font-bold text-balance">
+              Find your people in STEM.
+            </h1>
+            <p className="text-lead text-ink-muted max-w-measure mt-6 sm:mt-8">
+              We are the Georgia Tech chapter of the Society of Asian Scientists
+              and Engineers. SASE KIN, recruiter workshops, and semester-long
+              build teams, open to every student on campus, any major, any
+              background.
+            </p>
+            <div className="mt-8 flex flex-col items-stretch gap-4 sm:mt-10 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-8 sm:gap-y-5">
+              <Button
+                href={joinHref}
+                className="w-full justify-center sm:w-auto"
+              >
+                Become a member
+              </Button>
+              <Button
+                href="/events"
+                variant="outline"
+                className="w-full justify-center sm:w-auto"
+              >
+                See every event
+              </Button>
+            </div>
+            <p className="text-ink-muted text-body-sm max-w-measure mt-10">
+              {meeting.summary}
+            </p>
           </div>
 
-          <div className="grid gap-x-16 gap-y-10 pt-8 pb-14 lg:grid-cols-[1.3fr_0.7fr] lg:gap-y-14 lg:pt-16 lg:pb-28">
-            <div>
-              <h1 className="font-display text-navy text-hero optical-left font-bold tracking-tight">
-                <span className="block">
-                  <span>Find your people</span>
-                </span>
-                <span className="block">
-                  <span>in STEM.</span>
-                </span>
-              </h1>
-              <p className="text-lead text-ink-muted max-w-measure mt-6 sm:mt-8">
-                We are the Georgia Tech chapter of the Society of Asian
-                Scientists and Engineers. SASE KIN, recruiter workshops, and
-                semester-long build teams, open to every student on campus, any
-                major, any background.
-              </p>
-              <div className="mt-8 flex flex-col items-stretch gap-4 sm:mt-10 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-8 sm:gap-y-5">
-                <Button
-                  href={joinHref}
-                  className="w-full justify-center sm:w-auto"
-                >
-                  Become a member
-                </Button>
-                <Button
-                  href="/programs"
-                  variant="outline"
-                  className="w-full justify-center sm:w-auto"
-                >
-                  What we do
-                </Button>
-              </div>
-            </div>
-
-            <div>
-              <PhotoFrame
-                photo={homePhotos.conventionDelegation}
-                priority
-                sizes="(min-width: 1024px) 42vw, 100vw"
-                className="aspect-[4/3]"
-              />
-              <Card className="mt-6 sm:mt-10">
-                <p className="font-display text-navy text-h2 font-bold">
-                  General body meetings
-                </p>
-                <p className="text-ink-muted text-body mt-3">
-                  {meeting.summary}
-                </p>
-                <p className="text-ink-muted text-body-sm mt-1">
-                  {meeting.location}
-                </p>
-
-                {nextUp && (
-                  <div className="border-hairline mt-7 border-t pt-6">
-                    <Badge className="bg-gold-bright text-navy text-eyebrow tracking-masthead rounded-md font-semibold uppercase">
-                      Next up
-                    </Badge>
-                    <p className="font-display text-navy text-h3 mt-3 font-bold">
-                      {nextUp.title}
-                    </p>
-                    <p className="text-ink-muted text-body-sm mt-1">
-                      {nextUp.displayDate}
-                      {nextUp.location ? ` · ${nextUp.location}` : ""}
-                    </p>
-                  </div>
-                )}
-
-                <div className="mt-7">
-                  <TextLink href="/events">See the full calendar</TextLink>
-                </div>
-              </Card>
-            </div>
-          </div>
+          <LanyardBadge
+            photo={homePhotos.conventionDelegation}
+            year={schoolYear(new Date()).replace(
+              /^(\d{4})-\d{2}(\d{2})$/,
+              "$1–$2",
+            )}
+            next={
+              nextUp
+                ? {
+                    title: nextUp.title,
+                    when: nextUp.displayDate,
+                    where: nextUp.location,
+                  }
+                : null
+            }
+          />
         </div>
       </section>
 
@@ -165,7 +134,7 @@ export default async function Home() {
           placeholder="blur"
           className="object-cover object-center opacity-25"
         />
-        <div className="bg-navy/85 navy-wash absolute inset-0" />
+        <div className="bg-navy/85 absolute inset-0" />
         <p className="max-w-content font-display text-gold-bright text-h1 relative mx-auto border-t-2 border-white/70 pt-10 font-bold tracking-tight text-balance sm:pt-14">
           {chapterLine}
         </p>
@@ -355,7 +324,7 @@ export default async function Home() {
       <section className="px-5 pt-4 pb-20 sm:px-6 sm:pb-28">
         <div className="max-w-content mx-auto">
           <div className="rule-heavy grid gap-x-16 gap-y-6 pt-10 lg:grid-cols-[1.35fr_1fr] lg:items-end">
-            <h2 className="font-display text-navy text-h1 optical-left font-bold tracking-tight text-balance">
+            <h2 className="font-display text-navy text-h1 font-bold tracking-tight text-balance">
               Every major. Every year. Everyone welcome.
             </h2>
             <p className="text-ink-muted text-lead max-w-measure lg:pb-2">

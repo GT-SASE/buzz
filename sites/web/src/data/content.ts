@@ -142,6 +142,11 @@ export type BoardMember = {
   major?: string;
   /** Per-role aliases when the chapter creates them. */
   email?: string;
+  /**
+   * A headshot the officer sent in, saved under public/board/, e.g.
+   * "/board/alex-liu.jpg". Without one the board shows their initials.
+   */
+  photo?: string;
 };
 
 /** 2026–2027 executive board. Co-roles share a title; the UI keys rows by name. */

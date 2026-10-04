@@ -1,4 +1,3 @@
-import { Honeycomb } from "~/components/site/hive";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent } from "~/components/ui/card";
 import { signOutOfPortal } from "./auth-actions";
@@ -14,8 +13,7 @@ export function PortalHeader({
   aside?: React.ReactNode;
 }) {
   return (
-    <section className="bg-cream paper-wash border-hairline relative overflow-hidden border-b">
-      <Honeycomb className="text-gold/20 pointer-events-none absolute -top-8 -right-10 h-48 w-80" />
+    <section className="bg-cream border-hairline relative overflow-hidden border-b">
       <div className="max-w-content relative mx-auto grid gap-6 px-5 py-8 sm:gap-10 sm:px-6 sm:py-16 lg:grid-cols-[1fr_auto] lg:items-center lg:gap-16">
         <div className="max-w-xl">
           <h1 className="font-display text-navy text-h2 sm:text-h1 font-bold tracking-tight text-balance sm:mt-5">

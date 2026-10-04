@@ -456,12 +456,16 @@ export const committeeApplications = createTable(
     wantsEvents: d.boolean().notNull().default(false),
     wantsMarketing: d.boolean().notNull().default(false),
     wantsTreasury: d.boolean().notNull().default(false),
+    wantsWebsite: d.boolean().notNull().default(false),
     discordHandle: d.varchar({ length: 80 }).notNull(),
     eventsWhy: d.varchar({ length: 2000 }),
     eventsCollabs: d.varchar({ length: 1000 }),
     marketingWhy: d.varchar({ length: 2000 }),
     marketingConnections: d.varchar({ length: 1000 }),
     treasuryWhy: d.varchar({ length: 2000 }),
+    websiteWhy: d.varchar({ length: 2000 }),
+    /** GitHub, a portfolio, anything they have built. Optional. */
+    websiteLinks: d.varchar({ length: 1000 }),
     otherOrgs: d.varchar({ length: 1000 }),
     comments: d.varchar({ length: 1000 }),
     status: d
@@ -489,7 +493,7 @@ export const committeeApplications = createTable(
     ),
     check(
       idx("committee_app_committee_check"),
-      sql`${t.wantsEvents} or ${t.wantsMarketing} or ${t.wantsTreasury}`,
+      sql`${t.wantsEvents} or ${t.wantsMarketing} or ${t.wantsTreasury} or ${t.wantsWebsite}`,
     ),
   ],
 );

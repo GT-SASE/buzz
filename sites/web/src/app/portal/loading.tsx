@@ -5,7 +5,7 @@ export default function PortalShellLoading() {
     <div
       aria-busy="true"
       aria-live="polite"
-      className="bg-cream paper-wash flex min-h-[60vh] items-center px-5 py-20 sm:px-6"
+      className="bg-cream flex min-h-[60vh] items-center px-5 py-20 sm:px-6"
     >
       <span className="sr-only">Loading.</span>
 

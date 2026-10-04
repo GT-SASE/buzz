@@ -32,7 +32,7 @@ const groups = navGroups.filter((group) => group.href !== "/join");
 const toPath = (href: string) => href.split("#")[0];
 
 const linkBase =
-  "text-eyebrow tracking-caps relative flex items-center gap-2 px-2.5 py-3 font-semibold uppercase transition xl:px-3";
+  "text-body-sm relative flex items-center gap-2 px-2.5 py-3 font-semibold transition xl:px-3";
 
 export function SiteNav() {
   const [open, setOpen] = useState(false);
@@ -148,7 +148,7 @@ export function SiteNav() {
           <li className="ml-4">
             <Button
               asChild
-              className="text-eyebrow tracking-caps bg-navy hover:bg-navy-deep h-auto rounded-md px-4 py-3 font-semibold text-white uppercase"
+              className="text-body-sm bg-navy hover:bg-navy-deep h-auto rounded-full px-5 py-3 font-bold text-white [font-stretch:112%]"
             >
               <Link
                 href={navCta.href}
@@ -195,7 +195,7 @@ export function SiteNav() {
 
             <Button
               asChild
-              className="text-eyebrow tracking-caps bg-navy hover:bg-navy-deep h-auto w-full rounded-md px-6 py-4 font-semibold text-white uppercase"
+              className="text-body bg-navy hover:bg-navy-deep h-auto w-full rounded-full px-6 py-4 font-bold text-white [font-stretch:112%]"
             >
               <Link href={navCta.href} onClick={() => setOpen(false)}>
                 {navCta.label}

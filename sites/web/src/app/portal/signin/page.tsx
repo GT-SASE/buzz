@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 
 import { signInWithGoogle } from "~/app/portal/_components/auth-actions";
 import { checkInPath, safeRedirectPath } from "~/app/portal/_lib/paths";
-import { Eyebrow, Honeycomb } from "~/components/site";
+import { Eyebrow } from "~/components/site";
 import { site } from "~/data/site";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader } from "~/components/ui/card";
@@ -30,8 +30,7 @@ export default async function SignInPage({
   }
 
   return (
-    <section className="bg-cream paper-wash relative flex min-h-[70vh] items-center overflow-hidden px-5 py-20 sm:px-6">
-      <Honeycomb className="text-gold/20 pointer-events-none absolute inset-0 h-full w-full" />
+    <section className="bg-cream relative flex min-h-[70vh] items-center overflow-hidden px-5 py-20 sm:px-6">
       <Card className="border-hairline bg-paper relative mx-auto w-full max-w-md rounded-xl">
         <CardHeader>
           <Eyebrow tone="gold">{site.portalName}</Eyebrow>

@@ -7,7 +7,6 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { toast } from "sonner";
 
 import { checkInPath, signInPath } from "~/app/portal/_lib/paths";
-import { Honeycomb } from "~/app/portal/_components/honeycomb";
 import { Eyebrow } from "~/components/site";
 import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert";
 import { Button } from "~/components/ui/button";
@@ -129,7 +128,6 @@ export function CheckInForm({ initialCode }: { initialCode: string }) {
           role="status"
           className="border-navy-deep bg-navy relative overflow-hidden rounded-lg px-6 py-12 text-center text-white"
         >
-          <Honeycomb className="absolute inset-0 h-full w-full text-white/[0.07]" />
           <AlertTitle className="text-eyebrow tracking-masthead text-gold-bright relative font-semibold uppercase">
             Checked in
           </AlertTitle>
