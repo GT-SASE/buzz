@@ -77,6 +77,7 @@ function EventForm({
       utils.event.getById.invalidate(),
       utils.chapter.overview.invalidate(),
       utils.chapter.attendance.invalidate(),
+      utils.chapter.turnout.invalidate(),
       revalidatePublicCalendar(),
     ]);
     onDone();
@@ -347,6 +348,7 @@ function EventActions({ event }: { event: AdminEvent }) {
       utils.event.getById.invalidate({ id: event.id }),
       utils.chapter.overview.invalidate(),
       utils.chapter.attendance.invalidate(),
+      utils.chapter.turnout.invalidate(),
       revalidatePublicCalendar(),
     ]);
   };

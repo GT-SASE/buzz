@@ -10,13 +10,14 @@ import {
   isNull,
   lt,
   or,
+  sql,
 } from "drizzle-orm";
 import { z } from "zod";
 
 import { asInt } from "../aggregates";
 import { periodSince } from "../periods";
 import { adminProcedure, createTRPCRouter } from "../trpc";
-import { eventCheckIns, events, users } from "@buzz/db";
+import { eventCheckIns, eventRsvps, events, users } from "@buzz/db";
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -199,6 +200,89 @@ export const chapterRouter = createTRPCRouter({
         })),
       };
     }),
+
+  /**
+   * Chart data for the officer events page. Per past event: check-ins split
+   * into first-timers (no earlier check-in anywhere) and returning members.
+   * Plus RSVP counts for what is coming up.
+   */
+  turnout: adminProcedure
+    .input(
+      z.object({
+        period: z.enum(["30d", "90d", "semester", "all"]).default("semester"),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const now = new Date();
+      const since = periodSince(input.period, now);
+      const inWindow = since
+        ? and(lt(events.startsAt, now), gte(events.startsAt, since))
+        : lt(events.startsAt, now);
+      const countable = or(
+        eq(events.checkInEnabled, true),
+        gt(events.pointsValue, 0),
+        gt(events.currentCheckIns, 0),
+      );
+      // Earlier check-ins by the same member, from the same table.
+      const prior = sql.identifier("prior_check_in");
+
+      const [past, upcoming] = await Promise.all([
+        ctx.db
+          .select({
+            id: events.id,
+            title: events.title,
+            startsAt: events.startsAt,
+            checkIns: count(eventCheckIns.id),
+            firstTimers: sql<number>`count(${eventCheckIns.id}) filter (where not exists (
+              select 1 from ${eventCheckIns} as ${prior}
+              where ${prior}.${sql.identifier(eventCheckIns.userId.name)} = ${eventCheckIns.userId}
+                and ${prior}.${sql.identifier(eventCheckIns.checkedInAt.name)} < ${eventCheckIns.checkedInAt}
+            ))`,
+          })
+          .from(events)
+          .leftJoin(eventCheckIns, eq(eventCheckIns.eventId, events.id))
+          .where(and(inWindow, countable))
+          .groupBy(events.id)
+          .orderBy(desc(events.startsAt))
+          .limit(SERIES_LIMIT),
+        ctx.db
+          .select({
+            id: events.id,
+            title: events.title,
+            startsAt: events.startsAt,
+            rsvps: count(eventRsvps.userId),
+          })
+          .from(events)
+          .leftJoin(eventRsvps, eq(eventRsvps.eventId, events.id))
+          .where(and(isNull(events.archivedAt), gte(events.startsAt, now)))
+          .groupBy(events.id)
+          .orderBy(asc(events.startsAt))
+          .limit(UPCOMING_LIMIT),
+      ]);
+
+      return {
+        // Oldest first: the chart reads left to right in time.
+        events: past.reverse().map((row) => {
+          const checkIns = asInt(row.checkIns);
+          const firstTimers = asInt(row.firstTimers);
+          return {
+            id: row.id,
+            title: row.title,
+            startsAt: row.startsAt,
+            checkIns,
+            firstTimers,
+            returning: checkIns - firstTimers,
+          };
+        }),
+        upcoming: upcoming.map((row) => ({
+          id: row.id,
+          title: row.title,
+          startsAt: row.startsAt,
+          rsvps: asInt(row.rsvps),
+        })),
+      };
+    }),
 });
 
 const SERIES_LIMIT = 48;
+const UPCOMING_LIMIT = 12;
