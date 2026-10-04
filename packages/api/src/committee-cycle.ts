@@ -1,6 +1,11 @@
 import { z } from "zod";
 
-export const COMMITTEE_IDS = ["events", "marketing", "treasury"] as const;
+export const COMMITTEE_IDS = [
+  "events",
+  "marketing",
+  "treasury",
+  "website",
+] as const;
 export type CommitteeId = (typeof COMMITTEE_IDS)[number];
 
 export const COMMITTEE_STATUSES = [
@@ -45,16 +50,24 @@ export const committeeApplySchema = z
     wantsEvents: z.boolean(),
     wantsMarketing: z.boolean(),
     wantsTreasury: z.boolean(),
+    wantsWebsite: z.boolean().default(false),
     eventsWhy: optionalText(2000),
     eventsCollabs: optionalText(1000),
     marketingWhy: optionalText(2000),
     marketingConnections: optionalText(1000),
     treasuryWhy: optionalText(2000),
+    websiteWhy: optionalText(2000),
+    websiteLinks: optionalText(1000),
     otherOrgs: optionalText(1000),
     comments: optionalText(1000),
   })
   .superRefine((value, ctx) => {
-    if (!value.wantsEvents && !value.wantsMarketing && !value.wantsTreasury) {
+    if (
+      !value.wantsEvents &&
+      !value.wantsMarketing &&
+      !value.wantsTreasury &&
+      !value.wantsWebsite
+    ) {
       ctx.addIssue({
         code: "custom",
         message: "Pick at least one committee.",
@@ -82,6 +95,13 @@ export const committeeApplySchema = z
         path: ["treasuryWhy"],
       });
     }
+    if (value.wantsWebsite && !value.websiteWhy) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Tell us why you want the website team.",
+        path: ["websiteWhy"],
+      });
+    }
   });
 
 export type CommitteeApplyInput = z.infer<typeof committeeApplySchema>;
@@ -92,6 +112,7 @@ export function committeeAnswerFields(input: CommitteeApplyInput) {
     wantsEvents: input.wantsEvents,
     wantsMarketing: input.wantsMarketing,
     wantsTreasury: input.wantsTreasury,
+    wantsWebsite: input.wantsWebsite,
     discordHandle: input.discordHandle,
     eventsWhy: input.wantsEvents ? (input.eventsWhy ?? null) : null,
     eventsCollabs: input.wantsEvents ? (input.eventsCollabs ?? null) : null,
@@ -100,6 +121,8 @@ export function committeeAnswerFields(input: CommitteeApplyInput) {
       ? (input.marketingConnections ?? null)
       : null,
     treasuryWhy: input.wantsTreasury ? (input.treasuryWhy ?? null) : null,
+    websiteWhy: input.wantsWebsite ? (input.websiteWhy ?? null) : null,
+    websiteLinks: input.wantsWebsite ? (input.websiteLinks ?? null) : null,
     otherOrgs: input.otherOrgs ?? null,
     comments: input.comments ?? null,
   };

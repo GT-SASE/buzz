@@ -51,6 +51,17 @@ export const committees = [
       "Planning the SASE budget",
     ],
   },
+  {
+    id: "website" as const,
+    title: "Website Team",
+    blurb:
+      "Build and run this site and Buzz, the member portal: check-in, RSVPs, SASE KIN, elections. Any experience level; you learn the codebase with the team.",
+    responsibilities: [
+      "Shipping features officers and members ask for",
+      "Fixing bugs and reviewing each other's code",
+      "Keeping the event calendar and pages up to date",
+    ],
+  },
 ] as const;
 
 export type PublicCommitteeId = (typeof committees)[number]["id"];
@@ -59,10 +70,12 @@ export function selectedCommitteeIds(row: {
   wantsEvents: boolean;
   wantsMarketing: boolean;
   wantsTreasury: boolean;
+  wantsWebsite: boolean;
 }): PublicCommitteeId[] {
   const ids: PublicCommitteeId[] = [];
   if (row.wantsEvents) ids.push("events");
   if (row.wantsMarketing) ids.push("marketing");
   if (row.wantsTreasury) ids.push("treasury");
+  if (row.wantsWebsite) ids.push("website");
   return ids;
 }

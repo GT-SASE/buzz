@@ -42,6 +42,17 @@ export const committeeInterviewQuestions: Record<
       prompt: "Would you be interested in joining any of the other committees?",
     },
   ],
+  website: [
+    {
+      id: "website-built",
+      prompt:
+        "Walk me through something you have built, for a class or on your own.",
+    },
+    {
+      id: "website-feature",
+      prompt: "What is one thing you would change about this site or Buzz?",
+    },
+  ],
 };
 
 export function interviewScript(ids: PublicCommitteeId[]) {

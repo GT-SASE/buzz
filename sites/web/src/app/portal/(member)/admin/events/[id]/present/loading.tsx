@@ -4,7 +4,7 @@ export default function PresentLoading() {
     <div
       aria-busy="true"
       aria-live="polite"
-      className="bg-navy navy-wash fixed inset-0 z-50 flex flex-col items-center justify-center overflow-hidden px-8"
+      className="bg-navy fixed inset-0 z-50 flex flex-col items-center justify-center overflow-hidden px-8"
     >
       <span className="sr-only">Loading present screen.</span>
       <div className="bg-gold-bright/20 h-3 w-32 animate-pulse rounded-full" />
