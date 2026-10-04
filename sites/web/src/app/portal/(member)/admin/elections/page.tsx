@@ -30,7 +30,6 @@ async function AdminElectionsBody() {
   return (
     <HydrateClient>
       <PortalHeader
-        eyebrow="Elections"
         title="Officer elections"
         body="Open nominations, approve the ballot, then open voting. Only members with an event check-in this school year can vote. Counts stay hidden until you close voting."
         aside={

@@ -22,9 +22,8 @@ export default function ProgramsPage() {
     <>
       <JsonLd data={breadcrumbSchema("Programs", "/programs")} />
       <PageHeader
-        eyebrow="Programs"
         title="What a semester here looks like."
-        body="Six standing programs run every semester. Members pick as many or as few as they want — nothing below is all-or-nothing."
+        body="Six standing programs run every semester. Members pick as many or as few as they want."
       />
 
       <Section size="sm">

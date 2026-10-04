@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 
-import { Eyebrow } from "~/components/site";
 import { Skeleton } from "~/components/ui/skeleton";
 import { cn } from "~/lib/utils";
 import { api, type RouterOutputs } from "~/trpc/react";
@@ -56,62 +55,21 @@ function PeriodSwitch({
   );
 }
 
-function PeriodFigures({ data }: { data: Attendance }) {
+/** One sentence instead of a second row of tiles under the chapter figures. */
+function PeriodSummary({ data }: { data: Attendance }) {
   return (
-    <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-      <div className="border-hairline bg-paper rounded-lg border p-4 shadow-xs">
-        <Eyebrow
-          as="dt"
-          tone="muted"
-          rule={false}
-          className="text-ink-muted text-xs font-semibold tracking-wider uppercase"
-        >
-          Check-ins
-        </Eyebrow>
-        <dd className="font-display text-navy mt-2 text-2xl font-bold tabular-nums">
-          {data.checkIns}
-        </dd>
-      </div>
-      <div className="border-hairline bg-paper rounded-lg border p-4 shadow-xs">
-        <Eyebrow
-          as="dt"
-          tone="muted"
-          rule={false}
-          className="text-ink-muted text-xs font-semibold tracking-wider uppercase"
-        >
-          Members who came
-        </Eyebrow>
-        <dd className="font-display text-navy mt-2 text-2xl font-bold tabular-nums">
-          {data.uniqueMembers}
-        </dd>
-      </div>
-      <div className="border-hairline bg-paper rounded-lg border p-4 shadow-xs">
-        <Eyebrow
-          as="dt"
-          tone="muted"
-          rule={false}
-          className="text-ink-muted text-xs font-semibold tracking-wider uppercase"
-        >
-          Events
-        </Eyebrow>
-        <dd className="font-display text-navy mt-2 text-2xl font-bold tabular-nums">
-          {data.events}
-        </dd>
-      </div>
-      <div className="border-hairline bg-paper rounded-lg border p-4 shadow-xs">
-        <Eyebrow
-          as="dt"
-          tone="muted"
-          rule={false}
-          className="text-ink-muted text-xs font-semibold tracking-wider uppercase"
-        >
-          Average attendance
-        </Eyebrow>
-        <dd className="font-display text-navy mt-2 text-2xl font-bold tabular-nums">
-          {data.averageAttendance.toFixed(1)}
-        </dd>
-      </div>
-    </dl>
+    <p className="text-ink text-body">
+      <span className="font-semibold tabular-nums">{data.checkIns}</span>{" "}
+      {data.checkIns === 1 ? "check-in" : "check-ins"} from{" "}
+      <span className="font-semibold tabular-nums">{data.uniqueMembers}</span>{" "}
+      {data.uniqueMembers === 1 ? "member" : "members"} across{" "}
+      <span className="font-semibold tabular-nums">{data.events}</span>{" "}
+      {data.events === 1 ? "event" : "events"}, about{" "}
+      <span className="font-semibold tabular-nums">
+        {data.averageAttendance.toFixed(1)}
+      </span>{" "}
+      per event.
+    </p>
   );
 }
 
@@ -177,7 +135,7 @@ function AttendanceBody({
 
   return (
     <div className="mt-6">
-      <PeriodFigures data={data} />
+      <PeriodSummary data={data} />
       {turnout && <Charts turnout={turnout} />}
       {data.events > data.series.length ? (
         <p className="text-ink-muted text-body-sm mt-6 tabular-nums">
@@ -191,27 +149,10 @@ function AttendanceBody({
 function AttendanceSkeleton() {
   return (
     <div aria-hidden="true" className="mt-6">
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {[0, 1, 2, 3].map((figure) => (
-          <div
-            key={figure}
-            className="border-hairline bg-paper/50 rounded-lg border p-4"
-          >
-            <Skeleton className="h-3 w-24" />
-            <Skeleton className="mt-3 h-7 w-16" />
-          </div>
-        ))}
-      </div>
-      <div className="mt-6 grid gap-3">
-        {[0, 1, 2].map((row) => (
-          <div
-            key={row}
-            className="border-hairline bg-paper/50 rounded-lg border p-4"
-          >
-            <Skeleton className="h-4 w-40" />
-            <Skeleton className="mt-3 h-2 w-full" />
-          </div>
-        ))}
+      <Skeleton className="h-5 w-3/4 max-w-lg" />
+      <div className="border-hairline bg-paper/50 mt-6 rounded-lg border p-5">
+        <Skeleton className="h-4 w-40" />
+        <Skeleton className="mt-4 h-52 w-full" />
       </div>
     </div>
   );

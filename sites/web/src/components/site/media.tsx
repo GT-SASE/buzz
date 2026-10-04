@@ -67,41 +67,6 @@ export function PhotoMosaic({ photos }: { photos: readonly Photo[] }) {
 }
 
 /**
- * A statistic that counts up as it scrolls into view via a registered CSS
- * custom property — no JavaScript, no hydration, no layout shift. Generated
- * content is not reliably announced, so the real value ships as sr-only text.
- */
-export function StatValue({
-  value,
-  className,
-}: {
-  value: string;
-  className?: string;
-}) {
-  // "200+" counts; "2007" does not — a founding year ticking up from zero
-  // reads as a bug rather than a flourish.
-  const parts = /^(\d{1,3})(\D*)$/.exec(value);
-
-  if (!parts) {
-    return <span className={className}>{value}</span>;
-  }
-
-  const [, digits, suffix] = parts;
-
-  return (
-    <span className={className}>
-      <span className="sr-only">{value}</span>
-      <span
-        aria-hidden="true"
-        className="count-up"
-        style={{ "--to": Number(digits) } as React.CSSProperties}
-      />
-      <span aria-hidden="true">{suffix}</span>
-    </span>
-  );
-}
-
-/**
  * Scrolling ribbon. Two identical halves make the -50% loop seamless; the clone
  * is hidden from assistive tech. Pauses on hover and focus-within (WCAG 2.2.2),
  * and under reduced motion becomes a plain wrapped list rather than a frozen

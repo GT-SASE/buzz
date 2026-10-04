@@ -78,7 +78,7 @@ export function CheckInForm({ initialCode }: { initialCode: string }) {
   const checkIn = api.event.checkIn.useMutation({
     onSuccess: async (result) => {
       toast.success("Checked in", {
-        description: `${result.eventTitle} — +${result.pointsEarned} points`,
+        description: `${result.eventTitle}, +${result.pointsEarned} points`,
       });
       // The dashboard is server-rendered, so both the query cache and the RSC
       // payload have to be told the totals moved.
@@ -274,7 +274,7 @@ export function CheckInForm({ initialCode }: { initialCode: string }) {
           </Alert>
 
           <p className="text-ink-muted text-body-sm mt-6">
-            Point your phone&rsquo;s own camera at the QR on the screen — it
+            Point your phone&rsquo;s own camera at the QR on the screen. It
             opens this page ready to check in. Otherwise ask an officer to add
             you, or email{" "}
             <a

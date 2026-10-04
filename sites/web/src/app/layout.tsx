@@ -15,7 +15,7 @@ import {
 } from "~/lib/seo";
 
 const defaultTitle = `${site.name} — ${site.tagline}`;
-const defaultDescription = `${site.name} — ${site.description.replace("The Georgia Tech chapter of the Society of Asian Scientists and Engineers — ", "")}`;
+const defaultDescription = site.description;
 const googleVerification = googleSiteVerification(
   env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION,
 );

@@ -1,4 +1,3 @@
-import { Eyebrow } from "~/components/site";
 import { Honeycomb } from "~/components/site/hive";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent } from "~/components/ui/card";
@@ -6,12 +5,10 @@ import { signOutOfPortal } from "./auth-actions";
 
 /** Portal masthead. Quieter than the marketing `PageHeader` on purpose. */
 export function PortalHeader({
-  eyebrow,
   title,
   body,
   aside,
 }: {
-  eyebrow: string;
   title: string;
   body?: string;
   aside?: React.ReactNode;
@@ -21,8 +18,7 @@ export function PortalHeader({
       <Honeycomb className="text-gold/20 pointer-events-none absolute -top-8 -right-10 h-48 w-80" />
       <div className="max-w-content relative mx-auto grid gap-6 px-5 py-8 sm:gap-10 sm:px-6 sm:py-16 lg:grid-cols-[1fr_auto] lg:items-center lg:gap-16">
         <div className="max-w-xl">
-          <Eyebrow tone="gold">{eyebrow}</Eyebrow>
-          <h1 className="font-display text-navy text-h2 sm:text-h1 mt-4 font-bold tracking-tight text-balance sm:mt-5">
+          <h1 className="font-display text-navy text-h2 sm:text-h1 font-bold tracking-tight text-balance sm:mt-5">
             {title}
           </h1>
           {body && (

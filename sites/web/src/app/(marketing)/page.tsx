@@ -5,14 +5,12 @@ import {
   Button,
   Card,
   EventCard,
-  Eyebrow,
   Icon,
   Marquee,
   PhotoFrame,
   PhotoMosaic,
   PillarGrid,
   Section,
-  StatValue,
   TextLink,
 } from "~/components/site";
 import { JsonLd } from "~/components/site/json-ld";
@@ -31,7 +29,7 @@ import {
   meeting,
   missionPillars,
   programs,
-  stats,
+  chapterLine,
 } from "~/data/content";
 import { galleryPhotos, homePhotos } from "~/data/photos-home";
 import { discord, joinHref, site } from "~/data/site";
@@ -80,19 +78,19 @@ export default async function Home() {
           </div>
 
           <div className="grid gap-x-16 gap-y-10 pt-8 pb-14 lg:grid-cols-[1.3fr_0.7fr] lg:gap-y-14 lg:pt-16 lg:pb-28">
-            <div className="rise">
+            <div>
               <h1 className="font-display text-navy text-hero optical-left font-bold tracking-tight">
-                <span className="line-mask">
+                <span className="block">
                   <span>Find your people</span>
                 </span>
-                <span className="line-mask">
+                <span className="block">
                   <span>in STEM.</span>
                 </span>
               </h1>
               <p className="text-lead text-ink-muted max-w-measure mt-6 sm:mt-8">
                 We are the Georgia Tech chapter of the Society of Asian
                 Scientists and Engineers. SASE KIN, recruiter workshops, and
-                semester-long build teams — open to every student on campus, any
+                semester-long build teams, open to every student on campus, any
                 major, any background.
               </p>
               <div className="mt-8 flex flex-col items-stretch gap-4 sm:mt-10 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-8 sm:gap-y-5">
@@ -112,7 +110,7 @@ export default async function Home() {
               </div>
             </div>
 
-            <div className="rise" style={{ animationDelay: "140ms" }}>
+            <div>
               <PhotoFrame
                 photo={homePhotos.conventionDelegation}
                 priority
@@ -120,10 +118,7 @@ export default async function Home() {
                 className="aspect-[4/3]"
               />
               <Card className="mt-6 sm:mt-10">
-                <Eyebrow tone="muted" rule={false}>
-                  Come to a meeting
-                </Eyebrow>
-                <p className="font-display text-navy text-h2 mt-4 font-bold">
+                <p className="font-display text-navy text-h2 font-bold">
                   General body meetings
                 </p>
                 <p className="text-ink-muted text-body mt-3">
@@ -159,9 +154,8 @@ export default async function Home() {
 
       <Marquee items={marqueeItems} />
 
-      {/* The photograph is decorative — the figures carry the information — so
-          it takes an empty alt and sits behind a scrim that holds the gold at
-          AA for large text. */}
+      {/* The photograph is decorative, so it takes an empty alt and sits behind
+          a scrim that holds the gold at AA for large text. */}
       <section className="bg-navy relative overflow-hidden px-5 py-14 sm:px-6 sm:py-24">
         <Image
           src={homePhotos.generalBody.src}
@@ -172,27 +166,12 @@ export default async function Home() {
           className="object-cover object-center opacity-25"
         />
         <div className="bg-navy/85 navy-wash absolute inset-0" />
-        <dl className="max-w-content relative mx-auto grid border-t-2 border-white/70 sm:grid-cols-3">
-          {stats.map((stat) => (
-            // Column-reverse keeps the figure above its label on screen while
-            // the term still precedes its definition in the DOM.
-            <div
-              key={stat.label}
-              className="flex flex-col-reverse border-b border-white/15 py-8 last:border-b-0 sm:border-b-0 sm:border-l sm:py-12 sm:pl-10 sm:first:border-l-0 sm:first:pl-0"
-            >
-              <Eyebrow as="dt" tone="onNavy" rule={false} className="mt-4">
-                {stat.label}
-              </Eyebrow>
-              <dd className="font-display text-gold-bright text-stat font-bold">
-                <StatValue value={stat.value} />
-              </dd>
-            </div>
-          ))}
-        </dl>
+        <p className="max-w-content font-display text-gold-bright text-h1 relative mx-auto border-t-2 border-white/70 pt-10 font-bold tracking-tight text-balance sm:pt-14">
+          {chapterLine}
+        </p>
       </section>
 
       <Section
-        eyebrow="Our mission"
         title="Three commitments we hold each other to."
         lead="SASE's national mission, run at chapter scale on the Flats."
       >
@@ -202,10 +181,10 @@ export default async function Home() {
         </div>
       </Section>
 
-      <Section eyebrow="What we do" title="What membership actually gets you.">
+      <Section title="What membership actually gets you.">
         <ul
           role="list"
-          className="stagger grid gap-x-8 gap-y-8 sm:grid-cols-2 lg:grid-cols-3"
+          className="grid gap-x-8 gap-y-8 sm:grid-cols-2 lg:grid-cols-3"
         >
           {programs.map((program) => (
             <li key={program.slug} className="h-full">
@@ -236,13 +215,12 @@ export default async function Home() {
       {/* The hesitation to answer is not "what is SASE" but "what happens if I
           show up alone". */}
       <Section
-        eyebrow="Your first month"
         title="What happens if you just show up."
         lead="You do not need a friend already in it, a technical major, or a plan."
       >
         <ol
           role="list"
-          className="stagger grid gap-x-10 gap-y-12 sm:grid-cols-2 lg:grid-cols-4"
+          className="grid gap-x-10 gap-y-12 sm:grid-cols-2 lg:grid-cols-4"
         >
           {firstMonth.map((step, i) => (
             <li key={step.when} className="border-gold border-t-2 pt-6">
@@ -275,7 +253,6 @@ export default async function Home() {
       </Section>
 
       <Section
-        eyebrow="Life in the chapter"
         title="A year of it, roughly."
         lead="Convention delegations, campus tabling, service nights, Hawks games, and the trips in between."
         tone="cream"
@@ -285,11 +262,10 @@ export default async function Home() {
 
       <Section
         layout="split"
-        eyebrow="Leadership"
         title="The people running the chapter."
         lead="Every seat is elected by the membership each spring."
       >
-        <ul role="list" className="stagger border-hairline border-t">
+        <ul role="list" className="border-hairline border-t">
           {board.slice(0, 4).map((member) => (
             <BoardRow key={member.name ?? member.role} member={member} />
           ))}
@@ -299,13 +275,10 @@ export default async function Home() {
         </div>
       </Section>
 
-      <Section eyebrow="Calendar" title="What's coming up.">
+      <Section title="What's coming up.">
         {calendar.length > 0 ? (
           <>
-            <ul
-              role="list"
-              className="stagger grid gap-x-10 gap-y-12 md:grid-cols-3"
-            >
+            <ul role="list" className="grid gap-x-10 gap-y-12 md:grid-cols-3">
               {calendar.map((event) => (
                 <li key={event.id}>
                   <EventCard event={event} />
@@ -331,7 +304,7 @@ export default async function Home() {
       </Section>
 
       {/* Partners. An invitation, not a wall of empty logo tiles. */}
-      <Section eyebrow="Partners" title="Recruit from this chapter.">
+      <Section title="Recruit from this chapter.">
         <Card tone="navy">
           <div className="grid gap-10 lg:grid-cols-[1.2fr_0.8fr] lg:items-center">
             <div>
@@ -380,7 +353,7 @@ export default async function Home() {
       {/* Deliberately outside the numbered sequence: the last thing on the page
           is the invitation, not another section. */}
       <section className="px-5 pt-4 pb-20 sm:px-6 sm:pb-28">
-        <div className="max-w-content reveal mx-auto">
+        <div className="max-w-content mx-auto">
           <div className="rule-heavy grid gap-x-16 gap-y-6 pt-10 lg:grid-cols-[1.35fr_1fr] lg:items-end">
             <h2 className="font-display text-navy text-h1 optical-left font-bold tracking-tight text-balance">
               Every major. Every year. Everyone welcome.

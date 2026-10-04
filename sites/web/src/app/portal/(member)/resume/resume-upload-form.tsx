@@ -104,8 +104,8 @@ function ResumeFields({ row }: { row: Mine }) {
         Upload your resume.
       </h1>
       <p className="text-ink-muted text-body mt-4">
-        PDF only, 2 MB or less. Officers use this for the member resume book —
-        it is not posted on the public site.
+        PDF only, 2 MB or less. Officers use this for the member resume book. It
+        is not posted on the public site.
       </p>
 
       {row && (

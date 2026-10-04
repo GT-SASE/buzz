@@ -107,8 +107,9 @@ describe("Attendance", () => {
     expect(
       screen.getByRole("heading", { name: "Attendance over time" }),
     ).toBeTruthy();
-    expect(screen.getByText("69")).toBeTruthy();
-    expect(screen.getByText("Members who came")).toBeTruthy();
+    expect(document.body.textContent).toContain(
+      "69 check-ins from 40 members across 2 events, about 34.5 per event.",
+    );
 
     const kickoff = screen.getByRole("link", { name: /Spring Kickoff/i });
     expect(kickoff.getAttribute("href")).toBe("/portal/admin/events/event-8");
