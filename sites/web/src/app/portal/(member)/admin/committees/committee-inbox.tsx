@@ -35,6 +35,7 @@ function committeePhrase(row: {
   wantsEvents: boolean;
   wantsMarketing: boolean;
   wantsTreasury: boolean;
+  wantsWebsite: boolean;
 }) {
   const titles = selectedCommitteeIds(row).map(
     (id) => committees.find((committee) => committee.id === id)?.title ?? id,
@@ -100,6 +101,8 @@ export function CommitteeInbox({ cycle }: { cycle: string }) {
             "Marketing why",
             "Marketing connections",
             "Treasury why",
+            "Website why",
+            "Website links",
             "Other orgs",
             "Comments",
             "Status",
@@ -116,6 +119,8 @@ export function CommitteeInbox({ cycle }: { cycle: string }) {
             row.marketingWhy ?? "",
             row.marketingConnections ?? "",
             row.treasuryWhy ?? "",
+            row.websiteWhy ?? "",
+            row.websiteLinks ?? "",
             row.otherOrgs ?? "",
             row.comments ?? "",
             row.status,

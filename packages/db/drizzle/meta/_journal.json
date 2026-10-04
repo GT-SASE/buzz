@@ -43,6 +43,13 @@
       "when": 1791053407867,
       "tag": "0005_event_rsvp",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1791148861768,
+      "tag": "0006_website_committee",
+      "breakpoints": true
     }
   ]
 }

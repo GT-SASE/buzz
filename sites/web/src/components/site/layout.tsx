@@ -1,6 +1,5 @@
 import { Card as UiCard } from "~/components/ui/card";
 import { Separator } from "~/components/ui/separator";
-import { Honeycomb } from "~/components/site/hive";
 import { cn } from "~/lib/utils";
 
 const eyebrowTones = {
@@ -54,10 +53,9 @@ export function Eyebrow({
 export function PageHeader({ title, body }: { title: string; body: string }) {
   return (
     <header className="relative overflow-hidden px-5 pt-8 pb-10 sm:px-6 sm:pt-14 sm:pb-20">
-      <Honeycomb className="text-gold/25 pointer-events-none absolute -top-6 -right-8 hidden h-52 w-[26rem] sm:block" />
       <div className="max-w-content relative mx-auto">
         <div className="rule-heavy grid gap-x-16 gap-y-6 pt-8 lg:grid-cols-[1.35fr_1fr] lg:items-end">
-          <h1 className="font-display text-navy text-h1 optical-left font-bold tracking-tight text-balance">
+          <h1 className="font-display text-navy text-h1 font-bold tracking-tight text-balance">
             {title}
           </h1>
           <p className="text-lead text-ink-muted max-w-measure lg:pb-2">
@@ -136,7 +134,7 @@ export function Section({
             </p>
           )}
           {title && (
-            <h2 className="font-display text-navy text-h2 optical-left font-bold tracking-tight text-balance">
+            <h2 className="font-display text-navy text-h2 font-bold tracking-tight text-balance">
               {title}
             </h2>
           )}
@@ -203,11 +201,10 @@ export function Card({
     return (
       <UiCard
         className={cn(
-          "bg-navy navy-wash relative gap-0 overflow-hidden rounded-xl border-0 p-5 text-white shadow-none sm:p-8 lg:p-12",
+          "bg-navy relative gap-0 overflow-hidden rounded-xl border-0 p-5 text-white shadow-none sm:p-8 lg:p-12",
           className,
         )}
       >
-        <Honeycomb className="text-gold-bright/10 pointer-events-none absolute inset-0 h-full w-full" />
         <div className="relative">{children}</div>
       </UiCard>
     );
@@ -216,7 +213,7 @@ export function Card({
   return (
     <UiCard
       className={cn(
-        "border-gold gap-0 rounded-xl border-0 border-t-2 bg-transparent py-0 pt-6 shadow-none",
+        "border-hairline gap-0 rounded-none border-0 border-t bg-transparent py-0 pt-6 shadow-none",
         tone === "cream" ? "bg-cream px-6 pb-6" : "",
         className,
       )}
@@ -239,8 +236,7 @@ export function CtaPanel({
   children: React.ReactNode;
 }) {
   return (
-    <div className="bg-navy navy-wash relative overflow-hidden px-6 py-16 sm:px-12 lg:py-24">
-      <Honeycomb className="text-gold-bright/12 pointer-events-none absolute inset-0 h-full w-full" />
+    <div className="bg-navy relative overflow-hidden px-6 py-16 sm:px-12 lg:py-24">
       <div className="max-w-measure relative mx-auto text-center">
         {eyebrow && (
           <Eyebrow tone="light" rule={false} className="justify-center">

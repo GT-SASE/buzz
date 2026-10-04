@@ -14,6 +14,7 @@ import {
   committeeDiscordHref,
   committeeExpectations,
   committees,
+  type PublicCommitteeId,
 } from "~/data/committees";
 import { ConfirmDialog } from "~/app/portal/_components/confirm-dialog";
 import { formatDate, formatDeadline } from "~/app/portal/_lib/format";
@@ -83,9 +84,22 @@ function CommitteeApplyFields({ data }: { data: Mine }) {
     row?.marketingConnections ?? "",
   );
   const [treasuryWhy, setTreasuryWhy] = useState(row?.treasuryWhy ?? "");
+  const [wantsWebsite, setWantsWebsite] = useState(row?.wantsWebsite ?? false);
+  const [websiteWhy, setWebsiteWhy] = useState(row?.websiteWhy ?? "");
+  const [websiteLinks, setWebsiteLinks] = useState(row?.websiteLinks ?? "");
   const [otherOrgs, setOtherOrgs] = useState(row?.otherOrgs ?? "");
   const [comments, setComments] = useState(row?.comments ?? "");
-  const pickedCommittee = wantsEvents || wantsMarketing || wantsTreasury;
+  const pickedCommittee =
+    wantsEvents || wantsMarketing || wantsTreasury || wantsWebsite;
+  const picks: Record<
+    PublicCommitteeId,
+    readonly [boolean, (value: boolean) => void]
+  > = {
+    events: [wantsEvents, setWantsEvents],
+    marketing: [wantsMarketing, setWantsMarketing],
+    treasury: [wantsTreasury, setWantsTreasury],
+    website: [wantsWebsite, setWantsWebsite],
+  };
 
   const apply = api.committee.submit.useMutation({
     onSuccess: async () => {
@@ -113,7 +127,7 @@ function CommitteeApplyFields({ data }: { data: Mine }) {
           Not recruiting right now.
         </h1>
         <p className="text-ink-muted text-body mt-4">
-          Committees for Events, Marketing, and Treasury recruit once a
+          Events, Marketing, Treasury and the website team recruit once a
           semester. Applications open here when the board announces them. Watch
           the Discord.
         </p>
@@ -130,8 +144,8 @@ function CommitteeApplyFields({ data }: { data: Mine }) {
         {data.open ? "Apply to a committee." : "Committee applications."}
       </h1>
       <p className="text-ink-muted text-body mt-4">
-        Membership stays free and open. This is only for Events, Marketing, or
-        Treasury.{" "}
+        Membership stays free and open. This is only for Events, Marketing,
+        Treasury or the website team.{" "}
         {data.open
           ? `Closes ${formatDeadline(data.closesAt)}. We will reach out afterwards to schedule a call.`
           : "Recruiting for this cycle is over."}
@@ -194,11 +208,14 @@ function CommitteeApplyFields({ data }: { data: Mine }) {
             wantsEvents,
             wantsMarketing,
             wantsTreasury,
+            wantsWebsite,
             eventsWhy,
             eventsCollabs,
             marketingWhy,
             marketingConnections,
             treasuryWhy,
+            websiteWhy,
+            websiteLinks,
             otherOrgs,
             comments,
           });
@@ -236,18 +253,7 @@ function CommitteeApplyFields({ data }: { data: Mine }) {
             Which committee(s)
           </legend>
           {committees.map((committee) => {
-            const checked =
-              committee.id === "events"
-                ? wantsEvents
-                : committee.id === "marketing"
-                  ? wantsMarketing
-                  : wantsTreasury;
-            const onChange =
-              committee.id === "events"
-                ? setWantsEvents
-                : committee.id === "marketing"
-                  ? setWantsMarketing
-                  : setWantsTreasury;
+            const [checked, onChange] = picks[committee.id];
 
             return (
               <label
@@ -359,6 +365,39 @@ function CommitteeApplyFields({ data }: { data: Mine }) {
               className="border-hairline mt-2 text-base"
             />
           </div>
+        )}
+
+        {wantsWebsite && (
+          <>
+            <div>
+              <Label htmlFor="website-why">Why the website team?</Label>
+              <Textarea
+                id="website-why"
+                value={websiteWhy}
+                onChange={(event) => setWebsiteWhy(event.target.value)}
+                required
+                maxLength={2000}
+                rows={5}
+                disabled={!canEdit}
+                className="border-hairline mt-2 text-base"
+              />
+            </div>
+            <div>
+              <Label htmlFor="website-links">
+                Anything you have built (optional)
+              </Label>
+              <Textarea
+                id="website-links"
+                value={websiteLinks}
+                onChange={(event) => setWebsiteLinks(event.target.value)}
+                maxLength={1000}
+                rows={2}
+                disabled={!canEdit}
+                placeholder="GitHub, a portfolio, a class project"
+                className="border-hairline mt-2 text-base"
+              />
+            </div>
+          </>
         )}
 
         <div>

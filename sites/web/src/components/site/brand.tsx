@@ -1,4 +1,4 @@
-import { Avatar, AvatarFallback } from "~/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "~/components/ui/avatar";
 import { SaseMark } from "~/components/site/hive";
 import { cn } from "~/lib/utils";
 
@@ -18,7 +18,7 @@ export function Wordmark({ tone }: { tone: "light" | "dark" }) {
         </span>
         <span
           className={cn(
-            "text-eyebrow tracking-caps mt-1.5 font-semibold uppercase",
+            "mt-1 text-[0.8125rem] font-medium",
             tone === "dark" ? "text-ink-muted" : "text-white/60",
           )}
         >
@@ -35,9 +35,11 @@ export function Wordmark({ tone }: { tone: "light" | "dark" }) {
  */
 export function InitialDisc({
   label,
+  photo,
   className,
 }: {
   label: string;
+  photo?: string;
   className?: string;
 }) {
   // Two words give two initials; one word gives its first two letters, so
@@ -56,6 +58,7 @@ export function InitialDisc({
       aria-hidden="true"
       className={cn("hex-face ring-gold/30 size-14 ring-1", className)}
     >
+      {photo && <AvatarImage src={photo} alt="" className="object-cover" />}
       <AvatarFallback className="bg-sand text-navy font-display text-lg font-bold">
         {initials || "GT"}
       </AvatarFallback>

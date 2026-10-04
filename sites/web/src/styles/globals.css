@@ -7,8 +7,8 @@
 @custom-variant dark (&:is(.dark *));
 
 /* ---------------------------------------------------------------------------
-   Hive palette. Georgia Tech navy and sting gold on comb paper.
-   Ink stays warm so gold never sits on a cool gray.
+   Lanyard palette. A convention badge: white card stock, Georgia Tech navy
+   print, a gold-and-navy strap. "Desk" is the cool gray the badge lies on.
 --------------------------------------------------------------------------- */
 :root {
   --navy: #003057;
@@ -16,17 +16,17 @@
   --gold: #b3a369;
   --gold-bright: #eaaa00;
 
-  --paper: #f6f1e3;
-  --cream: #efe6d2;
-  --sand: #e4d7bc;
-  --parchment: #dccaa3;
+  --paper: #ffffff;
+  --cream: #eef1f4;
+  --sand: #dfe4ea;
+  --parchment: #f6f8fa;
 
-  --ink: #241f1a;
-  --ink-muted: #5b5348;
-  --gold-ink: #6b5a24;
+  --ink: #0f1f30;
+  --ink-muted: #4a5866;
+  --gold-ink: #7a5800;
 
-  --hairline: rgb(36 31 26 / 0.12);
-  --rule: rgb(36 31 26 / 0.9);
+  --hairline: rgb(15 31 48 / 0.13);
+  --rule: rgb(15 31 48 / 0.9);
 
   /* shadcn contract, mapped onto the palette above. */
   --radius: 0.75rem;
@@ -48,7 +48,7 @@
   --destructive: #9a2f22;
   --destructive-foreground: #ffffff;
   --border: var(--hairline);
-  --input: rgb(36 31 26 / 0.2);
+  --input: rgb(15 31 48 / 0.22);
   --ring: var(--navy);
 
   --chart-1: #003057;
@@ -68,8 +68,8 @@
 }
 
 @theme inline {
-  --font-sans: var(--font-bricolage), ui-sans-serif, system-ui, sans-serif;
-  --font-display: var(--font-display), Georgia, "Times New Roman", serif;
+  --font-sans: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-ibm), ui-monospace, monospace;
 
   --color-navy: var(--navy);
@@ -133,12 +133,12 @@
   --text-lead--line-height: 1.6;
   --text-h3: clamp(1.375rem, 0.6vw + 1.15rem, 1.625rem);
   --text-h3--line-height: 1.25;
-  --text-h2: clamp(2rem, 3.2vw, 3.5rem);
+  --text-h2: clamp(1.75rem, 2.7vw, 3rem);
   --text-h2--line-height: 1.05;
-  --text-h1: clamp(2.75rem, 6vw, 5.5rem);
-  --text-h1--line-height: 0.98;
-  --text-hero: clamp(2.15rem, 9vw, 8rem);
-  --text-hero--line-height: 1.06;
+  --text-h1: clamp(2.25rem, 5vw, 4.5rem);
+  --text-h1--line-height: 1;
+  --text-hero: clamp(2.5rem, 7.2vw, 6.75rem);
+  --text-hero--line-height: 0.98;
   --text-stat: clamp(2.75rem, 4vw, 4.5rem);
   --text-stat--line-height: 0.95;
   --text-numeral: clamp(0.75rem, 0.3vw + 0.6rem, 0.8125rem);
@@ -163,39 +163,39 @@
 }
 
 @layer utilities {
-  /* The comb edge. Gold, not ink — the newspaper rule is gone. */
+  /* Headings are Archivo at its widest. Weight comes from font-bold on each
+     heading; this raises it to the black cut the direction calls for. */
+  .font-display {
+    font-stretch: 125%;
+    letter-spacing: -0.02em;
+  }
+  .font-display.font-bold {
+    font-weight: 900;
+  }
+
+  /* The lanyard: navy and gold at 135deg, tapering toward the clip. */
+  .lanyard-strap {
+    background: repeating-linear-gradient(
+      135deg,
+      var(--navy) 0 14px,
+      var(--gold-bright) 14px 22px
+    );
+    clip-path: polygon(0 0, 100% 0, 78% 100%, 22% 100%);
+  }
+
+  /* Section top: a plain hairline. Space does the grouping. */
   .rule-heavy {
-    border-top: 2px solid var(--gold);
+    border-top: 1px solid var(--hairline);
   }
 
-  /* Point-up hex. Used for the GT lockup and as a kicker pip. */
+  /* Round pip: the punched hole in a badge. */
   .hex-face {
-    clip-path: polygon(
-      50% 5%,
-      94% 27.5%,
-      94% 72.5%,
-      50% 95%,
-      6% 72.5%,
-      6% 27.5%
-    );
+    border-radius: 9999px;
   }
 
-  /* Opposite chamfers so a photo reads as a cell, not a rectangle. */
+  /* Photos get the badge's corner radius. */
   .hex-cut {
-    clip-path: polygon(
-      0 0,
-      calc(100% - 1.5rem) 0,
-      100% 1.5rem,
-      100% 100%,
-      1.5rem 100%,
-      0 calc(100% - 1.5rem)
-    );
-  }
-
-  /* Fraunces carries noticeable left side bearing at hero sizes, so a headline
-     set flush to a rule sits visibly inboard of it until it is pulled back. */
-  .optical-left {
-    margin-left: -0.055em;
+    border-radius: 1rem;
   }
 
   .hang {
@@ -233,35 +233,6 @@
         animation: marquee 38s linear infinite;
       }
     }
-  }
-
-  /* Warm paper grain. Two offset radial washes, no image request. */
-  .paper-wash {
-    background-image:
-      radial-gradient(
-        44rem 30rem at 12% -8%,
-        rgb(179 163 105 / 0.16),
-        transparent 60%
-      ),
-      radial-gradient(
-        38rem 28rem at 92% 8%,
-        rgb(0 48 87 / 0.07),
-        transparent 62%
-      );
-  }
-
-  .navy-wash {
-    background-image:
-      radial-gradient(
-        40rem 26rem at 8% 0%,
-        rgb(234 170 0 / 0.18),
-        transparent 62%
-      ),
-      radial-gradient(
-        34rem 30rem at 96% 96%,
-        rgb(179 163 105 / 0.14),
-        transparent 60%
-      );
   }
 
   .text-balance {
