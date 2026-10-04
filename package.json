@@ -9,6 +9,7 @@
     "vercel-build": "node scripts/vercel-build.mjs",
     "start": "pnpm --filter @buzz/web start",
     "preview": "pnpm --filter @buzz/web preview",
+    "smoke": "node scripts/smoke.mjs",
     "check": "pnpm run lint && pnpm run typecheck && pnpm run format:check && pnpm run test",
     "test": "vitest run",
     "test:watch": "vitest",

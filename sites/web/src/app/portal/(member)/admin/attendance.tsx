@@ -1,15 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 
-import { formatDate } from "~/app/portal/_lib/format";
 import { Eyebrow } from "~/components/site";
 import { Skeleton } from "~/components/ui/skeleton";
 import { cn } from "~/lib/utils";
 import { api, type RouterOutputs } from "~/trpc/react";
+import { Legend, RsvpBars, TurnoutChart, TurnoutTable } from "./turnout-charts";
 
 type Attendance = RouterOutputs["chapter"]["attendance"];
+type Turnout = RouterOutputs["chapter"]["turnout"];
 type Period = Attendance["period"];
 
 const periods: { id: Period; label: string }[] = [
@@ -115,53 +115,57 @@ function PeriodFigures({ data }: { data: Attendance }) {
   );
 }
 
-function EventBars({ series }: { series: Attendance["series"] }) {
-  const peak = Math.max(0, ...series.map((row) => row.checkIns));
+const panel = "border-hairline bg-paper rounded-lg border p-5 shadow-xs";
 
+function Charts({ turnout }: { turnout: Turnout }) {
   return (
-    <ul role="list" className="mt-6 grid gap-3">
-      {series.map((row) => {
-        const width = peak === 0 ? 0 : (row.checkIns / peak) * 100;
-        return (
-          <li key={row.id}>
-            <Link
-              href={`/portal/admin/events/${row.id}`}
-              className="border-hairline bg-paper hover:bg-cream/40 focus-visible:ring-gold-bright block rounded-lg border p-4 transition focus-visible:ring-2 focus-visible:outline-none"
-            >
-              <div className="flex items-baseline justify-between gap-4">
-                <p className="text-navy min-w-0 font-semibold">
-                  <span className="block truncate">{row.title}</span>
-                  <span className="text-ink-muted text-body-sm mt-0.5 block font-normal tabular-nums">
-                    {formatDate(row.startsAt)}
-                  </span>
-                </p>
-                <div className="flex shrink-0 items-baseline gap-1.5">
-                  <span className="font-display text-navy text-lg font-bold tabular-nums">
-                    {row.checkIns}
-                  </span>
-                  <span className="text-ink-muted text-xs font-normal">
-                    attendees
-                  </span>
-                </div>
-              </div>
-              <div
-                className="bg-sand/60 mt-3 h-2 overflow-hidden rounded-full"
-                aria-hidden="true"
-              >
-                <div
-                  className="bg-gold-bright h-full rounded-full transition-all duration-500"
-                  style={{ width: `${width}%` }}
-                />
-              </div>
-            </Link>
-          </li>
-        );
-      })}
-    </ul>
+    <div className="mt-6 grid gap-6">
+      <section aria-labelledby="turnout-heading" className={panel}>
+        <div className="flex flex-wrap items-baseline justify-between gap-3">
+          <h3
+            id="turnout-heading"
+            className="text-navy text-body font-semibold"
+          >
+            Check-ins per event
+          </h3>
+          <Legend />
+        </div>
+        <div className="mt-4">
+          <TurnoutChart events={turnout.events} />
+        </div>
+        <details className="mt-4">
+          <summary className="text-navy text-body-sm cursor-pointer font-semibold">
+            Show as table
+          </summary>
+          <div className="mt-3">
+            <TurnoutTable events={turnout.events} />
+          </div>
+        </details>
+      </section>
+
+      <section aria-labelledby="rsvp-heading" className={panel}>
+        <h3 id="rsvp-heading" className="text-navy text-body font-semibold">
+          RSVPs for upcoming events
+        </h3>
+        <div className="mt-4">
+          {turnout.upcoming.length > 0 ? (
+            <RsvpBars upcoming={turnout.upcoming} />
+          ) : (
+            <p className="text-ink-muted text-body-sm">No upcoming events.</p>
+          )}
+        </div>
+      </section>
+    </div>
   );
 }
 
-function AttendanceBody({ data }: { data: Attendance }) {
+function AttendanceBody({
+  data,
+  turnout,
+}: {
+  data: Attendance;
+  turnout: Turnout | undefined;
+}) {
   if (data.events === 0) {
     return (
       <p className="text-ink-muted text-body max-w-measure mt-6">
@@ -174,7 +178,7 @@ function AttendanceBody({ data }: { data: Attendance }) {
   return (
     <div className="mt-6">
       <PeriodFigures data={data} />
-      <EventBars series={data.series} />
+      {turnout && <Charts turnout={turnout} />}
       {data.events > data.series.length ? (
         <p className="text-ink-muted text-body-sm mt-6 tabular-nums">
           Showing the {data.series.length} most recent of {data.events} events.
@@ -220,6 +224,10 @@ export function Attendance() {
     { period },
     { placeholderData: (previous) => previous },
   );
+  const turnout = api.chapter.turnout.useQuery(
+    { period },
+    { placeholderData: (previous) => previous },
+  );
 
   return (
     <section
@@ -245,7 +253,7 @@ export function Attendance() {
 
           <div aria-live="polite" aria-busy={attendance.isPending}>
             {attendance.data ? (
-              <AttendanceBody data={attendance.data} />
+              <AttendanceBody data={attendance.data} turnout={turnout.data} />
             ) : attendance.error ? (
               <p className="text-ink-muted text-body-sm mt-6">
                 Attendance for this window is unavailable right now.

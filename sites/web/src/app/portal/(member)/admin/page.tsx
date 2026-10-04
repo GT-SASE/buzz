@@ -24,6 +24,7 @@ async function AdminEventsBody() {
   await Promise.all([
     api.chapter.overview(),
     api.chapter.attendance({ period: "semester" }),
+    api.chapter.turnout({ period: "semester" }),
     api.event.listAll({ limit: 200, offset: 0 }),
   ]);
 
