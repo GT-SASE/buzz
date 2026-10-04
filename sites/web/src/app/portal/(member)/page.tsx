@@ -246,7 +246,7 @@ async function DashboardBody() {
                   <p className="text-ink-muted text-body max-w-measure mx-auto mt-3">
                     Your first one takes about ten seconds.{" "}
                     {open.length > 0
-                      ? `${open.length} ${open.length === 1 ? "event is" : "events are"} open right now — check into one and it lands here.`
+                      ? `${open.length} ${open.length === 1 ? "event is" : "events are"} open right now. Check into one and it lands here.`
                       : "Check-in opens when an officer starts an event."}
                   </p>
                 </div>

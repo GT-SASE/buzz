@@ -86,7 +86,7 @@ export function KinCard({
           />
           <p className="text-ink-muted text-body-sm mt-2.5">
             {tier.pointsToNext} more KIN points to reach {tier.next}. Meetings
-            only — GBMs do not count here.
+            only. GBMs do not count here.
           </p>
         </div>
       )}

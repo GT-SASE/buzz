@@ -31,7 +31,6 @@ async function AdminEventsBody() {
   return (
     <HydrateClient>
       <PortalHeader
-        eyebrow="Events"
         title="Events"
         body="Open check-in and put the QR on a screen. No scanning."
       />

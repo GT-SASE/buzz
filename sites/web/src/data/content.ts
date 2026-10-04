@@ -10,12 +10,9 @@
  * site (sites.gatech.edu/gtsase). Sponsors stay empty until partners sign.
  */
 
-/** Verified founding year; membership/access claims that do not invent counts. */
-export const stats = [
-  { value: "2007", label: "Chapter founded" },
-  { value: "Free", label: "Membership" },
-  { value: "Open", label: "To every major" },
-] as const;
+/** The home page's one line about the chapter. 2007 is the verified founding year. */
+export const chapterLine =
+  "Here since 2007. Free to join, open to every major.";
 
 /**
  * Meeting schedule is announced week-to-week on the chapter feeds — the
@@ -66,7 +63,7 @@ export const programs = [
     title: "Professional Development",
     body: "Resume reviews, mock interviews, and info sessions with recruiters from our corporate partners.",
     detail:
-      "Recruiting season workshops run in the first half of the fall semester: resume line edits with industry mentors, behavioral and technical mock interviews, and closed info sessions hosted by partner companies. Bring a draft of anything — nothing here assumes you already have an internship.",
+      "Recruiting season workshops run in the first half of the fall semester: resume line edits with industry mentors, behavioral and technical mock interviews, and closed info sessions hosted by partner companies. Bring a draft of anything. Nothing here assumes you already have an internship.",
   },
   {
     slug: "mentorship",
@@ -74,15 +71,15 @@ export const programs = [
     title: "SASE KIN",
     body: "Small kin groups of underclassmen and upperclassmen, new every semester.",
     detail:
-      "Sign up in the member portal as a mentor or mentee, then join a SASE KIN group: a small cluster of underclassmen and upperclassmen, some with an alum in industry. Groups start fresh every semester. Kin set their own rhythm — coffee between classes, resume passes before a deadline, someone to text when a semester goes sideways.",
+      "Sign up in the member portal as a mentor or mentee, then join a SASE KIN group: a small cluster of underclassmen and upperclassmen, some with an alum in industry. Groups start fresh every semester. Kin set their own rhythm: coffee between classes, resume passes before a deadline, someone to text when a semester goes sideways.",
   },
   {
     slug: "technical-projects",
     icon: "terminal",
     title: "Technical Projects",
-    body: "Semester-long team projects — software, hardware, and data — built and demoed at the end-of-year showcase.",
+    body: "Semester-long team projects in software, hardware, and data, built and demoed at the end-of-year showcase.",
     detail:
-      "Teams of four to six pick a project in the first weeks of the semester and ship it by the showcase. Past tracks have covered web and mobile software, embedded hardware, and data analysis. Beginners are staffed alongside experienced members on purpose — the point is to leave with something you can talk about in an interview.",
+      "Teams of four to six pick a project in the first weeks of the semester and ship it by the showcase. Past tracks have covered web and mobile software, embedded hardware, and data analysis. Beginners are staffed alongside experienced members on purpose. The point is to leave with something you can talk about in an interview.",
   },
   {
     slug: "community-service",
@@ -90,7 +87,7 @@ export const programs = [
     title: "Community Service",
     body: "STEM outreach with Atlanta-area K-12 students and volunteering with local nonprofits.",
     detail:
-      "Chapter service pairs hands-on STEM outreach for Atlanta-area K-12 students with recurring volunteer days at local nonprofits. Sessions are short and drop-in — a single Saturday morning counts.",
+      "Chapter service pairs hands-on STEM outreach for Atlanta-area K-12 students with recurring volunteer days at local nonprofits. Sessions are short and drop-in. A single Saturday morning counts.",
   },
   {
     slug: "socials",
@@ -98,7 +95,7 @@ export const programs = [
     title: "Socials",
     body: "Boba runs, game nights, and intramural sports throughout the semester.",
     detail:
-      "The social calendar is the low-stakes way in: boba runs after class, game nights, and intramural teams. No sign-up sheet and no experience required — just show up.",
+      "The social calendar is the low-stakes way in: boba runs after class, game nights, and intramural teams. No sign-up sheet and no experience required. Just show up.",
   },
   {
     slug: "conferences",

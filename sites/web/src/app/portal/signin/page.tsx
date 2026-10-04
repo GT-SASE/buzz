@@ -44,7 +44,7 @@ export default async function SignInPage({
           <p className="text-ink-muted text-body">
             {checkingIn
               ? "Signing in is how the chapter records that you were there and credits your points. You will land back on the check-in screen."
-              : "Membership is free. Sign in with Google and you are a member — your card, points, and SASE KIN signup all live in the portal. There is nothing to pay and no application to fill out."}
+              : "Membership is free. Sign in with Google and you are a member. Your card, points, and SASE KIN signup all live in the portal. There is nothing to pay and no application to fill out."}
           </p>
 
           <form action={signInWithGoogle} className="mt-8">

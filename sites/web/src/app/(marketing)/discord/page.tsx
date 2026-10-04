@@ -43,7 +43,6 @@ export default async function DiscordPage() {
     <>
       <JsonLd data={breadcrumbSchema("Discord", "/discord")} />
       <PageHeader
-        eyebrow="Discord"
         title="Join the Discord."
         body="Where the chapter talks between meetings. Open to every Georgia Tech student, no membership needed."
       />
@@ -59,7 +58,7 @@ export default async function DiscordPage() {
             <Button href={invite} variant="solid" external>
               Join the server
             </Button>
-            <ul role="list" className="stagger border-hairline mt-10 border-t">
+            <ul role="list" className="border-hairline mt-10 border-t">
               {reasons.map((reason) => (
                 <li
                   key={reason.title}

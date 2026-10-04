@@ -105,7 +105,7 @@ function MentorshipSignupForm({
       </h1>
       <p className="text-ink-muted text-body mt-4">
         Sign up as a mentor or mentee, then join a kin group below. KIN points
-        live on their own card — an officer adds them after your group meets.
+        live on their own card. An officer adds them after your group meets.
         Groups change every semester. Your signup and KIN points last the whole
         school year.
       </p>
@@ -120,10 +120,10 @@ function MentorshipSignupForm({
           />
           <p className="text-ink-muted text-body-sm mt-3">
             {row.status === "interested"
-              ? "Signed up — pick a kin group below."
+              ? "Signed up. Pick a kin group below."
               : row.groupId
                 ? "In a kin group."
-                : "Enrolled — an officer will place you in a group."}
+                : "Enrolled. An officer will place you in a group."}
           </p>
         </div>
       )}

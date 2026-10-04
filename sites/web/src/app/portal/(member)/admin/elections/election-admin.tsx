@@ -388,9 +388,7 @@ export function ElectionAdmin({ currentYear }: { currentYear: string }) {
             </SelectContent>
           </Select>
           {readOnly && (
-            <p className="text-ink-muted text-body-sm">
-              Past year — read only.
-            </p>
+            <p className="text-ink-muted text-body-sm">Past year, read only.</p>
           )}
         </div>
         {!readOnly && <CreateElection />}

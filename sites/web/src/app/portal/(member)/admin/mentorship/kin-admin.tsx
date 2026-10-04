@@ -38,7 +38,7 @@ export function KinAdmin({ currentSemester }: { currentSemester: string }) {
         </Select>
         {readOnly && (
           <p className="text-ink-muted text-body-sm">
-            Past semester — read only.
+            Past semester, read only.
           </p>
         )}
       </div>
