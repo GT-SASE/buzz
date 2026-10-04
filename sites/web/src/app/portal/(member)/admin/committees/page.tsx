@@ -25,9 +25,8 @@ async function AdminCommitteesBody() {
   return (
     <HydrateClient>
       <PortalHeader
-        eyebrow="Committees"
         title="Committee applications"
-        body="Open this semester's recruiting, read the answers, run the callback from the prompts on each application, and mark who moves forward. Notes stay on the row — members never see them."
+        body="Open this semester's recruiting, read the answers, run the callback from the prompts on each application, and mark who moves forward. Notes stay on the row. Members never see them."
       />
       <Section size="sm">
         <CommitteeAdmin />

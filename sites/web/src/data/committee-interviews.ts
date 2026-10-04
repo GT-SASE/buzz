@@ -12,7 +12,7 @@ export type InterviewQuestion = {
 export const sharedInterviewQuestions: readonly InterviewQuestion[] = [
   {
     id: "intro",
-    prompt: "Introduction — tell me about yourself.",
+    prompt: "Introduction: tell me about yourself.",
   },
   {
     id: "time",

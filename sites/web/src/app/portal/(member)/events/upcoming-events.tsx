@@ -98,10 +98,7 @@ export function UpcomingEvents() {
 
   return (
     <div className="mx-auto w-full max-w-2xl px-5 py-10 sm:px-6 sm:py-14">
-      <p className="text-eyebrow tracking-caps text-gold-ink font-semibold uppercase">
-        Events
-      </p>
-      <h1 className="font-display text-navy text-h2 mt-3 font-bold tracking-tight">
+      <h1 className="font-display text-navy text-h2 font-bold tracking-tight">
         Upcoming events.
       </h1>
       <p className="text-ink-muted text-body mt-4">

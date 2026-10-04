@@ -10,9 +10,4 @@ export {
   PageHeader,
   Section,
 } from "~/components/site/layout";
-export {
-  Marquee,
-  PhotoFrame,
-  PhotoMosaic,
-  StatValue,
-} from "~/components/site/media";
+export { Marquee, PhotoFrame, PhotoMosaic } from "~/components/site/media";

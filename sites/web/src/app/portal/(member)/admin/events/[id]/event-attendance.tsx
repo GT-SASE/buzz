@@ -461,7 +461,7 @@ export function EventAttendance({ eventId }: { eventId: string }) {
                   ? "This event is archived. The QR will not admit anyone."
                   : isPast
                     ? "Check-in closed automatically 24 hours after this event started."
-                    : "Check-in is closed — members scanning this QR will be turned away."}
+                    : "Check-in is closed. Members who scan this QR will be turned away."}
               </p>
             )}
           </div>

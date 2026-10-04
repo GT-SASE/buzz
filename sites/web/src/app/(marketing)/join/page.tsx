@@ -18,7 +18,7 @@ import { breadcrumbSchema, pageMetadata } from "~/lib/seo";
 export const metadata = pageMetadata({
   title: "Join SASE at Georgia Tech",
   description:
-    "How to join SASE at Georgia Tech in three steps. Membership is free — no application, no dues, and no major requirement.",
+    "How to join SASE at Georgia Tech in three steps. Membership is free: no application, no dues, and no major requirement.",
   path: "/join",
 });
 
@@ -32,12 +32,12 @@ const steps: { title: string; body: string; links: StepLink[] }[] = [
   },
   {
     title: "Check in at the door",
-    body: "Scan the QR code on the presentation screen with the member portal. It is free, takes a few seconds, and earns chapter points toward ranks — come back the next event for a streak bonus.",
+    body: "Scan the QR code on the presentation screen with the member portal. It is free, takes a few seconds, and earns chapter points toward ranks. Come back the next event for a streak bonus.",
     links: [{ label: "Open the member portal", href: "/portal" }],
   },
   {
     title: "Follow the chapter feeds",
-    body: "Room changes, corporate info sessions, and internship postings go out on our feeds first — that is where the week-to-week detail lives.",
+    body: "Room changes, corporate info sessions, and internship postings go out on our feeds first. That is where the week-to-week detail lives.",
     links: [instagram, discord, engage]
       .filter((social) => social !== undefined)
       .map((social) => ({
@@ -123,9 +123,8 @@ export default async function JoinPage() {
         }}
       />
       <PageHeader
-        eyebrow="Get involved"
         title="Join SASE GT."
-        body="Open to every Georgia Tech student — any major, any year, any background."
+        body="Open to every Georgia Tech student: any major, any year, any background."
       />
 
       <section className="px-5 pt-12 sm:px-6">
@@ -143,15 +142,8 @@ export default async function JoinPage() {
         </div>
       </section>
 
-      <Section
-        number="01"
-        eyebrow="How to join"
-        title="Three steps, none of them hard."
-      >
-        <ol
-          role="list"
-          className="stagger grid gap-x-12 gap-y-14 md:grid-cols-3"
-        >
+      <Section number="01" title="Three steps, none of them hard.">
+        <ol role="list" className="grid gap-x-12 gap-y-14 md:grid-cols-3">
           {steps.map((step, i) => (
             <li key={step.title}>
               <Card className="h-full">
@@ -176,7 +168,6 @@ export default async function JoinPage() {
 
       {recruiting?.open && (
         <Section
-          eyebrow="Committees"
           title="Want to help run the chapter?"
           lead={`Events, Marketing, and Treasury are recruiting for ${recruiting.label}. Membership is still free and does not need this form. Applications close ${recruiting.closesLabel}.`}
         >
@@ -226,7 +217,6 @@ export default async function JoinPage() {
       )}
 
       <Section
-        eyebrow="Cadence and dues"
         title="What the year asks of you."
         lead="One recurring commitment and no invoice. Everything else is opt-in, semester by semester."
         layout="split"
@@ -262,7 +252,7 @@ export default async function JoinPage() {
               </Badge>
             </div>
             <p className="text-ink-muted text-body-sm mt-5 leading-relaxed">
-              Membership is free — no application, no dues, and no major
+              Membership is free: no application, no dues, and no major
               requirement. Chapter points come from showing up, not from paying
               in.
             </p>
@@ -279,9 +269,8 @@ export default async function JoinPage() {
       </Section>
 
       <Section
-        eyebrow="Questions"
         title="Before you ask."
-        lead="If the answer you need is not here, email the chapter — someone on the board reads it."
+        lead="If the answer you need is not here, email the chapter. Someone on the board reads it."
         layout="split"
       >
         <Accordion
@@ -306,7 +295,7 @@ export default async function JoinPage() {
         </Accordion>
       </Section>
 
-      <Section eyebrow="Stay in touch" title="Find us here." size="sm">
+      <Section title="Find us here." size="sm">
         <div className="flex flex-wrap items-center gap-x-8 gap-y-4">
           {site.socials.map((social) => (
             <Button

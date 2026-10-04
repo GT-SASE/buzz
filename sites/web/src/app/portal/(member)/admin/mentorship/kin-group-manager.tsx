@@ -118,7 +118,7 @@ function GroupForm({ group, onDone }: { group?: Group; onDone: () => void }) {
           className="accent-navy size-4"
         />
         <span className="text-body-sm">
-          Open — members can join on their own
+          Open: members can join on their own
         </span>
       </label>
       <DialogFooter className="mt-2 gap-2 sm:gap-2">

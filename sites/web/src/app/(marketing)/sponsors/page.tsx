@@ -40,7 +40,6 @@ export default function SponsorsPage() {
     <>
       <JsonLd data={breadcrumbSchema("Sponsors", "/sponsors")} />
       <PageHeader
-        eyebrow="Partner with us"
         title="Sponsors."
         body="Sponsoring SASE GT puts your company in front of hundreds of Georgia Tech students in engineering, computing, and the sciences."
       />
@@ -52,7 +51,7 @@ export default function SponsorsPage() {
         title="Partner slots are open."
         lead="The chapter is building its corporate partner roster for the coming year. Early partners choose their event first."
       >
-        <dl className="stagger grid gap-x-10 gap-y-12 md:grid-cols-3">
+        <dl className="grid gap-x-10 gap-y-12 md:grid-cols-3">
           {reach.map((item) => (
             <Card key={item.label}>
               <Eyebrow as="dt" tone="gold" rule={false}>
@@ -64,12 +63,8 @@ export default function SponsorsPage() {
         </dl>
       </Section>
 
-      <Section
-        size="lg"
-        eyebrow="Tiers"
-        title="Pick a level, or ask for something custom."
-      >
-        <ul role="list" className="stagger grid gap-8 lg:grid-cols-3">
+      <Section size="lg" title="Pick a level, or ask for something custom.">
+        <ul role="list" className="grid gap-8 lg:grid-cols-3">
           {sponsorTiers.map((tier, i) => (
             <li key={tier.tier} className="flex">
               <UiCard
@@ -132,8 +127,8 @@ export default function SponsorsPage() {
             Request the sponsorship packet
           </Button>
           <p className="text-body-sm text-ink-muted mt-6">
-            Custom packages and single-event sponsorships are available —
-            mention what you are recruiting for at {site.email}.
+            Custom packages and single-event sponsorships are available. Mention
+            what you are recruiting for at {site.email}.
           </p>
         </div>
       </Section>

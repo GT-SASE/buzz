@@ -29,7 +29,6 @@ async function AdminMentorshipBody() {
   return (
     <HydrateClient>
       <PortalHeader
-        eyebrow="SASE KIN"
         title="Kin groups"
         body="Groups change every semester; signups and KIN points last the school year. Set up groups, place people who signed up, and tap +5 after a meeting."
       />
