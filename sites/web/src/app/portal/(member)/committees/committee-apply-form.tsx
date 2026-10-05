@@ -273,7 +273,7 @@ function CommitteeApplyFields({ data }: { data: Mine }) {
             return (
               <label
                 key={committee.id}
-                className="border-hairline has-[:checked]:border-navy has-[:checked]:bg-cream flex cursor-pointer gap-3 rounded-lg border p-4"
+                className="border-hairline has-[:checked]:border-navy has-[:checked]:bg-navy group flex cursor-pointer gap-3 rounded-lg border p-4 transition"
               >
                 <input
                   type="checkbox"
@@ -282,13 +282,13 @@ function CommitteeApplyFields({ data }: { data: Mine }) {
                   checked={checked}
                   disabled={!canEdit}
                   onChange={(event) => onChange(event.target.checked)}
-                  className="accent-navy mt-1 size-4"
+                  className="mt-1 size-4 accent-white"
                 />
                 <span>
-                  <span className="text-navy block font-semibold">
+                  <span className="text-navy block font-semibold group-has-[:checked]:text-white">
                     {committee.title}
                   </span>
-                  <span className="text-ink-muted text-body-sm mt-1 block">
+                  <span className="text-ink-muted text-body-sm mt-1 block group-has-[:checked]:text-white/80">
                     {committee.blurb}
                   </span>
                 </span>
