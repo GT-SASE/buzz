@@ -24,6 +24,33 @@ export const LOCKED_COMMITTEE_STATUSES = [
   "declined",
 ] as const;
 
+export const committeeIdsSchema = z
+  .array(z.enum(COMMITTEE_IDS))
+  .min(1, "Open at least one committee.")
+  .transform((ids) => COMMITTEE_IDS.filter((id) => ids.includes(id)));
+
+const wantsKey = {
+  events: "wantsEvents",
+  marketing: "wantsMarketing",
+  treasury: "wantsTreasury",
+  website: "wantsWebsite",
+} as const satisfies Record<CommitteeId, string>;
+
+/**
+ * Committees picked in `input` that this cycle is not taking. A pick the
+ * member already saved stays allowed, so closing a committee mid-cycle does
+ * not block edits to the rest of their application.
+ */
+export function closedCommitteePicks(
+  input: Record<(typeof wantsKey)[CommitteeId], boolean>,
+  open: readonly string[],
+  saved?: Partial<Record<(typeof wantsKey)[CommitteeId], boolean>>,
+) {
+  return COMMITTEE_IDS.filter(
+    (id) => input[wantsKey[id]] && !open.includes(id) && !saved?.[wantsKey[id]],
+  );
+}
+
 /** A cycle takes applications until its close instant, exclusive. */
 export function isCommitteeCycleOpen(closesAt: Date, now: Date) {
   return now.getTime() < closesAt.getTime();

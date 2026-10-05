@@ -10,5 +10,6 @@ export async function revalidateCommitteeRecruiting() {
   await requireOfficer("/portal/admin/committees");
   revalidateTag(COMMITTEE_RECRUITING_TAG, "max");
   revalidatePath("/join");
+  revalidatePath("/website-team");
   revalidatePath("/portal");
 }

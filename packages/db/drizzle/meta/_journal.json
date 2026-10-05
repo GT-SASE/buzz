@@ -50,6 +50,13 @@
       "when": 1791148861768,
       "tag": "0006_website_committee",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1791214655879,
+      "tag": "0007_committee_open_list",
+      "breakpoints": true
     }
   ]
 }

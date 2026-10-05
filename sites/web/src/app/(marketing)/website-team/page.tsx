@@ -15,7 +15,11 @@ export const metadata = pageMetadata({
 const team = committees.find((committee) => committee.id === "website")!;
 
 export default async function WebsiteTeamPage() {
-  const recruiting = await getCommitteeRecruiting();
+  const cycle = await getCommitteeRecruiting();
+  const recruiting =
+    cycle?.open && cycle.committees.some(({ id }) => id === "website")
+      ? cycle
+      : null;
 
   return (
     <>
@@ -27,7 +31,7 @@ export default async function WebsiteTeamPage() {
         layout="split"
         title="What you do."
         lead={
-          recruiting?.open
+          recruiting
             ? `Recruiting for ${recruiting.label}. Applications close ${recruiting.closesLabel}.`
             : "The team recruits once a semester. Applications open in the portal when the board announces them."
         }
@@ -51,7 +55,7 @@ export default async function WebsiteTeamPage() {
           ))}
         </ul>
         <div className="mt-10 flex flex-wrap gap-4">
-          {recruiting?.open ? (
+          {recruiting ? (
             <Button
               href="/portal/committees?committee=website"
               className="w-full justify-center sm:w-auto"

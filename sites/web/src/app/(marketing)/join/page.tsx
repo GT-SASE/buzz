@@ -10,8 +10,8 @@ import {
 } from "~/components/ui/accordion";
 import { Badge } from "~/components/ui/badge";
 import { meeting } from "~/data/content";
-import { getCommitteeRecruiting } from "~/data/committee-recruiting";
-import { committeeExpectations, committees } from "~/data/committees";
+import { getCommitteeRecruiting, listNames } from "~/data/committee-recruiting";
+import { committeeExpectations } from "~/data/committees";
 import { discord, engage, instagram, joinHref, site } from "~/data/site";
 import { breadcrumbSchema, pageMetadata } from "~/lib/seo";
 
@@ -169,10 +169,10 @@ export default async function JoinPage() {
       {recruiting?.open && (
         <Section
           title="Want to help run the chapter?"
-          lead={`Events, Marketing, and Treasury are recruiting for ${recruiting.label}. Membership is still free and does not need this form. Applications close ${recruiting.closesLabel}.`}
+          lead={`${listNames(recruiting.names)} ${recruiting.names.length === 1 ? "is" : "are"} recruiting for ${recruiting.label}. Membership is still free and does not need this form. Applications close ${recruiting.closesLabel}.`}
         >
-          <div className="grid gap-x-12 gap-y-10 md:grid-cols-3">
-            {committees.map((committee) => (
+          <div className="grid gap-x-12 gap-y-10 md:grid-cols-2">
+            {recruiting.committees.map((committee) => (
               <Card key={committee.id} className="h-full">
                 <h3 className="font-display text-navy text-h3 font-bold">
                   {committee.title}
