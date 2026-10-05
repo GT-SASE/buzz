@@ -104,8 +104,8 @@ describe("seo", () => {
       title,
     });
     expect(meta.openGraph?.images).toEqual([shareImage]);
-    expect(shareImage.url).toBe(`${site.url}/opengraph-image`);
-    expect(meta.twitter?.images).toEqual([`${site.url}/opengraph-image`]);
+    expect(shareImage.url).toBe(`${site.url}/opengraph-image?v=2`);
+    expect(meta.twitter?.images).toEqual([`${site.url}/opengraph-image?v=2`]);
   });
 
   it("emits a Google verification tag only when a token is set", () => {
