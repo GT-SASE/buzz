@@ -12,7 +12,7 @@ import { formatMonth } from "~/app/portal/_lib/format";
 import { requireSession } from "~/app/portal/_lib/session";
 import { Card } from "~/components/ui/card";
 import { Separator } from "~/components/ui/separator";
-import { getCommitteeRecruiting } from "~/data/committee-recruiting";
+import { getCommitteeRecruiting, listNames } from "~/data/committee-recruiting";
 import { api, HydrateClient } from "~/trpc/server";
 import PortalLoading from "./loading";
 
@@ -201,7 +201,7 @@ async function DashboardBody() {
                       {isOfficer
                         ? "Read applications and run callbacks."
                         : recruiting?.open
-                          ? `Apply to Events, Marketing, or Treasury. Closes ${recruiting.closesLabel}.`
+                          ? `Apply to ${listNames(recruiting.names).replace(/,? and /, " or ")}. Closes ${recruiting.closesLabel}.`
                           : "Check the status of your application."}
                     </span>
                   </span>
