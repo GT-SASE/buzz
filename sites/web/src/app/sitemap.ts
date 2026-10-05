@@ -22,6 +22,7 @@ const routes = [
   { path: "/board", priority: 0.6, changeFrequency: "yearly" },
   { path: "/contact", priority: 0.6, changeFrequency: "yearly" },
   { path: "/discord", priority: 0.6, changeFrequency: "yearly" },
+  { path: "/website-team", priority: 0.6, changeFrequency: "monthly" },
 ] as const;
 
 export default function sitemap(): MetadataRoute.Sitemap {

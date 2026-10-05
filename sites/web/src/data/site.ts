@@ -99,6 +99,7 @@ export const navGroups: NavGroup[] = [
   },
   { label: "Sponsors", href: "/sponsors", items: [] },
   { label: "Discord", href: "/discord", items: [] },
+  { label: "Website Team", href: "/website-team", items: [] },
   { label: "Contact", href: "/contact", items: [] },
   { label: "Join", href: "/join", items: [] },
 ];
