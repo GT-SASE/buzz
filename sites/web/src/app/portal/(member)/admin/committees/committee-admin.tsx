@@ -58,11 +58,11 @@ function CommitteePicker({
   return (
     <fieldset className="grid gap-2 sm:col-span-2">
       <legend className="text-sm font-medium">Taking applications for</legend>
-      <div className="flex flex-wrap gap-x-5 gap-y-2">
+      <div className="flex flex-wrap gap-2">
         {committees.map((committee) => (
           <label
             key={committee.id}
-            className="text-body-sm flex min-h-11 cursor-pointer items-center gap-2"
+            className="ring-hairline text-navy hover:bg-cream has-[:checked]:bg-navy has-[:checked]:ring-navy has-[:focus-visible]:ring-ring/50 flex min-h-11 cursor-pointer items-center gap-2 rounded-full px-4 text-sm font-semibold ring-1 transition has-[:checked]:text-white has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-60 has-[:focus-visible]:ring-[3px]"
           >
             <input
               type="checkbox"
@@ -78,7 +78,7 @@ function CommitteePicker({
                   ),
                 )
               }
-              className="accent-navy size-4"
+              className="sr-only"
             />
             {committee.title}
           </label>
