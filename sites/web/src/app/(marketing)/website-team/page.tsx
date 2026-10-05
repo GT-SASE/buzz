@@ -14,6 +14,10 @@ export const metadata = pageMetadata({
 
 const team = committees.find((committee) => committee.id === "website")!;
 
+const expectations = committeeExpectations.filter(
+  (item) => !item.startsWith("Plan one full event"),
+);
+
 export default async function WebsiteTeamPage() {
   const cycle = await getCommitteeRecruiting();
   const recruiting =
@@ -26,35 +30,36 @@ export default async function WebsiteTeamPage() {
       <JsonLd data={breadcrumbSchema("Website Team", "/website-team")} />
       <PageHeader title="Join the website team." body={team.blurb} />
 
-      <Section
-        size="sm"
-        layout="split"
-        title="What you do."
-        lead={
-          recruiting
-            ? `Recruiting for ${recruiting.label}. Applications close ${recruiting.closesLabel}.`
-            : "The team recruits once a semester. Applications open in the portal when the board announces them."
-        }
-      >
+      <Section size="sm" layout="split" title="What you do.">
+        <ol role="list" className="border-hairline border-t">
+          {team.responsibilities.map((item, index) => (
+            <li key={item} className="border-hairline flex gap-6 border-b py-5">
+              <span className="text-gold-ink text-body-sm w-6 shrink-0 pt-0.5 font-semibold tabular-nums">
+                {String(index + 1).padStart(2, "0")}
+              </span>
+              <span className="text-navy text-body font-semibold">{item}</span>
+            </li>
+          ))}
+        </ol>
+      </Section>
+
+      <Section size="sm" layout="split" title="What it takes.">
         <ul role="list" className="border-hairline border-t">
-          {team.responsibilities.map((item) => (
-            <li key={item} className="border-hairline border-b py-5">
-              <p className="text-navy text-body font-semibold">{item}</p>
+          {expectations.map((item) => (
+            <li
+              key={item}
+              className="border-hairline text-ink-muted text-body border-b py-4"
+            >
+              {item}
             </li>
           ))}
         </ul>
-        <ul className="text-ink-muted text-body-sm mt-10 grid gap-2 sm:grid-cols-2">
-          {committeeExpectations.map((item) => (
-            <li key={item} className="flex gap-3">
-              <span
-                aria-hidden="true"
-                className="bg-gold-bright mt-1.5 size-1.5 shrink-0 rounded-full"
-              />
-              <span>{item}</span>
-            </li>
-          ))}
-        </ul>
-        <div className="mt-10 flex flex-wrap gap-4">
+        <p className="text-ink text-body mt-10">
+          {recruiting
+            ? `Applications for ${recruiting.label} close ${recruiting.closesLabel}.`
+            : "The team recruits once a semester. Applications open in the portal when the board announces them on Discord."}
+        </p>
+        <div className="mt-6">
           {recruiting ? (
             <Button
               href="/portal/committees?committee=website"
@@ -69,7 +74,7 @@ export default async function WebsiteTeamPage() {
                 external
                 className="w-full justify-center sm:w-auto"
               >
-                Watch the Discord
+                Join the Discord
               </Button>
             )
           )}
