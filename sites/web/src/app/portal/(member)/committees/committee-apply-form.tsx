@@ -87,7 +87,8 @@ function CommitteeApplyFields({ data }: { data: Mine }) {
   );
   const [treasuryWhy, setTreasuryWhy] = useState(row?.treasuryWhy ?? "");
   const [wantsWebsite, setWantsWebsite] = useState(
-    row?.wantsWebsite ?? preselect === "website",
+    row?.wantsWebsite ??
+      (preselect === "website" && data.committees.includes("website")),
   );
   const [websiteWhy, setWebsiteWhy] = useState(row?.websiteWhy ?? "");
   const [websiteLinks, setWebsiteLinks] = useState(row?.websiteLinks ?? "");
@@ -120,6 +121,16 @@ function CommitteeApplyFields({ data }: { data: Mine }) {
   });
 
   const canEdit = data.open && !locked;
+  const saved: Record<PublicCommitteeId, boolean | undefined> = {
+    events: row?.wantsEvents,
+    marketing: row?.wantsMarketing,
+    treasury: row?.wantsTreasury,
+    website: row?.wantsWebsite,
+  };
+  const shown = committees.filter(
+    (committee) =>
+      data.committees.includes(committee.id) || saved[committee.id],
+  );
 
   if (!data.cycle || !data.closesAt) {
     return (
@@ -148,8 +159,8 @@ function CommitteeApplyFields({ data }: { data: Mine }) {
         {data.open ? "Apply to a committee." : "Committee applications."}
       </h1>
       <p className="text-ink-muted text-body mt-4">
-        Membership stays free and open. This is only for Events, Marketing,
-        Treasury or the website team.{" "}
+        Membership stays free and open. This is only for{" "}
+        {shown.map((committee) => committee.title).join(", ")}.{" "}
         {data.open
           ? `Closes ${formatDeadline(data.closesAt)}. We will reach out afterwards to schedule a call.`
           : "Recruiting for this cycle is over."}
@@ -256,7 +267,7 @@ function CommitteeApplyFields({ data }: { data: Mine }) {
           <legend className="text-eyebrow tracking-caps text-ink-muted font-semibold uppercase">
             Which committee(s)
           </legend>
-          {committees.map((committee) => {
+          {shown.map((committee) => {
             const [checked, onChange] = picks[committee.id];
 
             return (

@@ -1,0 +1,1 @@
+ALTER TABLE "buzz_committee_cycle" ADD COLUMN IF NOT EXISTS "committees" varchar(16)[] DEFAULT ARRAY['events','marketing','treasury','website']::varchar(16)[] NOT NULL;

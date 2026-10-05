@@ -59,6 +59,7 @@ const unreachableDb = new Proxy(
 );
 
 const CLOSES_AT = new Date("2026-09-10T04:00:00.000Z");
+const ALL = ["events", "marketing", "treasury", "website"];
 
 /** The `select().from().where()` chain the router uses to read a cycle. */
 function cycleSelect(rows: unknown[]) {
@@ -106,7 +107,9 @@ describe("committee.setStatus", () => {
 describe("committee.mine", () => {
   it("omits officer notes from the member payload", async () => {
     const db = {
-      select: cycleSelect([{ id: "fall-2026", closesAt: CLOSES_AT }]),
+      select: cycleSelect([
+        { id: "fall-2026", closesAt: CLOSES_AT, committees: ALL },
+      ]),
       query: {
         committeeApplications: {
           findFirst: () =>
@@ -150,7 +153,9 @@ describe("committee.submit", () => {
   it("inserts a first-time treasury application", async () => {
     const inserted: unknown[] = [];
     const db = {
-      select: cycleSelect([{ id: "fall-2026", closesAt: CLOSES_AT }]),
+      select: cycleSelect([
+        { id: "fall-2026", closesAt: CLOSES_AT, committees: ALL },
+      ]),
       query: {
         committeeApplications: {
           findFirst: () => Promise.resolve(undefined),
@@ -182,9 +187,30 @@ describe("committee.submit", () => {
     expect(result).toMatchObject({ wantsTreasury: true, status: "submitted" });
   });
 
+  it("refuses a committee the cycle is not taking", async () => {
+    const db = {
+      select: cycleSelect([
+        { id: "fall-2026", closesAt: CLOSES_AT, committees: ["website"] },
+      ]),
+      query: {
+        committeeApplications: { findFirst: () => Promise.resolve(undefined) },
+      },
+      insert: () => {
+        throw new Error("must not insert");
+      },
+    };
+
+    const error = await rejection(
+      createCaller(memberCtx(db)).committee.submit(treasuryInput),
+    );
+    expect(error.code).toBe("BAD_REQUEST");
+  });
+
   it("refuses to rewrite a row already in review", async () => {
     const db = {
-      select: cycleSelect([{ id: "fall-2026", closesAt: CLOSES_AT }]),
+      select: cycleSelect([
+        { id: "fall-2026", closesAt: CLOSES_AT, committees: ALL },
+      ]),
       query: {
         committeeApplications: {
           findFirst: () =>
@@ -211,7 +237,9 @@ describe("committee.submit", () => {
   it("refuses after the cycle closes", async () => {
     vi.setSystemTime(CLOSES_AT);
     const db = {
-      select: cycleSelect([{ id: "fall-2026", closesAt: CLOSES_AT }]),
+      select: cycleSelect([
+        { id: "fall-2026", closesAt: CLOSES_AT, committees: ALL },
+      ]),
     };
 
     const error = await rejection(

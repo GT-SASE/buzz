@@ -555,6 +555,13 @@ export const resumesRelations = relations(resumes, ({ one }) => ({
 export const committeeCycles = createTable("committee_cycle", (d) => ({
   id: d.varchar({ length: 32 }).primaryKey(),
   closesAt: d.timestamp({ withTimezone: true }).notNull(),
+  committees: d
+    .varchar({ length: 16 })
+    .array()
+    .default(
+      sql`ARRAY['events','marketing','treasury','website']::varchar(16)[]`,
+    )
+    .notNull(),
   createdById: d.varchar({ length: 255 }).references(() => users.id, {
     onDelete: "set null",
   }),

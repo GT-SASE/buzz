@@ -21,6 +21,7 @@ import {
   SelectValue,
 } from "~/components/ui/select";
 import { Skeleton } from "~/components/ui/skeleton";
+import { committees, type PublicCommitteeId } from "~/data/committees";
 import { api, type RouterOutputs } from "~/trpc/react";
 import { CommitteeInbox } from "./committee-inbox";
 import { defaultCycle } from "./default-cycle";
@@ -41,11 +42,58 @@ function useRefresh() {
     ]);
 }
 
+const allCommittees = committees.map((committee) => committee.id);
+
+function CommitteePicker({
+  name,
+  value,
+  onChange,
+  disabled,
+}: {
+  name: string;
+  value: readonly string[];
+  onChange: (next: PublicCommitteeId[]) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <fieldset className="grid gap-2 sm:col-span-2">
+      <legend className="text-sm font-medium">Taking applications for</legend>
+      <div className="flex flex-wrap gap-x-5 gap-y-2">
+        {committees.map((committee) => (
+          <label
+            key={committee.id}
+            className="text-body-sm flex min-h-11 cursor-pointer items-center gap-2"
+          >
+            <input
+              type="checkbox"
+              name={name}
+              checked={value.includes(committee.id)}
+              disabled={disabled}
+              onChange={(event) =>
+                onChange(
+                  allCommittees.filter((id) =>
+                    id === committee.id
+                      ? event.target.checked
+                      : value.includes(id),
+                  ),
+                )
+              }
+              className="accent-navy size-4"
+            />
+            {committee.title}
+          </label>
+        ))}
+      </div>
+    </fieldset>
+  );
+}
+
 function OpenCycle({ label }: { label: string }) {
   const refresh = useRefresh();
   const [closes, setCloses] = useState(() =>
     toLocalInputValue(new Date(Date.now() + 2 * WEEK_MS)),
   );
+  const [picked, setPicked] = useState<PublicCommitteeId[]>(allCommittees);
   const open = api.committee.openCycle.useMutation({
     onSuccess: async () => {
       toast.success(`${label} applications are open.`);
@@ -59,9 +107,17 @@ function OpenCycle({ label }: { label: string }) {
       className="border-hairline bg-paper/80 grid gap-4 rounded-xl border p-5 sm:grid-cols-[1fr_auto] sm:items-end"
       onSubmit={(event) => {
         event.preventDefault();
-        open.mutate({ closesAt: fromLocalInputValue(closes) });
+        open.mutate({
+          closesAt: fromLocalInputValue(closes),
+          committees: picked,
+        });
       }}
     >
+      <CommitteePicker
+        name="open-committees"
+        value={picked}
+        onChange={setPicked}
+      />
       <div className="grid gap-2">
         <Label htmlFor="cycle-closes">
           {label} applications close (Atlanta time)
@@ -75,7 +131,11 @@ function OpenCycle({ label }: { label: string }) {
           className="text-base tabular-nums"
         />
       </div>
-      <Action type="submit" tone="primary" disabled={open.isPending}>
+      <Action
+        type="submit"
+        tone="primary"
+        disabled={open.isPending || picked.length === 0}
+      >
         {open.isPending ? "Opening..." : `Open ${label} applications`}
       </Action>
     </form>
@@ -98,6 +158,13 @@ function CycleSettings({
     },
     onError: (error) => toast.error(error.message),
   });
+  const setCommittees = api.committee.setCycleCommittees.useMutation({
+    onSuccess: async () => {
+      toast.success("Committees saved.");
+      await refresh();
+    },
+    onError: (error) => toast.error(error.message),
+  });
 
   return (
     <div className="border-hairline bg-paper/80 rounded-xl border p-5">
@@ -111,6 +178,20 @@ function CycleSettings({
         {readOnly && (
           <p className="text-ink-muted text-body-sm">Past cycle, read only.</p>
         )}
+      </div>
+      <div className="mt-4 grid">
+        <CommitteePicker
+          name={`committees-${cycle.id}`}
+          value={cycle.committees}
+          disabled={readOnly || setCommittees.isPending}
+          onChange={(next) => {
+            if (next.length === 0) {
+              toast.error("Keep at least one committee open, or close now.");
+              return;
+            }
+            setCommittees.mutate({ id: cycle.id, committees: next });
+          }}
+        />
       </div>
       {!readOnly && (
         <form
