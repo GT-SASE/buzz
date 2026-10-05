@@ -7,9 +7,10 @@ import { site } from "~/data/site";
  * `openGraph` object replaces the layout's resolved tags, so the file-based
  * image never reaches the document unless this URL is set explicitly.
  * Absolute: link-preview crawlers do not resolve a relative image path.
+ * Bump `v` when the card changes: previews cache by image URL.
  */
 export const shareImage = {
-  url: `${site.url}/opengraph-image`,
+  url: `${site.url}/opengraph-image?v=2`,
   width: 1200,
   height: 630,
   alt: `${site.name} — ${site.tagline}`,
