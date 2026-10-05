@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   committeeAnswerFields,
   committeeApplySchema,
+  committeeIdsSchema,
+  closedCommitteePicks,
   isCommitteeApplicationLocked,
   isCommitteeCycleOpen,
 } from "../packages/api/src/committee-cycle";
@@ -73,5 +75,39 @@ describe("committeeApplySchema", () => {
     });
     expect(committeeAnswerFields(parsed).eventsWhy).toBeNull();
     expect(committeeAnswerFields(parsed).treasuryWhy).toContain("SGA");
+  });
+});
+
+describe("closedCommitteePicks", () => {
+  const picks = {
+    wantsEvents: true,
+    wantsMarketing: false,
+    wantsTreasury: false,
+    wantsWebsite: true,
+  };
+
+  it("flags picks the cycle is not taking", () => {
+    expect(closedCommitteePicks(picks, ["website"])).toEqual(["events"]);
+    expect(closedCommitteePicks(picks, ["events", "website"])).toEqual([]);
+  });
+
+  it("keeps a pick the member already saved", () => {
+    expect(
+      closedCommitteePicks(picks, ["website"], { wantsEvents: true }),
+    ).toEqual([]);
+  });
+});
+
+describe("committeeIdsSchema", () => {
+  it("dedupes into canonical order", () => {
+    expect(committeeIdsSchema.parse(["website", "events", "website"])).toEqual([
+      "events",
+      "website",
+    ]);
+  });
+
+  it("needs at least one known committee", () => {
+    expect(committeeIdsSchema.safeParse([]).success).toBe(false);
+    expect(committeeIdsSchema.safeParse(["finance"]).success).toBe(false);
   });
 });

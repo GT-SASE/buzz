@@ -6,6 +6,8 @@ import {
   COMMITTEE_STATUSES,
   committeeAnswerFields,
   committeeApplySchema,
+  committeeIdsSchema,
+  closedCommitteePicks,
   isCommitteeApplicationLocked,
   isCommitteeCycleOpen,
 } from "../committee-cycle";
@@ -133,6 +135,7 @@ export const committeeRouter = createTRPCRouter({
       cycle: cycle ? cycle.id : null,
       label: semesterLabel(cycleId),
       closesAt: cycle ? cycle.closesAt : null,
+      committees: cycle ? cycle.committees : [],
       open: cycle ? isCommitteeCycleOpen(cycle.closesAt, now) : false,
     };
   }),
@@ -152,11 +155,25 @@ export const committeeRouter = createTRPCRouter({
           eq(committeeApplications.userId, ctx.session.user.id),
           eq(committeeApplications.cycle, cycle.id),
         ),
-        columns: { id: true, status: true },
+        columns: {
+          id: true,
+          status: true,
+          wantsEvents: true,
+          wantsMarketing: true,
+          wantsTreasury: true,
+          wantsWebsite: true,
+        },
       });
 
       if (existing && isCommitteeApplicationLocked(existing.status)) {
         answersLocked();
+      }
+
+      if (closedCommitteePicks(input, cycle.committees, existing).length > 0) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "That committee is not taking applications right now.",
+        });
       }
 
       const answers = committeeAnswerFields(input);
@@ -384,6 +401,7 @@ export const committeeRouter = createTRPCRouter({
         id: cycle.id,
         label: semesterLabel(cycle.id),
         closesAt: cycle.closesAt,
+        committees: cycle.committees,
         open: isCommitteeCycleOpen(cycle.closesAt, now),
         applications: counts.find((row) => row.cycle === cycle.id)?.n ?? 0,
       })),
@@ -392,7 +410,12 @@ export const committeeRouter = createTRPCRouter({
 
   /** Opens this semester's applications. One cycle per semester. */
   openCycle: adminProcedure
-    .input(z.object({ closesAt: z.date() }))
+    .input(
+      z.object({
+        closesAt: z.date(),
+        committees: committeeIdsSchema.optional(),
+      }),
+    )
     .mutation(async ({ ctx, input }) => {
       const now = new Date();
       if (input.closesAt.getTime() <= now.getTime()) {
@@ -408,6 +431,7 @@ export const committeeRouter = createTRPCRouter({
           .values({
             id,
             closesAt: input.closesAt,
+            ...(input.committees && { committees: input.committees }),
             createdById: ctx.session.user.id,
           })
           .returning();
@@ -435,6 +459,24 @@ export const committeeRouter = createTRPCRouter({
       const [updated] = await ctx.db
         .update(committeeCycles)
         .set({ closesAt: input.closesAt })
+        .where(eq(committeeCycles.id, input.id))
+        .returning();
+      if (!updated) notFound("Committee cycle");
+      return updated;
+    }),
+
+  /** Which committees this cycle takes applications for. */
+  setCycleCommittees: adminProcedure
+    .input(
+      z.object({
+        id: z.string().regex(semesterPattern),
+        committees: committeeIdsSchema,
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const [updated] = await ctx.db
+        .update(committeeCycles)
+        .set({ committees: input.committees })
         .where(eq(committeeCycles.id, input.id))
         .returning();
       if (!updated) notFound("Committee cycle");
