@@ -1,5 +1,6 @@
 "use client";
 
+import { useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -63,6 +64,7 @@ export function CommitteeApplyForm() {
 
 function CommitteeApplyFields({ data }: { data: Mine }) {
   const utils = api.useUtils();
+  const preselect = useSearchParams().get("committee");
   const row = data.application;
   const locked =
     row?.status === "interviewing" ||
@@ -84,7 +86,9 @@ function CommitteeApplyFields({ data }: { data: Mine }) {
     row?.marketingConnections ?? "",
   );
   const [treasuryWhy, setTreasuryWhy] = useState(row?.treasuryWhy ?? "");
-  const [wantsWebsite, setWantsWebsite] = useState(row?.wantsWebsite ?? false);
+  const [wantsWebsite, setWantsWebsite] = useState(
+    row?.wantsWebsite ?? preselect === "website",
+  );
   const [websiteWhy, setWebsiteWhy] = useState(row?.websiteWhy ?? "");
   const [websiteLinks, setWebsiteLinks] = useState(row?.websiteLinks ?? "");
   const [otherOrgs, setOtherOrgs] = useState(row?.otherOrgs ?? "");
