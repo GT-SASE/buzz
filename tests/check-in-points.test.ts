@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import {
   catchUpBonus,
   medianOf,
-  OFFICER_POINTS,
   pointsForArrival,
   scoreCheckIn,
   streakBonus,
@@ -122,8 +121,7 @@ describe("scoreCheckIn", () => {
     medianTotal: null,
   };
 
-  it("pays an officer a flat point and ignores every bonus input", () => {
-    expect(OFFICER_POINTS).toBe(1);
+  it("pays an officer the base and ignores every bonus input", () => {
     expect(
       scoreCheckIn({
         ...member,
@@ -133,7 +131,7 @@ describe("scoreCheckIn", () => {
         ownTotal: 0,
         medianTotal: 100,
       }),
-    ).toBe(1);
+    ).toBe(10);
   });
 
   it("pays a member the base alone with no bonus in play", () => {

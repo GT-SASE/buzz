@@ -1,6 +1,5 @@
 "use client";
 
-import { OFFICER_POINTS } from "@buzz/api/check-in-points";
 import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -494,7 +493,7 @@ export function EventAttendance({ eventId }: { eventId: string }) {
               </span>
               <span className="text-ink-muted text-body-sm mt-1 block">
                 per member, plus early-bird, streak and catch-up bonuses.
-                {event.pointsValue > 0 && <> Officers earn {OFFICER_POINTS}.</>}
+                {event.pointsValue > 0 && <> Officers earn the base only.</>}
               </span>
             </div>
           </div>
@@ -627,7 +626,7 @@ export function EventAttendance({ eventId }: { eventId: string }) {
             <span className="tabular-nums">{event.pointsValue}</span> points as
             everyone who used the code, plus any early-bird, streak or catch-up
             bonus
-            {event.pointsValue > 0 && <> (officers earn {OFFICER_POINTS})</>}.
+            {event.pointsValue > 0 && <> (officers get no bonus)</>}.
           </p>
 
           {manual.error && (

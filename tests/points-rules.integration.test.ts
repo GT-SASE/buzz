@@ -134,21 +134,21 @@ describe.skipIf(!process.env.DATABASE_URL)("points rules", () => {
   }, SLOW);
 
   it(
-    "pays officers a flat point and lets them use up no early-bird spot",
+    "pays officers the base alone and lets them use up no early-bird spot",
     async () => {
       const m1 = await makeUser("early-m1", "MEMBER");
       const m2 = await makeUser("early-m2", "MEMBER");
       const m3 = await makeUser("early-m3", "MEMBER");
       const event = await makeEvent(0, "early bird");
 
-      // Officers first: a flat point, no early-bird, and no spot used up.
-      expect(await stamp(event, deputy)).toBe(1);
+      // Officers first: the base alone, no early-bird, and no spot used up.
+      expect(await stamp(event, deputy)).toBe(10);
       const boss = await makeUser("early-boss", "SUPER_ADMIN");
-      expect(await stamp(event, boss)).toBe(1);
+      expect(await stamp(event, boss)).toBe(10);
       // First member in: 10 + 5, and nobody else to catch up to.
       expect(await stamp(event, m1)).toBe(15);
       // 10 + 4 early + catch-up min(10, ceil((15 - 0) / 2)) = 8. The officers'
-      // 1s are not in the median.
+      // points are not in the median.
       expect(await stamp(event, m2)).toBe(22);
       // Third member arrival: 10 + 3 early + catch-up min(10, ceil((18.5 - 0) / 2)).
       expect(await stamp(event, m3)).toBe(23);
@@ -422,7 +422,7 @@ describe.skipIf(!process.env.DATABASE_URL)("points rules", () => {
       expect(saved).toMatchObject({
         method: "code",
         actedByUserId: null,
-        pointsEarned: 1,
+        pointsEarned: 10,
       });
       await expect(caller.event.checkIn({ code })).rejects.toMatchObject({
         code: "CONFLICT",

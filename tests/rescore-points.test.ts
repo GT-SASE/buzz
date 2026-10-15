@@ -66,12 +66,12 @@ describe("rescorePoints", () => {
       roles: roles({ O: "ADMIN" }),
     });
     expect(pointsById(rows)).toEqual({
-      // Officer: flat 1, no early-bird spot used.
-      c1: 1,
+      // Officer: base only, no early-bird spot used.
+      c1: 10,
       // First member: 10 + 5, nobody else to compare to.
       c2: 15,
-      // 10 + 4, plus catch-up half of (15 - 0) = 8; the officer's 1 is not in
-      // the median.
+      // 10 + 4, plus catch-up half of (15 - 0) = 8; the officer's points are not
+      // in the median.
       c3: 22,
       // 10 + 5 early + 2 streak + catch-up ceil((22 - 15) / 2) = 4.
       c4: 21,
@@ -116,9 +116,9 @@ describe("rescorePoints", () => {
       checkIns,
       roles: roles({ O: "SUPER_ADMIN", A: "ADMIN" }),
     });
-    expect(pointsById(asOfficer.rows).c1).toBe(1);
-    expect(pointsById(asOfficer.rows).c2).toBe(1);
-    expect(pointsById(asOfficer.rows).c4).toBe(1);
+    expect(pointsById(asOfficer.rows).c1).toBe(10);
+    expect(pointsById(asOfficer.rows).c2).toBe(10);
+    expect(pointsById(asOfficer.rows).c4).toBe(10);
   });
 
   it("scores an archived event's rows but lets them feed nothing", () => {
@@ -171,7 +171,7 @@ describe("rescorePoints", () => {
     expect(a).toMatchObject({ oldTotal: 15, newTotal: 36, oldRank: 2 });
     expect(users.find((u) => u.userId === "O")).toMatchObject({
       oldTotal: 10,
-      newTotal: 1,
+      newTotal: 10,
       oldRank: 3,
       newRank: 3,
     });
