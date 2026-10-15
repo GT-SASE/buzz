@@ -442,8 +442,8 @@ function EventActions({ event }: { event: AdminEvent }) {
         title={archived ? "Restore this event?" : "Archive this event?"}
         body={
           archived
-            ? `"${event.title}" goes back on the members' list, its code works again, and its check-ins count toward points, the leaderboard, streaks and voting.`
-            : `"${event.title}" keeps its ${event.attendees} recorded check-ins, but members stop seeing it, its code stops working, and those check-ins stop counting toward points, the leaderboard, streaks and voting until you restore it.`
+            ? `"${event.title}" goes back on the members' list, its code works again, and its check-ins count toward points, the leaderboard, and voting.`
+            : `"${event.title}" keeps its ${event.attendees} recorded check-ins, but members stop seeing it, its code stops working, and those check-ins stop counting toward points, the leaderboard, and voting until you restore it.`
         }
         action={archived ? "Yes, restore" : "Yes, archive"}
         danger={!archived}

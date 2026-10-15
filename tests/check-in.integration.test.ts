@@ -299,8 +299,8 @@ describe.skipIf(!process.env.DATABASE_URL)("check-in", () => {
         const caller = callerFor(statsMember);
         const result = await caller.event.checkIn({ code: code.snapshot });
 
-        expect(result.pointsEarned).toBe(15);
-        expect(result.totalPoints).toBe(15);
+        expect(result.pointsEarned).toBe(10);
+        expect(result.totalPoints).toBe(10);
         expect(result.totalEvents).toBe(1);
 
         // `sum()` and `count()` come back from postgres as strings without the
@@ -328,14 +328,14 @@ describe.skipIf(!process.env.DATABASE_URL)("check-in", () => {
             eq(eventCheckIns.userId, statsMember.id),
           ),
         });
-        expect(row?.pointsEarned).toBe(15);
+        expect(row?.pointsEarned).toBe(10);
 
         const stats = await callerFor(statsMember).event.myStats();
-        expect(stats.totalPoints).toBe(15);
+        expect(stats.totalPoints).toBe(10);
         expect(stats.totalEvents).toBe(1);
 
         const mine = await callerFor(statsMember).event.myEvents();
-        expect(mine.find((e) => e.id === id.snapshot)?.pointsEarned).toBe(15);
+        expect(mine.find((e) => e.id === id.snapshot)?.pointsEarned).toBe(10);
       },
       SLOW,
     );
@@ -346,8 +346,7 @@ describe.skipIf(!process.env.DATABASE_URL)("check-in", () => {
         const result = await callerFor(extraMember).event.checkIn({
           code: code.snapshot,
         });
-        // 50 base + 4 early (second member in) + catch-up min(50, ceil((15 - 0) / 2)).
-        expect(result.pointsEarned).toBe(62);
+        expect(result.pointsEarned).toBe(50);
       },
       SLOW,
     );
@@ -382,9 +381,7 @@ describe.skipIf(!process.env.DATABASE_URL)("check-in", () => {
       async () => {
         const caller = callerFor(gateMember);
         const first = await caller.event.checkIn({ code: code.duplicate });
-        // 5 base + 5 early + catch-up capped at the 5 base: the two members
-        // already holding points put the median far above gateMember's 0.
-        expect(first.pointsEarned).toBe(15);
+        expect(first.pointsEarned).toBe(5);
 
         expect(
           await errorCode(caller.event.checkIn({ code: code.duplicate })),
@@ -397,7 +394,7 @@ describe.skipIf(!process.env.DATABASE_URL)("check-in", () => {
         expect((await readEvent(id.duplicate))?.currentCheckIns).toBe(0);
 
         const stats = await caller.event.myStats();
-        expect(stats.totalPoints).toBe(15);
+        expect(stats.totalPoints).toBe(5);
         expect(stats.totalEvents).toBe(1);
       },
       SLOW,
@@ -429,10 +426,7 @@ describe.skipIf(!process.env.DATABASE_URL)("check-in", () => {
         const result = await callerFor(gateMember).event.checkIn({
           code: code.fresh,
         });
-        // 10 base + 5 early + catch-up capped at 10 (gateMember has 15 against
-        // a median of 38.5): the 23-hour-old event predates their history, so
-        // no streak.
-        expect(result.pointsEarned).toBe(25);
+        expect(result.pointsEarned).toBe(10);
       },
       SLOW,
     );
@@ -489,9 +483,7 @@ describe.skipIf(!process.env.DATABASE_URL)("check-in", () => {
         const admitted = await callerFor(gateMember).event.checkIn({
           code: code.capped,
         });
-        // 10 base, +5 for first in, +2 streak from the 23-hour-old event. At
-        // 40 points gateMember is above the median (38.5): no catch-up.
-        expect(admitted.pointsEarned).toBe(17);
+        expect(admitted.pointsEarned).toBe(10);
 
         expect(
           await errorCode(

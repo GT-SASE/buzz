@@ -16,12 +16,11 @@ vi.mock("../packages/auth/src/index.ts", () => ({
   signOut: async () => undefined,
 }));
 
-const { and, eq, inArray, notInArray } =
+const { and, eq, inArray } =
   await import("../packages/db/node_modules/drizzle-orm/index.js");
 const { createCaller } = await import("../packages/api/src/root");
 const { db, eventCheckIns, events, users } =
   await import("../packages/db/src/index");
-const { rescorePoints } = await import("../packages/api/src/rescore-points");
 
 /**
  * A whole room checking in at once.
@@ -194,18 +193,8 @@ describe.skipIf(!HAS_DB)("a room scanning at once", () => {
     expect(after?.currentCheckIns).toBe(seats);
   }, 120_000);
 
-  it("scores a burst exactly as the replay of history would, under load", async () => {
-    // Starts before this file's other events, so nobody carries a streak into it.
+  it("stamps the event's points on every scan in a burst", async () => {
     const event = await makeEvent(null, new Date(Date.now() - 3_600_000));
-
-    // Catch-up reads every member's live total, so the replay below only
-    // matches on a database holding nothing but this file's check-ins.
-    expect(
-      await db.$count(
-        eventCheckIns,
-        notInArray(eventCheckIns.eventId, eventIds),
-      ),
-    ).toBe(0);
 
     await Promise.all(
       memberIds.map((id) =>
@@ -213,46 +202,18 @@ describe.skipIf(!HAS_DB)("a room scanning at once", () => {
       ),
     );
 
-    // The door serialises on the event row, so each arrival saw exactly the
-    // ones before it. Replaying this file's whole history through the pure
-    // rules must therefore reproduce every stored score. (Catch-up reads the
-    // median of every member in the database, so this assumes a database
-    // holding nothing but this file's rows.)
-    const eventRows = await db
-      .select({
-        id: events.id,
-        startsAt: events.startsAt,
-        pointsValue: events.pointsValue,
-        archivedAt: events.archivedAt,
-      })
-      .from(events)
-      .where(inArray(events.id, eventIds));
     const rows = await db
       .select({
         id: eventCheckIns.id,
         eventId: eventCheckIns.eventId,
-        userId: eventCheckIns.userId,
-        checkedInAt: eventCheckIns.checkedInAt,
         pointsEarned: eventCheckIns.pointsEarned,
-        method: eventCheckIns.method,
       })
       .from(eventCheckIns)
       .where(inArray(eventCheckIns.eventId, eventIds));
 
     const burst = rows.filter((row) => row.eventId === event.id);
     expect(burst).toHaveLength(ROOM);
-
-    const replay = rescorePoints({
-      events: eventRows,
-      checkIns: rows,
-      roles: new Map([[officerId, "ADMIN" as const]]),
-    });
-    const expected = new Map(replay.rows.map((row) => [row.id, row.newPoints]));
-    for (const row of rows) {
-      expect(row.pointsEarned).toBe(expected.get(row.id));
-    }
-    // Member arrivals are never paid below the event value.
-    for (const row of burst) expect(row.pointsEarned).toBeGreaterThanOrEqual(7);
+    for (const row of rows) expect(row.pointsEarned).toBe(7);
   }, 120_000);
 
   it("counts one row when the same member's phone fires repeatedly", async () => {

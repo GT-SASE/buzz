@@ -1,22 +1,9 @@
 import { TRPCError } from "@trpc/server";
-import {
-  and,
-  asc,
-  count,
-  desc,
-  eq,
-  gte,
-  isNull,
-  lt,
-  ne,
-  notInArray,
-  sum,
-} from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, isNull } from "drizzle-orm";
 import { z } from "zod";
 
 import { asDate, asInt, totalsColumns } from "../aggregates";
 import { sendCalendarInvite } from "../calendar-invite";
-import { medianOf, scoreCheckIn, streakLevel } from "../check-in-points";
 import { notFound } from "../errors";
 import { isUniqueViolation } from "../pg-errors";
 import {
@@ -28,14 +15,7 @@ import {
   RSVP_LIMIT,
 } from "../rate-limit";
 import { adminProcedure, createTRPCRouter, protectedProcedure } from "../trpc";
-import {
-  eventCheckIns,
-  eventRsvps,
-  events,
-  isOfficerRole,
-  users,
-  type db,
-} from "@buzz/db";
+import { eventCheckIns, eventRsvps, events, users } from "@buzz/db";
 
 /**
  * How long after an event starts the door stays open. The member-facing list
@@ -56,140 +36,6 @@ const TWO_YEARS_MS = 2 * 365.25 * 24 * 60 * 60 * 1000;
  */
 const CODE_ALPHABET = "23456789ABCDEFGHJKMNPQRSTVWXYZ";
 const CODE_LENGTH = 8;
-
-/**
- * How many members are already in. Officers (ADMIN, SUPER_ADMIN) are not counted, so their
- * check-ins never use up a member's early-bird spot. Called under the event
- * row lock so two phones cannot both read "first".
- */
-async function priorMemberArrivals(
-  tx: {
-    select: (typeof db)["select"];
-  },
-  eventId: string,
-) {
-  const [row] = await tx
-    .select({ prior: count() })
-    .from(eventCheckIns)
-    .innerJoin(users, eq(users.id, eventCheckIns.userId))
-    .where(
-      and(
-        eq(eventCheckIns.eventId, eventId),
-        notInArray(users.role, ["ADMIN", "SUPER_ADMIN"]),
-      ),
-    );
-  return asInt(row?.prior);
-}
-
-/**
- * Streak level this person carries into an event starting at `startsAt`. A
- * happening is a live (non-archived) event that has at least one check-in — a
- * calendar row nobody came to does not cost anyone a level. Oldest first, with
- * the id breaking ties so the walk is deterministic.
- */
-async function priorStreak(
-  tx: {
-    select: (typeof db)["select"];
-  },
-  startsAt: Date,
-  userId: string,
-) {
-  const happenings = await tx
-    .select({ id: events.id, startsAt: events.startsAt })
-    .from(events)
-    .innerJoin(eventCheckIns, eq(eventCheckIns.eventId, events.id))
-    .where(and(lt(events.startsAt, startsAt), isNull(events.archivedAt)))
-    .groupBy(events.id)
-    .orderBy(asc(events.startsAt), asc(events.id));
-
-  if (happenings.length === 0) return 0;
-
-  const attended = await tx
-    .select({ eventId: eventCheckIns.eventId })
-    .from(eventCheckIns)
-    .where(eq(eventCheckIns.userId, userId));
-
-  return streakLevel(
-    attended.map((row) => row.eventId),
-    happenings.map((row) => row.id),
-  );
-}
-
-/** Live (non-archived) point total of one person, 0 with no live check-ins. */
-async function liveTotal(
-  tx: {
-    select: (typeof db)["select"];
-  },
-  userId: string,
-) {
-  const [row] = await tx
-    .select({ total: sum(eventCheckIns.pointsEarned) })
-    .from(eventCheckIns)
-    .innerJoin(events, eq(events.id, eventCheckIns.eventId))
-    .where(and(eq(eventCheckIns.userId, userId), isNull(events.archivedAt)));
-  return asInt(row?.total);
-}
-
-/**
- * Median live total across non-officer members with at least one live
- * check-in, not counting `userId`. The yardstick for catch-up points.
- */
-async function otherMembersMedian(
-  tx: {
-    select: (typeof db)["select"];
-  },
-  userId: string,
-) {
-  const rows = await tx
-    .select({ total: sum(eventCheckIns.pointsEarned) })
-    .from(eventCheckIns)
-    .innerJoin(events, eq(events.id, eventCheckIns.eventId))
-    .innerJoin(users, eq(users.id, eventCheckIns.userId))
-    .where(
-      and(
-        isNull(events.archivedAt),
-        ne(eventCheckIns.userId, userId),
-        notInArray(users.role, ["ADMIN", "SUPER_ADMIN"]),
-      ),
-    )
-    .groupBy(eventCheckIns.userId);
-  return medianOf(rows.map((row) => asInt(row.total)));
-}
-
-/**
- * What the next check-in is worth, from the pure rules in check-in-points.ts.
- * Gathers the inputs only; the re-score replay feeds the same function.
- */
-async function nextCheckInPoints(
-  tx: {
-    select: (typeof db)["select"];
-  },
-  event: { id: string; startsAt: Date; pointsValue: number },
-  userId: string,
-) {
-  if (event.pointsValue <= 0) return 0;
-  const [user] = await tx
-    .select({ role: users.role })
-    .from(users)
-    .where(eq(users.id, userId));
-  const base = {
-    base: event.pointsValue,
-    priorMemberArrivals: 0,
-    streakLevel: 0,
-    ownTotal: 0,
-    medianTotal: null,
-  };
-  if (isOfficerRole(user?.role))
-    return scoreCheckIn({ ...base, isOfficer: true });
-  return scoreCheckIn({
-    base: event.pointsValue,
-    isOfficer: false,
-    priorMemberArrivals: await priorMemberArrivals(tx, event.id),
-    streakLevel: await priorStreak(tx, event.startsAt, userId),
-    ownTotal: await liveTotal(tx, userId),
-    medianTotal: await otherMembersMedian(tx, userId),
-  });
-}
 
 function newCheckInCode() {
   const alphabetLen = CODE_ALPHABET.length;
@@ -684,7 +530,7 @@ export const eventRouter = createTRPCRouter({
             eventId: locked.id,
             userId: member.id,
             method: "manual",
-            pointsEarned: await nextCheckInPoints(tx, locked, member.id),
+            pointsEarned: locked.pointsValue,
             actedByUserId: ctx.session.user.id,
           });
           // Honest override: officers may exceed capacity, and the counter
@@ -814,7 +660,7 @@ export const eventRouter = createTRPCRouter({
           assertCheckInWindow(locked.startsAt);
 
           eventTitle = locked.title;
-          pointsEarned = await nextCheckInPoints(tx, locked, userId);
+          pointsEarned = locked.pointsValue;
 
           try {
             // pointsEarned is snapshotted here and never recomputed. Re-pricing
@@ -859,7 +705,7 @@ export const eventRouter = createTRPCRouter({
           assertCheckInWindow(locked.startsAt);
 
           eventTitle = locked.title;
-          pointsEarned = await nextCheckInPoints(tx, locked, userId);
+          pointsEarned = locked.pointsValue;
 
           const existing = await tx.query.eventCheckIns.findFirst({
             where: and(

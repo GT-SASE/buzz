@@ -184,8 +184,8 @@ export const events = createTable(
     currentCheckIns: d.integer().notNull().default(0),
     /**
      * Soft hide. An event with attendance is never deleted — that is history.
-     * While set, its check-ins count for nothing: not points, streaks, the
-     * leaderboard or voting eligibility. Read-time only, so restoring undoes it.
+     * While set, its check-ins count for nothing: not points, the leaderboard,
+     * or voting eligibility. Read-time only, so restoring undoes it.
      */
     archivedAt: d.timestamp({ withTimezone: true }),
     createdById: d

@@ -71,6 +71,13 @@
       "when": 1792099753460,
       "tag": "0009_points_earned_integer",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1792105000000,
+      "tag": "0010_restore_check_in_points",
+      "breakpoints": true
     }
   ]
 }
