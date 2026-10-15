@@ -369,7 +369,10 @@ function EventActions({ event }: { event: AdminEvent }) {
       );
       await invalidate();
     },
-    onError: (e) => toast.error(e.message),
+    onError: async (e) => {
+      toast.error(e.message);
+      await utils.event.listAll.invalidate();
+    },
   });
   const archive = api.event.setArchived.useMutation({
     onSuccess: async (updated) => {
@@ -398,16 +401,22 @@ function EventActions({ event }: { event: AdminEvent }) {
 
       {/* Disabled on an archived event because `event.checkIn` refuses one
           outright. */}
+      {/* Check-in closes a day after the event starts, so a past event has
+          nothing left to toggle. */}
       <Button
         size="sm"
         className="h-11 min-h-11 w-full rounded-md font-semibold md:h-9 md:min-h-9 md:w-auto"
         variant={openingIsUrgent ? "default" : "outline"}
-        disabled={toggle.isPending || archived}
+        disabled={toggle.isPending || archived || event.isPast}
         onClick={() =>
           toggle.mutate({ id: event.id, enabled: !event.checkInEnabled })
         }
       >
-        {event.checkInEnabled ? "Close check-in" : "Open check-in"}
+        {event.isPast && !archived
+          ? "Check-in ended"
+          : event.checkInEnabled
+            ? "Close check-in"
+            : "Open check-in"}
       </Button>
 
       <EventDialog
