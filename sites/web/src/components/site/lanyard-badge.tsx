@@ -32,20 +32,16 @@ export function LanyardBadge({
   className?: string;
 }) {
   return (
-    <div
-      className={cn(
-        "flex flex-col items-center max-sm:pr-12 lg:max-xl:pr-16",
-        className,
-      )}
-    >
+    <div className={cn("flex flex-col items-center", className)}>
       <Strap />
       <div className="relative w-full max-w-[24rem]">
-        {/* The host, peeking out from behind the badge. The card hides the
-            body, so only the head and an arm show past its right edge. */}
-        <SaseDino
-          flip
-          className="dino-hop absolute top-[38%] right-0 h-32 translate-x-[52%] sm:h-40 lg:h-48"
-        />
+        {/* The host pops up from behind the badge on load. The card hides
+            its lower body, so the head and arms show over the top edge. The
+            pop is on the wrapper so hovering the hero CTAs, which raises it
+            further, never replays it. */}
+        <div className="dino-pop absolute right-3 bottom-full translate-y-[30%] -rotate-2">
+          <SaseDino className="dino-rise h-32 sm:h-40 lg:h-44" />
+        </div>
         <article className="border-hairline bg-paper relative z-10 w-full -rotate-2 overflow-hidden rounded-[1.375rem] border shadow-[0_1px_0_var(--hairline),0_18px_40px_-18px_rgb(15_31_48/0.35)]">
           <div
             aria-hidden="true"

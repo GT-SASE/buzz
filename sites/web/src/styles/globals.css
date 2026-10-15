@@ -188,7 +188,40 @@
   }
 }
 
+/* Rises from behind whatever hides its lower half, overshoots, settles. */
+@keyframes dino-pop {
+  from {
+    transform: translateY(75%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
 @layer utilities {
+  .dino-pop {
+    animation: dino-pop 650ms cubic-bezier(0.34, 1.56, 0.64, 1) 400ms both;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .dino-pop {
+      animation: none;
+    }
+  }
+
+  /* The dino rises further out of whatever hides it while an action in the
+     same .dino-hop-host is hovered or focused, and sinks back after. */
+  .dino-rise {
+    transition: translate 380ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  .dino-hop-host:has(.dino-trigger:is(:hover, :focus-visible)) .dino-rise {
+    translate: 0 -18%;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .dino-rise {
+      transition: none;
+    }
+  }
+
   /* The dino hops once while the primary action inside the same
      .dino-hop-host is hovered or focused. Mark the action with .dino-trigger. */
   .dino-hop {

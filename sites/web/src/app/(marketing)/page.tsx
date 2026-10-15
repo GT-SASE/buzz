@@ -93,7 +93,7 @@ export default async function Home() {
               <Button
                 href="/events"
                 variant="outline"
-                className="w-full justify-center sm:w-auto"
+                className="dino-trigger w-full justify-center sm:w-auto"
               >
                 See every event
               </Button>
