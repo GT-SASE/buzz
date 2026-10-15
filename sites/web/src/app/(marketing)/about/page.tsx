@@ -36,7 +36,7 @@ export default function AboutPage() {
         body="The Georgia Tech chapter of the Society of Asian Scientists and Engineers, a national nonprofit serving Asian heritage students and professionals in STEM."
       />
 
-      <Section title="What we are here to do." size="lg">
+      <Section title="What we are here to do.">
         <PillarGrid pillars={missionPillars} />
 
         <div className="mt-16 grid gap-4 sm:grid-cols-2">
