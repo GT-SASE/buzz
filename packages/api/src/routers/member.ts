@@ -24,7 +24,7 @@ import {
   pointsSum,
 } from "../aggregates";
 import { notFound } from "../errors";
-import { crownLeaderboard } from "../leaderboard-crown";
+import { rankLeaderboard } from "../leaderboard-rank";
 import { isUndefinedTable } from "../pg-errors";
 import { schoolYearStart } from "../periods";
 import { assertRateLimit, EXPORT_ROSTER_LIMIT } from "../rate-limit";
@@ -425,8 +425,8 @@ export const memberRouter = createTRPCRouter({
 
   /**
    * Ranked by points over every member with live attendance (archived events
-   * count for nothing, and count again once restored). Early check-in
-   * pays a bonus at the door, so first through is not the same 15 as the rest.
+   * count for nothing, and count again once restored), highest first.
+   * Early check-in pays a bonus at the door.
    * Remaining ties break on who checked in earlier.
    */
   leaderboard: protectedProcedure
@@ -452,7 +452,7 @@ export const memberRouter = createTRPCRouter({
         .groupBy(users.id)
         .orderBy(desc(totalPoints), asc(firstCheckIn), asc(users.id));
 
-      const ranked = crownLeaderboard(
+      const ranked = rankLeaderboard(
         rows.map((row) => ({
           userId: row.userId,
           name: row.name,

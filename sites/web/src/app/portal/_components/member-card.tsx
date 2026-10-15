@@ -94,7 +94,7 @@ export function MemberCard({
             {tier.pointsToNext} more to reach {tier.next}.
             <span className="hidden sm:inline">
               {" "}
-              Come back next event for a streak bonus.
+              Keep showing up and each event pays a little more.
             </span>
           </p>
         </div>
