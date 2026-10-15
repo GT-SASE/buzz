@@ -430,7 +430,7 @@ export function EventAttendance({ eventId }: { eventId: string }) {
             ) : (
               <p className="text-body-sm mt-4 text-white/75">
                 {state === "archived"
-                  ? "This event is archived. The QR will not admit anyone, and these check-ins count toward nobody's points, streak or voting until you restore it."
+                  ? "This event is archived. The QR will not admit anyone, and these check-ins count toward nobody's points or voting until you restore it."
                   : isPast
                     ? "Check-in closed automatically 24 hours after this event started."
                     : "Check-in is closed. Members who scan this QR will be turned away."}
@@ -485,15 +485,14 @@ export function EventAttendance({ eventId }: { eventId: string }) {
 
           <div className="border-hairline bg-paper/80 flex flex-col rounded-xl border p-5 shadow-xs">
             <span className="text-eyebrow tracking-caps text-ink-muted text-xs font-semibold uppercase">
-              Base points
+              Points
             </span>
             <div className="mt-4">
               <span className="font-display text-navy block text-3xl font-bold tabular-nums sm:text-4xl">
                 +{event.pointsValue}
               </span>
               <span className="text-ink-muted text-body-sm mt-1 block">
-                per member, plus early-bird, streak and catch-up bonuses.
-                {event.pointsValue > 0 && <> Officers earn the base only.</>}
+                per person who checks in.
               </span>
             </div>
           </div>
@@ -624,9 +623,7 @@ export function EventAttendance({ eventId }: { eventId: string }) {
             They have to have signed in to the portal at least once, and they
             earn the same{" "}
             <span className="tabular-nums">{event.pointsValue}</span> points as
-            everyone who used the code, plus any early-bird, streak or catch-up
-            bonus
-            {event.pointsValue > 0 && <> (officers get no bonus)</>}.
+            everyone who used the code.
           </p>
 
           {manual.error && (
