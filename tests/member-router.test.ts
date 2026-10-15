@@ -53,6 +53,21 @@ function adminCtx(db: unknown): Ctx {
   } as unknown as Ctx;
 }
 
+function superAdminCtx(db: unknown): Ctx {
+  return {
+    db,
+    session: {
+      user: {
+        id: "super-1",
+        role: "SUPER_ADMIN",
+        email: "super@gatech.edu",
+      },
+      expires: "2099-01-01T00:00:00.000Z",
+    },
+    headers: new Headers(),
+  } as unknown as Ctx;
+}
+
 function memberCtx(db: unknown): Ctx {
   return {
     db,
@@ -1109,6 +1124,16 @@ describe("member.metrics", () => {
     await expect(
       createCaller(memberCtx(db)).member.metrics({ tiers: TIER_FLOORS }),
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
+  it("admits a super admin, who keeps every officer power", async () => {
+    const { db } = metricsDb([], { total: 1, officers: 1 });
+    const result = await createCaller(superAdminCtx(db)).member.metrics({
+      tiers: TIER_FLOORS,
+    });
+
+    expect(result.total).toBe(1);
+    expect(result.officers).toBe(1);
   });
 
   /**

@@ -6,14 +6,14 @@
  * updates copy, room, start time, points, and check-in without rotating the code.
  *
  * Remote databases need SEED_FORCE=1. This script will not invent an officer
- * account — it attaches new rows to an existing ADMIN user.
+ * account — it attaches new rows to an existing officer (ADMIN or SUPER_ADMIN).
  *
  * Left out on purpose: Sat Oct 24 social/volunteering and Tue Oct 27 Halloween
  * still look tentative.
  */
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 
@@ -229,11 +229,11 @@ const fall2026: Draft[] = [
 
 async function main() {
   const officer = await db.query.users.findFirst({
-    where: eq(schema.users.role, "ADMIN"),
+    where: inArray(schema.users.role, ["ADMIN", "SUPER_ADMIN"]),
   });
   if (!officer) {
     throw new Error(
-      "No ADMIN user in this database. Sign in with an allowlisted officer first.",
+      "No officer in this database. Sign in as an ADMIN or SUPER_ADMIN first.",
     );
   }
 

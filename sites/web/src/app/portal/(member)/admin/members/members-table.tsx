@@ -6,10 +6,11 @@ import { useEffect, useState } from "react";
 
 import { Action, Field, inputClass } from "~/app/portal/_components/controls";
 import { EmptyState } from "~/app/portal/_components/portal-ui";
+import { RoleBadge } from "~/app/portal/_components/role-badge";
 import { downloadCsv, toCsv } from "~/app/portal/_lib/csv";
 import { formatDate } from "~/app/portal/_lib/format";
+import { roleLabel } from "~/app/portal/_lib/roles";
 import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert";
-import { Badge } from "~/components/ui/badge";
 import { Input } from "~/components/ui/input";
 import { Skeleton } from "~/components/ui/skeleton";
 import {
@@ -153,18 +154,7 @@ function MemberCard({ member }: { member: Member }) {
           <p className="font-display text-navy text-base font-bold">
             {member.name ?? "—"}
           </p>
-          {member.role === "ADMIN" ? (
-            <Badge className="bg-gold-bright text-navy shrink-0 border-transparent font-semibold shadow-none">
-              Officer
-            </Badge>
-          ) : (
-            <Badge
-              variant="outline"
-              className="border-hairline text-ink-muted shrink-0 font-semibold"
-            >
-              Member
-            </Badge>
-          )}
+          <RoleBadge role={member.role} className="shrink-0" />
         </div>
         <p className="text-ink-muted text-body-sm mt-1 break-all">
           {member.email}
@@ -204,18 +194,7 @@ function MemberRow({ member }: { member: Member }) {
       </TableCell>
 
       <TableCell className="py-3.5 pr-6">
-        {member.role === "ADMIN" ? (
-          <Badge className="bg-gold-bright text-navy border-transparent font-semibold shadow-none">
-            Officer
-          </Badge>
-        ) : (
-          <Badge
-            variant="outline"
-            className="border-hairline text-ink-muted font-semibold"
-          >
-            Member
-          </Badge>
-        )}
+        <RoleBadge role={member.role} />
       </TableCell>
 
       <TableCell className="text-navy py-3.5 pr-6 text-right font-bold tabular-nums">
@@ -363,7 +342,7 @@ export function MembersTable() {
           ...rows.map((row) => [
             row.name ?? "",
             row.email,
-            row.role === "ADMIN" ? "Officer" : "Member",
+            roleLabel(row.role),
             row.totalPoints,
             row.totalEvents,
             row.lastCheckInAt?.toISOString() ?? "",
