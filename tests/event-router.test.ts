@@ -581,6 +581,153 @@ describe("event.setArchived", () => {
   });
 });
 
+// ------------------------------------------------- check-in window (admin)
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** An event that started `offsetMs` ago (negative: that far in the future). */
+function startedAgo(offsetMs: number) {
+  return new Date(Date.now() - offsetMs);
+}
+
+/** findFirst for the window check, plus an update that records its SET. */
+function toggleDb(eventStartsAt: Date | null) {
+  const sets: Record<string, unknown>[] = [];
+  const db = {
+    query: {
+      events: {
+        findFirst: () =>
+          Promise.resolve(
+            eventStartsAt ? { startsAt: eventStartsAt } : undefined,
+          ),
+      },
+    },
+    update: () => ({
+      set: (values: Record<string, unknown>) => {
+        sets.push(values);
+        return {
+          where: () => ({
+            returning: () => Promise.resolve([{ id: "event-1", ...values }]),
+          }),
+        };
+      },
+    }),
+  };
+  return { db, sets };
+}
+
+describe("event.setCheckInEnabled", () => {
+  it("refuses to open check-in on an event past its window", async () => {
+    const { db, sets } = toggleDb(startedAgo(DAY_MS + 60_000));
+    const error = await rejection(
+      createCaller(adminCtx(db)).event.setCheckInEnabled({
+        id: "event-1",
+        enabled: true,
+      }),
+    );
+    expect(error.code).toBe("BAD_REQUEST");
+    expect(error.message).toMatch(/ended/);
+    expect(sets).toHaveLength(0);
+  });
+
+  it("allows closing check-in on a past event", async () => {
+    const { db, sets } = toggleDb(startedAgo(5 * DAY_MS));
+    await createCaller(adminCtx(db)).event.setCheckInEnabled({
+      id: "event-1",
+      enabled: false,
+    });
+    expect(sets[0]).toEqual({ checkInEnabled: false });
+  });
+
+  it("still opens check-in on a current or upcoming event", async () => {
+    for (const eventStartsAt of [startedAgo(60_000), startedAgo(-3 * DAY_MS)]) {
+      const { db, sets } = toggleDb(eventStartsAt);
+      await createCaller(adminCtx(db)).event.setCheckInEnabled({
+        id: "event-1",
+        enabled: true,
+      });
+      expect(sets[0]).toEqual({ checkInEnabled: true });
+    }
+  });
+
+  it("reports NOT_FOUND when opening a missing event", async () => {
+    const { db } = toggleDb(null);
+    const error = await rejection(
+      createCaller(adminCtx(db)).event.setCheckInEnabled({
+        id: "nope",
+        enabled: true,
+      }),
+    );
+    expect(error.code).toBe("NOT_FOUND");
+  });
+});
+
+describe("event.listAll check-in state", () => {
+  function listDb(rows: Record<string, unknown>[]) {
+    const rowsChain = {
+      from: () => rowsChain,
+      leftJoin: () => rowsChain,
+      groupBy: () => rowsChain,
+      orderBy: () => rowsChain,
+      limit: () => rowsChain,
+      offset: () => Promise.resolve(rows),
+    };
+    const totalChain = {
+      from: () => Promise.resolve([{ total: rows.length }]),
+    };
+    let call = 0;
+    return { select: () => (call++ === 0 ? rowsChain : totalChain) };
+  }
+
+  it("reads closed for a past event whose stored flag is still true", async () => {
+    const db = listDb([
+      { id: "old", startsAt: startedAgo(3 * DAY_MS), checkInEnabled: true },
+      { id: "now", startsAt: startedAgo(60_000), checkInEnabled: true },
+      { id: "off", startsAt: startedAgo(60_000), checkInEnabled: false },
+    ]);
+    const { events } = await createCaller(adminCtx(db)).event.listAll({});
+    expect(events.map((e) => [e.id, e.isPast, e.checkInEnabled])).toEqual([
+      ["old", true, false],
+      ["now", false, true],
+      ["off", false, false],
+    ]);
+  });
+});
+
+describe("event.getById check-in state", () => {
+  it("reads closed for a past event whose stored flag is still true", async () => {
+    const chain = (result: unknown) => {
+      const c: Record<string, unknown> = {};
+      for (const k of ["from", "innerJoin", "where", "orderBy", "limit"]) {
+        c[k] = () => c;
+      }
+      c.offset = () => Promise.resolve(result);
+      c.then = (resolve: (v: unknown) => unknown) => resolve(result);
+      return c;
+    };
+    const results = [[], [{ total: 0 }], []];
+    let call = 0;
+    const db = {
+      query: {
+        events: {
+          findFirst: () =>
+            Promise.resolve({
+              id: "event-1",
+              startsAt: startedAgo(3 * DAY_MS),
+              checkInEnabled: true,
+            }),
+        },
+      },
+      select: () => chain(results[call++]),
+    };
+    const result = await createCaller(adminCtx(db)).event.getById({
+      id: "event-1",
+    });
+    expect(result.isPast).toBe(true);
+    expect(result.event.checkInEnabled).toBe(false);
+  });
+});
+
 // ------------------------------------------------------------- normalizeCode
 
 describe("normalizeCode (through event.checkIn)", () => {

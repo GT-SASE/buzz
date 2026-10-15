@@ -337,10 +337,16 @@ export const eventRouter = createTRPCRouter({
       // is the same cutoff the check-in door uses.
       const cutoff = Date.now() - CHECK_IN_WINDOW_MS;
       return {
-        events: rows.map((row) => ({
-          ...row,
-          isPast: row.startsAt.getTime() < cutoff,
-        })),
+        events: rows.map((row) => {
+          const isPast = row.startsAt.getTime() < cutoff;
+          // The stored flag is a manual toggle that never flips itself off, so
+          // report the effective state: a past event is always closed.
+          return {
+            ...row,
+            checkInEnabled: row.checkInEnabled && !isPast,
+            isPast,
+          };
+        }),
         total:
           typeof totals?.total === "number"
             ? totals.total
@@ -409,7 +415,7 @@ export const eventRouter = createTRPCRouter({
       const opensAt = new Date(event.startsAt.getTime() - CHECK_IN_GRACE_MS);
 
       return {
-        event,
+        event: { ...event, checkInEnabled: event.checkInEnabled && !isPast },
         roster,
         rosterTotal:
           typeof rosterCount?.total === "number"
@@ -461,6 +467,23 @@ export const eventRouter = createTRPCRouter({
   setCheckInEnabled: adminProcedure
     .input(z.object({ id: z.string().min(1), enabled: z.boolean() }))
     .mutation(async ({ ctx, input }) => {
+      if (input.enabled) {
+        const event = await ctx.db.query.events.findFirst({
+          where: eq(events.id, input.id),
+          columns: { startsAt: true },
+        });
+        if (!event) {
+          notFound("Event");
+        }
+        if (checkInClosed(event.startsAt, Date.now())) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message:
+              "Check-in closes a day after an event starts. This one has ended.",
+          });
+        }
+      }
+
       const [updated] = await ctx.db
         .update(events)
         .set({ checkInEnabled: input.enabled })
