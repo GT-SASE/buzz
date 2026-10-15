@@ -105,7 +105,7 @@ export const navGroups: NavGroup[] = [
 ];
 
 /** Membership is a portal account, so joining is signing in. */
-export const joinHref = signInPath("/portal");
+export const joinHref = signInPath("/portal/start");
 
 /** The one high-emphasis call to action in the site chrome. */
 export const navCta = { label: "Join SASE", href: joinHref } as const;

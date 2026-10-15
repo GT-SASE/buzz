@@ -7,7 +7,7 @@ import { api, type RouterOutputs } from "~/trpc/react";
 
 type Metrics = RouterOutputs["member"]["metrics"];
 
-const figureGrid = "grid gap-4 sm:grid-cols-2 lg:grid-cols-4";
+const figureGrid = "grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4";
 
 function share(part: number, whole: number) {
   return whole === 0 ? 0 : Math.round((part / whole) * 100);
@@ -20,10 +20,10 @@ function Figure({
 }: {
   label: string;
   value: string;
-  note: string;
+  note: React.ReactNode;
 }) {
   return (
-    <div className="border-hairline bg-paper/80 hover:border-gold-ink/30 flex flex-col justify-between rounded-xl border p-5 shadow-xs transition-all">
+    <div className="border-hairline bg-paper/80 hover:border-gold-ink/30 flex flex-col rounded-xl border p-4 shadow-xs transition-all sm:p-5">
       <Eyebrow
         as="dt"
         tone="muted"
@@ -33,7 +33,7 @@ function Figure({
         {label}
       </Eyebrow>
       <dd className="mt-4">
-        <span className="font-display text-navy block text-3xl font-bold tracking-tight tabular-nums sm:text-4xl">
+        <span className="font-display text-navy block text-2xl font-bold tracking-tight tabular-nums sm:text-4xl">
           {value}
         </span>
         <span className="text-ink-muted text-body-sm mt-1.5 block tabular-nums">
@@ -128,7 +128,12 @@ function Figures({ data }: { data: Metrics }) {
         <Figure
           label="Active this year"
           value={String(data.activeThisYear)}
-          note={`${share(data.activeThisYear, data.total)}% of the roster · ${data.activeLast30} in the last 30 days`}
+          note={
+            <>
+              <span className="block">{`${share(data.activeThisYear, data.total)}% of the roster`}</span>
+              <span className="block">{`${data.activeLast30} in the last 30 days`}</span>
+            </>
+          }
         />
         <Figure
           label="New this month"

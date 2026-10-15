@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { toast } from "sonner";
 
+import { formatEventTime } from "~/app/portal/_lib/format";
 import { checkInPath, signInPath } from "~/app/portal/_lib/paths";
 import { Eyebrow } from "~/components/site";
 import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert";
@@ -54,6 +55,13 @@ export function CheckInForm({ initialCode }: { initialCode: string }) {
   );
   const hashCode = useSyncExternalStore(noSubscribe, codeFromHash, () => "");
   const [dismissed, setDismissed] = useState(false);
+  const peek = api.event.peek.useQuery(
+    { code: (hashCode || initialCode).toUpperCase() },
+    {
+      enabled: hydrated && !dismissed && !!(hashCode || initialCode),
+      retry: false,
+    },
+  );
   /** Set when a QR arrives in the URL, which needs a tap before it fires. */
   const confirm = dismissed ? "" : (hashCode || initialCode).toUpperCase();
   const dismiss = () => {
@@ -224,23 +232,45 @@ export function CheckInForm({ initialCode }: { initialCode: string }) {
   // Arrived from the phone's own camera. One tap rather than an automatic
   // submit, because a link preview or a prefetch must never check anyone in.
   if (confirm) {
+    const event = peek.data;
+    const closed = event?.checkInOpen === false;
     return (
       <Card className="border-hairline bg-paper rounded-lg">
         <CardHeader>
           <Eyebrow tone="muted">QR scanned</Eyebrow>
-          <CardTitle className="font-display text-navy text-h3 mt-2 font-bold">
-            Check in to this event?
+          <CardTitle className="font-display text-navy text-h3 mt-2 leading-tight font-bold">
+            {event ? `Check in to ${event.title}?` : "Check in to this event?"}
           </CardTitle>
+          {event && (
+            <p className="text-ink-muted text-body-sm mt-2">
+              {formatEventTime(event.startsAt)}
+              {event.location ? ` · ${event.location}` : ""}
+              {event.pointsValue > 0 && (
+                <>
+                  {" · "}
+                  <span className="text-gold-ink font-semibold whitespace-nowrap">
+                    +{event.pointsValue} pts
+                  </span>
+                </>
+              )}
+            </p>
+          )}
         </CardHeader>
 
         <CardContent>
-          <Button
-            size="lg"
-            onClick={() => submit(confirm)}
-            className="bg-gold-bright text-navy hover:bg-gold h-auto min-h-12 w-full rounded-md py-6 text-base font-semibold"
-          >
-            Check in
-          </Button>
+          {closed ? (
+            <p className="text-destructive text-body-sm font-medium">
+              Check-in for this event is closed.
+            </p>
+          ) : (
+            <Button
+              size="lg"
+              onClick={() => submit(confirm)}
+              className="bg-gold-bright text-navy hover:bg-gold h-auto min-h-12 w-full rounded-md py-6 text-base font-semibold"
+            >
+              Check in
+            </Button>
+          )}
 
           <div className="mt-6 flex justify-center">
             <Button
@@ -259,7 +289,13 @@ export function CheckInForm({ initialCode }: { initialCode: string }) {
   if (cameraNote) {
     return (
       <Card className="border-hairline bg-paper rounded-lg">
-        <CardContent className="py-10">
+        <CardHeader>
+          <Eyebrow tone="gold">Check in</Eyebrow>
+          <CardTitle className="font-display text-navy text-h3 mt-2 font-bold">
+            Camera is off.
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
           <Alert
             variant="destructive"
             className="border-destructive/30 bg-paper rounded-lg"
@@ -277,7 +313,7 @@ export function CheckInForm({ initialCode }: { initialCode: string }) {
             you, or email{" "}
             <a
               href={`mailto:${site.email}`}
-              className="text-navy inline-flex min-h-11 items-center underline"
+              className="text-navy py-3 underline"
             >
               {site.email}
             </a>

@@ -115,7 +115,7 @@ function ApplicationBody({
   const script = interviewScript(picked);
 
   return (
-    <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start">
+    <div className="grid gap-10 xl:grid-cols-[minmax(0,1fr)_20rem] xl:items-start">
       <div>
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>

@@ -54,9 +54,12 @@ function ticksFor(max: number) {
   if (max <= 0) return [0, 1];
   const rough = max / 4;
   const magnitude = 10 ** Math.floor(Math.log10(rough));
-  const step =
+  // Whole check-ins only: no half-person ticks.
+  const step = Math.max(
+    1,
     [1, 2, 5, 10].map((m) => m * magnitude).find((s) => s >= rough) ??
-    10 * magnitude;
+      10 * magnitude,
+  );
   const ticks = [];
   for (let value = 0; value < max + step; value += step) ticks.push(value);
   return ticks;
@@ -287,7 +290,7 @@ export function RsvpBars({ upcoming }: { upcoming: Turnout["upcoming"] }) {
             className="hover:bg-cream/40 focus-visible:ring-gold-bright grid gap-1.5 rounded-md p-1 transition focus-visible:ring-2 focus-visible:outline-none sm:grid-cols-[minmax(0,14rem)_1fr] sm:items-center sm:gap-4"
           >
             <span className="min-w-0">
-              <span className="text-navy text-body-sm block truncate font-semibold">
+              <span className="text-navy text-body-sm line-clamp-2 block font-semibold">
                 {row.title}
               </span>
               <span className="text-ink-muted block text-xs">
@@ -306,7 +309,7 @@ export function RsvpBars({ upcoming }: { upcoming: Turnout["upcoming"] }) {
               />
               <span className="text-ink text-body-sm font-semibold tabular-nums">
                 {row.rsvps}
-                <span className="sr-only"> RSVPs</span>
+                <span className="text-ink-muted font-normal"> RSVPs</span>
               </span>
             </span>
           </Link>

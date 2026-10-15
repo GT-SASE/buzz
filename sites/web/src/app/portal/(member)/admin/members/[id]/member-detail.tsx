@@ -27,9 +27,22 @@ type HistoryRow = RouterOutputs["member"]["byId"]["history"][number];
 const columnHeading =
   "text-eyebrow tracking-caps text-ink-muted h-auto py-3 font-semibold uppercase";
 
-function Figure({ label, value }: { label: string; value: string }) {
+function Figure({
+  label,
+  value,
+  className,
+}: {
+  label: string;
+  value: string;
+  className?: string;
+}) {
   return (
-    <div className="border-hairline bg-paper/80 flex flex-col justify-between rounded-xl border p-5 shadow-xs transition-all">
+    <div
+      className={cn(
+        "border-hairline bg-paper/80 flex flex-col rounded-xl border p-4 shadow-xs transition-all sm:p-5",
+        className,
+      )}
+    >
       <Eyebrow
         as="dt"
         tone="muted"
@@ -38,7 +51,7 @@ function Figure({ label, value }: { label: string; value: string }) {
       >
         {label}
       </Eyebrow>
-      <dd className="font-display text-navy mt-3 text-3xl font-bold tracking-tight tabular-nums">
+      <dd className="font-display text-navy mt-3 text-2xl font-bold tracking-tight tabular-nums sm:text-3xl">
         {value}
       </dd>
     </div>
@@ -253,7 +266,7 @@ export function MemberDetail({ memberId }: { memberId: string }) {
 
   return (
     <div>
-      <div className="flex flex-wrap items-start gap-5">
+      <div className="grid gap-4 sm:flex sm:items-start sm:gap-5">
         <InitialDisc label={displayName} />
 
         <div className="min-w-0 flex-1">
@@ -263,6 +276,11 @@ export function MemberDetail({ memberId }: { memberId: string }) {
           <p className="text-ink-muted text-body mt-2 break-words">
             {member.email}
           </p>
+          {memberSince && (
+            <p className="text-ink-muted text-body-sm mt-1">
+              Member since {formatMonth(memberSince)}
+            </p>
+          )}
           {resume && (
             <p className="text-ink-muted text-body-sm mt-2">
               Resume on file: {resume.fileName}
@@ -285,82 +303,34 @@ export function MemberDetail({ memberId }: { memberId: string }) {
               Rank {tier.level} · {tier.name}
             </Badge>
           </div>
-          <div className="mt-4 flex flex-wrap gap-2">
-            {resume && (
+          {tier.pointsToNext !== null && (
+            <p className="text-ink-muted text-body-sm mt-2">
+              <span className="text-navy font-semibold tabular-nums">
+                {tier.pointsToNext}
+              </span>{" "}
+              more to reach {tier.next}.
+            </p>
+          )}
+          {resume && (
+            <div className="mt-4 grid gap-2 sm:flex sm:flex-wrap">
               <Button
                 asChild
                 variant="outline"
-                className="border-hairline text-navy hover:bg-cream min-h-11 rounded-md font-semibold"
+                className="border-hairline text-navy hover:bg-cream min-h-11 w-full rounded-md font-semibold sm:w-auto"
               >
                 <a href={`/api/portal/admin/members/${member.id}/resume`}>
                   Download resume
                 </a>
               </Button>
-            )}
-            {member.role !== "ADMIN" && (
-              <ConfirmDialog
-                title={`Make ${displayName} an officer?`}
-                body="They will see the officer tools the next time they load the portal. This does not take officer access away from anyone else."
-                action="Yes, make officer"
-                onConfirm={() => promote.mutate({ userId: member.id })}
-              >
-                <Button
-                  type="button"
-                  disabled={promote.isPending}
-                  className="bg-navy hover:bg-navy-deep min-h-11 rounded-md font-semibold text-white"
-                >
-                  {promote.isPending ? "Promoting..." : "Make officer"}
-                </Button>
-              </ConfirmDialog>
-            )}
-            <ConfirmDialog
-              title={`Sign ${displayName} out everywhere?`}
-              body="Every device they are signed in on is signed out. They can sign back in with Google."
-              action="Revoke sessions"
-              danger
-              onConfirm={() => revoke.mutate({ userId: member.id })}
-            >
-              <Button
-                type="button"
-                variant="outline"
-                disabled={revoke.isPending}
-                className="border-hairline text-navy hover:bg-cream min-h-11 rounded-md font-semibold"
-              >
-                {revoke.isPending
-                  ? "Revoking sessions..."
-                  : revoke.isSuccess
-                    ? revoke.data.revoked === 0
-                      ? "No sessions to revoke"
-                      : `Revoked ${revoke.data.revoked} session${revoke.data.revoked === 1 ? "" : "s"}`
-                    : "Revoke all sessions"}
-              </Button>
-            </ConfirmDialog>
-          </div>
-          {promote.error && (
-            <p className="text-destructive text-body-sm mt-2">
-              {promote.error.message}
-            </p>
+            </div>
           )}
         </div>
       </div>
 
-      <dl className="mt-8 grid gap-4 sm:grid-cols-3">
+      <dl className="mt-8 grid grid-cols-2 gap-3 sm:gap-4">
         <Figure label="Total points" value={String(totalPoints)} />
         <Figure label="Events attended" value={String(totalEvents)} />
-        <Figure
-          label="Member since"
-          value={memberSince ? formatMonth(memberSince) : "Not yet"}
-        />
       </dl>
-
-      {tier.pointsToNext !== null && (
-        <p className="text-ink-muted text-body-sm mt-3">
-          <span className="text-navy font-semibold tabular-nums">
-            {tier.pointsToNext}
-          </span>{" "}
-          more to reach {tier.next}.
-        </p>
-      )}
 
       <div className="mt-12">
         <Eyebrow tone="gold">Attendance</Eyebrow>
@@ -390,10 +360,60 @@ export function MemberDetail({ memberId }: { memberId: string }) {
         ) : (
           <EmptyState
             title="No check-ins yet."
-            body="Every event they enter a code for lands here, with the points it earned."
+            body="Every check-in at an event that is not archived lands here, scanned or added by hand, with the points it earned."
           />
         )}
       </div>
+
+      <section className="border-hairline mt-12 border-t pt-6">
+        <h2 className="text-navy text-body font-semibold">Access</h2>
+        <div className="mt-3 grid gap-2 sm:flex sm:flex-wrap">
+          {member.role !== "ADMIN" && (
+            <ConfirmDialog
+              title={`Make ${displayName} an officer?`}
+              body="They will see the officer tools the next time they load the portal. This does not take officer access away from anyone else."
+              action="Yes, make officer"
+              onConfirm={() => promote.mutate({ userId: member.id })}
+            >
+              <Button
+                type="button"
+                disabled={promote.isPending}
+                variant="outline"
+                className="border-hairline text-navy hover:bg-cream min-h-11 w-full rounded-md font-semibold sm:w-auto"
+              >
+                {promote.isPending ? "Promoting..." : "Make officer"}
+              </Button>
+            </ConfirmDialog>
+          )}
+          <ConfirmDialog
+            title={`Sign ${displayName} out everywhere?`}
+            body="Every device they are signed in on is signed out. They can sign back in with Google."
+            action="Revoke sessions"
+            danger
+            onConfirm={() => revoke.mutate({ userId: member.id })}
+          >
+            <Button
+              type="button"
+              variant="outline"
+              disabled={revoke.isPending}
+              className="border-hairline text-navy hover:bg-cream min-h-11 w-full rounded-md font-semibold sm:w-auto"
+            >
+              {revoke.isPending
+                ? "Revoking sessions..."
+                : revoke.isSuccess
+                  ? revoke.data.revoked === 0
+                    ? "No sessions to revoke"
+                    : `Revoked ${revoke.data.revoked} session${revoke.data.revoked === 1 ? "" : "s"}`
+                  : "Revoke all sessions"}
+            </Button>
+          </ConfirmDialog>
+        </div>
+        {promote.error && (
+          <p className="text-destructive text-body-sm mt-2">
+            {promote.error.message}
+          </p>
+        )}
+      </section>
     </div>
   );
 }

@@ -33,7 +33,7 @@ const steps: { title: string; body: string; links: StepLink[] }[] = [
   {
     title: "Check in at the door",
     body: "Scan the QR code on the presentation screen with the member portal. It is free, takes a few seconds, and earns chapter points toward ranks. Come back the next event for a streak bonus.",
-    links: [{ label: "Open the member portal", href: "/portal" }],
+    links: [{ label: "Open the member portal", href: "/portal/start" }],
   },
   {
     title: "Follow the chapter feeds",

@@ -14,13 +14,13 @@ export function PortalHeader({
 }) {
   return (
     <section className="bg-cream border-hairline relative overflow-hidden border-b">
-      <div className="max-w-content relative mx-auto grid gap-6 px-5 py-8 sm:gap-10 sm:px-6 sm:py-16 lg:grid-cols-[1fr_auto] lg:items-center lg:gap-16">
+      <div className="max-w-content relative mx-auto grid gap-6 px-5 py-6 sm:gap-10 sm:px-6 sm:py-16 lg:grid-cols-[1fr_auto] lg:items-center lg:gap-16">
         <div className="max-w-xl">
           <h1 className="font-display text-navy text-h2 sm:text-h1 font-bold tracking-tight text-balance sm:mt-5">
             {title}
           </h1>
           {body && (
-            <p className="text-lead text-ink-muted max-w-measure mt-5">
+            <p className="text-body sm:text-lead text-ink-muted max-w-measure mt-3 sm:mt-5">
               {body}
             </p>
           )}

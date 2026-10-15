@@ -153,6 +153,11 @@ export function KinGroups({
               ? "Join an open group with room. Invite-only groups are placed by an officer."
               : "Sign up above first, then join a group."}
         </p>
+        <p className="text-ink-muted text-body-sm mt-2">
+          KIN points live on their own card. An officer adds them after your
+          group meets. Groups change every semester. Your signup and KIN points
+          last the whole school year.
+        </p>
 
         {all.length === 0 ? (
           <p className="text-ink-muted text-body mt-6">

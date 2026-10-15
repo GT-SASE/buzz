@@ -91,8 +91,11 @@ export function MemberCard({
             className="bg-sand [&_[data-slot=progress-indicator]]:bg-navy h-1"
           />
           <p className="text-ink-muted text-body-sm mt-2.5">
-            {tier.pointsToNext} more to reach {tier.next}. Come back next event
-            for a streak bonus.
+            {tier.pointsToNext} more to reach {tier.next}.
+            <span className="hidden sm:inline">
+              {" "}
+              Come back next event for a streak bonus.
+            </span>
           </p>
         </div>
       )}

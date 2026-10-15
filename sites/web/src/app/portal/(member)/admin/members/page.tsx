@@ -43,11 +43,14 @@ async function AdminMembersBody() {
         body="Who has signed in, what they have earned, when they last came."
       />
 
-      <RosterMetrics />
+      <div className="flex flex-col">
+        <RosterMetrics />
 
-      <Section size="sm">
-        <MembersTable />
-      </Section>
+        {/* On a phone the search is the job; the figures can wait. */}
+        <Section size="sm" className="order-first md:order-none">
+          <MembersTable />
+        </Section>
+      </div>
     </>
   );
 

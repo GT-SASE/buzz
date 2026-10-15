@@ -37,7 +37,7 @@ export function Action({
       type={type}
       variant="ghost"
       className={cn(
-        "h-auto min-h-11 rounded-full px-5 py-2.5 text-sm font-semibold transition duration-200 disabled:cursor-not-allowed disabled:opacity-45",
+        "h-auto min-h-11 rounded-md px-5 py-2.5 text-sm font-semibold transition duration-200 disabled:cursor-not-allowed disabled:opacity-45",
         actionTones[tone],
         className,
       )}
