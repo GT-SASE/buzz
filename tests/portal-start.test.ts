@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
 const session = vi.hoisted(() => ({
-  current: null as { user: { role: "ADMIN" | "MEMBER" } } | null,
+  current: null as {
+    user: { role: "ADMIN" | "SUPER_ADMIN" | "MEMBER" };
+  } | null,
 }));
 
 vi.mock("../packages/auth/src/index.ts", () => ({
@@ -34,6 +36,11 @@ describe("/portal/start", () => {
 
   it("sends an officer to the officer view", async () => {
     session.current = { user: { role: "ADMIN" } };
+    expect(await landing()).toBe("/portal/admin");
+  });
+
+  it("sends a super admin to the officer view too", async () => {
+    session.current = { user: { role: "SUPER_ADMIN" } };
     expect(await landing()).toBe("/portal/admin");
   });
 });

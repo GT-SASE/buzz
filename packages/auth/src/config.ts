@@ -100,8 +100,9 @@ export const authConfig = {
   events: {
     /**
      * Store email lowercase so roster search and the unique index agree.
-     * Officer access is the `role` column — promote from the roster, never
-     * from an env allowlist on sign-in.
+     * Officer access is the `role` column — ADMIN or SUPER_ADMIN. Role changes
+     * happen in the roster, and only a super admin can make them. Never from
+     * an env allowlist on sign-in.
      */
     createUser: async ({ user }) => {
       await storeEmailLowercase(user);

@@ -5,6 +5,7 @@ import { PortalSidebar } from "~/app/portal/_components/portal-sidebar";
 import { SignOutButton } from "~/app/portal/_components/portal-ui";
 import { Wordmark } from "~/components/site";
 import { auth } from "@buzz/auth";
+import { isOfficerRole } from "@buzz/db";
 
 // Every portal page reads the session and the database per request. Declaring
 // it here keeps the marketing routes prerendered.
@@ -50,7 +51,7 @@ export default async function PortalLayout({
       <div className="flex min-w-0 flex-1 flex-col lg:flex-row">
         {user && (
           <PortalSidebar
-            isOfficer={user.role === "ADMIN"}
+            isOfficer={isOfficerRole(user.role)}
             name={user.name ?? null}
             email={user.email ?? null}
             signOut={<SignOutButton />}

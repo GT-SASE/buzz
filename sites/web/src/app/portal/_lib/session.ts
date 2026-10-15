@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 
 import { signInPath } from "~/app/portal/_lib/paths";
 import { auth } from "@buzz/auth";
+import { isOfficerRole } from "@buzz/db";
 
 /**
  * Gate a portal page, remembering where the visitor was headed.
@@ -24,7 +25,7 @@ export async function requireSession(from: string) {
 /** As above, plus the officer check that mirrors `adminProcedure`. */
 export async function requireOfficer(from: string) {
   const session = await requireSession(from);
-  if (session.user.role !== "ADMIN") {
+  if (!isOfficerRole(session.user.role)) {
     redirect("/portal");
   }
   return session;
