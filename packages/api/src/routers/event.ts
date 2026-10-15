@@ -1,5 +1,15 @@
 import { TRPCError } from "@trpc/server";
-import { and, asc, count, desc, eq, gte, isNull, lt, ne } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  gte,
+  isNull,
+  lt,
+  notInArray,
+} from "drizzle-orm";
 import { z } from "zod";
 
 import { asDate, asInt, totalsColumns } from "../aggregates";
@@ -39,7 +49,7 @@ const CODE_ALPHABET = "23456789ABCDEFGHJKMNPQRSTVWXYZ";
 const CODE_LENGTH = 8;
 
 /**
- * How many members are already in. Officers (ADMIN) are not counted, so their
+ * How many members are already in. Officers (ADMIN, SUPER_ADMIN) are not counted, so their
  * check-ins never use up a member's early-bird spot. Called under the event
  * row lock so two phones cannot both read "first".
  */
@@ -53,7 +63,12 @@ async function priorMemberArrivals(
     .select({ prior: count() })
     .from(eventCheckIns)
     .innerJoin(users, eq(users.id, eventCheckIns.userId))
-    .where(and(eq(eventCheckIns.eventId, eventId), ne(users.role, "ADMIN")));
+    .where(
+      and(
+        eq(eventCheckIns.eventId, eventId),
+        notInArray(users.role, ["ADMIN", "SUPER_ADMIN"]),
+      ),
+    );
   return asInt(row?.prior);
 }
 

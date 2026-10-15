@@ -16,7 +16,11 @@ const { and, eq, inArray } =
 
 const SLOW = 60_000;
 
-type TestUser = { id: string; email: string; role: "MEMBER" | "ADMIN" };
+type TestUser = {
+  id: string;
+  email: string;
+  role: "MEMBER" | "ADMIN" | "SUPER_ADMIN";
+};
 
 function callerFor(user: TestUser) {
   return createCaller({
@@ -130,10 +134,12 @@ describe.skipIf(!process.env.DATABASE_URL)("points rules", () => {
 
       // Officer first: same formula as anyone, and no member arrived before.
       expect(await stamp(event, deputy)).toBe(15);
+      const boss = await makeUser("early-boss", "SUPER_ADMIN");
+      expect(await stamp(event, boss)).toBe(15);
       expect(await stamp(event, m1)).toBe(15);
       expect(await stamp(event, m2)).toBe(14);
-      // Third member arrival: two members were already in, the officer is not
-      // one of them.
+      // Third member arrival: two members were already in, the officers are
+      // not among them.
       expect(await stamp(event, m3)).toBe(13);
     },
     SLOW,

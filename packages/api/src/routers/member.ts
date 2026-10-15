@@ -1,3 +1,4 @@
+import { TRPCError } from "@trpc/server";
 import {
   and,
   asc,
@@ -5,6 +6,7 @@ import {
   desc,
   eq,
   ilike,
+  inArray,
   isNull,
   max,
   min,
@@ -26,7 +28,12 @@ import { crownLeaderboard } from "../leaderboard-crown";
 import { isUndefinedTable } from "../pg-errors";
 import { schoolYearStart } from "../periods";
 import { assertRateLimit, EXPORT_ROSTER_LIMIT } from "../rate-limit";
-import { adminProcedure, createTRPCRouter, protectedProcedure } from "../trpc";
+import {
+  adminProcedure,
+  createTRPCRouter,
+  protectedProcedure,
+  superAdminProcedure,
+} from "../trpc";
 import type * as BuzzDbModule from "@buzz/db";
 import { eventCheckIns, events, resumes, sessions, users } from "@buzz/db";
 
@@ -164,10 +171,11 @@ export const memberRouter = createTRPCRouter({
 
       const [[rosterTotals], [officerTotals], attended] = await Promise.all([
         ctx.db.select({ total: count() }).from(users),
+        // Super admins hold officer access, so the roster counts them here too.
         ctx.db
           .select({ total: count() })
           .from(users)
-          .where(eq(users.role, "ADMIN")),
+          .where(inArray(users.role, ["ADMIN", "SUPER_ADMIN"])),
         // One row per member who has attended anything live. Members with no
         // attendance are the difference against the roster count below.
         ctx.db
@@ -352,10 +360,31 @@ export const memberRouter = createTRPCRouter({
       };
     }),
 
-  /** Drop every session for a compromised or departing officer account. */
+  /**
+   * Drop every session for a compromised or departing account.
+   *
+   * An officer can do this for members and other officers. A super admin's
+   * sessions are off limits to them — that is an edit of a super admin, and
+   * only a super admin may do it.
+   */
   revokeSessions: adminProcedure
     .input(z.object({ userId: z.string().min(1) }))
     .mutation(async ({ ctx, input }) => {
+      const target = await ctx.db.query.users.findFirst({
+        where: eq(users.id, input.userId),
+        columns: { role: true },
+      });
+
+      if (
+        target?.role === "SUPER_ADMIN" &&
+        ctx.session.user.role !== "SUPER_ADMIN"
+      ) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Only a super admin can edit a super admin.",
+        });
+      }
+
       const revoked = await ctx.db
         .delete(sessions)
         .where(eq(sessions.userId, input.userId))
@@ -365,15 +394,23 @@ export const memberRouter = createTRPCRouter({
     }),
 
   /**
-   * One-way: an officer makes a member an officer. Never demotes — that is a
-   * database edit.
+   * Promote or demote. The only writer of `buzz_user.role` in the app.
+   *
+   * `superAdminProcedure` refuses an officer before this runs, so an ADMIN
+   * cannot change anyone's role and cannot demote a SUPER_ADMIN. The value
+   * written is the one the caller asked for — never a hardcoded promotion.
    */
-  promote: adminProcedure
-    .input(z.object({ userId: z.string().min(1) }))
+  setRole: superAdminProcedure
+    .input(
+      z.object({
+        userId: z.string().min(1),
+        role: z.enum(["MEMBER", "ADMIN", "SUPER_ADMIN"]),
+      }),
+    )
     .mutation(async ({ ctx, input }) => {
       const [updated] = await ctx.db
         .update(users)
-        .set({ role: "ADMIN" })
+        .set({ role: input.role })
         .where(eq(users.id, input.userId))
         .returning({ id: users.id, role: users.role });
 

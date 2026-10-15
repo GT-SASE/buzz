@@ -1,14 +1,35 @@
 "use client";
 
+import type { UserRole } from "@buzz/db";
 import Link from "next/link";
+import { useState } from "react";
 
-import { EmptyState } from "~/app/portal/_components/portal-ui";
-import { formatDate, formatMonth } from "~/app/portal/_lib/format";
-import { Eyebrow, InitialDisc } from "~/components/site";
 import { ConfirmDialog } from "~/app/portal/_components/confirm-dialog";
+import { EmptyState } from "~/app/portal/_components/portal-ui";
+import { RoleBadge } from "~/app/portal/_components/role-badge";
+import { formatDate, formatMonth } from "~/app/portal/_lib/format";
+import { roleLabel } from "~/app/portal/_lib/roles";
+import { Eyebrow, InitialDisc } from "~/components/site";
 import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "~/components/ui/alert-dialog";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "~/components/ui/select";
 import { Skeleton } from "~/components/ui/skeleton";
 import {
   Table,
@@ -175,6 +196,101 @@ function SkeletonRows() {
   );
 }
 
+const ROLE_OPTIONS: { value: UserRole; label: string }[] = [
+  { value: "MEMBER", label: "Member" },
+  { value: "ADMIN", label: "Officer" },
+  { value: "SUPER_ADMIN", label: "Super admin" },
+];
+
+function roleChangeBody(role: UserRole) {
+  switch (role) {
+    case "MEMBER":
+      return "They lose officer tools the next time they load the portal.";
+    case "SUPER_ADMIN":
+      return "They keep every officer tool, and they will be able to change anyone's role.";
+    case "ADMIN":
+      return "They will see the officer tools the next time they load the portal.";
+  }
+}
+
+/**
+ * The roster's role control. Only mounted for a super admin — an officer never
+ * sees it, and the procedure refuses them if they call it anyway.
+ */
+function RolePicker({
+  role,
+  displayName,
+  pending,
+  onChange,
+}: {
+  role: UserRole;
+  displayName: string;
+  pending: boolean;
+  onChange: (role: UserRole) => void;
+}) {
+  const [next, setNext] = useState<UserRole | null>(null);
+
+  return (
+    <>
+      <Select
+        value={role}
+        disabled={pending}
+        onValueChange={(value) => {
+          if (value !== role) setNext(value as UserRole);
+        }}
+      >
+        <SelectTrigger
+          aria-label={`Role for ${displayName}`}
+          className="border-hairline h-auto min-h-11 w-44"
+        >
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {ROLE_OPTIONS.map((option) => (
+            <SelectItem key={option.value} value={option.value}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <AlertDialog
+        open={next !== null}
+        onOpenChange={(open) => {
+          if (!open && !pending) setNext(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Change {displayName} to {next ? roleLabel(next) : "this role"}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {next ? roleChangeBody(next) : ""}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={pending || next === null}
+              className={
+                next === "MEMBER"
+                  ? "bg-destructive hover:bg-destructive/90 text-white"
+                  : undefined
+              }
+              onClick={(event) => {
+                event.preventDefault();
+                if (next) onChange(next);
+              }}
+            >
+              {pending ? "Saving..." : "Change role"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+}
+
 function MemberSkeleton() {
   return (
     <div role="status" aria-busy="true">
@@ -206,7 +322,13 @@ function MemberSkeleton() {
   );
 }
 
-export function MemberDetail({ memberId }: { memberId: string }) {
+export function MemberDetail({
+  memberId,
+  canManageRoles,
+}: {
+  memberId: string;
+  canManageRoles: boolean;
+}) {
   const utils = api.useUtils();
   const detail = api.member.byId.useQuery(
     { id: memberId },
@@ -222,11 +344,12 @@ export function MemberDetail({ memberId }: { memberId: string }) {
       await utils.member.byId.invalidate({ id: memberId });
     },
   });
-  const promote = api.member.promote.useMutation({
+  const setRole = api.member.setRole.useMutation({
     onSuccess: async () => {
       await Promise.all([
         utils.member.byId.invalidate({ id: memberId }),
         utils.member.list.invalidate(),
+        utils.member.metrics.invalidate(),
       ]);
     },
   });
@@ -290,12 +413,7 @@ export function MemberDetail({ memberId }: { memberId: string }) {
           {/* Both pills read "Member" for a new member, so each says which it
               is rather than relying on colour to tell them apart. */}
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <Badge
-              variant={member.role === "ADMIN" ? "default" : "secondary"}
-              className="text-body-sm font-semibold"
-            >
-              {member.role === "ADMIN" ? "Officer" : "Member"}
-            </Badge>
+            <RoleBadge role={member.role} className="text-body-sm" />
             <Badge
               variant="outline"
               className="text-gold-ink border-gold-ink/40 text-body-sm font-semibold"
@@ -365,55 +483,57 @@ export function MemberDetail({ memberId }: { memberId: string }) {
         )}
       </div>
 
-      <section className="border-hairline mt-12 border-t pt-6">
-        <h2 className="text-navy text-body font-semibold">Access</h2>
-        <div className="mt-3 grid gap-2 sm:flex sm:flex-wrap">
-          {member.role !== "ADMIN" && (
-            <ConfirmDialog
-              title={`Make ${displayName} an officer?`}
-              body="They will see the officer tools the next time they load the portal. This does not take officer access away from anyone else."
-              action="Yes, make officer"
-              onConfirm={() => promote.mutate({ userId: member.id })}
-            >
-              <Button
-                type="button"
-                disabled={promote.isPending}
-                variant="outline"
-                className="border-hairline text-navy hover:bg-cream min-h-11 w-full rounded-md font-semibold sm:w-auto"
+      {/* An officer has nothing to do on a super admin's access. */}
+      {(canManageRoles || member.role !== "SUPER_ADMIN") && (
+        <section className="border-hairline mt-12 border-t pt-6">
+          <h2 className="text-navy text-body font-semibold">Access</h2>
+          <div className="mt-3 grid gap-2 sm:flex sm:flex-wrap">
+            {canManageRoles && (
+              <RolePicker
+                key={member.role}
+                role={member.role}
+                displayName={displayName}
+                pending={setRole.isPending}
+                onChange={(role) => setRole.mutate({ userId: member.id, role })}
+              />
+            )}
+            {(canManageRoles || member.role !== "SUPER_ADMIN") && (
+              <ConfirmDialog
+                title={`Sign ${displayName} out everywhere?`}
+                body="Every device they are signed in on is signed out. They can sign back in with Google."
+                action="Revoke sessions"
+                danger
+                onConfirm={() => revoke.mutate({ userId: member.id })}
               >
-                {promote.isPending ? "Promoting..." : "Make officer"}
-              </Button>
-            </ConfirmDialog>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={revoke.isPending}
+                  className="border-hairline text-navy hover:bg-cream min-h-11 w-full rounded-md font-semibold sm:w-auto"
+                >
+                  {revoke.isPending
+                    ? "Revoking sessions..."
+                    : revoke.isSuccess
+                      ? revoke.data.revoked === 0
+                        ? "No sessions to revoke"
+                        : `Revoked ${revoke.data.revoked} session${revoke.data.revoked === 1 ? "" : "s"}`
+                      : "Revoke all sessions"}
+                </Button>
+              </ConfirmDialog>
+            )}
+          </div>
+          {setRole.error && (
+            <p className="text-destructive text-body-sm mt-2">
+              {setRole.error.message}
+            </p>
           )}
-          <ConfirmDialog
-            title={`Sign ${displayName} out everywhere?`}
-            body="Every device they are signed in on is signed out. They can sign back in with Google."
-            action="Revoke sessions"
-            danger
-            onConfirm={() => revoke.mutate({ userId: member.id })}
-          >
-            <Button
-              type="button"
-              variant="outline"
-              disabled={revoke.isPending}
-              className="border-hairline text-navy hover:bg-cream min-h-11 w-full rounded-md font-semibold sm:w-auto"
-            >
-              {revoke.isPending
-                ? "Revoking sessions..."
-                : revoke.isSuccess
-                  ? revoke.data.revoked === 0
-                    ? "No sessions to revoke"
-                    : `Revoked ${revoke.data.revoked} session${revoke.data.revoked === 1 ? "" : "s"}`
-                  : "Revoke all sessions"}
-            </Button>
-          </ConfirmDialog>
-        </div>
-        {promote.error && (
-          <p className="text-destructive text-body-sm mt-2">
-            {promote.error.message}
-          </p>
-        )}
-      </section>
+          {revoke.error && (
+            <p className="text-destructive text-body-sm mt-2">
+              {revoke.error.message}
+            </p>
+          )}
+        </section>
+      )}
     </div>
   );
 }
