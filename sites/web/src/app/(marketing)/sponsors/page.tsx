@@ -63,7 +63,7 @@ export default function SponsorsPage() {
         </dl>
       </Section>
 
-      <Section size="lg" title="Pick a level, or ask for something custom.">
+      <Section title="Pick a level, or ask for something custom.">
         <ul role="list" className="grid gap-8 lg:grid-cols-3">
           {sponsorTiers.map((tier, i) => (
             <li key={tier.tier} className="flex">

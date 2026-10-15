@@ -187,7 +187,7 @@ export default async function Home() {
       <Section
         title="What happens if you just show up."
         lead="You do not need a friend already in it, a technical major, or a plan."
-        className="bg-dino-pale"
+        tone="dino"
       >
         <ol
           role="list"
@@ -324,7 +324,7 @@ export default async function Home() {
 
       {/* Deliberately outside the numbered sequence: the last thing on the page
           is the invitation, not another section. */}
-      <section className="px-5 pt-4 pb-20 sm:px-6 sm:pb-28">
+      <section className="px-5 pt-8 pb-10 sm:px-6 sm:pt-10 sm:pb-16 lg:pt-12 lg:pb-20">
         <div className="max-w-content mx-auto">
           <div className="rule-heavy grid gap-x-16 gap-y-6 pt-10 lg:grid-cols-[1.35fr_1fr] lg:items-end">
             <h2 className="font-display text-navy text-h1 font-bold tracking-tight text-balance">

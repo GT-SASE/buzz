@@ -52,7 +52,10 @@ export function Eyebrow({
 /** Comb header at the top of every interior page. One per page. */
 export function PageHeader({ title, body }: { title: string; body: string }) {
   return (
-    <header className="relative overflow-hidden px-5 pt-8 pb-10 sm:px-6 sm:pt-14 sm:pb-20">
+    <header
+      data-tone="paper"
+      className="relative overflow-hidden px-5 pt-8 pb-10 sm:px-6 sm:pt-14 sm:pb-20"
+    >
       <div className="max-w-content relative mx-auto">
         <div className="rule-heavy grid gap-x-16 gap-y-6 pt-8 lg:grid-cols-[1.35fr_1fr] lg:items-end">
           <h1 className="font-display text-navy text-h1 font-bold tracking-tight text-balance">
@@ -76,6 +79,8 @@ const sectionPadding = {
 const sectionTones = {
   paper: "",
   cream: "bg-cream",
+  /** The mascot's ground. For dino moments only. */
+  dino: "bg-dino-pale",
 } as const;
 
 /**
@@ -156,6 +161,7 @@ export function Section({
   return (
     <section
       id={id}
+      data-tone={tone}
       className={cn(
         "px-5 sm:px-6",
         sectionPadding[size],

@@ -208,6 +208,23 @@
     }
   }
 
+  /* Back-to-back sections on one ground share a single gap. The heavy rule
+     already divides them, so the second keeps a short lead-in above it
+     instead of stacking a second full padding on the first. */
+  :is(
+    [data-tone="paper"] + [data-tone="paper"],
+    [data-tone="cream"] + [data-tone="cream"],
+    [data-tone="dino"] + [data-tone="dino"]
+  ) {
+    padding-top: 2rem;
+    @media (width >= 40rem) {
+      padding-top: 2.5rem;
+    }
+    @media (width >= 64rem) {
+      padding-top: 3rem;
+    }
+  }
+
   /* The dino rises further out of whatever hides it while an action in the
      same .dino-hop-host is hovered or focused, and sinks back after. */
   .dino-rise {
