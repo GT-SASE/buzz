@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { firstParam } from "~/app/portal/_lib/paths";
 import { Toaster } from "~/components/ui/sonner";
 import { auth } from "@buzz/auth";
+import { isOfficerRole } from "@buzz/db";
 import { CheckInForm } from "./check-in-form";
 import { SignInRedirect } from "./signin-redirect";
 
@@ -34,7 +35,10 @@ export default async function CheckInPage({
   return (
     <div className="mx-auto w-full max-w-md px-5 py-6 sm:px-6 sm:py-14">
       <h1 className="sr-only">Check in</h1>
-      <CheckInForm initialCode={code ?? ""} />
+      <CheckInForm
+        initialCode={code ?? ""}
+        isOfficer={isOfficerRole(session.user.role)}
+      />
       <Toaster position="bottom-center" />
     </div>
   );
