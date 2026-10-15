@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 
-import { Button } from "~/components/site";
+import { Button, SaseDino } from "~/components/site";
 import { SiteFooter } from "~/components/site/site-footer";
 import { SiteNav } from "~/components/site/site-nav";
 
@@ -28,9 +28,12 @@ export default function NotFound() {
         <section className="flex min-h-[60vh] items-center px-5 py-20 sm:px-6">
           <div className="max-w-content mx-auto w-full">
             {/* gold-ink, not gold: real text at display size, not decoration. */}
-            <p className="font-display text-gold-ink text-hero font-bold">
-              404
-            </p>
+            <div className="flex items-end justify-between gap-6">
+              <p className="font-display text-gold-ink text-hero font-bold">
+                404
+              </p>
+              <SaseDino className="h-28 sm:h-40" />
+            </div>
             <div className="rule-heavy mt-10 grid gap-x-16 gap-y-6 pt-8 lg:grid-cols-[1.35fr_1fr] lg:items-end">
               <h1 className="font-display text-navy text-h2 font-bold tracking-tight text-balance">
                 This page took the Tech Trolley somewhere else.

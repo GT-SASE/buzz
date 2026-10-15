@@ -1,3 +1,4 @@
+import { SaseDino } from "~/components/site";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent } from "~/components/ui/card";
 import { signOutOfPortal } from "./auth-actions";
@@ -44,6 +45,7 @@ export function EmptyState({
   return (
     <Card className="border-hairline bg-paper/60 rounded-xl border-dashed py-12 text-center shadow-xs">
       <CardContent>
+        <SaseDino className="mx-auto mb-5 h-20" />
         <h3 className="font-display text-navy text-h3 font-bold text-balance">
           {title}
         </h3>

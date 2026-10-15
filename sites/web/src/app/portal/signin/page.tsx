@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 
 import { signInWithGoogle } from "~/app/portal/_components/auth-actions";
 import { checkInPath, safeRedirectPath } from "~/app/portal/_lib/paths";
-import { Eyebrow } from "~/components/site";
+import { Eyebrow, SaseDino } from "~/components/site";
 import { site } from "~/data/site";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader } from "~/components/ui/card";
@@ -33,6 +33,7 @@ export default async function SignInPage({
     <section className="bg-cream relative flex min-h-[calc(100dvh-4.5rem)] items-center overflow-hidden px-5 py-10 sm:px-6 sm:py-20">
       <Card className="border-hairline bg-paper relative mx-auto w-full max-w-md rounded-xl">
         <CardHeader>
+          <SaseDino className="mb-5 h-20" />
           <Eyebrow tone="gold">{site.portalName}</Eyebrow>
           <h1 className="font-display text-navy text-h2 mt-5 font-bold tracking-tight text-balance">
             {checkingIn ? "Sign in to check in." : "Become a member."}
