@@ -32,7 +32,7 @@ export function LanyardBadge({
   className?: string;
 }) {
   return (
-    <div className={cn("flex flex-col items-center", className)}>
+    <div className={cn("flex flex-col items-center max-sm:px-5", className)}>
       <Strap />
       <div className="relative w-full max-w-[24rem]">
         {/* The host pops up from behind the badge on load. The card hides
