@@ -32,71 +32,79 @@ export function LanyardBadge({
   className?: string;
 }) {
   return (
-    <div className={cn("flex flex-col items-center", className)}>
+    <div
+      className={cn(
+        "flex flex-col items-center max-sm:pr-12 lg:max-xl:pr-16",
+        className,
+      )}
+    >
       <Strap />
-      <article className="border-hairline bg-paper relative w-full max-w-[24rem] -rotate-2 overflow-hidden rounded-[1.375rem] border shadow-[0_1px_0_var(--hairline),0_18px_40px_-18px_rgb(15_31_48/0.35)]">
-        <div
-          aria-hidden="true"
-          className="border-hairline bg-cream mx-auto mt-4 h-3 w-[4.5rem] rounded-full border"
+      <div className="relative w-full max-w-[24rem]">
+        {/* The host, peeking out from behind the badge. The card hides the
+            body, so only the head and an arm show past its right edge. */}
+        <SaseDino
+          flip
+          className="dino-hop absolute top-[38%] right-0 h-32 translate-x-[52%] sm:h-40 lg:h-48"
         />
-        <div className="bg-navy mt-3.5 flex items-baseline justify-between gap-3 px-5 py-4 text-white">
-          <span className="font-display text-xl font-bold">SASE GT</span>
-          <span className="text-[0.8125rem] text-white/75">
-            Member · {year}
-          </span>
-        </div>
-        <div className="relative aspect-[4/3]">
-          <Image
-            src={photo.src}
-            alt={photo.alt}
-            fill
-            priority
-            sizes="(min-width: 1024px) 24rem, 90vw"
-            placeholder="blur"
-            className="object-cover"
+        <article className="border-hairline bg-paper relative z-10 w-full -rotate-2 overflow-hidden rounded-[1.375rem] border shadow-[0_1px_0_var(--hairline),0_18px_40px_-18px_rgb(15_31_48/0.35)]">
+          <div
+            aria-hidden="true"
+            className="border-hairline bg-cream mx-auto mt-4 h-3 w-[4.5rem] rounded-full border"
           />
-        </div>
-        <div className="px-5 pt-4">
-          <p className="text-ink-muted text-[0.8125rem] font-semibold">
-            Hello, my name is
-          </p>
-          <p className="font-display text-navy mt-1 text-[1.75rem] leading-tight font-bold text-balance">
-            The newest SASE member.
-          </p>
-        </div>
-        <ul className="flex flex-wrap gap-2 px-5 pt-3">
-          {["Free", "Any major", "No application"].map((tag) => (
-            <li
-              key={tag}
-              className="bg-cream text-navy rounded-full px-2.5 py-1 text-[0.8125rem] font-bold"
-            >
-              {tag}
-            </li>
-          ))}
-        </ul>
-        <div className="border-sand mx-5 mt-4 mb-5 border-t-2 border-dashed pt-3.5">
-          {next ? (
-            <>
-              <p className="text-navy font-extrabold">
-                {next.title} · {next.when}
-              </p>
-              <p className="text-ink-muted text-body-sm">
-                {next.where ? `${next.where} · ` : ""}RSVP and it goes on your
-                calendar
-              </p>
-            </>
-          ) : (
-            <p className="text-navy font-extrabold">
-              General body meetings every few weeks
+          <div className="bg-navy mt-3.5 flex items-baseline justify-between gap-3 px-5 py-4 text-white">
+            <span className="font-display text-xl font-bold">SASE GT</span>
+            <span className="text-[0.8125rem] text-white/75">
+              Member · {year}
+            </span>
+          </div>
+          <div className="relative aspect-[4/3]">
+            <Image
+              src={photo.src}
+              alt={photo.alt}
+              fill
+              priority
+              sizes="(min-width: 1024px) 24rem, 90vw"
+              placeholder="blur"
+              className="object-cover"
+            />
+          </div>
+          <div className="px-5 pt-4">
+            <p className="text-ink-muted text-[0.8125rem] font-semibold">
+              Hello, my name is
             </p>
-          )}
-        </div>
-      </article>
-      {/* The host, at the badge's lower left, facing it. Clear of the card. */}
-      <SaseDino
-        flip
-        className="dino-hop mt-6 h-32 self-start sm:h-40 lg:h-48"
-      />
+            <p className="font-display text-navy mt-1 text-[1.75rem] leading-tight font-bold text-balance">
+              The newest SASE member.
+            </p>
+          </div>
+          <ul className="flex flex-wrap gap-2 px-5 pt-3">
+            {["Free", "Any major", "No application"].map((tag) => (
+              <li
+                key={tag}
+                className="bg-cream text-navy rounded-full px-2.5 py-1 text-[0.8125rem] font-bold"
+              >
+                {tag}
+              </li>
+            ))}
+          </ul>
+          <div className="border-sand mx-5 mt-4 mb-5 border-t-2 border-dashed pt-3.5">
+            {next ? (
+              <>
+                <p className="text-navy font-extrabold">
+                  {next.title} · {next.when}
+                </p>
+                <p className="text-ink-muted text-body-sm">
+                  {next.where ? `${next.where} · ` : ""}RSVP and it goes on your
+                  calendar
+                </p>
+              </>
+            ) : (
+              <p className="text-navy font-extrabold">
+                General body meetings every few weeks
+              </p>
+            )}
+          </div>
+        </article>
+      </div>
     </div>
   );
 }
