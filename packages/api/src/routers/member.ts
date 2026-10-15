@@ -438,7 +438,7 @@ export const memberRouter = createTRPCRouter({
   /**
    * Ranked by points over every member with live attendance (archived events
    * count for nothing, and count again once restored), highest first.
-   * Early check-in pays a bonus at the door.
+   * Each check-in contributes the event's pointsValue, snapshotted at the door.
    * Remaining ties break on who checked in earlier.
    */
   leaderboard: protectedProcedure
