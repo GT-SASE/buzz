@@ -341,7 +341,8 @@ function EventActions({ event }: { event: AdminEvent }) {
 
   // Not just the list: the attendance screen reads `getById`, so it would
   // otherwise keep serving a check-in code this mutation has just revoked, and
-  // archiving moves the counts in the overview strip above the table.
+  // archiving moves the counts in the overview strip above the table, and
+  // every member total, the leaderboard and voting eligibility with it.
   const invalidate = async () => {
     await Promise.all([
       utils.event.listAll.invalidate(),
@@ -349,6 +350,14 @@ function EventActions({ event }: { event: AdminEvent }) {
       utils.chapter.overview.invalidate(),
       utils.chapter.attendance.invalidate(),
       utils.chapter.turnout.invalidate(),
+      utils.member.list.invalidate(),
+      utils.member.metrics.invalidate(),
+      utils.member.byId.invalidate(),
+      utils.member.leaderboard.invalidate(),
+      utils.event.home.invalidate(),
+      utils.event.myStats.invalidate(),
+      utils.event.myEvents.invalidate(),
+      utils.election.current.invalidate(),
       revalidatePublicCalendar(),
     ]);
   };
@@ -377,12 +386,12 @@ function EventActions({ event }: { event: AdminEvent }) {
   const openingIsUrgent = !archived && !event.checkInEnabled && !event.isPast;
 
   return (
-    <div className="flex flex-wrap items-center gap-1.5 md:justify-end">
+    <div className="grid grid-cols-2 gap-2 md:flex md:flex-wrap md:items-center md:justify-end md:gap-1.5">
       <Button
         asChild
         variant="outline"
         size="sm"
-        className="border-hairline text-navy hover:bg-cream h-9 min-h-9 rounded-md font-semibold"
+        className="border-hairline text-navy hover:bg-cream h-11 min-h-11 w-full rounded-md font-semibold md:h-9 md:min-h-9 md:w-auto"
       >
         <Link href={`/portal/admin/events/${event.id}`}>Attendance</Link>
       </Button>
@@ -391,7 +400,7 @@ function EventActions({ event }: { event: AdminEvent }) {
           outright. */}
       <Button
         size="sm"
-        className="h-9 min-h-9 rounded-md font-semibold"
+        className="h-11 min-h-11 w-full rounded-md font-semibold md:h-9 md:min-h-9 md:w-auto"
         variant={openingIsUrgent ? "default" : "outline"}
         disabled={toggle.isPending || archived}
         onClick={() =>
@@ -406,7 +415,7 @@ function EventActions({ event }: { event: AdminEvent }) {
         trigger={
           <Button
             size="sm"
-            className="text-ink-muted hover:text-navy h-9 min-h-9 rounded-md font-semibold"
+            className="text-ink-muted hover:text-navy max-md:border-hairline h-11 min-h-11 w-full rounded-md font-semibold max-md:border md:h-9 md:min-h-9 md:w-auto"
             variant="ghost"
           >
             Edit
@@ -420,8 +429,8 @@ function EventActions({ event }: { event: AdminEvent }) {
         title={archived ? "Restore this event?" : "Archive this event?"}
         body={
           archived
-            ? `"${event.title}" goes back on the members' list and its code works again.`
-            : `"${event.title}" keeps its ${event.attendees} recorded check-ins, but members stop seeing it and its code stops working.`
+            ? `"${event.title}" goes back on the members' list, its code works again, and its check-ins count toward points, the leaderboard, streaks and voting.`
+            : `"${event.title}" keeps its ${event.attendees} recorded check-ins, but members stop seeing it, its code stops working, and those check-ins stop counting toward points, the leaderboard, streaks and voting until you restore it.`
         }
         action={archived ? "Yes, restore" : "Yes, archive"}
         danger={!archived}
@@ -430,7 +439,7 @@ function EventActions({ event }: { event: AdminEvent }) {
         <Button
           size="sm"
           variant="ghost"
-          className="text-ink-muted hover:bg-cream hover:text-navy h-9 min-h-9 rounded-md font-semibold"
+          className="text-ink-muted hover:bg-cream hover:text-navy max-md:border-hairline h-11 min-h-11 w-full rounded-md font-semibold max-md:border md:h-9 md:min-h-9 md:w-auto"
           disabled={archive.isPending}
         >
           {archived ? "Restore" : "Archive"}
@@ -488,7 +497,7 @@ function EventCard({ event }: { event: AdminEvent }) {
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <StatusBadges event={event} />
         <span className="text-ink-muted text-body-sm tabular-nums">
-          · {event.pointsValue} pts · {event.attendees}
+          {event.pointsValue} pts · {event.attendees}
           {event.maxCheckIns !== null ? ` of ${event.maxCheckIns}` : ""} checked
           in
         </span>
@@ -514,7 +523,7 @@ export function AdminEvents() {
   const createAction = (
     <EventDialog
       trigger={
-        <Button className="bg-navy hover:bg-navy-deep min-h-10 rounded-lg px-4 font-semibold text-white shadow-xs">
+        <Button className="bg-navy hover:bg-navy-deep min-h-11 rounded-lg px-4 font-semibold text-white shadow-xs">
           + New event
         </Button>
       }
@@ -528,7 +537,7 @@ export function AdminEvents() {
         <div
           role="group"
           aria-label="Filter events"
-          className="ring-hairline bg-cream flex max-w-full gap-1 overflow-x-auto overscroll-x-contain rounded-xl p-1 ring-1"
+          className="ring-hairline bg-cream grid max-w-full grid-cols-4 gap-1 rounded-xl p-1 ring-1 sm:flex"
         >
           {filters.map((option) => (
             <Button
@@ -538,7 +547,7 @@ export function AdminEvents() {
               aria-pressed={filter === option}
               onClick={() => setFilter(option)}
               className={cn(
-                "min-h-9 shrink-0 rounded-lg px-3.5 text-xs font-semibold transition-all",
+                "min-h-11 w-full shrink-0 rounded-lg px-2 text-sm font-semibold transition-all sm:min-h-9 sm:w-auto sm:px-3.5 sm:text-xs",
                 filter === option
                   ? "bg-navy text-white shadow-xs"
                   : "text-ink-muted hover:bg-paper hover:text-navy",

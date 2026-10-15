@@ -21,7 +21,7 @@ const roles = [
   {
     value: "mentor" as const,
     title: "Mentor",
-    body: "Upperclassman who can take a little to coffee and read a resume.",
+    body: "Upperclassman who can take a mentee to coffee and read a resume.",
   },
 ];
 
@@ -104,10 +104,7 @@ function MentorshipSignupForm({
         Find your kin.
       </h1>
       <p className="text-ink-muted text-body mt-4">
-        Sign up as a mentor or mentee, then join a kin group below. KIN points
-        live on their own card. An officer adds them after your group meets.
-        Groups change every semester. Your signup and KIN points last the whole
-        school year.
+        Sign up as a mentor or mentee, then join a kin group below.
       </p>
 
       {row && row.status !== "withdrawn" && (
@@ -136,7 +133,7 @@ function MentorshipSignupForm({
         </p>
       ) : (
         <form
-          className="mt-8 grid gap-6"
+          className="mt-6 grid gap-5"
           onSubmit={(event) => {
             event.preventDefault();
             const trimmed = note.trim();
@@ -158,7 +155,7 @@ function MentorshipSignupForm({
                   value={option.value}
                   checked={role === option.value}
                   onChange={() => setRole(option.value)}
-                  className="accent-navy mt-1 size-4"
+                  className="accent-navy mt-1 size-4 shrink-0"
                 />
                 <span>
                   <span className="text-navy block font-semibold">

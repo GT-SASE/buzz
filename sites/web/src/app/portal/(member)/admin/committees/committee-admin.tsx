@@ -1,5 +1,6 @@
 "use client";
 
+import { Check } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -57,12 +58,14 @@ function CommitteePicker({
 }) {
   return (
     <fieldset className="grid gap-2 sm:col-span-2">
-      <legend className="text-sm font-medium">Taking applications for</legend>
+      <legend className="mb-1 text-sm font-medium">
+        Taking applications for
+      </legend>
       <div className="flex flex-wrap gap-2">
         {committees.map((committee) => (
           <label
             key={committee.id}
-            className="ring-hairline text-navy hover:bg-cream has-[:checked]:bg-navy has-[:checked]:ring-navy has-[:focus-visible]:ring-ring/50 flex min-h-11 cursor-pointer items-center gap-2 rounded-full px-4 text-sm font-semibold ring-1 transition has-[:checked]:text-white has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-60 has-[:focus-visible]:ring-[3px]"
+            className="ring-hairline text-navy hover:bg-cream group has-[:checked]:bg-navy/10 has-[:checked]:ring-navy has-[:focus-visible]:ring-ring/50 flex min-h-11 cursor-pointer items-center gap-2 rounded-full px-4 text-sm font-semibold ring-1 transition has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-60 has-[:focus-visible]:ring-[3px]"
           >
             <input
               type="checkbox"
@@ -79,6 +82,10 @@ function CommitteePicker({
                 )
               }
               className="sr-only"
+            />
+            <Check
+              aria-hidden="true"
+              className="hidden size-4 group-has-[:checked]:block"
             />
             {committee.title}
           </label>
@@ -128,7 +135,7 @@ function OpenCycle({ label }: { label: string }) {
           required
           value={closes}
           onChange={(event) => setCloses(event.target.value)}
-          className="text-base tabular-nums"
+          className="h-11 text-base tabular-nums"
         />
       </div>
       <Action
@@ -214,7 +221,7 @@ function CycleSettings({
               required
               value={closes}
               onChange={(event) => setCloses(event.target.value)}
-              className="text-base tabular-nums"
+              className="h-11 text-base tabular-nums"
             />
           </div>
           <div className="flex flex-wrap gap-2">

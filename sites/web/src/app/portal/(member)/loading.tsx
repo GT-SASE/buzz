@@ -10,7 +10,7 @@ export default function PortalLoading() {
     >
       <span className="sr-only">Loading your portal.</span>
 
-      <div className="grid gap-10 lg:grid-cols-[26rem_minmax(0,1fr)] lg:items-start lg:gap-14">
+      <div className="grid gap-10 xl:grid-cols-[26rem_minmax(0,1fr)] xl:items-start xl:gap-14">
         <Skeleton className="h-[15.5rem] w-full max-w-[26rem] rounded-lg" />
 
         <div>

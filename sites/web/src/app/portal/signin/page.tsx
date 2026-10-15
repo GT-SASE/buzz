@@ -30,7 +30,7 @@ export default async function SignInPage({
   }
 
   return (
-    <section className="bg-cream relative flex min-h-[70vh] items-center overflow-hidden px-5 py-20 sm:px-6">
+    <section className="bg-cream relative flex min-h-[calc(100dvh-4.5rem)] items-center overflow-hidden px-5 py-10 sm:px-6 sm:py-20">
       <Card className="border-hairline bg-paper relative mx-auto w-full max-w-md rounded-xl">
         <CardHeader>
           <Eyebrow tone="gold">{site.portalName}</Eyebrow>
