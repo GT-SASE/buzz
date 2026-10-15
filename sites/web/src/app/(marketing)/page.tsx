@@ -72,8 +72,8 @@ export default async function Home() {
       />
 
       <section className="px-5 sm:px-6">
-        <div className="max-w-content dino-hop-host mx-auto grid items-start gap-x-16 gap-y-12 pt-10 pb-0 lg:grid-cols-[1.15fr_0.85fr] lg:pt-20">
-          <div className="pb-16 lg:pb-24">
+        <div className="max-w-content dino-hop-host mx-auto grid items-start gap-x-16 gap-y-12 pt-10 pb-16 lg:grid-cols-[1.15fr_0.85fr] lg:pt-20 lg:pb-24">
+          <div>
             <h1 className="font-display text-navy text-hero font-bold text-balance">
               Find your people in STEM.
             </h1>
