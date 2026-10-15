@@ -29,7 +29,7 @@ function PeriodSwitch({
     <div
       role="radiogroup"
       aria-label="Attendance period"
-      className="ring-hairline bg-cream flex flex-wrap gap-1 rounded-lg p-1 ring-1"
+      className="ring-hairline bg-cream grid grid-cols-2 gap-1 rounded-lg p-1 ring-1 sm:flex sm:flex-wrap"
     >
       {periods.map((period) => {
         const selected = period.id === value;
@@ -41,7 +41,7 @@ function PeriodSwitch({
             aria-checked={selected}
             onClick={() => onChange(period.id)}
             className={cn(
-              "min-h-9 rounded-md px-3 py-1.5 text-xs font-semibold transition-all",
+              "min-h-11 rounded-md px-3 py-1.5 text-sm font-semibold transition-all sm:min-h-9 sm:text-xs",
               selected
                 ? "bg-navy text-white shadow-xs"
                 : "text-ink-muted hover:bg-paper hover:text-navy",
@@ -127,8 +127,8 @@ function AttendanceBody({
   if (data.events === 0) {
     return (
       <p className="text-ink-muted text-body max-w-measure mt-6">
-        No countable events in this window. Campus listings without check-in
-        stay off this list.
+        No countable events in this window. Campus listings without check-in and
+        archived events stay off this list.
       </p>
     );
   }

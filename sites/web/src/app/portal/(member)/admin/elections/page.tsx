@@ -31,7 +31,7 @@ async function AdminElectionsBody() {
     <HydrateClient>
       <PortalHeader
         title="Officer elections"
-        body="Open nominations, approve the ballot, then open voting. Only members with an event check-in this school year can vote. Counts stay hidden until you close voting."
+        body="Open nominations, approve the ballot, then open voting. Only members with a check-in this school year at an event that is not archived can vote. Counts stay hidden until you close voting."
         aside={
           <Button asChild variant="outline" className="min-h-11">
             <Link href="/portal/elections">Run or vote as a member</Link>

@@ -42,7 +42,7 @@ export default async function AdminMemberPage({
 }) {
   const { id } = await params;
   if (!id) notFound();
-  await orNotFound(memberForPage(id));
+  const { member } = await orNotFound(memberForPage(id));
   const session = await auth();
 
   return (
@@ -57,8 +57,8 @@ export default async function AdminMemberPage({
             </BreadcrumbItem>
             <BreadcrumbSeparator />
             <BreadcrumbItem>
-              <BreadcrumbPage className="text-navy font-semibold">
-                Member
+              <BreadcrumbPage className="text-navy max-w-[16rem] truncate font-semibold">
+                {member.name ?? member.email}
               </BreadcrumbPage>
             </BreadcrumbItem>
           </BreadcrumbList>

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
-import { PortalTabs } from "~/app/portal/_components/portal-tabs";
+import { PortalSidebar } from "~/app/portal/_components/portal-sidebar";
 import { SignOutButton } from "~/app/portal/_components/portal-ui";
 import { Wordmark } from "~/components/site";
 import { auth } from "@buzz/auth";
@@ -34,30 +34,37 @@ export default async function PortalLayout({
       >
         Skip to content
       </a>
-      <header className="border-gold bg-paper z-50 border-b-2 sm:sticky sm:top-0">
-        <div className="max-w-content mx-auto flex items-center justify-between gap-4 px-5 py-3 sm:gap-6 sm:px-6 sm:py-4">
-          <Link href="/" className="inline-flex min-h-11 shrink-0 items-center">
-            <Wordmark tone="dark" />
-          </Link>
-          {user && (
-            <div className="flex items-center gap-5">
-              <span className="text-ink-muted text-body-sm hidden sm:inline">
-                {user.name ?? user.email}
-              </span>
-              <SignOutButton />
-            </div>
-          )}
-        </div>
-        {user && <PortalTabs isOfficer={isOfficerRole(user.role)} />}
-      </header>
+      {/* Signed-out visitors (sign-in, check-in) get a bare header, no menu. */}
+      {!user && (
+        <header className="border-gold bg-paper sticky top-0 z-40 border-b-2 pt-[env(safe-area-inset-top)]">
+          <div className="max-w-content mx-auto flex items-center justify-between gap-4 px-5 py-3 sm:gap-6 sm:px-6 sm:py-4">
+            <Link
+              href="/"
+              className="inline-flex min-h-11 shrink-0 items-center"
+            >
+              <Wordmark tone="dark" />
+            </Link>
+          </div>
+        </header>
+      )}
 
-      <main
-        id="content"
-        tabIndex={-1}
-        className="flex-1 focus:shadow-none focus:outline-none"
-      >
-        {children}
-      </main>
+      <div className="flex min-w-0 flex-1 flex-col lg:flex-row">
+        {user && (
+          <PortalSidebar
+            isOfficer={isOfficerRole(user.role)}
+            name={user.name ?? null}
+            email={user.email ?? null}
+            signOut={<SignOutButton />}
+          />
+        )}
+        <main
+          id="content"
+          tabIndex={-1}
+          className="min-w-0 flex-1 focus:shadow-none focus:outline-none"
+        >
+          {children}
+        </main>
+      </div>
     </>
   );
 }

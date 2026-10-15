@@ -1,14 +1,20 @@
 import { TRPCError } from "@trpc/server";
-import { and, asc, count, desc, eq, gte, isNull, lt } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  gte,
+  isNull,
+  lt,
+  notInArray,
+} from "drizzle-orm";
 import { z } from "zod";
 
 import { asDate, asInt, totalsColumns } from "../aggregates";
 import { sendCalendarInvite } from "../calendar-invite";
-import {
-  consecutivePriorStreak,
-  pointsForArrival,
-  streakBonus,
-} from "../check-in-points";
+import { pointsForCheckIn, streakLevel } from "../check-in-points";
 import { notFound } from "../errors";
 import { isUniqueViolation } from "../pg-errors";
 import {
@@ -43,27 +49,34 @@ const CODE_ALPHABET = "23456789ABCDEFGHJKMNPQRSTVWXYZ";
 const CODE_LENGTH = 8;
 
 /**
- * How many people are already in, then the spicy stamp. Called under the event
+ * How many members are already in. Officers (ADMIN, SUPER_ADMIN) are not counted, so their
+ * check-ins never use up a member's early-bird spot. Called under the event
  * row lock so two phones cannot both read "first".
  */
-async function nextArrivalPoints(
+async function priorMemberArrivals(
   tx: {
     select: (typeof db)["select"];
   },
   eventId: string,
-  base: number,
 ) {
   const [row] = await tx
     .select({ prior: count() })
     .from(eventCheckIns)
-    .where(eq(eventCheckIns.eventId, eventId));
-  return pointsForArrival(base, asInt(row?.prior));
+    .innerJoin(users, eq(users.id, eventCheckIns.userId))
+    .where(
+      and(
+        eq(eventCheckIns.eventId, eventId),
+        notInArray(users.role, ["ADMIN", "SUPER_ADMIN"]),
+      ),
+    );
+  return asInt(row?.prior);
 }
 
 /**
- * Consecutive happenings this member already has, newest first, before
- * `startsAt`. A happening is an event that has at least one check-in — a
- * calendar row nobody came to does not break a streak.
+ * Streak level this person carries into an event starting at `startsAt`. A
+ * happening is a live (non-archived) event that has at least one check-in — a
+ * calendar row nobody came to does not cost anyone a level. Oldest first, with
+ * the id breaking ties so the walk is deterministic.
  */
 async function priorStreak(
   tx: {
@@ -76,9 +89,9 @@ async function priorStreak(
     .select({ id: events.id, startsAt: events.startsAt })
     .from(events)
     .innerJoin(eventCheckIns, eq(eventCheckIns.eventId, events.id))
-    .where(lt(events.startsAt, startsAt))
+    .where(and(lt(events.startsAt, startsAt), isNull(events.archivedAt)))
     .groupBy(events.id)
-    .orderBy(desc(events.startsAt));
+    .orderBy(asc(events.startsAt), asc(events.id));
 
   if (happenings.length === 0) return 0;
 
@@ -87,7 +100,7 @@ async function priorStreak(
     .from(eventCheckIns)
     .where(eq(eventCheckIns.userId, userId));
 
-  return consecutivePriorStreak(
+  return streakLevel(
     attended.map((row) => row.eventId),
     happenings.map((row) => row.id),
   );
@@ -100,10 +113,10 @@ async function nextCheckInPoints(
   event: { id: string; startsAt: Date; pointsValue: number },
   userId: string,
 ) {
-  const arrival = await nextArrivalPoints(tx, event.id, event.pointsValue);
-  if (arrival === 0) return 0;
-  const prior = await priorStreak(tx, event.startsAt, userId);
-  return arrival + streakBonus(prior);
+  if (event.pointsValue <= 0) return 0;
+  const prior = await priorMemberArrivals(tx, event.id);
+  const level = await priorStreak(tx, event.startsAt, userId);
+  return pointsForCheckIn(event.pointsValue, prior, level);
 }
 
 function newCheckInCode() {
@@ -539,6 +552,14 @@ export const eventRouter = createTRPCRouter({
         });
       }
 
+      // Officers scan like everyone else; this path is for someone else's phone.
+      if (member.id === ctx.session.user.id) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Scan the QR to check yourself in.",
+        });
+      }
+
       try {
         await ctx.db.transaction(async (tx) => {
           // Re-read under the same lock the capacity path uses so a concurrent
@@ -579,68 +600,6 @@ export const eventRouter = createTRPCRouter({
       }
 
       return { name: member.name, email: member.email };
-    }),
-
-  /**
-   * Officers are in the room to run the event, not to scan the wall they
-   * just put up. Same snapshot and capacity override as the email path.
-   */
-  selfCheckIn: adminProcedure
-    .input(z.object({ eventId: z.string().min(1) }))
-    .mutation(async ({ ctx, input }) => {
-      assertRateLimit(
-        `self-check-in:${ctx.session.user.id}`,
-        MANUAL_CHECK_IN_LIMIT,
-      );
-
-      const officer = await ctx.db.query.users.findFirst({
-        where: eq(users.id, ctx.session.user.id),
-        columns: { id: true, name: true, email: true },
-      });
-
-      if (!officer) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Your account was not found.",
-        });
-      }
-
-      try {
-        await ctx.db.transaction(async (tx) => {
-          const [locked] = await tx
-            .select()
-            .from(events)
-            .where(eq(events.id, input.eventId))
-            .for("update");
-
-          if (!locked) {
-            notFound("Event");
-          }
-
-          await tx.insert(eventCheckIns).values({
-            eventId: locked.id,
-            userId: officer.id,
-            method: "manual",
-            pointsEarned: await nextCheckInPoints(tx, locked, officer.id),
-            actedByUserId: ctx.session.user.id,
-          });
-          await tx
-            .update(events)
-            .set({ currentCheckIns: locked.currentCheckIns + 1 })
-            .where(eq(events.id, locked.id));
-        });
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        if (isUniqueViolation(error)) {
-          throw new TRPCError({
-            code: "CONFLICT",
-            message: "You are already checked in.",
-          });
-        }
-        throw error;
-      }
-
-      return { name: officer.name, email: officer.email };
     }),
 
   /** Mis-scans happen; without this an officer cannot undo one. */
@@ -855,7 +814,9 @@ export const eventRouter = createTRPCRouter({
         .select(totalsColumns)
         .from(eventCheckIns)
         .innerJoin(events, eq(events.id, eventCheckIns.eventId))
-        .where(eq(eventCheckIns.userId, userId));
+        .where(
+          and(eq(eventCheckIns.userId, userId), isNull(events.archivedAt)),
+        );
 
       return {
         eventTitle,
@@ -865,7 +826,7 @@ export const eventRouter = createTRPCRouter({
       };
     }),
 
-  /** Everything this member has been to. One join, points already snapshotted. */
+  /** Everything this person has been to that still counts (archived events left out). One join, points already snapshotted. */
   myEvents: protectedProcedure.query(async ({ ctx }) => {
     return ctx.db
       .select({
@@ -879,7 +840,12 @@ export const eventRouter = createTRPCRouter({
       })
       .from(eventCheckIns)
       .innerJoin(events, eq(events.id, eventCheckIns.eventId))
-      .where(eq(eventCheckIns.userId, ctx.session.user.id))
+      .where(
+        and(
+          eq(eventCheckIns.userId, ctx.session.user.id),
+          isNull(events.archivedAt),
+        ),
+      )
       .orderBy(desc(eventCheckIns.checkedInAt))
       .limit(100);
   }),
@@ -890,7 +856,12 @@ export const eventRouter = createTRPCRouter({
       .select(totalsColumns)
       .from(eventCheckIns)
       .innerJoin(events, eq(events.id, eventCheckIns.eventId))
-      .where(eq(eventCheckIns.userId, ctx.session.user.id));
+      .where(
+        and(
+          eq(eventCheckIns.userId, ctx.session.user.id),
+          isNull(events.archivedAt),
+        ),
+      );
 
     return {
       totalEvents: asInt(totals?.totalEvents),
@@ -1001,8 +972,39 @@ export const eventRouter = createTRPCRouter({
     return rows.map((row) => ({
       ...row,
       rsvpOpen: row.startsAt.getTime() > now,
+      checkInOpen:
+        row.checkInEnabled &&
+        !checkInNotYetOpen(row.startsAt, now) &&
+        !checkInClosed(row.startsAt, now),
     }));
   }),
+
+  /**
+   * Read-only look at the event a scanned code belongs to, so the confirm
+   * screen can name it before anyone commits. No side effects. Rate limited
+   * so it cannot be used to guess codes.
+   */
+  peek: protectedProcedure
+    .input(z.object({ code: z.string().min(4).max(16) }))
+    .query(async ({ ctx, input }) => {
+      assertRateLimit(`check-in-peek:${ctx.session.user.id}`, CHECK_IN_LIMIT);
+      const event = await ctx.db.query.events.findFirst({
+        where: eq(events.checkInCode, normalizeCode(input.code)),
+      });
+      if (!event) return null;
+      const now = Date.now();
+      return {
+        title: event.title,
+        startsAt: event.startsAt,
+        location: event.location,
+        pointsValue: event.pointsValue,
+        checkInOpen:
+          event.archivedAt == null &&
+          event.checkInEnabled &&
+          !checkInNotYetOpen(event.startsAt, now) &&
+          !checkInClosed(event.startsAt, now),
+      };
+    }),
 
   /**
    * The member home screen. One procedure so the three reads share a pool
@@ -1025,14 +1027,16 @@ export const eventRouter = createTRPCRouter({
         })
         .from(eventCheckIns)
         .innerJoin(events, eq(events.id, eventCheckIns.eventId))
-        .where(eq(eventCheckIns.userId, userId))
+        .where(and(eq(eventCheckIns.userId, userId), isNull(events.archivedAt)))
         .orderBy(desc(eventCheckIns.checkedInAt))
         .limit(100),
       ctx.db
         .select(totalsColumns)
         .from(eventCheckIns)
         .innerJoin(events, eq(events.id, eventCheckIns.eventId))
-        .where(eq(eventCheckIns.userId, userId)),
+        .where(
+          and(eq(eventCheckIns.userId, userId), isNull(events.archivedAt)),
+        ),
       ctx.db
         .select({
           ...publicEventColumns,

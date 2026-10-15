@@ -174,7 +174,7 @@ describe("site map and navigation", () => {
       expect(group.href.startsWith("/")).toBe(true);
       expect(group.href.includes("/portal")).toBe(false);
     }
-    expect(navCta.href).toBe(signInPath("/portal"));
+    expect(navCta.href).toBe(signInPath("/portal/start"));
   });
 
   it("links socials over https and has no trailing slash on the site URL", () => {

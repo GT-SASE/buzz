@@ -27,3 +27,16 @@ export function SaseMark({
     </span>
   );
 }
+
+/** The chapter mascot. Size it with a height class; the width follows. */
+export function SaseDino({ className }: { className?: string }) {
+  return (
+    <Image
+      src="/brand/sase-dino.png"
+      alt=""
+      width={400}
+      height={475}
+      className={cn("h-24 w-auto shrink-0", className)}
+    />
+  );
+}

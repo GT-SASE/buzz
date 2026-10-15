@@ -849,6 +849,9 @@ describe("chapter.attendance", () => {
     expect(seriesQuery!.orderBy.map(orderText).join(", ")).toMatch(/\bdesc\b/i);
     expect(seriesQuery!.limit).toBe(48);
     expect(sqlText(seriesQuery!.where)).toMatch(/check.{0,3}in.{0,3}enabled/i);
+    expect(sqlText(seriesQuery!.where)).toMatch(
+      /archived.{0,3}at\s+is\s+null/i,
+    );
   });
 
   it("opens a 30-day window on the same instant as the past cutoff", async () => {

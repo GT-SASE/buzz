@@ -5,7 +5,7 @@ import { Skeleton } from "~/components/ui/skeleton";
 import { api, type RouterOutputs } from "~/trpc/react";
 
 type ChapterOverview = RouterOutputs["chapter"]["overview"];
-const figureGrid = "grid gap-4 sm:grid-cols-2 lg:grid-cols-4";
+const figureGrid = "grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4";
 
 function Figure({
   label,
@@ -17,7 +17,7 @@ function Figure({
   note: string;
 }) {
   return (
-    <div className="border-hairline bg-paper/80 hover:border-gold-ink/30 flex flex-col justify-between rounded-xl border p-5 shadow-xs transition-all">
+    <div className="border-hairline bg-paper/80 hover:border-gold-ink/30 flex flex-col rounded-xl border p-4 shadow-xs transition-all sm:p-5">
       <Eyebrow
         as="dt"
         tone="muted"
@@ -27,7 +27,7 @@ function Figure({
         {label}
       </Eyebrow>
       <dd className="mt-4">
-        <span className="font-display text-navy block text-3xl font-bold tracking-tight tabular-nums sm:text-4xl">
+        <span className="font-display text-navy block text-2xl font-bold tracking-tight tabular-nums sm:text-4xl">
           {value}
         </span>
         <span className="text-ink-muted text-body-sm mt-1.5 block tabular-nums">
@@ -87,7 +87,7 @@ function Figures({ data }: { data: ChapterOverview }) {
       {/* Already one decimal from the server; toFixed keeps the trailing zero
           so the figure does not change shape week to week. */}
       <Figure
-        label="Average attendance"
+        label="Avg. attendance"
         value={events.averageAttendance.toFixed(1)}
         note={attendanceNote}
       />

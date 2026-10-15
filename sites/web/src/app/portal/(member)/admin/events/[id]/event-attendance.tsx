@@ -387,7 +387,7 @@ export function EventAttendance({ eventId }: { eventId: string }) {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <div className="flex flex-wrap items-center gap-3">
-            <h1 className="font-display text-navy text-h2 font-bold tracking-tight text-balance">
+            <h1 className="font-display text-navy text-h3 sm:text-h2 font-bold tracking-tight text-balance">
               {event.title}
             </h1>
             <CheckInStatus state={state} opensAt={opensAt} />
@@ -402,37 +402,11 @@ export function EventAttendance({ eventId }: { eventId: string }) {
           {(state === "open" || state === "scheduled") && (
             <Button
               asChild
-              className="bg-navy hover:bg-navy-deep min-h-10 rounded-lg px-4 font-semibold text-white shadow-xs"
+              className="bg-navy hover:bg-navy-deep min-h-11 w-full rounded-lg px-4 font-semibold text-white shadow-xs sm:w-auto"
             >
               <Link href={`/portal/admin/events/${event.id}/present`}>
                 Open projector view
               </Link>
-            </Button>
-          )}
-
-          <ConfirmDialog
-            title="Replace the QR on screen?"
-            body="Every slide, poster and photograph of the current QR stops working the moment you do this, and the old one cannot be brought back."
-            action="Yes, rotate"
-            danger
-            onConfirm={() => rotate.mutate({ id: event.id })}
-          >
-            <Button
-              variant="outline"
-              disabled={rotate.isPending}
-              className="border-hairline text-navy hover:bg-cream min-h-10 rounded-lg px-4 font-semibold"
-            >
-              {rotate.isPending ? "Rotating..." : "Rotate QR"}
-            </Button>
-          </ConfirmDialog>
-
-          {rosterTotal > 0 && (
-            <Button
-              variant="outline"
-              onClick={() => void exportAttendance()}
-              className="border-hairline text-navy hover:bg-cream min-h-10 rounded-lg px-4 font-semibold"
-            >
-              Export CSV
             </Button>
           )}
         </div>
@@ -456,22 +430,39 @@ export function EventAttendance({ eventId }: { eventId: string }) {
             ) : (
               <p className="text-body-sm mt-4 text-white/75">
                 {state === "archived"
-                  ? "This event is archived. The QR will not admit anyone."
+                  ? "This event is archived. The QR will not admit anyone, and these check-ins count toward nobody's points, streak or voting until you restore it."
                   : isPast
                     ? "Check-in closed automatically 24 hours after this event started."
                     : "Check-in is closed. Members who scan this QR will be turned away."}
               </p>
             )}
           </div>
-          <p className="relative mt-4 text-xs text-white/60">
+          <p className="relative mt-4 text-sm text-white/75">
             Rotate immediately if this code was leaked or photographed outside
             the event.
           </p>
+          <div className="relative mt-4">
+            <ConfirmDialog
+              title="Replace the QR on screen?"
+              body="Every slide, poster and photograph of the current QR stops working the moment you do this, and the old one cannot be brought back."
+              action="Yes, rotate"
+              danger
+              onConfirm={() => rotate.mutate({ id: event.id })}
+            >
+              <Button
+                variant="outline"
+                disabled={rotate.isPending}
+                className="border-hairline text-navy hover:bg-cream min-h-11 rounded-lg px-4 font-semibold"
+              >
+                {rotate.isPending ? "Rotating..." : "Rotate QR"}
+              </Button>
+            </ConfirmDialog>
+          </div>
         </div>
 
         {/* Quick event stats */}
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="border-hairline bg-paper/80 flex flex-col justify-between rounded-xl border p-5 shadow-xs">
+        <div className="grid grid-cols-2 gap-3 sm:gap-4">
+          <div className="border-hairline bg-paper/80 flex flex-col rounded-xl border p-5 shadow-xs">
             <span className="text-eyebrow tracking-caps text-ink-muted text-xs font-semibold uppercase">
               Attendance
             </span>
@@ -492,21 +483,21 @@ export function EventAttendance({ eventId }: { eventId: string }) {
             )}
           </div>
 
-          <div className="border-hairline bg-paper/80 flex flex-col justify-between rounded-xl border p-5 shadow-xs">
+          <div className="border-hairline bg-paper/80 flex flex-col rounded-xl border p-5 shadow-xs">
             <span className="text-eyebrow tracking-caps text-ink-muted text-xs font-semibold uppercase">
-              Reward Points
+              Base points
             </span>
             <div className="mt-4">
               <span className="font-display text-navy block text-3xl font-bold tabular-nums sm:text-4xl">
                 +{event.pointsValue}
               </span>
               <span className="text-ink-muted text-body-sm mt-1 block">
-                pts awarded per attendee
+                per attendee, plus early-bird and streak bonuses
               </span>
             </div>
           </div>
 
-          <div className="border-hairline bg-paper/80 rounded-xl border p-5 shadow-xs sm:col-span-2">
+          <div className="border-hairline bg-paper/80 col-span-2 rounded-xl border p-5 shadow-xs">
             <span className="text-eyebrow tracking-caps text-ink-muted text-xs font-semibold uppercase">
               RSVPs
             </span>
@@ -539,6 +530,15 @@ export function EventAttendance({ eventId }: { eventId: string }) {
               {event.maxCheckIns !== null ? ` of ${event.maxCheckIns}` : ""}
             </h2>
           </div>
+          {rosterTotal > 0 && (
+            <Button
+              variant="outline"
+              onClick={() => void exportAttendance()}
+              className="border-hairline text-navy hover:bg-cream min-h-11 rounded-lg px-4 font-semibold"
+            >
+              Export CSV
+            </Button>
+          )}
         </div>
 
         <div>
@@ -599,6 +599,11 @@ export function EventAttendance({ eventId }: { eventId: string }) {
               <Input
                 id="manual-email"
                 type="email"
+                required
+                autoComplete="off"
+                autoCapitalize="none"
+                spellCheck={false}
+                enterKeyHint="go"
                 value={email}
                 onChange={(changeEvent) => setEmail(changeEvent.target.value)}
                 placeholder="member@gatech.edu"
@@ -608,7 +613,7 @@ export function EventAttendance({ eventId }: { eventId: string }) {
             <Button
               type="submit"
               disabled={manual.isPending}
-              className="bg-gold-bright text-navy hover:bg-gold h-11 w-full rounded-full font-semibold sm:w-auto"
+              className="bg-navy hover:bg-navy-deep h-11 w-full rounded-md font-semibold text-white sm:w-auto"
             >
               {manual.isPending ? "Adding..." : "Add to roster"}
             </Button>
@@ -618,7 +623,7 @@ export function EventAttendance({ eventId }: { eventId: string }) {
             They have to have signed in to the portal at least once, and they
             earn the same{" "}
             <span className="tabular-nums">{event.pointsValue}</span> points as
-            everyone who used the code.
+            everyone who used the code, plus any early-bird or streak bonus.
           </p>
 
           {manual.error && (

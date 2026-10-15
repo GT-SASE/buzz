@@ -35,8 +35,8 @@ async function archivo(axes: string) {
  * `gap`, `grid`, and shorthand `background` with layers are unavailable.
  */
 export default async function OpengraphImage() {
-  const emblem = `data:image/png;base64,${(
-    await readFile(join(process.cwd(), "public/brand/sase-emblem.png"))
+  const dino = `data:image/png;base64,${(
+    await readFile(join(process.cwd(), "public/brand/sase-dino.png"))
   ).toString("base64")}`;
   const [heavy, regular] = await Promise.all([
     archivo("wdth,wght@125,800"),
@@ -68,7 +68,7 @@ export default async function OpengraphImage() {
       >
         <div style={{ display: "flex", alignItems: "center" }}>
           {/* eslint-disable-next-line @next/next/no-img-element -- Satori renders plain <img> only */}
-          <img src={emblem} width={64} height={64} alt="" />
+          <img src={dino} width={67} height={80} alt="" />
           <div
             style={{
               display: "flex",

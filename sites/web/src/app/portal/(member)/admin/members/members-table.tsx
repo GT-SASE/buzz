@@ -376,12 +376,32 @@ export function MembersTable() {
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Name or email"
               maxLength={SEARCH_MAX}
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="none"
+              spellCheck={false}
+              enterKeyHint="search"
               className={cn(inputClass, "bg-paper/80 h-11")}
             />
           </Field>
+          {/* The desktop table sorts from its headers; phones get this. */}
+          <div className="mt-4 md:hidden">
+            <Field label="Sort by" htmlFor="member-sort">
+              <select
+                id="member-sort"
+                value={sort}
+                onChange={(event) => changeSort(event.target.value as SortKey)}
+                className={cn(inputClass, "bg-paper/80 h-11 w-full px-3")}
+              >
+                <option value="points">Points</option>
+                <option value="name">Name</option>
+                <option value="recent">Last check-in</option>
+              </select>
+            </Field>
+          </div>
         </div>
 
-        <div className="flex flex-col items-start sm:items-end">
+        <div className="hidden flex-col items-start sm:flex sm:items-end">
           <Action
             onClick={() => void exportRoster()}
             disabled={exporting || total === 0}
@@ -472,7 +492,13 @@ export function MembersTable() {
       </div>
 
       {!listing.error && (
-        <div className="border-hairline bg-paper/50 mt-6 flex flex-wrap items-center justify-between gap-4 rounded-xl border p-4 shadow-xs">
+        <div
+          className={cn(
+            "mt-4 flex flex-wrap items-center justify-between gap-4",
+            (total > PAGE_SIZE || offset > 0) &&
+              "border-hairline bg-paper/50 rounded-xl border p-4 shadow-xs",
+          )}
+        >
           {/* The only thing that tells a screen reader the page moved, and the
               one region the export reports into rather than opening a second. */}
           <p
@@ -483,6 +509,14 @@ export function MembersTable() {
             {exportStatus ? ` · ${exportStatus}` : ""}
           </p>
 
+          <Action
+            onClick={() => void exportRoster()}
+            disabled={exporting || total === 0}
+            className="min-h-11 shadow-xs sm:hidden"
+          >
+            {exporting ? "Exporting..." : "Export CSV"}
+          </Action>
+
           {/* Both disabled while the rows are stale: `total` still describes
               the previous result set, so Next would page past the end of a
               narrower search that has not landed yet. */}
@@ -491,14 +525,14 @@ export function MembersTable() {
               <Action
                 disabled={stale || offset === 0}
                 onClick={() => goTo(Math.max(0, offset - PAGE_SIZE))}
-                className="h-10 min-h-10 px-4 text-xs font-semibold"
+                className="min-h-11 px-4 text-sm font-semibold"
               >
                 Previous
               </Action>
               <Action
                 disabled={stale || offset + PAGE_SIZE >= total}
                 onClick={() => goTo(offset + PAGE_SIZE)}
-                className="h-10 min-h-10 px-4 text-xs font-semibold"
+                className="min-h-11 px-4 text-sm font-semibold"
               >
                 Next
               </Action>

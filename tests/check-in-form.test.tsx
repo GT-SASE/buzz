@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { push } from "./mocks/next-navigation";
 
-const { mutate, toastError, mutation, cameraFail } = vi.hoisted(() => {
+const { mutate, toastError, mutation, cameraFail, peek } = vi.hoisted(() => {
   const mutation: {
     isPending: boolean;
     data: unknown;
@@ -28,6 +28,7 @@ const { mutate, toastError, mutation, cameraFail } = vi.hoisted(() => {
     toastError: vi.fn(),
     mutation,
     cameraFail: { current: false },
+    peek: { data: undefined as unknown },
   };
 });
 
@@ -65,6 +66,7 @@ vi.mock("~/trpc/react", () => ({
       member: { leaderboard: { invalidate: vi.fn() } },
     }),
     event: {
+      peek: { useQuery: () => ({ data: peek.data }) },
       checkIn: {
         useMutation: (opts: {
           onError?: (
@@ -114,6 +116,7 @@ describe("CheckInForm", () => {
 
   beforeEach(() => {
     push.mockReset();
+    peek.data = undefined;
     mutate.mockReset();
     toastError.mockReset();
     mutation.isPending = false;
@@ -149,6 +152,26 @@ describe("CheckInForm", () => {
 
     await user.click(screen.getByRole("button", { name: "Check in" }));
     expect(mutate).toHaveBeenCalledWith({ code: "ABCD2345" });
+  });
+
+  it("names the event on the confirm screen, and says when it is closed", async () => {
+    peek.data = {
+      title: "Fall GBM",
+      startsAt: new Date("2026-10-14T18:00:00Z"),
+      location: "Klaus 1443",
+      pointsValue: 15,
+      checkInOpen: true,
+    };
+    const { unmount } = render(<CheckInForm initialCode="ABCD2345" />);
+    expect(screen.getByText("Check in to Fall GBM?")).toBeTruthy();
+    expect(screen.getByText("+15 pts")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Check in" })).toBeTruthy();
+    unmount();
+
+    peek.data = { ...(peek.data as object), checkInOpen: false };
+    render(<CheckInForm initialCode="ABCD2345" />);
+    expect(screen.getByText("Check-in for this event is closed.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Check in" })).toBeNull();
   });
 
   it("reads a scanned #code= and clears it from the address bar once used", async () => {

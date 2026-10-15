@@ -183,7 +183,7 @@ function Ballot({
               value={candidate.id}
               checked={(voted ?? choice) === candidate.id}
               onChange={() => setChoice(candidate.id)}
-              className="accent-navy mt-1 size-4"
+              className="accent-navy mt-1 size-4 shrink-0"
             />
             <span>
               <span className="text-navy block font-semibold">
@@ -358,16 +358,22 @@ export function ElectionsView() {
       <p className="text-ink-muted text-body mt-4">
         Run for a position with a short statement; officers approve the ballot.
         Anyone with an event check-in this school year can vote, once per
-        position.{" "}
-        {eligible
-          ? "You are eligible to vote."
-          : "You have no check-in this school year yet, so you cannot vote."}
+        position.
+        {elections.length > 0 &&
+          (eligible
+            ? " You are eligible to vote."
+            : " You have no check-in this school year yet, so you cannot vote.")}
       </p>
 
       {elections.length === 0 ? (
-        <p className="text-ink-muted text-body mt-10">
-          No election is running this school year yet.
-        </p>
+        <div className="border-hairline bg-cream mt-8 rounded-lg border border-dashed px-6 py-10 text-center">
+          <p className="font-display text-navy text-h3 font-bold">
+            No election yet.
+          </p>
+          <p className="text-ink-muted text-body-sm mt-2">
+            Nominations open here when the board starts one.
+          </p>
+        </div>
       ) : (
         elections.map((election) => (
           <ElectionCard
