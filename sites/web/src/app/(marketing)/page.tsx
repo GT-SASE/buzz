@@ -9,6 +9,7 @@ import {
   Marquee,
   PhotoMosaic,
   PillarGrid,
+  SaseDino,
   Section,
   TextLink,
 } from "~/components/site";
@@ -71,8 +72,8 @@ export default async function Home() {
       />
 
       <section className="px-5 sm:px-6">
-        <div className="max-w-content mx-auto grid items-start gap-x-16 gap-y-12 pt-10 pb-16 lg:grid-cols-[1.15fr_0.85fr] lg:pt-20 lg:pb-24">
-          <div>
+        <div className="max-w-content dino-hop-host mx-auto grid items-start gap-x-16 gap-y-12 pt-10 pb-0 lg:grid-cols-[1.15fr_0.85fr] lg:pt-20">
+          <div className="pb-16 lg:pb-24">
             <h1 className="font-display text-navy text-hero font-bold text-balance">
               Find your people in STEM.
             </h1>
@@ -85,7 +86,7 @@ export default async function Home() {
             <div className="mt-8 flex flex-col items-stretch gap-4 sm:mt-10 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-8 sm:gap-y-5">
               <Button
                 href={joinHref}
-                className="w-full justify-center sm:w-auto"
+                className="dino-trigger w-full justify-center sm:w-auto"
               >
                 Become a member
               </Button>
@@ -186,6 +187,7 @@ export default async function Home() {
       <Section
         title="What happens if you just show up."
         lead="You do not need a friend already in it, a technical major, or a plan."
+        className="bg-dino-pale"
       >
         <ol
           role="list"
@@ -202,7 +204,7 @@ export default async function Home() {
                 </span>
                 <Badge
                   variant="secondary"
-                  className="text-eyebrow tracking-masthead rounded-md font-semibold uppercase"
+                  className="text-eyebrow tracking-masthead rounded-md bg-white font-semibold uppercase"
                 >
                   {step.when}
                 </Badge>
@@ -214,17 +216,18 @@ export default async function Home() {
             </li>
           ))}
         </ol>
-        <div className="mt-12">
+        <div className="mt-12 flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
           <Button href="/join" className="w-full justify-center sm:w-auto">
             Start at the next meeting
           </Button>
+          <SaseDino className="-mb-12 h-28 self-end sm:-mb-20 sm:h-36 lg:-mb-28" />
         </div>
       </Section>
 
       <Section
         title="A year of it, roughly."
         lead="Convention delegations, campus tabling, service nights, Hawks games, and the trips in between."
-        tone="cream"
+        tone="paper"
       >
         <PhotoMosaic photos={galleryPhotos} />
       </Section>

@@ -1,5 +1,6 @@
 import Image, { type StaticImageData } from "next/image";
 
+import { SaseDino } from "~/components/site/hive";
 import { cn } from "~/lib/utils";
 
 /** The strap a badge hangs from: navy and gold, cut to a taper. */
@@ -91,6 +92,11 @@ export function LanyardBadge({
           )}
         </div>
       </article>
+      {/* The host, at the badge's lower left, facing it. Clear of the card. */}
+      <SaseDino
+        flip
+        className="dino-hop mt-6 h-32 self-start sm:h-40 lg:h-48"
+      />
     </div>
   );
 }

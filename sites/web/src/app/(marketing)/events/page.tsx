@@ -3,6 +3,7 @@ import {
   CtaPanel,
   EventCard,
   PageHeader,
+  SaseDino,
   Section,
   TextLink,
 } from "~/components/site";
@@ -123,22 +124,25 @@ export default async function EventsPage() {
             ))}
           </div>
         ) : (
-          <EmptyState title="Nothing scheduled yet.">
-            <p>
-              Dates go up here as soon as the board has rooms confirmed.
-              Announcements go out on the feeds first.
-            </p>
-            {instagram && (
-              <TextLink href={instagram.href} external>
-                Follow on {instagram.label}
-              </TextLink>
-            )}
-            {discord && (
-              <TextLink href={discord.href} external>
-                Join the {discord.label}
-              </TextLink>
-            )}
-          </EmptyState>
+          <div className="flex flex-col items-start gap-6 sm:flex-row sm:items-end sm:gap-10">
+            <SaseDino className="h-28 sm:h-36" />
+            <EmptyState title="Nothing scheduled yet.">
+              <p>
+                Dates go up here as soon as the board has rooms confirmed.
+                Announcements go out on the feeds first.
+              </p>
+              {instagram && (
+                <TextLink href={instagram.href} external>
+                  Follow on {instagram.label}
+                </TextLink>
+              )}
+              {discord && (
+                <TextLink href={discord.href} external>
+                  Join the {discord.label}
+                </TextLink>
+              )}
+            </EmptyState>
+          </div>
         )}
 
         <div className="border-hairline mt-14 border-t pt-6">
