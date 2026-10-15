@@ -28,8 +28,19 @@ export const createTable = pgTableCreator((name) => `buzz_${name}`);
  */
 const idx = (name: string) => `buzz_${name}`;
 
-/** Portal roles. Membership is free, so `MEMBER` is simply "has signed in". */
-export type UserRole = "MEMBER" | "ADMIN";
+/**
+ * Portal roles. Membership is free, so `MEMBER` is simply "has signed in".
+ * `ADMIN` is an officer. `SUPER_ADMIN` ranks above every officer and is the
+ * only role that can change someone else's role.
+ */
+export type UserRole = "MEMBER" | "ADMIN" | "SUPER_ADMIN";
+
+/** Officer tools: an admin, or a super admin who keeps every admin power. */
+export function isOfficerRole(
+  role: string | null | undefined,
+): role is "ADMIN" | "SUPER_ADMIN" {
+  return role === "ADMIN" || role === "SUPER_ADMIN";
+}
 
 export const users = createTable(
   "user",
@@ -57,8 +68,9 @@ export const users = createTable(
      * column exists, so anything `notNull` here needs a default at the database
      * level, not just in the builder.
      *
-     * Officers are promoted from the roster by an existing officer, or by
-     * hand in `pnpm db:studio`.
+     * Officers are `ADMIN`. The first `SUPER_ADMIN` is assigned by hand in the
+     * database; the migration only allows the value. After that, only a super
+     * admin can change roles from the roster.
      */
     role: d
       .varchar({ length: 16 })
@@ -73,7 +85,10 @@ export const users = createTable(
      */
     uniqueIndex(idx("user_email_lower_idx")).on(sql`lower(${t.email})`),
     /** `$type` is a compile-time cast only; this is what the database enforces. */
-    check(idx("user_role_check"), sql`${t.role} in ('MEMBER', 'ADMIN')`),
+    check(
+      idx("user_role_check"),
+      sql`${t.role} in ('MEMBER', 'ADMIN', 'SUPER_ADMIN')`,
+    ),
   ],
 );
 
