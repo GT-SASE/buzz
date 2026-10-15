@@ -9,8 +9,7 @@
     ".": "./src/index.ts",
     "./trpc": "./src/trpc.ts",
     "./terms": "./src/terms.ts",
-    "./event-length": "./src/event-length.ts",
-    "./check-in-points": "./src/check-in-points.ts"
+    "./event-length": "./src/event-length.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

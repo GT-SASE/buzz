@@ -4,10 +4,10 @@
  * re-score replay cannot drift apart.
  *
  * Officers (ADMIN, SUPER_ADMIN) are running the room, not racing for the
- * leaderboard: they earn a flat OFFICER_POINTS, no bonuses, and they neither
- * use up an early-bird spot nor count toward the catch-up median.
+ * leaderboard: they earn the event's base points and no bonuses (no early-bird,
+ * streak, or catch-up), and they neither use up an early-bird spot nor count
+ * toward the catch-up median.
  */
-export const OFFICER_POINTS = 1;
 
 /**
  * First members through the door get extra points. The event value is still the
@@ -109,7 +109,7 @@ export type CheckInScoreInput = {
 
 export function scoreCheckIn(input: CheckInScoreInput) {
   if (input.base <= 0) return 0;
-  if (input.isOfficer) return OFFICER_POINTS;
+  if (input.isOfficer) return input.base;
   return (
     pointsForArrival(input.base, input.priorMemberArrivals) +
     streakBonus(input.streakLevel) +
