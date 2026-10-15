@@ -407,7 +407,8 @@ export const eventRouter = createTRPCRouter({
       // Decided here rather than in the component: reading the clock during
       // render makes the list re-sort itself on an unrelated re-render, and this
       // is the same cutoff the check-in door uses.
-      const cutoff = Date.now() - CHECK_IN_WINDOW_MS;
+      const now = Date.now();
+      const cutoff = now - CHECK_IN_WINDOW_MS;
       return {
         events: rows.map((row) => {
           const isPast = row.startsAt.getTime() < cutoff;
@@ -417,6 +418,9 @@ export const eventRouter = createTRPCRouter({
             ...row,
             checkInEnabled: row.checkInEnabled && !isPast,
             isPast,
+            // And an event more than two hours out is not open yet either.
+            notYetOpen: checkInNotYetOpen(row.startsAt, now),
+            opensAt: new Date(row.startsAt.getTime() - CHECK_IN_GRACE_MS),
           };
         }),
         total:
@@ -667,6 +671,13 @@ export const eventRouter = createTRPCRouter({
 
           if (!locked) {
             notFound("Event");
+          }
+
+          if (locked.archivedAt != null) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: "Restore this event before adding check-ins.",
+            });
           }
 
           await tx.insert(eventCheckIns).values({

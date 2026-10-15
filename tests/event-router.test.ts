@@ -692,6 +692,22 @@ describe("event.listAll check-in state", () => {
       ["off", false, false],
     ]);
   });
+
+  it("flags an event more than two hours out as not open yet", async () => {
+    const db = listDb([
+      {
+        id: "soon",
+        startsAt: new Date(Date.now() + DAY_MS),
+        checkInEnabled: true,
+      },
+      { id: "now", startsAt: startedAgo(60_000), checkInEnabled: true },
+    ]);
+    const { events } = await createCaller(adminCtx(db)).event.listAll({});
+    expect(events.map((e) => [e.id, e.notYetOpen])).toEqual([
+      ["soon", true],
+      ["now", false],
+    ]);
+  });
 });
 
 describe("event.getById check-in state", () => {

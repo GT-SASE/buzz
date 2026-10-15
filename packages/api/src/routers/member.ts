@@ -408,6 +408,18 @@ export const memberRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
+      // The only super admin could otherwise lock everyone out of role
+      // changes with one confirm; another super admin has to step you down.
+      if (
+        input.userId === ctx.session.user.id &&
+        input.role !== "SUPER_ADMIN"
+      ) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Ask another super admin to change your role.",
+        });
+      }
+
       const [updated] = await ctx.db
         .update(users)
         .set({ role: input.role })

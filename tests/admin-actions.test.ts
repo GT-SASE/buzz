@@ -541,6 +541,17 @@ describe("member.setRole", () => {
     expect(result).toEqual({ success: true, role: "SUPER_ADMIN" });
   });
 
+  it("refuses a super admin demoting themself before writing", async () => {
+    const error = await rejection(
+      createCaller(superAdminCtx(unreachableDb)).member.setRole({
+        userId: "super-1",
+        role: "ADMIN",
+      }),
+    );
+
+    expect(error.code).toBe("BAD_REQUEST");
+  });
+
   it("404s when the user row is missing", async () => {
     const { db } = setRoleDb([]);
     const error = await rejection(

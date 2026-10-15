@@ -464,6 +464,22 @@ describe.skipIf(!process.env.DATABASE_URL)("check-in", () => {
       },
       SLOW,
     );
+
+    it(
+      "refuses a manual check-in on an archived event",
+      async () => {
+        expect(
+          await errorCode(
+            callerFor(admin).event.manualCheckIn({
+              eventId: id.archived,
+              email: gateMember.email,
+            }),
+          ),
+        ).toBe("BAD_REQUEST");
+        expect(await countCheckIns(id.archived)).toBe(0);
+      },
+      SLOW,
+    );
   });
 
   describe("capacity", () => {
