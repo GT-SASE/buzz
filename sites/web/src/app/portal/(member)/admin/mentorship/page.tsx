@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { Suspense } from "react";
 
 import { PortalHeader } from "~/app/portal/_components/portal-ui";
-import { Section, TextLink } from "~/components/site";
+import { Section } from "~/components/site";
 import { HydrateClient, api } from "~/trpc/server";
 import { semester } from "@buzz/api";
 import AdminLoading from "../loading";
@@ -36,7 +37,13 @@ async function AdminMentorshipBody() {
         <KinAdmin currentSemester={currentSemester} />
         <p className="text-ink-muted text-body-sm mt-8">
           Officers who want a family of their own can{" "}
-          <TextLink href="/portal/mentorship">sign up here</TextLink>.
+          <Link
+            href="/portal/mentorship"
+            className="text-navy font-semibold underline underline-offset-4"
+          >
+            sign up here
+          </Link>
+          .
         </p>
       </Section>
     </HydrateClient>

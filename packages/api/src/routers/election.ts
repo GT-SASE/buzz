@@ -8,6 +8,7 @@ import {
   eq,
   gte,
   inArray,
+  isNull,
 } from "drizzle-orm";
 import { z } from "zod";
 
@@ -23,6 +24,7 @@ import {
   elections,
   electionVotes,
   eventCheckIns,
+  events,
   users,
   type db as Db,
   type ElectionPhase,
@@ -48,10 +50,12 @@ async function eligibility(db: Database, userId: string, now: Date) {
   const [row] = await db
     .select({ n: count() })
     .from(eventCheckIns)
+    .innerJoin(events, eq(events.id, eventCheckIns.eventId))
     .where(
       and(
         eq(eventCheckIns.userId, userId),
         gte(eventCheckIns.checkedInAt, schoolYearStart(now)),
+        isNull(events.archivedAt),
       ),
     );
   return (row?.n ?? 0) > 0;

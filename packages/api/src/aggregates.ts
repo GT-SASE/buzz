@@ -5,7 +5,9 @@ import { eventCheckIns } from "@buzz/db";
 /**
  * Shared Drizzle aggregate expressions for member totals. Kept in one place so
  * event / member / chapter routers cannot drift on how points or attendance
- * are counted. Null sums are coerced to 0 at the call site via `asInt`.
+ * are counted. These do not filter archived events: every caller must join
+ * `events` and add `isNull(events.archivedAt)`, because an archived event
+ * counts for nothing. Null sums are coerced to 0 at the call site via `asInt`.
  */
 
 /** `count(eventCheckIns.id)`, never `count(*)`, under a LEFT JOIN. */

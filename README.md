@@ -162,16 +162,35 @@ Demotion is still a database edit — set `role` back to `MEMBER`.
 
 ## How points work
 
-An event carries a `pointsValue`. Checking in copies that number onto the attendance row as
-`pointsEarned` and never reads it back. Re-pricing an event later therefore changes what
-future attendance is worth and leaves everybody's existing total exactly where it was.
+An event carries a `pointsValue`. Checking in stamps one number onto the attendance row as
+`pointsEarned` and never recomputes it. Re-pricing an event later therefore changes what
+future attendance is worth and leaves everybody's existing total exactly where it was. A free
+event (`pointsValue` 0) pays nothing, bonuses included.
+
+The stamp is the same for officers and members: the event's value, plus two bonuses
+(`packages/api/src/check-in-points.ts`).
+
+- **Early bird.** The first five _member_ arrivals at an event get +5, +4, +3, +2, +1.
+  Officer check-ins do not use up a spot, so the first members through the door keep theirs;
+  an officer's own bonus comes from the same count of member arrivals.
+- **Streak.** +3 per level, three levels, so at most +9. A "happening" is an event that is not
+  archived and has at least one check-in. Counting starts at the first happening a person
+  attended; earlier ones are never held against a newcomer. From there every happening they
+  attend raises the level by one (to the cap) and every one they miss lowers it by one (to
+  zero). So after three in a row the next check-in carries +9; one miss after that drops it to +6, not zero.
+
+Archived events count for nothing: not in anyone's total, event count, "member since", tier,
+the leaderboard, the roster and its CSV, a member's detail page, the streak, or voting
+eligibility. That is a read-time filter, not a data change, so restoring an event brings
+its points back. Stamps written while it was archived are not recomputed. Officers still see an archived event's own attendance list on its page.
 
 A member's total is one aggregate query over their own check-ins. Tiers are derived from
 that total at render time — they live in `src/data/portal.ts` and changing them needs no
 migration.
 
-The dashboard leaderboard ranks members by that same total, with competition ranks computed
-in app code (`packages/api/src/leaderboard-crown.ts`), so ties share a place. It shows names and totals only — never an email, an id, or a photo — and
+The dashboard leaderboard ranks members by that same total, with ranks computed in app code
+(`packages/api/src/leaderboard-crown.ts`) and one place per person even when totals tie. It
+shows names and totals only — never an email, an id, or a photo — and
 there is no opt-out column, so if the board wants members to be able to hide, that needs a
 migration.
 
@@ -205,8 +224,8 @@ Yearly, at `/portal/elections` (members) and `/portal/admin/elections` (officers
 creates the election with its positions and moves it through the phases by hand:
 
 1. **Nominating**: members run for a position with a short statement; officers approve or reject.
-2. **Voting**: approved candidates only. A member can vote if they have at least one event
-   check-in this school year. One vote per position, enforced by the table's primary key.
+2. **Voting**: approved candidates only. A member can vote if they have at least one check-in
+   this school year at an event that is not archived. One vote per position, enforced by the table's primary key.
 3. **Closed**: officers see the counts.
 4. **Published**: members see the counts too.
 
@@ -217,7 +236,8 @@ Ballots are secret: no endpoint returns who voted for whom.
 `/portal/admin/members` is the officers' view of everyone who has ever signed in, searchable
 by name or email, sortable by points, name or last check-in, and paged 25 at a time.
 `/portal/admin/members/<id>` is one member: their totals, their tier, and every check-in with
-the points it earned and whether it was scanned or added by hand. Both are `adminProcedure` —
+the points it earned and whether it was scanned or added by hand. Check-ins at archived
+events are left out of all of it. Both are `adminProcedure` —
 a member holding another member's id gets `FORBIDDEN`, and there is a test that fails if that
 gate is ever downgraded.
 
@@ -230,7 +250,8 @@ inline a second CSV writer.
 
 `/portal/admin` opens with the chapter's figures: members and how many have ever checked in,
 check-ins in total and over the last 30 days, past and upcoming event counts, average
-attendance per past event, and what is on next. Every figure is counted in SQL against one
+attendance per past event, and what is on next. Archived events are excluded from all of
+them. Every figure is counted in SQL against one
 clock reading, so no two can disagree about where "now" is.
 
 ## Check-in codes

@@ -1,3 +1,6 @@
+import { ArrowRight } from "lucide-react";
+import Link from "next/link";
+
 import { formatEventTime } from "~/app/portal/_lib/format";
 import { Badge } from "~/components/ui/badge";
 import {
@@ -19,6 +22,8 @@ export type EventRow = {
   /** Already attended — shown instead of the points a check-in would earn. */
   done?: boolean;
   note?: string | null;
+  /** Makes the phone card a link; ignored once the row is done. */
+  href?: string;
 };
 
 /**
@@ -60,41 +65,59 @@ export function EventRows({
       ) : (
         <>
           <ul className="mt-4 grid gap-4 md:hidden">
-            {rows.map((row) => (
-              <li
-                key={row.key}
-                className="border-hairline rounded-lg border px-4 py-4"
-              >
-                <p className="text-ink-muted text-body-sm">
-                  {formatEventTime(row.at)}
-                </p>
-                <p className="text-navy mt-1 font-semibold">{row.title}</p>
-                {row.location && (
-                  <p className="text-ink-muted text-body-sm mt-1">
-                    {row.location}
+            {rows.map((row) => {
+              const body = (
+                <>
+                  <p className="text-ink-muted text-body-sm">
+                    {formatEventTime(row.at)}
                   </p>
-                )}
-                {row.note && (
-                  <p className="text-ink-muted/80 text-body-sm mt-1 italic">
-                    {row.note}
-                  </p>
-                )}
-                <p className="mt-3">
-                  {row.done ? (
-                    <Badge
-                      variant="secondary"
-                      className="text-ink-muted font-semibold"
-                    >
-                      Checked in
-                    </Badge>
-                  ) : (
-                    <span className="text-gold-ink text-body-sm font-semibold tabular-nums">
-                      +{row.points}
-                    </span>
+                  <p className="text-navy mt-1 font-semibold">{row.title}</p>
+                  {row.location && (
+                    <p className="text-ink-muted text-body-sm mt-1">
+                      {row.location}
+                    </p>
                   )}
-                </p>
-              </li>
-            ))}
+                  {row.note && (
+                    <p className="text-ink-muted/80 text-body-sm mt-1 italic">
+                      {row.note}
+                    </p>
+                  )}
+                  <p className="mt-3 flex items-center justify-between gap-3">
+                    {row.done ? (
+                      <Badge
+                        variant="secondary"
+                        className="text-ink-muted font-semibold"
+                      >
+                        Checked in
+                      </Badge>
+                    ) : (
+                      <span className="text-gold-ink text-body-sm font-semibold tabular-nums">
+                        +{row.points}
+                      </span>
+                    )}
+                    {row.href && !row.done && (
+                      <ArrowRight
+                        aria-hidden="true"
+                        className="text-gold-ink size-5 shrink-0"
+                      />
+                    )}
+                  </p>
+                </>
+              );
+              const cardClass = "block min-h-11 px-4 py-4";
+
+              return (
+                <li key={row.key} className="border-hairline rounded-lg border">
+                  {row.href && !row.done ? (
+                    <Link href={row.href} className={cardClass}>
+                      {body}
+                    </Link>
+                  ) : (
+                    <div className={cardClass}>{body}</div>
+                  )}
+                </li>
+              );
+            })}
           </ul>
 
           <div className="hidden md:block">

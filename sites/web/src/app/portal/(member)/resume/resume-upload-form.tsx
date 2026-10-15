@@ -138,7 +138,7 @@ function ResumeFields({ row }: { row: Mine }) {
               setFile(event.target.files?.[0] ?? null);
               setError(null);
             }}
-            className="border-hairline mt-2 text-base"
+            className="border-hairline file:bg-navy mt-2 h-12 py-2 text-base file:mr-3 file:h-8 file:rounded-md file:px-3 file:font-semibold file:text-white"
           />
         </div>
 

@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { SaseDino } from "~/components/site";
 import { Button } from "~/components/ui/button";
 import {
   Card,
@@ -19,6 +20,7 @@ export default function PortalNotFound() {
     <section className="bg-cream flex min-h-[60vh] items-center px-5 py-20 sm:px-6">
       <Card className="border-hairline bg-paper mx-auto w-full max-w-lg rounded-lg">
         <CardHeader>
+          <SaseDino className="mb-5 h-20" />
           <p className="text-eyebrow tracking-masthead text-gold-ink font-semibold uppercase">
             404
           </p>

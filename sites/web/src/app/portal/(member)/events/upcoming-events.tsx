@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { toast } from "sonner";
 
 import { formatEventTime } from "~/app/portal/_lib/format";
@@ -46,7 +47,7 @@ function EventRow({ event }: { event: Upcoming }) {
           <p className="text-gold-ink text-eyebrow tracking-caps font-semibold uppercase">
             {formatEventTime(event.startsAt)}
           </p>
-          <h2 className="font-display text-navy text-h3 mt-2 font-bold break-words">
+          <h2 className="font-display text-navy sm:text-h3 mt-2 text-xl font-bold break-words">
             {event.title}
           </h2>
           {event.location && (
@@ -55,6 +56,10 @@ function EventRow({ event }: { event: Upcoming }) {
         </div>
         {event.attendedAt ? (
           <Badge variant="secondary">Checked in</Badge>
+        ) : event.checkInOpen ? (
+          <Badge className="bg-gold-bright text-navy border-transparent">
+            Check-in open
+          </Badge>
         ) : event.rsvpedAt ? (
           <Badge className="bg-gold-bright text-navy border-transparent">
             Going
@@ -67,6 +72,19 @@ function EventRow({ event }: { event: Upcoming }) {
       )}
 
       <div className="mt-5 flex flex-wrap items-center gap-3 empty:hidden">
+        {event.checkInOpen && !event.attendedAt && (
+          <Button
+            asChild
+            className="bg-gold-bright text-navy hover:bg-gold min-h-11 rounded-md font-semibold"
+          >
+            <Link href="/portal/check-in">Check in</Link>
+          </Button>
+        )}
+        {!event.rsvpOpen && !event.checkInOpen && !event.attendedAt && (
+          <p className="text-ink-muted text-body-sm">
+            Started. Check-in is closed.
+          </p>
+        )}
         {event.rsvpOpen &&
           (event.rsvpedAt ? (
             <Button

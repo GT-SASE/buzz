@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { Suspense } from "react";
 
 import { PortalHeader } from "~/app/portal/_components/portal-ui";
-import { Section, TextLink } from "~/components/site";
+import { Section } from "~/components/site";
 import { HydrateClient, api } from "~/trpc/server";
 import AdminLoading from "../loading";
 import { CommitteeAdmin } from "./committee-admin";
@@ -32,9 +33,14 @@ async function AdminCommitteesBody() {
         <CommitteeAdmin />
         <p className="text-ink-muted text-body-sm mt-8">
           Applicants use{" "}
-          <TextLink href="/portal/committees">this form</TextLink>. While a
-          cycle is open, /join and the member dashboard advertise it on their
-          own.
+          <Link
+            href="/portal/committees"
+            className="text-navy font-semibold underline underline-offset-4"
+          >
+            this form
+          </Link>
+          . While a cycle is open, /join and the member dashboard advertise it
+          on their own.
         </p>
       </Section>
     </HydrateClient>

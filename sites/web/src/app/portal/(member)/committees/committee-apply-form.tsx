@@ -214,249 +214,273 @@ function CommitteeApplyFields({ data }: { data: Mine }) {
         ))}
       </ul>
 
-      <form
-        className="mt-8 grid gap-6"
-        onSubmit={(event) => {
-          event.preventDefault();
-          apply.mutate({
-            discordHandle,
-            wantsEvents,
-            wantsMarketing,
-            wantsTreasury,
-            wantsWebsite,
-            eventsWhy,
-            eventsCollabs,
-            marketingWhy,
-            marketingConnections,
-            treasuryWhy,
-            websiteWhy,
-            websiteLinks,
-            otherOrgs,
-            comments,
-          });
-        }}
-      >
-        <div>
-          <Label htmlFor="committee-discord">Discord handle</Label>
-          <Input
-            id="committee-discord"
-            value={discordHandle}
-            onChange={(event) => setDiscordHandle(event.target.value)}
-            required
-            maxLength={80}
-            disabled={!canEdit}
-            placeholder="name or name#0000"
-            className="border-hairline mt-2 text-base"
-          />
-          <p className="text-ink-muted text-body-sm mt-1.5">
-            We will use a Discord channel for the committee.{" "}
-            <a
-              href={committeeDiscordHref}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-navy decoration-gold font-semibold underline decoration-2 underline-offset-4"
-            >
-              Join the server
-              <span className="sr-only"> (opens in a new tab)</span>
-            </a>
-            .
-          </p>
-        </div>
+      {!canEdit && !row && (
+        <Button
+          asChild
+          variant="outline"
+          className="mt-8 min-h-11 w-full sm:w-auto"
+        >
+          <a
+            href={committeeDiscordHref}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Join the SASE Discord
+            <span className="sr-only"> (opens in a new tab)</span>
+          </a>
+        </Button>
+      )}
 
-        <fieldset className="grid gap-3">
-          <legend className="text-eyebrow tracking-caps text-ink-muted font-semibold uppercase">
-            Which committee(s)
-          </legend>
-          {shown.map((committee) => {
-            const [checked, onChange] = picks[committee.id];
-
-            return (
-              <label
-                key={committee.id}
-                className="border-hairline has-[:checked]:border-navy has-[:checked]:bg-navy group flex cursor-pointer gap-3 rounded-lg border p-4 transition"
-              >
-                <input
-                  type="checkbox"
-                  name="committees"
-                  value={committee.id}
-                  checked={checked}
-                  disabled={!canEdit}
-                  onChange={(event) => onChange(event.target.checked)}
-                  className="mt-1 size-4 accent-white"
-                />
-                <span>
-                  <span className="text-navy block font-semibold group-has-[:checked]:text-white">
-                    {committee.title}
-                  </span>
-                  <span className="text-ink-muted text-body-sm mt-1 block group-has-[:checked]:text-white/80">
-                    {committee.blurb}
-                  </span>
-                </span>
-              </label>
-            );
-          })}
-        </fieldset>
-
-        {wantsEvents && (
-          <>
-            <div>
-              <Label htmlFor="events-why">
-                Why Events, and what would you run?
-              </Label>
-              <Textarea
-                id="events-why"
-                value={eventsWhy}
-                onChange={(event) => setEventsWhy(event.target.value)}
-                required
-                maxLength={2000}
-                rows={5}
-                disabled={!canEdit}
-                className="border-hairline mt-2 text-base"
-              />
-            </div>
-            <div>
-              <Label htmlFor="events-collabs">
-                Clubs you would like to collaborate with
-              </Label>
-              <Textarea
-                id="events-collabs"
-                value={eventsCollabs}
-                onChange={(event) => setEventsCollabs(event.target.value)}
-                maxLength={1000}
-                rows={3}
-                disabled={!canEdit}
-                className="border-hairline mt-2 text-base"
-              />
-            </div>
-          </>
-        )}
-
-        {wantsMarketing && (
-          <>
-            <div>
-              <Label htmlFor="marketing-why">Why Marketing?</Label>
-              <Textarea
-                id="marketing-why"
-                value={marketingWhy}
-                onChange={(event) => setMarketingWhy(event.target.value)}
-                required
-                maxLength={2000}
-                rows={5}
-                disabled={!canEdit}
-                className="border-hairline mt-2 text-base"
-              />
-            </div>
-            <div>
-              <Label htmlFor="marketing-connections">
-                Classes, clubs, or orgs you can advertise SASE or National
-                Conference to
-              </Label>
-              <Textarea
-                id="marketing-connections"
-                value={marketingConnections}
-                onChange={(event) =>
-                  setMarketingConnections(event.target.value)
-                }
-                maxLength={1000}
-                rows={3}
-                disabled={!canEdit}
-                className="border-hairline mt-2 text-base"
-              />
-            </div>
-          </>
-        )}
-
-        {wantsTreasury && (
+      {(canEdit || row) && (
+        <form
+          className="mt-8 grid gap-6"
+          onSubmit={(event) => {
+            event.preventDefault();
+            apply.mutate({
+              discordHandle,
+              wantsEvents,
+              wantsMarketing,
+              wantsTreasury,
+              wantsWebsite,
+              eventsWhy,
+              eventsCollabs,
+              marketingWhy,
+              marketingConnections,
+              treasuryWhy,
+              websiteWhy,
+              websiteLinks,
+              otherOrgs,
+              comments,
+            });
+          }}
+        >
           <div>
-            <Label htmlFor="treasury-why">Why Treasury?</Label>
-            <Textarea
-              id="treasury-why"
-              value={treasuryWhy}
-              onChange={(event) => setTreasuryWhy(event.target.value)}
+            <Label htmlFor="committee-discord">Discord handle</Label>
+            <Input
+              id="committee-discord"
+              value={discordHandle}
+              onChange={(event) => setDiscordHandle(event.target.value)}
               required
-              maxLength={2000}
-              rows={5}
+              maxLength={80}
+              disabled={!canEdit}
+              placeholder="name or name#0000"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              autoComplete="off"
+              enterKeyHint="next"
+              className="border-hairline mt-2 h-11 text-base"
+            />
+            <p className="text-ink-muted text-body-sm mt-1.5">
+              We will use a Discord channel for the committee.{" "}
+              <a
+                href={committeeDiscordHref}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-navy decoration-gold py-3 font-semibold underline decoration-2 underline-offset-4"
+              >
+                Join the server
+                <span className="sr-only"> (opens in a new tab)</span>
+              </a>
+              .
+            </p>
+          </div>
+
+          <fieldset className="grid gap-3">
+            <legend className="text-eyebrow tracking-caps text-ink-muted font-semibold uppercase">
+              Which committee(s)
+            </legend>
+            {shown.map((committee) => {
+              const [checked, onChange] = picks[committee.id];
+
+              return (
+                <label
+                  key={committee.id}
+                  className="border-hairline has-[:checked]:border-navy has-[:checked]:bg-navy group flex cursor-pointer gap-3 rounded-lg border p-4 transition"
+                >
+                  <input
+                    type="checkbox"
+                    name="committees"
+                    value={committee.id}
+                    checked={checked}
+                    disabled={!canEdit}
+                    onChange={(event) => onChange(event.target.checked)}
+                    className="mt-1 size-4 shrink-0 accent-white"
+                  />
+                  <span>
+                    <span className="text-navy block font-semibold group-has-[:checked]:text-white">
+                      {committee.title}
+                    </span>
+                    <span className="text-ink-muted text-body-sm mt-1 block group-has-[:checked]:text-white/80">
+                      {committee.blurb}
+                    </span>
+                  </span>
+                </label>
+              );
+            })}
+          </fieldset>
+
+          {wantsEvents && (
+            <>
+              <div>
+                <Label htmlFor="events-why">
+                  Why Events, and what would you run?
+                </Label>
+                <Textarea
+                  id="events-why"
+                  value={eventsWhy}
+                  onChange={(event) => setEventsWhy(event.target.value)}
+                  required
+                  maxLength={2000}
+                  rows={5}
+                  disabled={!canEdit}
+                  className="border-hairline mt-2 text-base"
+                />
+              </div>
+              <div>
+                <Label htmlFor="events-collabs">
+                  Clubs you would like to collaborate with
+                </Label>
+                <Textarea
+                  id="events-collabs"
+                  value={eventsCollabs}
+                  onChange={(event) => setEventsCollabs(event.target.value)}
+                  maxLength={1000}
+                  rows={3}
+                  disabled={!canEdit}
+                  className="border-hairline mt-2 text-base"
+                />
+              </div>
+            </>
+          )}
+
+          {wantsMarketing && (
+            <>
+              <div>
+                <Label htmlFor="marketing-why">Why Marketing?</Label>
+                <Textarea
+                  id="marketing-why"
+                  value={marketingWhy}
+                  onChange={(event) => setMarketingWhy(event.target.value)}
+                  required
+                  maxLength={2000}
+                  rows={5}
+                  disabled={!canEdit}
+                  className="border-hairline mt-2 text-base"
+                />
+              </div>
+              <div>
+                <Label htmlFor="marketing-connections">
+                  Classes, clubs, or orgs you can advertise SASE or National
+                  Conference to
+                </Label>
+                <Textarea
+                  id="marketing-connections"
+                  value={marketingConnections}
+                  onChange={(event) =>
+                    setMarketingConnections(event.target.value)
+                  }
+                  maxLength={1000}
+                  rows={3}
+                  disabled={!canEdit}
+                  className="border-hairline mt-2 text-base"
+                />
+              </div>
+            </>
+          )}
+
+          {wantsTreasury && (
+            <div>
+              <Label htmlFor="treasury-why">Why Treasury?</Label>
+              <Textarea
+                id="treasury-why"
+                value={treasuryWhy}
+                onChange={(event) => setTreasuryWhy(event.target.value)}
+                required
+                maxLength={2000}
+                rows={5}
+                disabled={!canEdit}
+                className="border-hairline mt-2 text-base"
+              />
+            </div>
+          )}
+
+          {wantsWebsite && (
+            <>
+              <div>
+                <Label htmlFor="website-why">Why the website team?</Label>
+                <Textarea
+                  id="website-why"
+                  value={websiteWhy}
+                  onChange={(event) => setWebsiteWhy(event.target.value)}
+                  required
+                  maxLength={2000}
+                  rows={5}
+                  disabled={!canEdit}
+                  className="border-hairline mt-2 text-base"
+                />
+              </div>
+              <div>
+                <Label htmlFor="website-links">
+                  Anything you have built (optional)
+                </Label>
+                <Textarea
+                  id="website-links"
+                  value={websiteLinks}
+                  onChange={(event) => setWebsiteLinks(event.target.value)}
+                  maxLength={1000}
+                  rows={2}
+                  disabled={!canEdit}
+                  placeholder="GitHub, a portfolio, a class project"
+                  className="border-hairline mt-2 text-base"
+                />
+              </div>
+            </>
+          )}
+
+          <div>
+            <Label htmlFor="other-orgs">
+              What other orgs will you be in this year?
+            </Label>
+            <Textarea
+              id="other-orgs"
+              value={otherOrgs}
+              onChange={(event) => setOtherOrgs(event.target.value)}
+              maxLength={1000}
+              rows={3}
               disabled={!canEdit}
               className="border-hairline mt-2 text-base"
             />
           </div>
-        )}
 
-        {wantsWebsite && (
-          <>
-            <div>
-              <Label htmlFor="website-why">Why the website team?</Label>
-              <Textarea
-                id="website-why"
-                value={websiteWhy}
-                onChange={(event) => setWebsiteWhy(event.target.value)}
-                required
-                maxLength={2000}
-                rows={5}
-                disabled={!canEdit}
-                className="border-hairline mt-2 text-base"
-              />
-            </div>
-            <div>
-              <Label htmlFor="website-links">
-                Anything you have built (optional)
-              </Label>
-              <Textarea
-                id="website-links"
-                value={websiteLinks}
-                onChange={(event) => setWebsiteLinks(event.target.value)}
-                maxLength={1000}
-                rows={2}
-                disabled={!canEdit}
-                placeholder="GitHub, a portfolio, a class project"
-                className="border-hairline mt-2 text-base"
-              />
-            </div>
-          </>
-        )}
+          <div>
+            <Label htmlFor="committee-comments">Anything else</Label>
+            <Textarea
+              id="committee-comments"
+              value={comments}
+              onChange={(event) => setComments(event.target.value)}
+              maxLength={1000}
+              rows={3}
+              disabled={!canEdit}
+              className="border-hairline mt-2 text-base"
+            />
+          </div>
 
-        <div>
-          <Label htmlFor="other-orgs">
-            What other orgs will you be in this year?
-          </Label>
-          <Textarea
-            id="other-orgs"
-            value={otherOrgs}
-            onChange={(event) => setOtherOrgs(event.target.value)}
-            maxLength={1000}
-            rows={3}
-            disabled={!canEdit}
-            className="border-hairline mt-2 text-base"
-          />
-        </div>
-
-        <div>
-          <Label htmlFor="committee-comments">Anything else</Label>
-          <Textarea
-            id="committee-comments"
-            value={comments}
-            onChange={(event) => setComments(event.target.value)}
-            maxLength={1000}
-            rows={3}
-            disabled={!canEdit}
-            className="border-hairline mt-2 text-base"
-          />
-        </div>
-
-        {canEdit && (
-          <Button
-            type="submit"
-            disabled={apply.isPending || !pickedCommittee}
-            className="bg-navy hover:bg-navy-deep h-12 w-full rounded-md font-semibold text-white sm:w-auto"
-          >
-            {apply.isPending
-              ? "Saving..."
-              : row
-                ? "Update application"
-                : "Submit application"}
-          </Button>
-        )}
-      </form>
+          {canEdit && (
+            <Button
+              type="submit"
+              disabled={apply.isPending || !pickedCommittee}
+              className="bg-navy hover:bg-navy-deep h-12 w-full rounded-md font-semibold text-white sm:w-auto"
+            >
+              {apply.isPending
+                ? "Saving..."
+                : row
+                  ? "Update application"
+                  : "Submit application"}
+            </Button>
+          )}
+        </form>
+      )}
 
       {canEdit && row?.status === "submitted" && (
         <ConfirmDialog

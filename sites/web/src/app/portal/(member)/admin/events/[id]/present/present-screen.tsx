@@ -77,7 +77,7 @@ export function PresentScreen({ eventId }: { eventId: string }) {
 
   return (
     // A nested layout renders inside its parents, so covering the viewport is
-    // the only way to be rid of the site header and the portal tab rail.
+    // the only way to be rid of the site header and the portal sidebar.
     <div className="bg-navy fixed inset-0 z-50 flex flex-col overflow-hidden px-8 py-7 sm:px-12 sm:py-9">
       <header className="relative flex shrink-0 flex-wrap items-baseline justify-between gap-x-8 gap-y-3">
         <h1 className="font-display text-[clamp(1.75rem,3vw,3.25rem)] leading-none font-bold text-white">
