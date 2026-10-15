@@ -5,6 +5,7 @@ import { PortalTabs } from "~/app/portal/_components/portal-tabs";
 import { SignOutButton } from "~/app/portal/_components/portal-ui";
 import { Wordmark } from "~/components/site";
 import { auth } from "@buzz/auth";
+import { isOfficerRole } from "@buzz/db";
 
 // Every portal page reads the session and the database per request. Declaring
 // it here keeps the marketing routes prerendered.
@@ -47,7 +48,7 @@ export default async function PortalLayout({
             </div>
           )}
         </div>
-        {user && <PortalTabs isOfficer={user.role === "ADMIN"} />}
+        {user && <PortalTabs isOfficer={isOfficerRole(user.role)} />}
       </header>
 
       <main

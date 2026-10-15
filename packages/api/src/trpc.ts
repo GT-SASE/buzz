@@ -12,7 +12,7 @@ import superjson from "superjson";
 import { ZodError } from "zod";
 
 import { auth } from "@buzz/auth";
-import { db } from "@buzz/db";
+import { db, isOfficerRole } from "@buzz/db";
 
 /**
  * 1. CONTEXT
@@ -126,10 +126,27 @@ export const protectedProcedure = t.procedure
  * a demotion takes effect on the caller's very next request.
  */
 export const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
-  if (ctx.session.user.role !== "ADMIN") {
+  if (!isOfficerRole(ctx.session.user.role)) {
     throw new TRPCError({
       code: "FORBIDDEN",
       message: "Officer access required.",
+    });
+  }
+  return next({ ctx });
+});
+
+/**
+ * Super admin procedure.
+ *
+ * Role changes go through here. An officer (`ADMIN`) keeps every other admin
+ * power via `adminProcedure`, and cannot promote, demote, or edit a super
+ * admin. The check is the procedure, not the screen that calls it.
+ */
+export const superAdminProcedure = protectedProcedure.use(({ ctx, next }) => {
+  if (ctx.session.user.role !== "SUPER_ADMIN") {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Super admin access required.",
     });
   }
   return next({ ctx });

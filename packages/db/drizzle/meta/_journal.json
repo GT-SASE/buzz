@@ -57,6 +57,13 @@
       "when": 1791214655879,
       "tag": "0007_committee_open_list",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1792022598330,
+      "tag": "0008_super_admin_role",
+      "breakpoints": true
     }
   ]
 }

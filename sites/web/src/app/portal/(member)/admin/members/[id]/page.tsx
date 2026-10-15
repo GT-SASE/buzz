@@ -1,3 +1,4 @@
+import { auth } from "@buzz/auth";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -42,6 +43,7 @@ export default async function AdminMemberPage({
   const { id } = await params;
   if (!id) notFound();
   await orNotFound(memberForPage(id));
+  const session = await auth();
 
   return (
     <HydrateClient>
@@ -62,7 +64,10 @@ export default async function AdminMemberPage({
           </BreadcrumbList>
         </Breadcrumb>
 
-        <MemberDetail memberId={id} />
+        <MemberDetail
+          memberId={id}
+          canManageRoles={session?.user.role === "SUPER_ADMIN"}
+        />
       </Section>
     </HydrateClient>
   );

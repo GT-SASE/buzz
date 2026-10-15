@@ -7,7 +7,7 @@ import {
   resumeDownloadHeaders,
 } from "@buzz/api";
 import { auth } from "@buzz/auth";
-import { db, resumes } from "@buzz/db";
+import { db, isOfficerRole, resumes } from "@buzz/db";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,7 +24,7 @@ export async function GET(
   if (!session?.user) {
     return jsonError("Sign in required.", 401);
   }
-  if (session.user.role !== "ADMIN") {
+  if (!isOfficerRole(session.user.role)) {
     return jsonError("Officer access required.", 403);
   }
 

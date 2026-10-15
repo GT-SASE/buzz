@@ -1,3 +1,4 @@
+import { isOfficerRole } from "@buzz/db";
 import { ArrowRight } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -34,7 +35,7 @@ export default function PortalDashboard() {
 
 async function DashboardBody() {
   const session = await requireSession("/portal");
-  const isOfficer = session.user.role === "ADMIN";
+  const isOfficer = isOfficerRole(session.user.role);
 
   const [home, , kin, kinGroup, recruiting, committee] = await Promise.all([
     api.event.home(),

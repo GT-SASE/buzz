@@ -38,6 +38,21 @@ function adminCtx(db: unknown): Ctx {
   } as unknown as Ctx;
 }
 
+function superAdminCtx(db: unknown): Ctx {
+  return {
+    db,
+    session: {
+      user: {
+        id: "super-1",
+        role: "SUPER_ADMIN",
+        email: "super@gatech.edu",
+      },
+      expires: "2099-01-01T00:00:00.000Z",
+    },
+    headers: new Headers(),
+  } as unknown as Ctx;
+}
+
 function memberCtx(db: unknown): Ctx {
   return {
     db,
@@ -387,8 +402,18 @@ describe("event.removeCheckIn", () => {
   });
 });
 
-function revokeSessionsDb(deleted: { sessionToken: string }[]) {
+function revokeSessionsDb(
+  deleted: { sessionToken: string }[],
+  target: { role: "MEMBER" | "ADMIN" | "SUPER_ADMIN" } | null = {
+    role: "MEMBER",
+  },
+) {
   const db = {
+    query: {
+      users: {
+        findFirst: () => Promise.resolve(target),
+      },
+    },
     delete: () => ({
       where: () => ({ returning: () => Promise.resolve(deleted) }),
     }),
@@ -428,51 +453,131 @@ describe("member.revokeSessions", () => {
 
     expect(error.code).toBe("FORBIDDEN");
   });
-});
 
-function promoteDb(returned: { id: string; role: "ADMIN" }[]) {
-  const db = {
-    update: () => ({
-      set: () => ({
-        where: () => ({ returning: () => Promise.resolve(returned) }),
-      }),
-    }),
-  };
-  return { db };
-}
-
-describe("member.promote", () => {
-  it("promotes the member to ADMIN", async () => {
-    const { db } = promoteDb([{ id: "member-1", role: "ADMIN" }]);
-    const result = await createCaller(adminCtx(db)).member.promote({
+  it("lets a super admin revoke sessions", async () => {
+    const { db } = revokeSessionsDb([{ sessionToken: "a" }]);
+    const result = await createCaller(superAdminCtx(db)).member.revokeSessions({
       userId: "member-1",
     });
 
+    expect(result).toEqual({ success: true, revoked: 1 });
+  });
+
+  it("refuses an officer who tries to edit a super admin", async () => {
+    let deleted = false;
+    const db = {
+      query: {
+        users: {
+          findFirst: () => Promise.resolve({ role: "SUPER_ADMIN" }),
+        },
+      },
+      delete: () => {
+        deleted = true;
+        throw new Error("delete should not run");
+      },
+    };
+
+    const error = await rejection(
+      createCaller(adminCtx(db)).member.revokeSessions({
+        userId: "super-1",
+      }),
+    );
+
+    expect(error.code).toBe("FORBIDDEN");
+    expect(deleted).toBe(false);
+  });
+
+  it("lets a super admin revoke another super admin", async () => {
+    const { db } = revokeSessionsDb([{ sessionToken: "a" }], {
+      role: "SUPER_ADMIN",
+    });
+    const result = await createCaller(superAdminCtx(db)).member.revokeSessions({
+      userId: "super-2",
+    });
+
+    expect(result).toEqual({ success: true, revoked: 1 });
+  });
+});
+
+function setRoleDb(
+  returned: { id: string; role: "MEMBER" | "ADMIN" | "SUPER_ADMIN" }[],
+) {
+  const sets: unknown[] = [];
+  const db = {
+    update: () => ({
+      set: (value: unknown) => {
+        sets.push(value);
+        return {
+          where: () => ({ returning: () => Promise.resolve(returned) }),
+        };
+      },
+    }),
+  };
+  return { db, sets };
+}
+
+describe("member.setRole", () => {
+  it("promotes a member to ADMIN", async () => {
+    const { db, sets } = setRoleDb([{ id: "member-1", role: "ADMIN" }]);
+    const result = await createCaller(superAdminCtx(db)).member.setRole({
+      userId: "member-1",
+      role: "ADMIN",
+    });
+
+    expect(sets).toEqual([{ role: "ADMIN" }]);
     expect(result).toEqual({ success: true, role: "ADMIN" });
   });
 
-  it("is a no-op success when they are already an officer", async () => {
-    const { db } = promoteDb([{ id: "officer-2", role: "ADMIN" }]);
-    const result = await createCaller(adminCtx(db)).member.promote({
+  it("demotes an officer to MEMBER", async () => {
+    const { db, sets } = setRoleDb([{ id: "officer-2", role: "MEMBER" }]);
+    const result = await createCaller(superAdminCtx(db)).member.setRole({
       userId: "officer-2",
+      role: "MEMBER",
     });
 
-    expect(result).toEqual({ success: true, role: "ADMIN" });
+    expect(sets).toEqual([{ role: "MEMBER" }]);
+    expect(result).toEqual({ success: true, role: "MEMBER" });
+  });
+
+  it("can assign SUPER_ADMIN", async () => {
+    const { db, sets } = setRoleDb([{ id: "officer-2", role: "SUPER_ADMIN" }]);
+    const result = await createCaller(superAdminCtx(db)).member.setRole({
+      userId: "officer-2",
+      role: "SUPER_ADMIN",
+    });
+
+    expect(sets).toEqual([{ role: "SUPER_ADMIN" }]);
+    expect(result).toEqual({ success: true, role: "SUPER_ADMIN" });
   });
 
   it("404s when the user row is missing", async () => {
-    const { db } = promoteDb([]);
+    const { db } = setRoleDb([]);
     const error = await rejection(
-      createCaller(adminCtx(db)).member.promote({ userId: "missing" }),
+      createCaller(superAdminCtx(db)).member.setRole({
+        userId: "missing",
+        role: "ADMIN",
+      }),
     );
 
     expect(error.code).toBe("NOT_FOUND");
   });
 
-  it("refuses a MEMBER session before writing", async () => {
+  it("refuses an ADMIN before writing", async () => {
     const error = await rejection(
-      createCaller(memberCtx(unreachableDb)).member.promote({
+      createCaller(adminCtx(unreachableDb)).member.setRole({
         userId: "member-2",
+        role: "MEMBER",
+      }),
+    );
+
+    expect(error.code).toBe("FORBIDDEN");
+  });
+
+  it("refuses a MEMBER before writing", async () => {
+    const error = await rejection(
+      createCaller(memberCtx(unreachableDb)).member.setRole({
+        userId: "member-2",
+        role: "ADMIN",
       }),
     );
 
