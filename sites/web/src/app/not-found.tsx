@@ -58,7 +58,7 @@ export default function NotFound() {
           </div>
         </section>
       </main>
-      <SiteFooter />
+      <SiteFooter dino={false} />
     </>
   );
 }

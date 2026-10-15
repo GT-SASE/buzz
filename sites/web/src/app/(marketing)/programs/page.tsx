@@ -84,7 +84,7 @@ export default function ProgramsPage() {
 
       <Section
         size="sm"
-        tone="cream"
+        tone="paper"
         title="Pick one and show up."
         lead="Every program starts at a general body meeting."
       >

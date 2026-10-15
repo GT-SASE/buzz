@@ -28,15 +28,25 @@ export function SaseMark({
   );
 }
 
-/** The chapter mascot. Size it with a height class; the width follows. */
-export function SaseDino({ className }: { className?: string }) {
+/**
+ * The chapter mascot. Size it with a height class; the width follows. `flip`
+ * mirrors it so it can face the content.
+ */
+export function SaseDino({
+  flip = false,
+  className,
+}: {
+  flip?: boolean;
+  className?: string;
+}) {
   return (
     <Image
       src="/brand/sase-dino.png"
       alt=""
-      width={400}
-      height={475}
-      className={cn("h-24 w-auto shrink-0", className)}
+      aria-hidden
+      width={636}
+      height={759}
+      className={cn("h-24 w-auto shrink-0", flip && "-scale-x-100", className)}
     />
   );
 }
