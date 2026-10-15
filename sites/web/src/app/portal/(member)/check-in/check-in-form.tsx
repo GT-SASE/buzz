@@ -39,7 +39,14 @@ function clearCodeFromUrl() {
   window.history.replaceState(null, "", window.location.pathname);
 }
 
-export function CheckInForm({ initialCode }: { initialCode: string }) {
+export function CheckInForm({
+  initialCode,
+  isOfficer,
+}: {
+  initialCode: string;
+  /** Officers earn the event base only, so there is no streak to grow. */
+  isOfficer: boolean;
+}) {
   const router = useRouter();
   const utils = api.useUtils();
 
@@ -148,8 +155,8 @@ export function CheckInForm({ initialCode }: { initialCode: string }) {
             </p>
             <p className="mt-3 text-white/70">
               {totalPoints} points across {totalEvents}{" "}
-              {totalEvents === 1 ? "event" : "events"}. Come back next time to
-              grow your streak bonus.
+              {totalEvents === 1 ? "event" : "events"}.
+              {!isOfficer && " Come back next time to grow your streak bonus."}
             </p>
           </AlertDescription>
         </Alert>
