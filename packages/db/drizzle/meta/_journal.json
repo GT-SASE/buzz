@@ -64,6 +64,13 @@
       "when": 1792022598330,
       "tag": "0008_super_admin_role",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1792099753460,
+      "tag": "0009_points_earned_integer",
+      "breakpoints": true
     }
   ]
 }

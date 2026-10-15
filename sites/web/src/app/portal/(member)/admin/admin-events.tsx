@@ -290,6 +290,10 @@ function StatusBadges({ event }: { event: AdminEvent }) {
         >
           Archived
         </Badge>
+      ) : event.checkInEnabled && event.notYetOpen ? (
+        <Badge variant="outline" className="border-hairline text-ink-muted">
+          Opens {formatEventTime(event.opensAt)}
+        </Badge>
       ) : event.checkInEnabled ? (
         <Badge className="gap-1.5 border-emerald-600/30 bg-emerald-600/10 font-medium text-emerald-800 shadow-none">
           <span className="size-1.5 animate-pulse rounded-full bg-emerald-600" />
