@@ -346,7 +346,8 @@ describe.skipIf(!process.env.DATABASE_URL)("check-in", () => {
         const result = await callerFor(extraMember).event.checkIn({
           code: code.snapshot,
         });
-        expect(result.pointsEarned).toBe(54);
+        // 50 base + 4 early (second member in) + catch-up min(50, ceil((15 - 0) / 2)).
+        expect(result.pointsEarned).toBe(62);
       },
       SLOW,
     );
@@ -381,7 +382,9 @@ describe.skipIf(!process.env.DATABASE_URL)("check-in", () => {
       async () => {
         const caller = callerFor(gateMember);
         const first = await caller.event.checkIn({ code: code.duplicate });
-        expect(first.pointsEarned).toBe(10);
+        // 5 base + 5 early + catch-up capped at the 5 base: the two members
+        // already holding points put the median far above gateMember's 0.
+        expect(first.pointsEarned).toBe(15);
 
         expect(
           await errorCode(caller.event.checkIn({ code: code.duplicate })),
@@ -394,7 +397,7 @@ describe.skipIf(!process.env.DATABASE_URL)("check-in", () => {
         expect((await readEvent(id.duplicate))?.currentCheckIns).toBe(0);
 
         const stats = await caller.event.myStats();
-        expect(stats.totalPoints).toBe(10);
+        expect(stats.totalPoints).toBe(15);
         expect(stats.totalEvents).toBe(1);
       },
       SLOW,
@@ -426,7 +429,10 @@ describe.skipIf(!process.env.DATABASE_URL)("check-in", () => {
         const result = await callerFor(gateMember).event.checkIn({
           code: code.fresh,
         });
-        expect(result.pointsEarned).toBe(15);
+        // 10 base + 5 early + catch-up capped at 10 (gateMember has 15 against
+        // a median of 38.5): the 23-hour-old event predates their history, so
+        // no streak.
+        expect(result.pointsEarned).toBe(25);
       },
       SLOW,
     );
@@ -467,8 +473,9 @@ describe.skipIf(!process.env.DATABASE_URL)("check-in", () => {
         const admitted = await callerFor(gateMember).event.checkIn({
           code: code.capped,
         });
-        // 10 base, +5 for first in, +3 streak from the 23-hour-old event.
-        expect(admitted.pointsEarned).toBe(18);
+        // 10 base, +5 for first in, +2 streak from the 23-hour-old event. At
+        // 40 points gateMember is above the median (38.5): no catch-up.
+        expect(admitted.pointsEarned).toBe(17);
 
         expect(
           await errorCode(
