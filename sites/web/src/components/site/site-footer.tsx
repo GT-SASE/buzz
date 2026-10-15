@@ -2,6 +2,8 @@ import Link from "next/link";
 
 import { TextLink } from "~/components/site/actions";
 import { Wordmark } from "~/components/site/brand";
+import { SaseDino } from "~/components/site/hive";
+import { cn } from "~/lib/utils";
 import { joinHref, navGroups, site } from "~/data/site";
 
 /** Discord already sits under Connect as the invite itself. */
@@ -16,9 +18,17 @@ const columnLabel =
 // py-1.5 gave a ~34px row on 0.9375rem copy, under the 44px touch target.
 const footerLink = "block py-3 transition hover:text-white";
 
-export function SiteFooter() {
+export function SiteFooter({ dino = true }: { dino?: boolean } = {}) {
   return (
-    <footer className="bg-navy text-white/70">
+    <footer
+      className={cn("bg-navy relative text-white/70", dino && "mt-20 sm:mt-24")}
+    >
+      {dino && (
+        <SaseDino
+          flip
+          className="absolute bottom-full left-5 h-16 sm:left-[calc(max(0px,(100%-72rem)/2)+1.5rem)] sm:h-20"
+        />
+      )}
       <div className="bg-gold-bright h-0.5" />
       <div className="max-w-content mx-auto px-5 py-16 sm:px-6">
         <div className="grid gap-x-12 gap-y-14 sm:grid-cols-2 md:grid-cols-[1.6fr_1fr_1fr_1.4fr]">

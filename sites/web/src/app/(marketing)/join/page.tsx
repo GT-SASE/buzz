@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { Button, Card, PageHeader, Section } from "~/components/site";
+import { Button, Card, PageHeader, SaseDino, Section } from "~/components/site";
 import { JsonLd } from "~/components/site/json-ld";
 import {
   Accordion,
@@ -127,22 +127,31 @@ export default async function JoinPage() {
         body="Open to every Georgia Tech student: any major, any year, any background."
       />
 
-      <section className="px-5 pt-12 sm:px-6">
-        <div className="max-w-content mx-auto flex flex-col items-stretch gap-4 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-8 sm:gap-y-4">
-          <Button href={joinHref} className="w-full justify-center sm:w-auto">
-            Become a member
-          </Button>
-          <Button
-            href="/events"
-            variant="outline"
-            className="w-full justify-center sm:w-auto"
-          >
-            Find the next meeting
-          </Button>
+      <section className="px-5 sm:px-6">
+        <div className="max-w-content bg-dino-pale dino-hop-host mx-auto flex flex-col gap-6 rounded-xl p-6 sm:flex-row sm:items-center sm:justify-between sm:gap-10 sm:px-12 sm:pt-12 sm:pb-0">
+          <div className="flex flex-col items-stretch gap-4 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-8 sm:gap-y-4">
+            <Button
+              href={joinHref}
+              className="dino-trigger w-full justify-center sm:w-auto"
+            >
+              Become a member
+            </Button>
+            <Button
+              href="/events"
+              variant="outline"
+              className="w-full justify-center sm:w-auto"
+            >
+              Find the next meeting
+            </Button>
+          </div>
+          <SaseDino
+            flip
+            className="dino-hop -mb-6 h-32 self-end sm:mb-0 sm:h-40 lg:h-48"
+          />
         </div>
       </section>
 
-      <Section number="01" title="Three steps, none of them hard.">
+      <Section title="Three steps, none of them hard.">
         <ol role="list" className="grid gap-x-12 gap-y-14 md:grid-cols-3">
           {steps.map((step, i) => (
             <li key={step.title}>
