@@ -200,6 +200,9 @@ function updateReturningDb(returned: Record<string, unknown>[]) {
   return {
     sets,
     db: {
+      query: {
+        events: { findFirst: () => Promise.resolve({ startsAt: new Date() }) },
+      },
       update: () => ({
         set: (values: Record<string, unknown>) => {
           sets.push(values);
