@@ -130,8 +130,8 @@ export const chapterRouter = createTRPCRouter({
 
   /**
    * Past events in a window, newest first. Campus listings (0 points,
-   * check-in never opened, nobody came) stay out. Archived events stay in:
-   * hiding one from the calendar must not erase the year.
+   * check-in never opened, nobody came) and archived events stay out, matching
+   * every other figure.
    */
   attendance: adminProcedure
     .input(
@@ -150,7 +150,7 @@ export const chapterRouter = createTRPCRouter({
         gt(events.pointsValue, 0),
         gt(events.currentCheckIns, 0),
       );
-      const where = and(inWindow, countable);
+      const where = and(inWindow, countable, isNull(events.archivedAt));
 
       const [[totals], recent] = await Promise.all([
         ctx.db
@@ -203,7 +203,7 @@ export const chapterRouter = createTRPCRouter({
 
   /**
    * Chart data for the officer events page. Per past event: check-ins split
-   * into first-timers (no earlier check-in anywhere) and returning members.
+   * into first-timers (no earlier check-in at an event that is not archived) and returning members.
    * Plus RSVP counts for what is coming up.
    */
   turnout: adminProcedure
@@ -223,8 +223,10 @@ export const chapterRouter = createTRPCRouter({
         gt(events.pointsValue, 0),
         gt(events.currentCheckIns, 0),
       );
-      // Earlier check-ins by the same member, from the same table.
+      // Earlier check-ins by the same member, from the same table. An archived
+      // event counts for nothing, so it cannot make someone "returning".
       const prior = sql.identifier("prior_check_in");
+      const priorEvent = sql.identifier("prior_event");
 
       const [past, upcoming] = await Promise.all([
         ctx.db
@@ -237,11 +239,16 @@ export const chapterRouter = createTRPCRouter({
               select 1 from ${eventCheckIns} as ${prior}
               where ${prior}.${sql.identifier(eventCheckIns.userId.name)} = ${eventCheckIns.userId}
                 and ${prior}.${sql.identifier(eventCheckIns.checkedInAt.name)} < ${eventCheckIns.checkedInAt}
+                and exists (
+                  select 1 from ${events} as ${priorEvent}
+                  where ${priorEvent}.${sql.identifier(events.id.name)} = ${prior}.${sql.identifier(eventCheckIns.eventId.name)}
+                    and ${priorEvent}.${sql.identifier(events.archivedAt.name)} is null
+                )
             ))`,
           })
           .from(events)
           .leftJoin(eventCheckIns, eq(eventCheckIns.eventId, events.id))
-          .where(and(inWindow, countable))
+          .where(and(inWindow, countable, isNull(events.archivedAt)))
           .groupBy(events.id)
           .orderBy(desc(events.startsAt))
           .limit(SERIES_LIMIT),
