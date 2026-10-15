@@ -1,4 +1,5 @@
 import {
+  and,
   asc,
   count,
   desc,
@@ -53,8 +54,8 @@ const rosterSort = z.enum(["points", "name", "recent"]);
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
 /**
- * Attendance that still exists. Archive hides an event from the calendar and
- * kills its code; it does not unwind points already earned.
+ * Attendance that still counts. An archived event's check-ins count for
+ * nothing — read-time only, so restoring the event brings them back.
  */
 function liveCheckInsSubquery(db: BuzzDb) {
   return db
@@ -65,6 +66,7 @@ function liveCheckInsSubquery(db: BuzzDb) {
     })
     .from(eventCheckIns)
     .innerJoin(events, eq(events.id, eventCheckIns.eventId))
+    .where(isNull(events.archivedAt))
     .as("live_check_ins");
 }
 
@@ -263,7 +265,7 @@ export const memberRouter = createTRPCRouter({
         .leftJoin(live, eq(live.userId, users.id))
         .where(rosterFilter(input.search))
         .groupBy(users.id)
-        .orderBy(desc(totalPoints), asc(users.email))
+        .orderBy(asc(isNull(totalPoints)), desc(totalPoints), asc(users.email))
         .limit(5000);
 
       return {
@@ -305,7 +307,9 @@ export const memberRouter = createTRPCRouter({
           })
           .from(eventCheckIns)
           .innerJoin(events, eq(events.id, eventCheckIns.eventId))
-          .where(eq(eventCheckIns.userId, member.id)),
+          .where(
+            and(eq(eventCheckIns.userId, member.id), isNull(events.archivedAt)),
+          ),
         ctx.db
           .select({
             eventId: events.id,
@@ -318,7 +322,9 @@ export const memberRouter = createTRPCRouter({
           })
           .from(eventCheckIns)
           .innerJoin(events, eq(events.id, eventCheckIns.eventId))
-          .where(eq(eventCheckIns.userId, member.id))
+          .where(
+            and(eq(eventCheckIns.userId, member.id), isNull(events.archivedAt)),
+          )
           .orderBy(desc(eventCheckIns.checkedInAt))
           .limit(200),
         ctx.db.query.resumes
@@ -381,7 +387,8 @@ export const memberRouter = createTRPCRouter({
   // ----------------------------------------------------------------- members
 
   /**
-   * Ranked by points over every member with live attendance. Early check-in
+   * Ranked by points over every member with live attendance (archived events
+   * count for nothing, and count again once restored). Early check-in
    * pays a bonus at the door, so first through is not the same 15 as the rest.
    * Remaining ties break on who checked in earlier.
    */
@@ -404,6 +411,7 @@ export const memberRouter = createTRPCRouter({
         .from(users)
         .innerJoin(eventCheckIns, eq(eventCheckIns.userId, users.id))
         .innerJoin(events, eq(events.id, eventCheckIns.eventId))
+        .where(isNull(events.archivedAt))
         .groupBy(users.id)
         .orderBy(desc(totalPoints), asc(firstCheckIn), asc(users.id));
 

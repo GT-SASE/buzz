@@ -530,10 +530,10 @@ describe("member.list", () => {
   });
 
   /**
-   * Archive is a hide, not a rewind. The IBM GBM still happened after
-   * officers took it off the members' list.
+   * Archive drops an event from every total. Read-time only, so restoring the
+   * event brings its points back.
    */
-  it("counts archived events toward roster points", async () => {
+  it("leaves archived events out of roster points", async () => {
     const { db, captures } = listDb([REGULAR], 1);
     await createCaller(adminCtx(db)).member.list({});
 
@@ -545,7 +545,7 @@ describe("member.list", () => {
       (join) => tableName(join.table) === getTableName(events),
     );
     expect(eventJoin).toBeDefined();
-    expect(sqlText(eventJoin!.on)).not.toMatch(/archived/i);
+    expect(sqlText(attendance!.where)).toMatch(/archived.{0,3}at\s+is\s+null/i);
   });
 
   /**
@@ -714,6 +714,25 @@ describe("member.exportRoster", () => {
       expect(pattern).toContain(`${escapeChar}%`);
       expect(unescapedWildcards(pattern, escapeChar)).toBeLessThanOrEqual(2);
     }
+  });
+
+  /**
+   * Same NULLS LAST trap as the roster: a member with no live check-ins sums
+   * to NULL, and Postgres puts NULL first on DESC, so the file would open on
+   * everyone who never came and a 5000-row cap would cut the leaders.
+   */
+  it("puts members who never came after the top scorers", async () => {
+    resetRateLimits();
+    const { db, captures } = exportDb([REGULAR, NEWCOMER]);
+    await createCaller(adminCtx(db)).member.exportRoster({});
+
+    const order = orderOf(captures);
+    const pointsAt = order.search(/points/i);
+    const emailAt = order.search(/email/i);
+    expect(pointsAt).toBeGreaterThanOrEqual(0);
+    expect(emailAt).toBeGreaterThan(pointsAt);
+    expect(order.slice(0, emailAt)).toMatch(/is\s+null/i);
+    expect(order.slice(0, emailAt)).toMatch(/desc/i);
   });
 
   /** An export of the 25 rows on screen is not an export of the roster. */
@@ -1003,12 +1022,8 @@ describe("member.leaderboard", () => {
     for (const join of checkInJoins) expect(join.kind).toBe("inner");
   });
 
-  /**
-   * Archive hides an event from the calendar. Dropping those rows from the
-   * board would zero a GBM the morning after, which is exactly when people
-   * look.
-   */
-  it("counts check-ins at archived events", async () => {
+  /** An archived event counts for nothing until it is restored. */
+  it("leaves check-ins at archived events out", async () => {
     const { db, captures } = leaderboardDb(RANKED);
     await createCaller(memberCtx(db)).member.leaderboard({ limit: 10 });
 
@@ -1022,8 +1037,7 @@ describe("member.leaderboard", () => {
       (join) => tableName(join.table) === getTableName(events),
     );
     expect(eventJoin).toBeDefined();
-    expect(sqlText(eventJoin!.on)).not.toMatch(/archived/i);
-    expect(sqlText(board!.where)).not.toMatch(/archived/i);
+    expect(sqlText(board!.where)).toMatch(/archived.{0,3}at\s+is\s+null/i);
   });
 
   /**

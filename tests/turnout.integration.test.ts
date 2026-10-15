@@ -41,7 +41,7 @@ describe.skipIf(!process.env.DATABASE_URL)("chapter.turnout", () => {
   const suffix = crypto.randomUUID().slice(0, 8);
   const userIds: string[] = [];
   const eventIds: string[] = [];
-  const id = { first: "", second: "", upcoming: "" };
+  const id = { first: "", second: "", upcoming: "", archived: "" };
   let admin: TestUser;
 
   async function makeUser(tag: string, role: "MEMBER" | "ADMIN") {
@@ -79,6 +79,15 @@ describe.skipIf(!process.env.DATABASE_URL)("chapter.turnout", () => {
           createdById: admin.id,
         },
         {
+          // Sam came to this one, but an archived event counts for nothing:
+          // it is not on the chart and does not make Sam "returning".
+          title: "vitest turnout archived",
+          startsAt: new Date(now - 96 * HOUR_MS),
+          checkInCode: randomCode(),
+          createdById: admin.id,
+          archivedAt: new Date(),
+        },
+        {
           title: "vitest turnout upcoming",
           startsAt: new Date(now + 48 * HOUR_MS),
           checkInCode: randomCode(),
@@ -91,11 +100,18 @@ describe.skipIf(!process.env.DATABASE_URL)("chapter.turnout", () => {
       if (row.title.endsWith("first")) id.first = row.id;
       if (row.title.endsWith("second")) id.second = row.id;
       if (row.title.endsWith("upcoming")) id.upcoming = row.id;
+      if (row.title.endsWith("archived")) id.archived = row.id;
     }
 
     // Alex comes to both; Sam only to the second. So the second event has one
     // returning member and one first-timer.
     await db.insert(eventCheckIns).values([
+      {
+        eventId: id.archived,
+        userId: sam.id,
+        pointsEarned: 10,
+        checkedInAt: new Date(now - 96 * HOUR_MS),
+      },
       {
         eventId: id.first,
         userId: alex.id,
