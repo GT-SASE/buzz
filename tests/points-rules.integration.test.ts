@@ -38,6 +38,10 @@ function callerFor(user: TestUser) {
  * timeline, so a private stretch of history keeps whatever else lives in the
  * database from turning up as a "happening" between these events. An officer
  * stamps them with manualCheckIn, which has no check-in window.
+ *
+ * Catch-up pays against the median of every member's live total, so the
+ * expected numbers below assume a database with no other check-ins in it. The
+ * running totals are noted beside each step.
  */
 const DAY_MS = 24 * 60 * 60 * 1000;
 const dayAt = (n: number) => new Date(Date.UTC(2001, 0, 1) + n * DAY_MS);
@@ -59,14 +63,19 @@ describe.skipIf(!process.env.DATABASE_URL)("points rules", () => {
     return { id, email, role } satisfies TestUser;
   }
 
-  async function makeEvent(day: number, label: string, archived = false) {
+  async function makeEvent(
+    day: number,
+    label: string,
+    archived = false,
+    pointsValue = 10,
+  ) {
     seq += 1;
     const [row] = await db
       .insert(events)
       .values({
         title: `pts ${label} ${suffix}`,
         startsAt: dayAt(day),
-        pointsValue: 10,
+        pointsValue,
         // Unique, and never a real alphabet code.
         checkInCode:
           `${suffix.slice(0, 6)}${String(seq).padStart(2, "0")}`.toUpperCase(),
@@ -125,22 +134,24 @@ describe.skipIf(!process.env.DATABASE_URL)("points rules", () => {
   }, SLOW);
 
   it(
-    "lets an officer check in without using up a member's early-bird spot",
+    "pays officers a flat point and lets them use up no early-bird spot",
     async () => {
       const m1 = await makeUser("early-m1", "MEMBER");
       const m2 = await makeUser("early-m2", "MEMBER");
       const m3 = await makeUser("early-m3", "MEMBER");
       const event = await makeEvent(0, "early bird");
 
-      // Officer first: same formula as anyone, and no member arrived before.
-      expect(await stamp(event, deputy)).toBe(15);
+      // Officers first: a flat point, no early-bird, and no spot used up.
+      expect(await stamp(event, deputy)).toBe(1);
       const boss = await makeUser("early-boss", "SUPER_ADMIN");
-      expect(await stamp(event, boss)).toBe(15);
+      expect(await stamp(event, boss)).toBe(1);
+      // First member in: 10 + 5, and nobody else to catch up to.
       expect(await stamp(event, m1)).toBe(15);
-      expect(await stamp(event, m2)).toBe(14);
-      // Third member arrival: two members were already in, the officers are
-      // not among them.
-      expect(await stamp(event, m3)).toBe(13);
+      // 10 + 4 early + catch-up min(10, ceil((15 - 0) / 2)) = 8. The officers'
+      // 1s are not in the median.
+      expect(await stamp(event, m2)).toBe(22);
+      // Third member arrival: 10 + 3 early + catch-up min(10, ceil((18.5 - 0) / 2)).
+      expect(await stamp(event, m3)).toBe(23);
     },
     SLOW,
   );
@@ -158,6 +169,14 @@ describe.skipIf(!process.env.DATABASE_URL)("points rules", () => {
         other = await makeUser("other", "MEMBER");
         newcomer = await makeUser("newcomer", "MEMBER");
 
+        // Ten members on 1 point each pin the catch-up median at 1, whatever
+        // earlier steps (or other rows in the database) left behind, so this
+        // block never pays catch-up and does not depend on its neighbours.
+        ev.filler = await makeEvent(5, "filler");
+        for (let i = 0; i < 10; i += 1) {
+          await attend(ev.filler, await makeUser(`filler${i}`, "MEMBER"), 1);
+        }
+
         // reg attends h1-h3; "other" keeps every event a happening.
         for (const [day, key] of [
           [10, "h1"],
@@ -169,19 +188,21 @@ describe.skipIf(!process.env.DATABASE_URL)("points rules", () => {
           await attend(ev[key], reg);
         }
 
-        // +9 regular, no miss yet: 10 base + 4 early (other was in) + 9.
+        // Level 3, no miss yet: 10 base + 4 early (other was in) + 6. reg (30)
+        // is above the median (1), so no catch-up.
         ev.t1 = await makeEvent(13, "t1");
         await attend(ev.t1, other);
-        expect(await stamp(ev.t1, reg)).toBe(23);
+        expect(await stamp(ev.t1, reg)).toBe(20);
 
-        // One miss costs a level, not the lot: +6.
+        // One miss costs a level, not the lot: still level 3 after climbing
+        // to 4, so +6.
         ev.h5 = await makeEvent(14, "h5");
         await attend(ev.h5, other);
         ev.t2 = await makeEvent(15, "t2");
         await attend(ev.t2, other);
         expect(await stamp(ev.t2, reg)).toBe(20);
 
-        // Two more misses: back down to +3 after climbing to the cap again.
+        // Two more misses after a hit at level 4: back down to level 2, +4.
         ev.h7 = await makeEvent(16, "h7");
         await attend(ev.h7, other);
         ev.h8 = await makeEvent(17, "h8");
@@ -189,11 +210,12 @@ describe.skipIf(!process.env.DATABASE_URL)("points rules", () => {
         await attend(ev.h8, newcomer);
         ev.t3 = await makeEvent(18, "t3");
         await attend(ev.t3, other);
-        expect(await stamp(ev.t3, reg)).toBe(17);
+        expect(await stamp(ev.t3, reg)).toBe(18);
 
         // Newcomer's first event was h8: h1-h7 are not held against them.
-        // 10 base + 3 early (other and reg were in) + 3 streak.
-        expect(await stamp(ev.t3, newcomer)).toBe(16);
+        // 10 base + 3 early (other and reg were in) + 2 streak; 10 is above the
+        // median (1), so no catch-up.
+        expect(await stamp(ev.t3, newcomer)).toBe(15);
       },
       SLOW,
     );
@@ -205,11 +227,12 @@ describe.skipIf(!process.env.DATABASE_URL)("points rules", () => {
           id: ev.h7!,
           archived: true,
         });
-        // Without h7 the walk ends t2 (3), h8 miss (2), t3 hit (3) = +9.
-        // Counting h7 it would be 3, 2, 1, 2 = +6.
+        // Without h7 the walk ends t2 (4), h8 miss (3), t3 hit (4) = +8.
+        // Counting h7 it would be 4, 3, 2, 3 = +6.
         ev.t4 = await makeEvent(19, "t4");
-        // 10 base + 5 early (first member in) + 9.
-        expect(await stamp(ev.t4, reg)).toBe(24);
+        await attend(ev.t4, other);
+        // 10 base + 4 early (other was in) + 8; reg is far above the median.
+        expect(await stamp(ev.t4, reg)).toBe(22);
       },
       SLOW,
     );
@@ -223,13 +246,15 @@ describe.skipIf(!process.env.DATABASE_URL)("points rules", () => {
         });
         // Attended h3, t1, t2, t3 and skipped everything else. Counting h7 the
         // walk after t2 (2) is h7 miss (1), h8 miss (0), t3 hit (1), t4 miss
-        // (0). Without h7 it would be h8 miss (1), t3 hit (2), t4 miss (1).
+        // (0). Without h7 it would be h8 miss (1), t3 hit (2), t4 miss (1),
+        // worth +2.
         const late = await makeUser("late", "MEMBER");
         for (const key of ["h3", "t1", "t2", "t3"] as const) {
           await attend(ev[key]!, late);
         }
         ev.t5 = await makeEvent(20, "t5");
-        // 10 base + 5 early (first member in) + 0 streak.
+        // 10 base + 5 early (first member in) + 0 streak. late (40) is above
+        // the median (1), so no catch-up.
         expect(await stamp(ev.t5, late)).toBe(15);
       },
       SLOW,
@@ -343,6 +368,17 @@ describe.skipIf(!process.env.DATABASE_URL)("points rules", () => {
   });
 
   it(
+    "pays nothing for a zero-point event, officer or member",
+    async () => {
+      const free = await makeUser("free", "MEMBER");
+      const event = await makeEvent(45, "zero points", false, 0);
+      expect(await stamp(event, deputy)).toBe(0);
+      expect(await stamp(event, free)).toBe(0);
+    },
+    SLOW,
+  );
+
+  it(
     "refuses an officer adding their own email: officers scan too",
     async () => {
       const event = await makeEvent(40, "self add");
@@ -383,7 +419,11 @@ describe.skipIf(!process.env.DATABASE_URL)("points rules", () => {
           eq(eventCheckIns.userId, deputy.id),
         ),
       });
-      expect(saved).toMatchObject({ method: "code", actedByUserId: null });
+      expect(saved).toMatchObject({
+        method: "code",
+        actedByUserId: null,
+        pointsEarned: 1,
+      });
       await expect(caller.event.checkIn({ code })).rejects.toMatchObject({
         code: "CONFLICT",
       });
