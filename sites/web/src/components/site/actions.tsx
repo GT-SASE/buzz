@@ -16,7 +16,7 @@ function isRouterHref(href: string, external: boolean) {
  */
 const actionVariants = {
   /** The one primary action on a light ground. Invisible on navy — use `solid`. */
-  primary: "bg-navy text-white hover:bg-navy-deep",
+  primary: "bg-navy text-white hover:bg-navy-deep hover:text-white",
   /** The same weight on a navy ground. */
   solid: "bg-gold-bright text-navy hover:bg-gold",
   /** The quiet action: a word on a gold rule that darkens on hover. No box. */

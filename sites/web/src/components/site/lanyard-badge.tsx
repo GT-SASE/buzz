@@ -39,7 +39,7 @@ export function LanyardBadge({
             its lower body, so the head and arms show over the top edge. The
             pop is on the wrapper so hovering the hero CTAs, which raises it
             further, never replays it. */}
-        <div className="dino-pop absolute right-3 bottom-full translate-y-[30%] -rotate-2">
+        <div className="dino-pop absolute right-3 bottom-full translate-y-[36%] -rotate-2">
           <SaseDino className="dino-rise h-32 sm:h-40 lg:h-44" />
         </div>
         <article className="border-hairline bg-paper relative z-10 w-full -rotate-2 overflow-hidden rounded-[1.375rem] border shadow-[0_1px_0_var(--hairline),0_18px_40px_-18px_rgb(15_31_48/0.35)]">
