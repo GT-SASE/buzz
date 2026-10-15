@@ -105,16 +105,18 @@ try {
   const users = (
     await client.query("SELECT id, name, email, role FROM buzz_user")
   ).rows;
+  // pg hands back bigint columns as strings, and production's pointsEarned is
+  // bigint. Left as strings, totals concatenate and every row reads as changed.
   const events = (
     await client.query(
       'SELECT id, "startsAt", "pointsValue", "archivedAt" FROM buzz_event',
     )
-  ).rows;
+  ).rows.map((row) => ({ ...row, pointsValue: Number(row.pointsValue) }));
   const checkIns = (
     await client.query(
       'SELECT id, "eventId", "userId", "checkedInAt", "pointsEarned", method FROM buzz_event_check_in',
     )
-  ).rows;
+  ).rows.map((row) => ({ ...row, pointsEarned: Number(row.pointsEarned) }));
 
   const roles = new Map(users.map((user) => [user.id, user.role]));
   const promotions = [];
