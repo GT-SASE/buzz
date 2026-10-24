@@ -54,6 +54,23 @@ The member portal (`/portal/**`) is the dynamic half. It reads the session and t
 on every request, mounts the tRPC client in its own layout, and is excluded from search
 indexing in two places (`robots.ts` and the portal layout's metadata).
 
+```mermaid
+flowchart LR
+  visitor([Visitor]) --> public["Public site<br/>app/(marketing)"]
+  member([Member / Admin]) --> portal["Member portal<br/>app/portal"]
+  public --> cache["Cached calendar query"]
+  portal --> api["Route handlers<br/>app/api"]
+  api --> auth["@buzz/auth<br/>NextAuth"]
+  api --> trpc["@buzz/api<br/>tRPC routers"]
+  auth <--> google[[Google OAuth]]
+  trpc --> db["@buzz/db<br/>Drizzle"]
+  auth --> db
+  cache --> db
+  db --> pg[(Postgres)]
+```
+
+Each part is broken down in [docs/site-structure.md](docs/site-structure.md).
+
 ## Setup
 
 The public site needs no environment at all — it builds and deploys with an
