@@ -1,22 +1,11 @@
-import { readFileSync } from "node:fs";
+import { siteUrl } from "./site-url.mjs";
 
 /**
  * Loads the pages people actually hit on the live site and exits non-zero if
  * any is down. The site URL comes from sites/web/src/data/site.ts so there is
  * one place to change it; SMOKE_URL overrides it.
  */
-function siteUrl() {
-  if (process.env.SMOKE_URL) return process.env.SMOKE_URL;
-  const source = readFileSync(
-    new URL("../sites/web/src/data/site.ts", import.meta.url),
-    "utf8",
-  );
-  const match = /\burl:\s*"([^"]+)"/.exec(source);
-  if (!match) throw new Error("No url in sites/web/src/data/site.ts");
-  return match[1];
-}
-
-const base = siteUrl().replace(/\/$/, "");
+const base = siteUrl(process.env.SMOKE_URL);
 
 /** [path, text the page must contain] */
 const checks = [

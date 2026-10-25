@@ -1,0 +1,55 @@
+name: Uptime
+
+# Every ten minutes, load the site's static pages and record the result in
+# uptime.json on the uptime-data branch, which /status reads straight from
+# raw.githubusercontent.com in the visitor's browser. Static pages come off
+# Vercel's CDN, so neither the probe nor the status page runs a function or
+# wakes the database.
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: uptime
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+
+      - name: Load history
+        run: |
+          git fetch --depth=1 origin uptime-data \
+            && git show FETCH_HEAD:uptime.json > "$RUNNER_TEMP/uptime.json" \
+            || echo "No history yet"
+
+      - name: Check live pages
+        run: node scripts/uptime.mjs "$RUNNER_TEMP/uptime.json"
+
+      # A single force-pushed commit, so the branch never grows. A push made
+      # with the workflow token does not start CI, and the vercel.json stops
+      # Vercel from deploying the branch.
+      - name: Publish
+        if: ${{ !cancelled() }}
+        run: |
+          git switch --orphan uptime-data
+          cp "$RUNNER_TEMP/uptime.json" uptime.json
+          mkdir -p sites/web
+          echo '{ "git": { "deploymentEnabled": false } }' > sites/web/vercel.json
+          git add uptime.json sites/web/vercel.json
+          git -c user.name="github-actions[bot]" \
+            -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -q -m "Record uptime check"
+          git push -q --force origin HEAD:uptime-data

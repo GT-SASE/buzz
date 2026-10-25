@@ -50,7 +50,7 @@ export function Eyebrow({
 }
 
 /** Comb header at the top of every interior page. One per page. */
-export function PageHeader({ title, body }: { title: string; body: string }) {
+export function PageHeader({ title, body }: { title: string; body?: string }) {
   return (
     <header
       data-tone="paper"
@@ -61,9 +61,11 @@ export function PageHeader({ title, body }: { title: string; body: string }) {
           <h1 className="font-display text-navy text-h1 font-bold tracking-tight text-balance">
             {title}
           </h1>
-          <p className="text-lead text-ink-muted max-w-measure lg:pb-2">
-            {body}
-          </p>
+          {body && (
+            <p className="text-lead text-ink-muted max-w-measure lg:pb-2">
+              {body}
+            </p>
+          )}
         </div>
       </div>
     </header>
