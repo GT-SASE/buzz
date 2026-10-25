@@ -82,8 +82,9 @@ describe("uptime summary", () => {
 
   it("summarizes each feature on its own", () => {
     const [site, auth] = summarize(history(), now).features;
-    expect(site?.averageMs).toBe(100);
-    expect(auth?.averageMs).toBe(Math.round((99 * 200 + 100 * 300) / 199));
+    // Median of 90 and 80; the failed auth sample is left out.
+    expect(site?.typicalMs).toBe(85);
+    expect(auth?.typicalMs).toBe(200);
     expect(auth?.uptime).toBeCloseTo((199 / 300) * 100);
     expect(auth?.recent.map((sample) => sample.ms)).toEqual([null, 200]);
   });
@@ -118,7 +119,7 @@ describe("uptime summary", () => {
 
   it("has no numbers before the first check", () => {
     const summary = summarize(history({ days: [] }), now);
-    expect(summary.features[0]?.averageMs).toBeNull();
+    expect(summary.days.at(-1)?.features[0]?.averageMs).toBeNull();
     expect(summary.windows.every((window) => window.percent === null)).toBe(
       true,
     );

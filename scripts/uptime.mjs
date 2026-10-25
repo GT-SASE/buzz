@@ -7,8 +7,8 @@ import { siteUrl } from "./site-url.mjs";
  * given as the first argument, records this run, and writes it back.
  *
  * Nothing here wakes the Neon database. The public site is a static page off
- * Vercel's CDN. The sign-in page and the auth providers endpoint run a
- * function, but with no session cookie Auth.js never queries the database.
+ * Vercel's CDN. The sign-in page runs a function, but with no session cookie
+ * Auth.js never queries the database.
  * /api/health runs a query, and the home page and /events revalidate against
  * the database, so probing those every ten minutes would keep compute warm.
  *
@@ -24,7 +24,6 @@ const base = siteUrl(process.env.UPTIME_URL);
 const checks = [
   ["site", "Public website", "/about", "SASE"],
   ["portal", "Member portal", "/portal/signin", "Continue with Google"],
-  ["auth", "Google sign-in", "/api/auth/providers", '"google"'],
 ];
 
 /** One sample per run for the last 24 hours, at a ten-minute cadence. */
@@ -46,6 +45,10 @@ function load() {
   return { recent: [], days: [], incidents: [] };
 }
 
+/**
+ * Response time is time to first byte: what the server took to answer, not
+ * how long the runner took to download the page.
+ */
 async function probe(path, expected) {
   const startedAt = Date.now();
   try {
@@ -53,8 +56,8 @@ async function probe(path, expected) {
       redirect: "follow",
       signal: AbortSignal.timeout(10_000),
     });
-    const body = await response.text();
     const ms = Date.now() - startedAt;
+    const body = await response.text();
     if (!response.ok)
       return { up: false, ms, detail: `HTTP ${response.status}` };
     if (!body.includes(expected)) {
@@ -74,6 +77,12 @@ async function probe(path, expected) {
     };
   }
 }
+
+// Open the connection first so DNS and the TLS handshake from a fresh
+// runner are not billed to whichever check happens to run first.
+await fetch(`${base}/robots.txt`, { signal: AbortSignal.timeout(10_000) })
+  .then((response) => response.arrayBuffer())
+  .catch(() => {});
 
 const checkedAt = new Date();
 const results = {};

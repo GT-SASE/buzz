@@ -45,8 +45,11 @@ export type FeatureSummary = {
   up: boolean;
   /** Over the last 90 days. */
   uptime: number | null;
-  /** Over the last 30 days, checks that came back up only. */
-  averageMs: number | null;
+  /**
+   * Median of the last 24 hours, checks that came back up only. A median, so
+   * one cold start does not drag the number a visitor usually gets.
+   */
+  typicalMs: number | null;
   /** Last 24 hours, oldest first; null where the check failed. */
   recent: { at: Date; ms: number | null }[];
 };
@@ -84,6 +87,15 @@ function average(buckets: Bucket[]) {
   return Math.round(
     buckets.reduce((sum, bucket) => sum + bucket.totalMs, 0) / up,
   );
+}
+
+function median(values: number[]) {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2
+    ? (sorted[middle] ?? null)
+    : Math.round(((sorted[middle - 1] ?? 0) + (sorted[middle] ?? 0)) / 2);
 }
 
 export function summarize(history: UptimeHistory, now: Date): UptimeSummary {
@@ -129,7 +141,11 @@ export function summarize(history: UptimeHistory, now: Date): UptimeSummary {
       name: check.name,
       up: history.latest[check.id]?.up ?? false,
       uptime: ratio(buckets(check.id, 90)),
-      averageMs: average(buckets(check.id, 30)),
+      typicalMs: median(
+        history.recent
+          .map((sample) => sample.ms[check.id])
+          .filter((ms) => ms != null),
+      ),
       recent: history.recent.map((sample) => ({
         at: new Date(sample.at),
         ms: sample.ms[check.id] ?? null,
