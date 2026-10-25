@@ -30,7 +30,8 @@ function formatPercent(value: number | null) {
 }
 
 function formatMs(value: number | null) {
-  return value === null ? "—" : `${value} ms`;
+  if (value === null) return "—";
+  return value < 1000 ? `${value} ms` : `${(value / 1000).toFixed(1)} s`;
 }
 
 function barColor(value: number | null) {
@@ -133,7 +134,7 @@ export function UptimeBoard() {
       <Eyebrow as="h3" className="mt-16">
         Response time, last 24 hours
       </Eyebrow>
-      <ul className="mt-6 grid gap-10 md:grid-cols-3 md:gap-8">
+      <ul className="mt-6 grid gap-10 md:grid-cols-2 md:gap-12">
         {summary.features.map((feature) => (
           <FeatureCard key={feature.id} feature={feature} maxMs={maxMs} />
         ))}
@@ -199,9 +200,9 @@ function FeatureCard({
           </dd>
         </div>
         <div>
-          <dt className={statLabel}>30-day average</dt>
+          <dt className={statLabel}>Typical response</dt>
           <dd className="text-ink text-body mt-1 font-semibold tabular-nums">
-            {formatMs(feature.averageMs)}
+            {formatMs(feature.typicalMs)}
           </dd>
         </div>
       </dl>
@@ -211,6 +212,7 @@ function FeatureCard({
 }
 
 const chartWidth = 300;
+const dayMs = 24 * 60 * 60 * 1000;
 const chartHeight = 72;
 
 function ResponseChart({
@@ -227,10 +229,12 @@ function ResponseChart({
     return <p className="text-ink-muted text-body-sm mt-4">No samples yet.</p>;
   }
 
+  // Placed by time across a fixed 24 hours ending at the latest check, so a
+  // short history sits at the right instead of stretching across the chart.
+  const end = samples.at(-1)?.at.getTime() ?? 0;
   const x = (index: number) =>
-    samples.length < 2
-      ? chartWidth
-      : (index / (samples.length - 1)) * chartWidth;
+    chartWidth -
+    ((end - (samples[index]?.at.getTime() ?? end)) / dayMs) * chartWidth;
   const y = (ms: number) => chartHeight - (ms / maxMs) * chartHeight;
 
   // A failed check breaks the line instead of dropping it to zero.
@@ -256,20 +260,26 @@ function ResponseChart({
   const left = (index: number) => `${(x(index) / chartWidth) * 100}%`;
 
   function pick(clientX: number, box: DOMRect) {
-    const ratio = Math.min(1, Math.max(0, (clientX - box.left) / box.width));
-    setActive(Math.round(ratio * (samples.length - 1)));
+    const target = ((clientX - box.left) / box.width) * chartWidth;
+    let nearest = 0;
+    samples.forEach((_, index) => {
+      if (Math.abs(x(index) - target) < Math.abs(x(nearest) - target)) {
+        nearest = index;
+      }
+    });
+    setActive(nearest);
   }
 
   return (
     <figure className="mt-5">
-      <div className="text-ink-muted text-eyebrow flex justify-between tabular-nums">
-        <span>{maxMs} ms</span>
-        {last && (
+      {last && (
+        <p className="text-ink-muted text-eyebrow text-right tabular-nums">
+          Now{" "}
           <span className="text-ink font-semibold">
-            {last.ms === null ? "Down" : `${last.ms} ms`}
+            {last.ms === null ? "Down" : formatMs(last.ms)}
           </span>
-        )}
-      </div>
+        </p>
+      )}
       <div
         role="img"
         tabIndex={0}
@@ -365,11 +375,11 @@ function ResponseChart({
               className="bg-paper border-hairline text-body-sm pointer-events-none absolute bottom-full mb-2 rounded-md border px-3 py-2 whitespace-nowrap shadow-sm"
               style={{
                 left: left(active),
-                transform: `translateX(-${(active / Math.max(1, samples.length - 1)) * 100}%)`,
+                transform: `translateX(-${(x(active) / chartWidth) * 100}%)`,
               }}
             >
               <span className="text-ink block font-semibold tabular-nums">
-                {shown.ms === null ? "Down" : `${shown.ms} ms`}
+                {shown.ms === null ? "Down" : formatMs(shown.ms)}
               </span>
               <span className="text-ink-muted block">
                 {clock.format(shown.at)}
