@@ -16,7 +16,7 @@
     "@auth/core": "^0.41.3",
     "@auth/drizzle-adapter": "^1.11.3",
     "@buzz/db": "workspace:*",
-    "drizzle-orm": "^0.45.3",
+    "drizzle-orm": "^0.45.4",
     "next-auth": "5.0.0-beta.32"
   },
   "devDependencies": {
