@@ -32,8 +32,6 @@ export const site = {
   region: "GA",
   parentOrganization: "https://www.saseconnect.org/",
   email: "gt@saseconnect.org",
-  /** Upptime status page, published from the GT-SASE/buzz-status repo. */
-  statusUrl: "https://gt-sase.github.io/buzz-status/",
   socials: [
     {
       id: "instagram",
