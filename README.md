@@ -160,11 +160,11 @@ beyond that.
 
 `/status` shows whether the site is up, 24-hour response times per feature,
 and daily uptime over 90 days; clicking a day lists its failed checks. The
-`Uptime` workflow (`scripts/uptime.mjs`) checks `/about`, `/portal/signin` and
-`/api/auth/providers` every ten minutes and force-pushes the result as
+`Uptime` workflow (`scripts/uptime.mjs`) checks `/about` and `/portal/signin`
+every ten minutes, timing to the first byte, and force-pushes the result as
 `uptime.json` to the `uptime-data` branch; the page fetches that file in the
-browser. None of those wakes the database: `/about` is static, and the other
-two never query it without a session cookie. Don't add `/api/health`, the home
+browser. Neither wakes the database: `/about` is static, and the sign-in page
+never queries it without a session cookie. Don't add `/api/health`, the home
 page or `/events`, which would. A failed probe fails the workflow run, which
 GitHub emails to the repo's watchers.
 
