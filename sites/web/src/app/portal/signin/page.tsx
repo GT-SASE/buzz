@@ -1,69 +1,35 @@
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
+import { Suspense } from "react";
 
-import { signInWithGoogle } from "~/app/portal/_components/auth-actions";
-import { checkInPath, safeRedirectPath } from "~/app/portal/_lib/paths";
-import { Eyebrow, SaseDino } from "~/components/site";
-import { site } from "~/data/site";
-import { Button } from "~/components/ui/button";
-import { Card, CardContent, CardHeader } from "~/components/ui/card";
-import { auth } from "@buzz/auth";
+import { SignedOutHeader } from "~/app/portal/_components/signed-out-header";
+import { SignInCard, SignInView } from "./sign-in-card";
 
 export const metadata: Metadata = {
   title: "Sign in",
 };
 
-export default async function SignInPage({
-  searchParams,
-}: {
-  // Next really does hand back an array when a key repeats.
-  searchParams: Promise<{ from?: string | string[] }>;
-}) {
-  const { from: rawFrom } = await searchParams;
-  const from = safeRedirectPath(rawFrom);
-  const checkingIn = from.startsWith(checkInPath());
-  const session = await auth();
-
-  // Already signed in: honour where they were headed.
-  if (session?.user) {
-    redirect(from);
-  }
-
+/**
+ * Prerendered and served from the CDN, so the page every "Join SASE" button
+ * lands on never waits on a cold function. `from` and the signed-in redirect
+ * are handled in the browser by `SignInCard`.
+ */
+export default function SignInPage() {
   return (
-    <section className="bg-cream relative flex min-h-[calc(100dvh-4.5rem)] items-center overflow-hidden px-5 py-10 sm:px-6 sm:py-20">
-      <Card className="border-hairline bg-paper relative mx-auto w-full max-w-md rounded-xl">
-        <CardHeader>
-          <SaseDino className="mb-5 h-20" />
-          <Eyebrow tone="gold">{site.portalName}</Eyebrow>
-          <h1 className="font-display text-navy text-h2 mt-5 font-bold tracking-tight text-balance">
-            {checkingIn ? "Sign in to check in." : "Become a member."}
-          </h1>
-        </CardHeader>
-
-        <CardContent>
-          <p className="text-ink-muted text-body">
-            {checkingIn
-              ? "Signing in is how the chapter records that you were there and credits your points. You will land back on the check-in screen."
-              : "Membership is free. Sign in with Google and you are a member. Your card, points, and SASE KIN signup all live in the portal. There is nothing to pay and no application to fill out."}
-          </p>
-
-          <form action={signInWithGoogle} className="mt-8">
-            <input type="hidden" name="from" value={from} />
-            <Button
-              type="submit"
-              size="lg"
-              className="bg-navy hover:bg-navy-deep h-auto min-h-12 w-full rounded-md py-6 font-semibold text-white"
-            >
-              Continue with Google
-            </Button>
-          </form>
-
-          <p className="text-ink-muted text-body-sm mt-6">
-            Sign in with any Google account. Nothing is posted anywhere and the
-            chapter only sees your name and email.
-          </p>
-        </CardContent>
-      </Card>
-    </section>
+    <>
+      <SignedOutHeader />
+      <div className="flex min-w-0 flex-1 flex-col lg:flex-row">
+        <main
+          id="content"
+          tabIndex={-1}
+          className="min-w-0 flex-1 focus:shadow-none focus:outline-none"
+        >
+          <section className="bg-cream relative flex min-h-[calc(100dvh-4.5rem)] items-center overflow-hidden px-5 py-10 sm:px-6 sm:py-20">
+            <Suspense fallback={<SignInView from="/portal" />}>
+              <SignInCard />
+            </Suspense>
+          </section>
+        </main>
+      </div>
+    </>
   );
 }

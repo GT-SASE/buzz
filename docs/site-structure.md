@@ -40,8 +40,10 @@ flowchart LR
 
 ## Member portal
 
-`app/portal/(member)` needs a session. Pages call tRPC through the client mounted in
-`app/portal/layout.tsx`; the resume upload goes through its own route handler.
+`app/portal/(member)` needs a session. Its layout reads the session for the
+sidebar and mounts the tRPC client the pages call; the resume upload goes
+through its own route handler. `/portal/signin` sits outside it and is
+prerendered: it reads `from` and redirects a signed-in visitor in the browser.
 
 ```mermaid
 flowchart LR
