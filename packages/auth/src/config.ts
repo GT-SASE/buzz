@@ -115,8 +115,11 @@ export const authConfig = {
     // Database sessions, so `user` is the freshly-read row: carrying the role
     // here costs no extra query, and a revoked officer loses access on their
     // next request rather than whenever a token happens to expire.
+    // Build the result field by field: with database sessions `session` is the
+    // stored row, so spreading it would put `sessionToken` in the JSON that
+    // /api/auth/session hands to any script on the page.
     session: ({ session, user }) => ({
-      ...session,
+      expires: session.expires,
       user: {
         ...session.user,
         id: user.id,
