@@ -99,6 +99,12 @@ export function SiteFooter({ dino = true }: { dino?: boolean } = {}) {
           <p>{site.name}</p>
           <p>Georgia Institute of Technology · Atlanta, GA</p>
           <Link
+            href="/status"
+            className="inline-flex min-h-11 items-center py-3 font-semibold transition hover:text-white"
+          >
+            Status
+          </Link>
+          <Link
             href={joinHref}
             className="inline-flex min-h-11 items-center py-3 font-semibold transition hover:text-white"
           >

@@ -156,7 +156,17 @@ shipping a broken sign-in.
 
 `GET /api/health` answers `200` with `{"status":"ok"}` when the database is
 reachable and `503` when it is not. It is unauthenticated, so it says nothing
-beyond that — point an uptime checker at it.
+beyond that.
+
+`/status` shows whether the site is up, 24-hour response times per feature,
+and daily uptime over 90 days; clicking a day lists its failed checks. The
+`Uptime` workflow (`scripts/uptime.mjs`) checks `/about`, `/portal/signin` and
+`/api/auth/providers` every ten minutes and force-pushes the result as
+`uptime.json` to the `uptime-data` branch; the page fetches that file in the
+browser. None of those wakes the database: `/about` is static, and the other
+two never query it without a session cookie. Don't add `/api/health`, the home
+page or `/events`, which would. A failed probe fails the workflow run, which
+GitHub emails to the repo's watchers.
 
 Everything a tRPC procedure throws is logged as one JSON line on stdout, which
 means Vercel → the deployment → **Runtime Logs**. Filter on `"event":"trpc.error"`.
