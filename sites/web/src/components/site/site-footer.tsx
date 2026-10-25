@@ -98,6 +98,15 @@ export function SiteFooter({ dino = true }: { dino?: boolean } = {}) {
         <div className="text-eyebrow tracking-caps mt-16 flex flex-col gap-4 border-t-2 border-white/20 pt-8 text-white/50 uppercase lg:flex-row lg:items-center lg:justify-between">
           <p>{site.name}</p>
           <p>Georgia Institute of Technology · Atlanta, GA</p>
+          <a
+            href={site.statusUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex min-h-11 items-center py-3 font-semibold transition hover:text-white"
+          >
+            Status
+            <span className="sr-only"> (opens in a new tab)</span>
+          </a>
           <Link
             href={joinHref}
             className="inline-flex min-h-11 items-center py-3 font-semibold transition hover:text-white"
