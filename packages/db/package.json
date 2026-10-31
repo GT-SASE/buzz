@@ -20,7 +20,7 @@
     "postgres": "docker run --rm --name buzz-ci-postgres -p 15433:5432 -e POSTGRES_PASSWORD=postgres postgres:16"
   },
   "dependencies": {
-    "@vercel/functions": "^3.10.3",
+    "@vercel/functions": "^3.10.4",
     "drizzle-orm": "^0.45.4",
     "next-auth": "5.0.0-beta.32",
     "pg": "^8.23.0",
