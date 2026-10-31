@@ -16,7 +16,8 @@
     "db:studio": "drizzle-kit studio",
     "db:seed": "node --disable-warning=ExperimentalWarning scripts/seed.ts",
     "db:seed:calendar": "node --disable-warning=ExperimentalWarning scripts/seed-fall-2026.ts",
-    "typecheck": "tsrs --noEmit --fast"
+    "typecheck": "tsrs --noEmit --fast",
+    "postgres": "docker run --rm --name buzz-ci-postgres -p 15433:5432 -e POSTGRES_PASSWORD=postgres postgres:16"
   },
   "dependencies": {
     "@vercel/functions": "^3.10.3",
