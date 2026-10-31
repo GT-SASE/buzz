@@ -57,6 +57,9 @@ VIETNAMESE = codes(
     (0x1AF, 0x1B0), (0x300, 0x301), (0x303, 0x304), (0x308, 0x309), 0x323, 0x329,
     (0x1EA0, 0x1EF9), 0x20AB,
 )
+# Unused in the source, but officers type event text into the database. Without
+# these, a stray bullet or euro sign would be redrawn in a system font.
+TYPED_SYMBOLS = codes(0x2020, 0x2022, 0x2039, 0x203A, 0x20AC, 0x2122)
 
 # The union of what next/font served before this script existed. A character
 # outside it was drawn by a system font even when the font file contains it, so
@@ -124,6 +127,8 @@ FACES = [
         license_file="OFL-IBMPlexMono.txt",
         css_weight="500",
         features=MONO_FEATURES,
+        # Only the error pages use it, so no page should pay to preload it.
+        preload=False,
         coverage=GOOGLE_COVERAGE | GOOGLE_CYRILLIC | GOOGLE_CYRILLIC_EXT,
         rename=[("IBM Plex Mono", "SASE Mono"), ("IBMPlexMono", "SASEMono")],
     ),
@@ -286,7 +291,7 @@ def main() -> None:
         if not args.small_core:
             core_wanted |= LATIN_1
         core = core_wanted & available
-        extended = ((LATIN_1 | LATIN_EXT_A | VIETNAMESE | used) & available) - core
+        extended = ((LATIN_1 | LATIN_EXT_A | VIETNAMESE | TYPED_SYMBOLS | used) & available) - core
 
         for part, wanted, preload in (("core", core, face.preload), ("extended", extended, False)):
             payload = to_bytes(cut(face, data, wanted))

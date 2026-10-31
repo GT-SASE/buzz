@@ -16,10 +16,10 @@
   font-weight: 100 900;
   font-stretch: 100% 125%;
   font-display: swap;
-  src: url("/fonts/archivo-extended.8fac11325b.woff2") format("woff2");
+  src: url("/fonts/archivo-extended.60e962d99a.woff2") format("woff2");
   unicode-range:
     U+100-17F, U+1A0-1A1, U+1AF-1B0, U+300-301, U+303-304, U+308-309, U+323,
-    U+1EA0-1EF9, U+20AB;
+    U+1EA0-1EF9, U+2020, U+2022, U+2039-203A, U+20AB-20AC, U+2122;
 }
 @font-face {
   font-family: "SASE Mono";
@@ -36,10 +36,10 @@
   font-style: normal;
   font-weight: 500;
   font-display: swap;
-  src: url("/fonts/sase-mono-extended.78c388b95b.woff2") format("woff2");
+  src: url("/fonts/sase-mono-extended.f2d4dece21.woff2") format("woff2");
   unicode-range:
     U+100-17F, U+1A0-1A1, U+1AF-1B0, U+300-301, U+303-304, U+308-309, U+323,
-    U+1EA0-1EF9, U+20AB;
+    U+1EA0-1EF9, U+2020, U+2022, U+2039-203A, U+20AB-20AC, U+2122;
 }
 @font-face {
   font-family: "Archivo Fallback";
