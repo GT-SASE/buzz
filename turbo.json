@@ -1,0 +1,18 @@
+{
+  "$schema": "https://turborepo.dev/schema.json",
+  "tasks": {
+    "//#lint": {
+      "tags": ["ci"]
+    },
+    "//#typecheck": {
+      "tags": ["ci"]
+    },
+    "//#format:check": {
+      "tags": ["ci"]
+    },
+    "//#test:ci": {
+      "with": ["@buzz/db#postgres"],
+      "tags": ["ci", "ci:cpus:4"]
+    }
+  }
+}
