@@ -4,7 +4,7 @@ import { Suspense } from "react";
 
 import { PortalHeader } from "~/app/portal/_components/portal-ui";
 import { Section } from "~/components/site";
-import { HydrateClient, api } from "~/trpc/server";
+import { HydrateClient, api, hydrated } from "~/trpc/server";
 import AdminLoading from "../loading";
 import { CommitteeAdmin } from "./committee-admin";
 import { defaultCycle } from "./default-cycle";
@@ -20,8 +20,10 @@ export default function AdminCommitteesPage() {
 }
 
 async function AdminCommitteesBody() {
-  const cycles = await api.committee.cycles();
-  await api.committee.list({ cycle: defaultCycle(cycles) });
+  const cycles = await hydrated(["committee", "cycles"], undefined, () =>
+    api.committee.cycles(),
+  );
+  await api.committee.list.prefetch({ cycle: defaultCycle(cycles) });
 
   return (
     <HydrateClient>

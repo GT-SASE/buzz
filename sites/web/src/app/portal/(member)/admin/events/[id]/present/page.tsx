@@ -4,10 +4,12 @@ import { cache } from "react";
 
 import { orNotFound } from "~/app/portal/_lib/missing";
 import { requireOfficer } from "~/app/portal/_lib/session";
-import { HydrateClient, api } from "~/trpc/server";
+import { HydrateClient, api, hydrated } from "~/trpc/server";
 import { PresentScreen } from "./present-screen";
 
-const eventForPage = cache((id: string) => api.event.getById({ id }));
+const eventForPage = cache((id: string) =>
+  hydrated(["event", "getById"], { id }, () => api.event.getById({ id })),
+);
 
 export async function generateMetadata({
   params,
