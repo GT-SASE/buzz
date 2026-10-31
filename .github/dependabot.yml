@@ -44,6 +44,8 @@ updates:
       - dependency-name: next-auth
       - dependency-name: typescript
       - dependency-name: typescript-7
+      # Beta, pinned exactly in every workspace. Move it by hand.
+      - dependency-name: tsrs
       # ESLint 10 crashes with eslint-config-next 16 / react-hooks 7
       # (scopeManager.addGlobals). Stay on 9 until those plugins support 10.
       - dependency-name: eslint
