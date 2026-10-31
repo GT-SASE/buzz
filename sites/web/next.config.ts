@@ -30,6 +30,16 @@ const config: NextConfig = {
 
     return [
       {
+        // Names carry a content hash, so a changed font gets a new URL.
+        source: "/fonts/:file([^/]+\\.woff2)",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, max-age=31536000, immutable",
+          },
+        ],
+      },
+      {
         source: "/:path*",
         headers: [
           ...base,

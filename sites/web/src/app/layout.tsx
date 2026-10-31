@@ -1,10 +1,12 @@
 import "~/styles/globals.css";
+import "~/styles/fonts.generated.css";
 
 import type { Metadata, Viewport } from "next";
 import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
-import { Archivo, IBM_Plex_Mono } from "next/font/google";
+import { preload } from "react-dom";
 
+import { fontPreloads } from "~/data/fonts.generated";
 import { site } from "~/data/site";
 import { env } from "~/env";
 import {
@@ -85,21 +87,6 @@ export const viewport: Viewport = {
   userScalable: true,
 };
 
-// One family. Headings use its width axis (see .font-display in globals.css).
-const sans = Archivo({
-  subsets: ["latin"],
-  variable: "--font-archivo",
-  axes: ["wdth"],
-  display: "swap",
-});
-
-const mono = IBM_Plex_Mono({
-  subsets: ["latin"],
-  variable: "--font-ibm",
-  weight: ["500"],
-  display: "swap",
-});
-
 /**
  * Document shell only. Chrome lives in the route groups — (marketing) mounts
  * the public nav and footer, the portal mounts its own — so a signed-in member
@@ -112,12 +99,14 @@ const mono = IBM_Plex_Mono({
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
+  // Font files are subset by hand: see scripts/fonts/README.md. A new weight,
+  // width, OpenType feature or character range may need a rerun.
+  for (const href of fontPreloads) {
+    preload(href, { as: "font", type: "font/woff2", crossOrigin: "anonymous" });
+  }
+
   return (
-    <html
-      lang="en"
-      data-scroll-behavior="smooth"
-      className={`${sans.variable} ${mono.variable}`}
-    >
+    <html lang="en" data-scroll-behavior="smooth">
       <body className="text-ink bg-paper flex min-h-screen flex-col antialiased">
         <script
           type="application/ld+json"

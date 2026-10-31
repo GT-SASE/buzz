@@ -40,6 +40,11 @@ directly and its peer range stops at `<6.1.0`; `typescript-7` is the alias that
 `tsc` actually runs. `postcss.config.js` is the one file still in JavaScript —
 Next 16.3 only resolves `postcss.config.{js,mjs,json}`.
 
+`pnpm typecheck` runs [tsrs](https://github.com/oxc-project/tsrs), the Rust port
+of the TypeScript compiler. It is a beta, so it is pinned exactly in every
+workspace and CI still runs `pnpm typecheck:tsc` as the deciding check. It only
+type-checks: Next compiles the site with SWC and dev uses Turbopack.
+
 `pnpm ui:add @watermelon/<name>` pulls another component into `components/ui`.
 
 ## Two halves

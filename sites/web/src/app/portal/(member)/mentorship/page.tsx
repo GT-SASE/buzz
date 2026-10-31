@@ -23,9 +23,9 @@ export default function MentorshipPage() {
 async function MentorshipBody() {
   const session = await requireSession("/portal/mentorship");
   await Promise.all([
-    api.mentorship.mine(),
-    api.mentorship.groups(),
-    api.mentorship.myGroup(),
+    api.mentorship.mine.prefetch(),
+    api.mentorship.groups.prefetch(),
+    api.mentorship.myGroup.prefetch(),
   ]);
 
   return (

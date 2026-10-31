@@ -23,8 +23,8 @@ export default function AdminElectionsPage() {
 async function AdminElectionsBody() {
   const currentYear = schoolYear(new Date());
   await Promise.all([
-    api.election.list({ year: currentYear }),
-    api.election.years(),
+    api.election.list.prefetch({ year: currentYear }),
+    api.election.years.prefetch(),
   ]);
 
   return (
