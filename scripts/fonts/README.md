@@ -16,8 +16,10 @@ clean rerun changes nothing. `--dry-run` prints sizes and writes nothing.
 ## Rerun when
 
 - Text in `sites/web/src` adds a character the fonts lack. Latin-1, Latin
-  Extended-A and Vietnamese are already covered. The script scans the source, but
-  it cannot see text stored in the database.
+  Extended-A, Vietnamese and `† • ‹ › € ™` are already covered. The script scans
+  the source, but it cannot see text stored in the database.
+- The mono font starts appearing on normal pages. It is not preloaded, because
+  only the error pages use it. Set `preload=True` on its face if that changes.
 - A style needs a width outside 100% to 125%. The browser clamps to that range
   without any error. Every Archivo weight from 100 to 900 ships.
 - A style turns on an OpenType feature not listed in `subset.py`, such as
