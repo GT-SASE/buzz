@@ -49,6 +49,9 @@ export default defineConfig({
           environment: "node",
           include: ["tests/**/*.test.ts"],
           fileParallelism: false,
+          // One project at a time. Vitest gives a worker a fixed 60s to start,
+          // and a slow machine can miss that while the other project runs.
+          sequence: { groupOrder: 0 },
         },
       },
       {
@@ -72,6 +75,7 @@ export default defineConfig({
           // Threads, not forks: only the node project needs fork semantics for
           // process.env.TZ, and forking this one times out starting its worker.
           pool: "threads",
+          sequence: { groupOrder: 1 },
         },
       },
     ],
