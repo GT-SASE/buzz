@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Suspense } from "react";
 
 import { SignedOutHeader } from "~/app/portal/_components/signed-out-header";
+import { afterSignIn } from "~/app/portal/_lib/paths";
 import { SignInCard, SignInView } from "./sign-in-card";
 
 export const metadata: Metadata = {
@@ -24,7 +25,7 @@ export default function SignInPage() {
           className="min-w-0 flex-1 focus:shadow-none focus:outline-none"
         >
           <section className="bg-cream relative flex min-h-[calc(100dvh-4.5rem)] items-center overflow-hidden px-5 py-10 sm:px-6 sm:py-20">
-            <Suspense fallback={<SignInView from="/portal" />}>
+            <Suspense fallback={<SignInView from={afterSignIn} />}>
               <SignInCard />
             </Suspense>
           </section>

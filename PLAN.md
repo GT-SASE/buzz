@@ -301,7 +301,6 @@ DDL helpers (`lower(email)` index, CHECK constraints).
 
 ## Intentionally out of scope
 
-- In-app promote/demote to officer
 - Dues system (membership is free)
 - Leaderboard opt-out (add only if the board asks)
 - School-domain lock on Google sign-in (product decision: any Google account)
