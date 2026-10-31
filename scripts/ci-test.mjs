@@ -13,9 +13,12 @@ function run(command, env = {}) {
 
 function ready() {
   try {
-    execSync("docker exec buzz-ci-postgres pg_isready -h 127.0.0.1 -U postgres", {
-      stdio: "ignore",
-    });
+    execSync(
+      "docker exec buzz-ci-postgres pg_isready -h 127.0.0.1 -U postgres",
+      {
+        stdio: "ignore",
+      },
+    );
     return true;
   } catch {
     return false;
