@@ -37,7 +37,7 @@ async function DashboardBody() {
 
   const [home, , kin, kinGroup, recruiting, committee] = await Promise.all([
     api.event.home(),
-    api.member.leaderboard({ limit: 10 }),
+    api.member.leaderboard.prefetch({ limit: 10 }),
     api.mentorship.mine().catch((error) => {
       console.error("KIN prefetch failed:", error);
       return null;

@@ -22,9 +22,9 @@ export default function AdminMentorshipPage() {
 async function AdminMentorshipBody() {
   const currentSemester = semester(new Date());
   await Promise.all([
-    api.mentorship.list({ semester: currentSemester }),
-    api.mentorship.groups({ semester: currentSemester }),
-    api.mentorship.semesters(),
+    api.mentorship.list.prefetch({ semester: currentSemester }),
+    api.mentorship.groups.prefetch({ semester: currentSemester }),
+    api.mentorship.semesters.prefetch(),
   ]);
 
   return (
