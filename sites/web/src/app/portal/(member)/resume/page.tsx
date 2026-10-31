@@ -21,7 +21,7 @@ export default function ResumePage() {
 
 async function ResumeBody() {
   await requireSession("/portal/resume");
-  await api.resume.mine();
+  await api.resume.mine.prefetch();
 
   return (
     <HydrateClient>

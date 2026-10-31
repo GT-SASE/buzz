@@ -21,7 +21,7 @@ export default function CommitteeApplyPage() {
 
 async function CommitteeApplyBody() {
   await requireSession("/portal/committees");
-  await api.committee.mine();
+  await api.committee.mine.prefetch();
 
   return (
     <HydrateClient>

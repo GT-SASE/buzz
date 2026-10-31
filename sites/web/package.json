@@ -8,7 +8,7 @@
     "dev": "next dev --turbopack",
     "preview": "next build && next start",
     "start": "next start",
-    "typecheck": "next typegen && tsc --noEmit"
+    "typecheck": "next typegen && tsrs --noEmit --fast"
   },
   "dependencies": {
     "@buzz/api": "workspace:*",
@@ -55,6 +55,7 @@
     "postcss": "^8.5.28",
     "shadcn": "^4.22.1",
     "tailwindcss": "^4.3.3",
+    "tsrs": "0.20.1-ts7.1.0-beta",
     "typescript": "^7.0.2"
   }
 }

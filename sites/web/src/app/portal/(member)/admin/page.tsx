@@ -24,10 +24,10 @@ export default function AdminEventsPage() {
 
 async function AdminEventsBody() {
   await Promise.all([
-    api.chapter.overview(),
-    api.chapter.attendance({ period: "semester" }),
-    api.chapter.turnout({ period: "semester" }),
-    api.event.listAll({ limit: 200, offset: 0 }),
+    api.chapter.overview.prefetch(),
+    api.chapter.attendance.prefetch({ period: "semester" }),
+    api.chapter.turnout.prefetch({ period: "semester" }),
+    api.event.listAll.prefetch({ limit: 200, offset: 0 }),
   ]);
 
   return (
