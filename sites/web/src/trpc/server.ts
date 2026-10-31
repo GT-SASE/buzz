@@ -27,3 +27,20 @@ export const { trpc: api, HydrateClient } = createHydrationHelpers<AppRouter>(
   caller,
   getQueryClient,
 );
+
+/**
+ * `await api.x.y(input)` for a page that reads the result itself and also
+ * renders a client `useQuery` on the same procedure, so one database call fills
+ * both. It rejects on failure, which `orNotFound` relies on and `.prefetch()`
+ * would swallow. The key must match what tRPC builds for the client hook.
+ */
+export function hydrated<T>(
+  path: [router: string, procedure: string],
+  input: unknown,
+  load: () => Promise<T>,
+) {
+  return getQueryClient().fetchQuery({
+    queryKey: [path, { input, type: "query" }],
+    queryFn: load,
+  });
+}

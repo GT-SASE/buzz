@@ -22,22 +22,16 @@ export default function AdminMembersPage() {
 }
 
 async function AdminMembersBody() {
-  // Prefetch is a speed-up. If it throws, the table and figures still render
-  // and fetch over HTTP — better than the whole roster dying behind the
-  // generic portal error card.
-  let prefetched = false;
-  try {
-    await Promise.all([
-      api.member.list({ limit: 25, offset: 0, sort: "points" }),
-      api.member.metrics({ tiers: tierFloors }),
-    ]);
-    prefetched = true;
-  } catch (error) {
-    console.error("Roster prefetch failed:", error);
-  }
+  // Prefetch is a speed-up and never throws. If it fails, the table and figures
+  // still render and fetch over HTTP — better than the whole roster dying
+  // behind the generic portal error card.
+  await Promise.all([
+    api.member.list.prefetch({ limit: 25, offset: 0, sort: "points" }),
+    api.member.metrics.prefetch({ tiers: tierFloors }),
+  ]);
 
-  const body = (
-    <>
+  return (
+    <HydrateClient>
       <PortalHeader
         title="Roster"
         body="Who has signed in, what they have earned, when they last came."
@@ -51,8 +45,6 @@ async function AdminMembersBody() {
           <MembersTable />
         </Section>
       </div>
-    </>
+    </HydrateClient>
   );
-
-  return prefetched ? <HydrateClient>{body}</HydrateClient> : body;
 }
