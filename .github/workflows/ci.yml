@@ -66,6 +66,13 @@ jobs:
           # Public prerender must not require portal secrets in CI.
           SKIP_ENV_VALIDATION: "1"
 
+      # `pnpm check` type-checks with tsrs, which is still a beta. Keep tsc as
+      # the deciding check until tsrs has a stable release.
+      - name: Typecheck with tsc
+        run: pnpm typecheck:tsc
+        env:
+          SKIP_ENV_VALIDATION: "1"
+
       - name: Build
         run: pnpm vercel-build
         env:
