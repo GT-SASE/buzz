@@ -19,7 +19,7 @@ export default function EventsPage() {
 
 async function EventsBody() {
   await requireSession("/portal/events");
-  await api.event.upcoming();
+  await api.event.upcoming.prefetch();
 
   return (
     <HydrateClient>
