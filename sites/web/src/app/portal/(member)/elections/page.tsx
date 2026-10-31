@@ -19,7 +19,7 @@ export default function ElectionsPage() {
 
 async function ElectionsBody() {
   await requireSession("/portal/elections");
-  await api.election.current();
+  await api.election.current.prefetch();
 
   return (
     <HydrateClient>
