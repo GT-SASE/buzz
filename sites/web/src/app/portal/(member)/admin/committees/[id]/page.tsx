@@ -13,10 +13,12 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from "~/components/ui/breadcrumb";
-import { HydrateClient, api } from "~/trpc/server";
+import { HydrateClient, api, hydrated } from "~/trpc/server";
 import { CommitteeApplication } from "./committee-application";
 
-const applicationForPage = cache((id: string) => api.committee.byId({ id }));
+const applicationForPage = cache((id: string) =>
+  hydrated(["committee", "byId"], { id }, () => api.committee.byId({ id })),
+);
 
 export async function generateMetadata({
   params,
