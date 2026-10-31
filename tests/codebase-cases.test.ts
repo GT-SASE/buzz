@@ -159,6 +159,7 @@ describe("site map and navigation", () => {
       "/board",
       "/contact",
       "/discord",
+      "/status",
     ]) {
       expect(urls).toContain(`${site.url}${path}`);
     }

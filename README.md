@@ -183,14 +183,13 @@ scanner did nothing" is findable without reproducing it.
 
 ## Promoting officers
 
-Any officer can promote a member from their page under `/portal/admin/members`:
-**Make officer**. The role rides on the database session, so it takes effect on
-their next request.
+A super admin promotes or demotes anyone from their page under
+`/portal/admin/members`. An officer cannot change roles. The role rides on the
+database session, so a change takes effect on their next request.
 
-The first officer on a fresh database is a `role` edit in `pnpm db:studio` (or
-the seed script locally). After that, the roster is the only way.
-
-Demotion is still a database edit — set `role` back to `MEMBER`.
+The first super admin on a fresh database is a `role` edit in `pnpm db:studio`
+(or the seed script locally). After that, the roster is the only way. You cannot
+change your own role, so another super admin has to step you down.
 
 ## How points work
 
