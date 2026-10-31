@@ -32,5 +32,11 @@ while (!ready()) {
   await new Promise((done) => setTimeout(done, 1000));
 }
 
-run("pnpm db:migrate", { DATABASE_URL: url });
-run("pnpm test", { TEST_DATABASE_URL: url });
+try {
+  run("pnpm db:migrate", { DATABASE_URL: url });
+  run("pnpm test", { TEST_DATABASE_URL: url });
+} finally {
+  // The container is turbo's persistent task. Stopping it ends that task, so
+  // turbo can exit, and nothing is left running if the tests failed.
+  execSync("docker stop buzz-ci-postgres", { stdio: "ignore" });
+}
