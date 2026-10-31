@@ -56,8 +56,12 @@ export function safeRedirectPath(value: string | string[] | undefined) {
   return path;
 }
 
-/** Sign-in, returning to `from` afterwards. */
+/** Where sign-in lands with no `from`. /portal/start picks the right view. */
+export const afterSignIn = "/portal/start";
+
+/** Sign-in, returning to `from` afterwards. The usual landing needs no query. */
 export function signInPath(from: string) {
+  if (from === afterSignIn) return "/portal/signin";
   return `/portal/signin?from=${encodeURIComponent(from)}`;
 }
 
