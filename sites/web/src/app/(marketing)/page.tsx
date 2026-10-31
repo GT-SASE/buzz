@@ -281,7 +281,8 @@ export default async function Home() {
           <div className="grid gap-10 lg:grid-cols-[1.2fr_0.8fr] lg:items-center">
             <div>
               <h3 className="font-display text-h2 font-bold text-balance text-white">
-                Partner slots are open for 2026&ndash;2027.
+                Partner slots are open for{" "}
+                {schoolYear(new Date()).replace("-", "–")}.
               </h3>
               <p className="mt-5 text-white/75">
                 Sponsorship runs from a single info session to a named signature

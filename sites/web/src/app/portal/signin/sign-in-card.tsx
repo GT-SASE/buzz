@@ -4,7 +4,11 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect } from "react";
 
 import { signInWithGoogle } from "~/app/portal/_components/auth-actions";
-import { checkInPath, safeRedirectPath } from "~/app/portal/_lib/paths";
+import {
+  afterSignIn,
+  checkInPath,
+  safeRedirectPath,
+} from "~/app/portal/_lib/paths";
 import { Eyebrow, SaseDino } from "~/components/site";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader } from "~/components/ui/card";
@@ -18,7 +22,8 @@ import { site } from "~/data/site";
  */
 export function SignInCard() {
   const router = useRouter();
-  const from = safeRedirectPath(useSearchParams().getAll("from"));
+  const requested = useSearchParams().getAll("from");
+  const from = requested.length ? safeRedirectPath(requested) : afterSignIn;
 
   useEffect(() => {
     let cancelled = false;

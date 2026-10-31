@@ -1,6 +1,23 @@
 import { describe, expect, it } from "vitest";
 
-import { firstParam, safeRedirectPath } from "~/app/portal/_lib/paths";
+import {
+  afterSignIn,
+  firstParam,
+  safeRedirectPath,
+  signInPath,
+} from "~/app/portal/_lib/paths";
+
+describe("signInPath", () => {
+  it("adds no query for the usual landing", () => {
+    expect(signInPath(afterSignIn)).toBe("/portal/signin");
+  });
+
+  it("keeps any other destination", () => {
+    expect(signInPath("/portal/events")).toBe(
+      "/portal/signin?from=%2Fportal%2Fevents",
+    );
+  });
+});
 
 describe("safeRedirectPath", () => {
   it("keeps a same-origin path", () => {

@@ -12,6 +12,10 @@ import {
 import { sponsorTiers } from "~/data/content";
 import { site } from "~/data/site";
 import { breadcrumbSchema, pageMetadata } from "~/lib/seo";
+import { schoolYear } from "@buzz/api/terms";
+
+// The school year below rolls over on its own, without a deploy.
+export const revalidate = 3600;
 
 export const metadata = pageMetadata({
   title: "Sponsors | SASE at Georgia Tech",
@@ -47,7 +51,7 @@ export default function SponsorsPage() {
       {/* No logo wall until there are logos — an empty one advertises that the
           chapter has no partners. */}
       <Section
-        eyebrow="2026-2027"
+        eyebrow={schoolYear(new Date())}
         title="Partner slots are open."
         lead="The chapter is building its corporate partner roster for the coming year. Early partners choose their event first."
       >
