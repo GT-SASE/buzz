@@ -5,6 +5,11 @@ name: Uptime
 # raw.githubusercontent.com in the visitor's browser. Static pages come off
 # Vercel's CDN, so neither the probe nor the status page runs a function or
 # wakes the database.
+#
+# GitHub throttles the schedule to a run every few hours, so each run waits
+# ten minutes and then starts the next one itself. The schedule only restarts
+# the chain if a run ever fails to. The concurrency group keeps one pending
+# run at most, so a scheduled run and the chain collapse into one.
 on:
   schedule:
     - cron: "*/10 * * * *"
@@ -12,6 +17,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 concurrency:
   group: uptime
@@ -20,7 +26,7 @@ concurrency:
 jobs:
   probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -53,3 +59,13 @@ jobs:
             -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
             commit -q -m "Record uptime check"
           git push -q --force origin HEAD:uptime-data
+
+      # A run started with the workflow token may start a workflow_dispatch
+      # run, unlike other events.
+      - name: Start the next check
+        if: ${{ !cancelled() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sleep 540
+          gh workflow run uptime.yml --repo "$GITHUB_REPOSITORY" --ref main
