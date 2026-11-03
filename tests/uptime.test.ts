@@ -66,11 +66,33 @@ describe("uptime summary", () => {
   });
 
   it("reports stale once the probe has not run for a while", () => {
+    // GitHub runs the schedule hours apart, so a few hours is still current.
+    const hoursAgo = summarize(
+      history({ checkedAt: "2026-10-25T12:00:00Z" }),
+      now,
+    );
+    expect(hoursAgo.state).toBe("up");
     const summary = summarize(
-      history({ checkedAt: "2026-10-25T16:00:00Z" }),
+      history({ checkedAt: "2026-10-25T04:00:00Z" }),
       now,
     );
     expect(summary.state).toBe("stale");
+  });
+
+  it("charts only the 24 hours before the latest check", () => {
+    const summary = summarize(
+      history({
+        recent: [
+          { at: "2026-10-20T17:55:00Z", ms: { site: 900, auth: 900 } },
+          { at: "2026-10-25T17:45:00Z", ms: { site: 90, auth: null } },
+          { at: "2026-10-25T17:55:00Z", ms: { site: 80, auth: 200 } },
+        ],
+      }),
+      now,
+    );
+    const [site] = summary.features;
+    expect(site?.recent).toHaveLength(2);
+    expect(site?.typicalMs).toBe(85);
   });
 
   it("weights each window by checks, not by days", () => {

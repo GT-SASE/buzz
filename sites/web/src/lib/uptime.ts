@@ -30,10 +30,14 @@ export const uptimeDataUrl =
 export const barDays = 90;
 
 /**
- * The probe runs every ten minutes, but scheduled GitHub Actions can lag by
- * a quarter of an hour or more. Past this, the last result is not "current".
+ * The probe is scheduled every ten minutes, but GitHub throttles scheduled
+ * workflows and in practice runs it every four to eight hours. Past this, the
+ * last result is not "current".
  */
-const staleAfterMs = 45 * 60 * 1000;
+const staleAfterMs = 12 * 60 * 60 * 1000;
+
+/** The response chart covers this window, ending at the latest check. */
+const recentWindowMs = 24 * 60 * 60 * 1000;
 
 const chapterDate = new Intl.DateTimeFormat("en-CA", {
   timeZone: "America/New_York",
@@ -119,6 +123,13 @@ export function summarize(history: UptimeHistory, now: Date): UptimeSummary {
       .map((date) => byDate.get(date))
       .filter((day) => day !== undefined);
 
+  // The probe keeps a fixed number of samples, which spans days when runs are
+  // sparse, so cut them to the chart's 24 hours.
+  const recent = history.recent.filter(
+    (sample) =>
+      checkedAt.getTime() - new Date(sample.at).getTime() <= recentWindowMs,
+  );
+
   const buckets = (id: string, count: number) =>
     lastDays(count)
       .map((day) => day.byCheck[id])
@@ -142,11 +153,9 @@ export function summarize(history: UptimeHistory, now: Date): UptimeSummary {
       up: history.latest[check.id]?.up ?? false,
       uptime: ratio(buckets(check.id, 90)),
       typicalMs: median(
-        history.recent
-          .map((sample) => sample.ms[check.id])
-          .filter((ms) => ms != null),
+        recent.map((sample) => sample.ms[check.id]).filter((ms) => ms != null),
       ),
-      recent: history.recent.map((sample) => ({
+      recent: recent.map((sample) => ({
         at: new Date(sample.at),
         ms: sample.ms[check.id] ?? null,
       })),
