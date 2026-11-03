@@ -30,11 +30,10 @@ export const uptimeDataUrl =
 export const barDays = 90;
 
 /**
- * The probe is scheduled every ten minutes, but GitHub throttles scheduled
- * workflows and in practice runs it every four to eight hours. Past this, the
- * last result is not "current".
+ * Each probe run starts the next one about ten minutes later. Past this, the
+ * chain has stopped and the last result is not "current".
  */
-const staleAfterMs = 12 * 60 * 60 * 1000;
+const staleAfterMs = 45 * 60 * 1000;
 
 /** The response chart covers this window, ending at the latest check. */
 const recentWindowMs = 24 * 60 * 60 * 1000;
