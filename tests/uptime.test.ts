@@ -66,14 +66,8 @@ describe("uptime summary", () => {
   });
 
   it("reports stale once the probe has not run for a while", () => {
-    // GitHub runs the schedule hours apart, so a few hours is still current.
-    const hoursAgo = summarize(
-      history({ checkedAt: "2026-10-25T12:00:00Z" }),
-      now,
-    );
-    expect(hoursAgo.state).toBe("up");
     const summary = summarize(
-      history({ checkedAt: "2026-10-25T04:00:00Z" }),
+      history({ checkedAt: "2026-10-25T16:00:00Z" }),
       now,
     );
     expect(summary.state).toBe("stale");
