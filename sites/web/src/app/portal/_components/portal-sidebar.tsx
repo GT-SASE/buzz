@@ -3,17 +3,10 @@
 import { Menu, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef } from "react";
 
 import { Wordmark } from "~/components/site";
 import { Button } from "~/components/ui/button";
-import {
-  Sheet,
-  SheetClose,
-  SheetContent,
-  SheetTitle,
-  SheetTrigger,
-} from "~/components/ui/sheet";
 import { adminNav, portalNav } from "~/data/portal";
 import { cn } from "~/lib/utils";
 
@@ -38,75 +31,81 @@ export function PortalSidebar({
   signOut,
 }: SidebarProps) {
   const pathname = usePathname();
-  const [open, setOpen] = useState(false);
+  const sheetRef = useRef<HTMLDialogElement>(null);
 
   // A link click navigates, so the pathname is the one signal that covers it
   // and the back button alike.
-  const [openedAt, setOpenedAt] = useState(pathname);
-  if (openedAt !== pathname) {
-    setOpenedAt(pathname);
-    setOpen(false);
-  }
+  useEffect(() => {
+    sheetRef.current?.close();
+  }, [pathname]);
 
   // The sheet is lg:hidden, so one left open while the window widens would
   // keep its scroll lock with nothing on screen to dismiss.
   useEffect(() => {
     const desktop = window.matchMedia("(min-width: 64rem)");
     const close = () => {
-      if (desktop.matches) setOpen(false);
+      if (desktop.matches) sheetRef.current?.close();
     };
     desktop.addEventListener("change", close);
     return () => desktop.removeEventListener("change", close);
   }, []);
 
   return (
-    <Sheet open={open} onOpenChange={setOpen}>
+    <>
       {/* Mobile: a top bar with the menu in a sheet. */}
       <header className="border-gold bg-paper sticky top-0 z-40 border-b-2 pt-[env(safe-area-inset-top)] lg:hidden">
         <div className="flex items-center justify-between gap-4 px-5 py-3 sm:px-6">
           <Brand />
-          <SheetTrigger asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="text-ink-muted hover:text-navy hover:bg-cream text-body-sm min-h-11 rounded-md font-semibold"
-            >
-              <Menu aria-hidden="true" className="size-4" />
-              Menu
-            </Button>
-          </SheetTrigger>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            aria-haspopup="dialog"
+            onClick={() => sheetRef.current?.showModal()}
+            className="text-ink-muted hover:text-navy hover:bg-cream text-body-sm min-h-11 rounded-md font-semibold"
+          >
+            <Menu aria-hidden="true" className="size-4" />
+            Menu
+          </Button>
         </div>
       </header>
-      <SheetContent
-        side="left"
-        showCloseButton={false}
-        className="bg-paper border-hairline z-50 w-72 max-w-[85vw] gap-0 overflow-y-auto pt-[max(0.75rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))] lg:hidden"
+
+      {/* A native modal <dialog>: the browser traps focus, inerts the page and
+          closes on Escape. A press on the backdrop lands on the dialog itself,
+          which has no padding or border of its own, so that is the only way the
+          target can be the dialog. */}
+      <dialog
+        ref={sheetRef}
+        aria-label="Portal menu"
+        onClick={(event) => {
+          if (event.target === event.currentTarget) event.currentTarget.close();
+        }}
+        className="fixed inset-y-0 right-auto left-0 m-0 h-full max-h-none w-72 max-w-[85vw] -translate-x-full overflow-hidden border-0 p-0 opacity-0 shadow-lg transition-[translate,opacity,display,overlay] transition-discrete duration-300 ease-out backdrop:bg-black/0 backdrop:transition-[background-color,display,overlay] backdrop:transition-discrete backdrop:duration-300 open:block open:translate-x-0 open:opacity-100 open:backdrop:bg-black/50 lg:hidden starting:open:-translate-x-full starting:open:opacity-0 starting:open:backdrop:bg-black/0"
       >
-        <SheetTitle className="sr-only">Portal menu</SheetTitle>
-        <div className="flex items-center justify-between px-4">
-          <Brand />
-          <SheetClose asChild>
+        <div className="bg-paper border-hairline flex h-full flex-col overflow-y-auto overscroll-contain border-r pt-[max(0.75rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))]">
+          <div className="flex items-center justify-between px-4">
+            <Brand />
             <Button
               type="button"
               variant="ghost"
               size="icon"
               aria-label="Close menu"
+              onClick={() => sheetRef.current?.close()}
               className="text-navy size-11"
             >
               <X aria-hidden="true" className="size-6" />
             </Button>
-          </SheetClose>
+          </div>
+          <SidebarContents
+            isOfficer={isOfficer}
+            name={name}
+            email={email}
+            signOut={signOut}
+            pathname={pathname}
+            onNavigate={() => sheetRef.current?.close()}
+          />
         </div>
-        <SidebarContents
-          isOfficer={isOfficer}
-          name={name}
-          email={email}
-          signOut={signOut}
-          pathname={pathname}
-          onNavigate={() => setOpen(false)}
-        />
-      </SheetContent>
+      </dialog>
 
       {/* Desktop: a fixed-width column that stays put while the page scrolls. */}
       <aside className="bg-paper border-hairline z-40 hidden w-64 shrink-0 border-r lg:sticky lg:top-0 lg:flex lg:h-dvh lg:flex-col lg:overflow-y-auto">
@@ -118,7 +117,7 @@ export function PortalSidebar({
           pathname={pathname}
         />
       </aside>
-    </Sheet>
+    </>
   );
 }
 
