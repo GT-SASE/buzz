@@ -1,13 +1,8 @@
 import Link from "next/link";
 
 import { Button, Card, PageHeader, SaseDino, Section } from "~/components/site";
+import { Disclosure } from "~/components/site/disclosure";
 import { JsonLd } from "~/components/site/json-ld";
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "~/components/ui/accordion";
 import { Badge } from "~/components/ui/badge";
 import { meeting } from "~/data/content";
 import { getCommitteeRecruiting, listNames } from "~/data/committee-recruiting";
@@ -282,26 +277,20 @@ export default async function JoinPage() {
         lead="If the answer you need is not here, email the chapter. Someone on the board reads it."
         layout="split"
       >
-        <Accordion
-          type="single"
-          collapsible
-          className="border-hairline border-t"
-        >
+        <div className="border-hairline border-t">
           {faqs.map((faq) => (
-            <AccordionItem
+            <Disclosure
               key={faq.q}
-              value={faq.q}
+              name="faq"
+              summary={faq.q}
               className="border-hairline last:border-b"
+              summaryClassName="font-display text-navy text-h3 gap-8 rounded-none py-6 font-bold"
+              panelClassName="text-ink-muted text-body max-w-measure pb-8 leading-relaxed"
             >
-              <AccordionTrigger className="font-display text-navy text-h3 gap-8 rounded-none py-6 font-bold hover:no-underline">
-                {faq.q}
-              </AccordionTrigger>
-              <AccordionContent className="text-ink-muted text-body max-w-measure pb-8 leading-relaxed">
-                {faq.a}
-              </AccordionContent>
-            </AccordionItem>
+              {faq.a}
+            </Disclosure>
           ))}
-        </Accordion>
+        </div>
       </Section>
 
       <Section title="Find us here." size="sm">
