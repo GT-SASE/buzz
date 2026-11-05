@@ -1,5 +1,4 @@
 import { Card as UiCard } from "~/components/ui/card";
-import { Separator } from "~/components/ui/separator";
 import { cn } from "~/lib/utils";
 
 const eyebrowTones = {
@@ -172,7 +171,12 @@ export function Section({
       )}
     >
       <div className="max-w-content mx-auto">
-        {hasHeader && <Separator className="rule-heavy mb-8 border-0" />}
+        {hasHeader && (
+          <div
+            role="none"
+            className="bg-border rule-heavy mb-8 h-px w-full shrink-0 border-0"
+          />
+        )}
         {split ? (
           <div className="lg:grid lg:grid-cols-[minmax(0,20rem)_1fr] lg:gap-16">
             {header}
