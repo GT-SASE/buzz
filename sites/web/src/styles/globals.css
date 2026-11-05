@@ -328,6 +328,11 @@
   .text-balance {
     text-wrap: balance;
   }
+
+  /* A modal <dialog> inerts the page but does not stop it scrolling. */
+  html:has(dialog[open]) {
+    overflow: hidden;
+  }
 }
 
 @layer base {
