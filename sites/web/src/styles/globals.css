@@ -329,6 +329,24 @@
     text-wrap: balance;
   }
 
+  /* A native <details> panel slides open and shut where the browser can
+     animate its content box; elsewhere it snaps, which is still correct. */
+  @supports selector(::details-content) {
+    .disclosure {
+      interpolate-size: allow-keywords;
+    }
+    .disclosure::details-content {
+      block-size: 0;
+      overflow: clip;
+      transition:
+        block-size 200ms ease,
+        content-visibility 200ms allow-discrete;
+    }
+    .disclosure[open]::details-content {
+      block-size: auto;
+    }
+  }
+
   /* A modal <dialog> inerts the page but does not stop it scrolling. */
   html:has(dialog[open]) {
     overflow: hidden;
