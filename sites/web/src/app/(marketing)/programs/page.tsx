@@ -1,11 +1,6 @@
 import { Button, Icon, PageHeader, Section } from "~/components/site";
+import { Disclosure } from "~/components/site/disclosure";
 import { JsonLd } from "~/components/site/json-ld";
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "~/components/ui/accordion";
 import { programs } from "~/data/content";
 import { joinHref } from "~/data/site";
 import { breadcrumbSchema, pageMetadata } from "~/lib/seo";
@@ -28,19 +23,18 @@ export default function ProgramsPage() {
 
       <Section size="sm">
         <h2 className="sr-only">Programs</h2>
-        <Accordion
-          type="single"
-          collapsible
-          className="rule-heavy border-hairline border-b"
-        >
+        <div className="rule-heavy border-hairline border-b">
           {programs.map((program) => (
-            <AccordionItem
+            <Disclosure
               key={program.slug}
               id={program.slug}
-              value={program.slug}
+              name="programs"
               className="border-hairline rounded-none"
-            >
-              <AccordionTrigger className="[&>svg]:text-gold-ink items-center gap-6 rounded-none py-7 hover:no-underline">
+              summaryClassName="[&>svg]:text-gold-ink items-center gap-6 rounded-none py-7"
+              // pr-10 clears the summary's chevron so the detail lines up under
+              // the summary it expands.
+              panelClassName="grid gap-x-16 pb-10 lg:grid-cols-[1.35fr_1fr] lg:pr-10"
+              summary={
                 <span className="grid min-w-0 flex-1 gap-x-16 gap-y-4 lg:grid-cols-[1.35fr_1fr] lg:items-center">
                   <span className="flex min-w-0 items-center gap-5 sm:gap-8">
                     <span
@@ -59,27 +53,24 @@ export default function ProgramsPage() {
                     {program.body}
                   </span>
                 </span>
-              </AccordionTrigger>
-              {/* pr-10 clears the trigger's chevron so the detail lines up under
-                  the summary it expands. */}
-              <AccordionContent className="grid gap-x-16 pb-10 lg:grid-cols-[1.35fr_1fr] lg:pr-10">
-                <div className="grid gap-5 lg:col-start-2">
-                  <p className="text-ink-muted text-body max-w-measure leading-relaxed">
-                    {program.detail}
-                  </p>
-                  {program.slug === "mentorship" && (
-                    <Button
-                      href="/portal/mentorship"
-                      className="w-full justify-center sm:w-auto"
-                    >
-                      Join a SASE KIN group
-                    </Button>
-                  )}
-                </div>
-              </AccordionContent>
-            </AccordionItem>
+              }
+            >
+              <div className="grid gap-5 lg:col-start-2">
+                <p className="text-ink-muted text-body max-w-measure leading-relaxed">
+                  {program.detail}
+                </p>
+                {program.slug === "mentorship" && (
+                  <Button
+                    href="/portal/mentorship"
+                    className="w-full justify-center sm:w-auto"
+                  >
+                    Join a SASE KIN group
+                  </Button>
+                )}
+              </div>
+            </Disclosure>
           ))}
-        </Accordion>
+        </div>
       </Section>
 
       <Section
