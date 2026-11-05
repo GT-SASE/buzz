@@ -1,4 +1,3 @@
-import { Avatar, AvatarFallback, AvatarImage } from "~/components/ui/avatar";
 import { SaseMark } from "~/components/site/hive";
 import { cn } from "~/lib/utils";
 
@@ -54,14 +53,26 @@ export function InitialDisc({
       : (words[0] ?? "").slice(0, 2).toUpperCase();
 
   return (
-    <Avatar
+    <span
       aria-hidden="true"
-      className={cn("hex-face ring-gold/30 size-14 ring-1", className)}
+      className={cn(
+        "hex-face ring-gold/30 bg-sand text-navy font-display relative flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-full text-lg font-bold ring-1",
+        className,
+      )}
     >
-      {photo && <AvatarImage src={photo} alt="" className="object-cover" />}
-      <AvatarFallback className="bg-sand text-navy font-display text-lg font-bold">
-        {initials || "GT"}
-      </AvatarFallback>
-    </Avatar>
+      {initials || "GT"}
+      {/* Layered over the initials, so a photo that fails to load leaves them
+          showing. Plain <img>: the board photos are 56px discs. */}
+      {photo && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={photo}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          className="absolute inset-0 size-full object-cover"
+        />
+      )}
+    </span>
   );
 }
