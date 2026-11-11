@@ -1,0 +1,5 @@
+#!/bin/sh
+# Activated with: npm run hooks:install
+# Exits non-zero, which blocks the push, if the scan script is missing.
+repo_root="$(git rev-parse --show-toplevel)" || exit 1
+exec bash "${repo_root}/scripts/gitleaks-pre-push.sh" "$@"

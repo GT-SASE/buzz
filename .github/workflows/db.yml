@@ -1,0 +1,213 @@
+name: Database
+
+# A change to prose alone cannot affect this workflow, so it does not spend Actions
+# minutes on one. ci.yml always runs, because it scans and checks those files. A check
+# GitHub skips this way never reports, so these lines have to go before these checks
+# are made required, as docs/PUBLIC_RELEASE.md says.
+on:
+  pull_request:
+    paths-ignore:
+      - "docs/**"
+      - "README.md"
+      - "SECURITY.md"
+  push:
+    branches: [main, staging]
+    paths-ignore:
+      - "docs/**"
+      - "README.md"
+      - "SECURITY.md"
+
+permissions:
+  contents: read
+
+jobs:
+  migrations:
+    name: Migrations and grants
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: package.json
+          cache: npm
+      - run: node scripts/check-migration-sql.ts
+      - run: npm ci --ignore-scripts
+      - run: npm run test:db
+
+  concurrency:
+    name: Concurrent writes on Postgres 17
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17@sha256:3b0cda93be7c8dba2ed484d19393d93845dc3dafb88973e248ba8e6d99d784e1
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      # The tests fail if this is unset or the server is not Postgres 17.
+      CONCURRENCY_DATABASE_URL: postgres://postgres@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: package.json
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run test:db:concurrency
+
+  # Real pg_dump, age, pg_restore and verify-restore.sh. These tools were not available
+  # where this job was written, so its first run ever is on GitHub. Treat a failure on
+  # that run as possibly a bug in the job itself.
+  backup-restore:
+    name: Backup and restore on Postgres 17, ${{ matrix.rls_path }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        rls_path: [policies, bypassrls]
+    services:
+      postgres:
+        image: postgres:17@sha256:3b0cda93be7c8dba2ed484d19393d93845dc3dafb88973e248ba8e6d99d784e1
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+      scratch:
+        image: postgres:17@sha256:3b0cda93be7c8dba2ed484d19393d93845dc3dafb88973e248ba8e6d99d784e1
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+      recovery:
+        image: postgres:17@sha256:3b0cda93be7c8dba2ed484d19393d93845dc3dafb88973e248ba8e6d99d784e1
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5434:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      # The same pins as backup/backup.workflow.yml.example. A test keeps them equal.
+      AGE_VERSION: v1.3.2
+      AGE_LINUX_AMD64_SHA256: cbe24006683f8eb669266162894b9a522a1af52f2665fbc63a4bb032ed26ac10
+      PG_CLIENT_VERSION: 17.11-1.pgdg24.04+2
+      PGDG_SIGNER_SHA512: f90aa7e1edb46fbe31d46c2e7138437e7fa6444c33b7dc1c70e9d655992504f860e6d6bba2d64954d648463849ea4d9d2f6db92159fa8c54b35555a232597ac7
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: package.json
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Install the PostgreSQL client
+        run: |
+          key="${RUNNER_TEMP}/pgdg.asc"
+          curl -fsSL --proto '=https' --tlsv1.2 --retry 5 --retry-all-errors --retry-delay 2 --max-time 60 -o "${key}" https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "${PGDG_SIGNER_SHA512}  ${key}" | sha512sum --check --strict
+          sudo install -D -m 0644 "${key}" /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
+          {
+            echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt noble-pgdg main"
+            echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt-archive.postgresql.org/pub/repos/apt noble-pgdg-archive main"
+          } | sudo tee /etc/apt/sources.list.d/pgdg.list >/dev/null
+          sudo apt-get -o Acquire::Retries=5 update -qq
+          sudo apt-get -o Acquire::Retries=5 install -y -qq --no-install-recommends "postgresql-client-17=${PG_CLIENT_VERSION}"
+          echo /usr/lib/postgresql/17/bin >>"${GITHUB_PATH}"
+      - name: Install age
+        run: |
+          tarball="${RUNNER_TEMP}/age.tar.gz"
+          curl -fsSL --proto '=https' --tlsv1.2 --retry 5 --retry-all-errors --retry-delay 2 --max-time 120 -o "${tarball}" \
+            "https://github.com/FiloSottile/age/releases/download/${AGE_VERSION}/age-${AGE_VERSION}-linux-amd64.tar.gz"
+          echo "${AGE_LINUX_AMD64_SHA256}  ${tarball}" | sha256sum --check --strict
+          tar -xzf "${tarball}" -C "${RUNNER_TEMP}" age/age age/age-keygen
+          sudo install -m 0755 "${RUNNER_TEMP}/age/age" "${RUNNER_TEMP}/age/age-keygen" /usr/local/bin/
+      - run: bash scripts/test-backup-restore.sh
+        env:
+          BACKUP_RLS_PATH: ${{ matrix.rls_path }}
+          POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
+          RECOVERY_CONTAINER: ${{ job.services.recovery.id }}
+
+  postgrest:
+    name: Access layer on real PostgREST
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17@sha256:3b0cda93be7c8dba2ed484d19393d93845dc3dafb88973e248ba8e6d99d784e1
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      POSTGREST_DATABASE_URL: postgres://postgres@localhost:5432/postgres
+      POSTGREST_URL: http://localhost:3000
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: package.json
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: node scripts/prepare-postgrest-db.ts
+      - name: Start PostgREST
+        run: |
+          PGRST_JWT_SECRET="$(openssl rand -hex 32)"
+          echo "::add-mask::${PGRST_JWT_SECRET}"
+          echo "PGRST_JWT_SECRET=${PGRST_JWT_SECRET}" >> "${GITHUB_ENV}"
+          export PGRST_JWT_SECRET
+          docker run -d --name postgrest --network host \
+            -e PGRST_DB_URI=postgres://authenticator@localhost:5432/postgres \
+            -e PGRST_DB_SCHEMAS=public \
+            -e PGRST_DB_ANON_ROLE=anon \
+            -e PGRST_DB_MAX_ROWS=1000 \
+            -e PGRST_JWT_SECRET \
+            -e PGRST_ADMIN_SERVER_PORT=3001 \
+            postgrest/postgrest:v14.18@sha256:c7cd7e265a85b05248abf53f4473fcec7e327c282d0bd0cf60f1551996d09fcf
+      - name: Wait for PostgREST
+        run: |
+          for _ in $(seq 1 30); do
+            if curl --fail --silent http://localhost:3001/ready > /dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs postgrest
+          exit 1
+      - run: npm run test:postgrest
+      - name: Show PostgREST logs
+        if: failure()
+        run: docker logs postgrest

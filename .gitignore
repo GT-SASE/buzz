@@ -1,0 +1,118 @@
+# Environment files. Only the placeholder template is tracked.
+.env
+.env.*
+.env[-_]*
+env.local
+*.env
+.envrc
+!.env.example
+
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# Logs
+logs/
+*.log
+
+# Deployment and local service state
+.vercel/
+supabase/.branches/
+supabase/.temp/
+
+# Keys, certificates and age identities
+*.pem
+*.key
+*.crt
+*.cer
+*.der
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+*.agekey
+age-identity*
+age-key*
+keys.txt
+key.txt
+age.txt
+identity.txt
+backup-identity*
+
+# Credential files
+secrets.json
+credentials.json
+service-account*.json
+.npmrc
+!/.npmrc
+.netrc
+.pgpass
+pgpass.conf
+.pg_service.conf
+.git-credentials
+
+# Database dumps and backups.
+# All SQL is ignored by default so a dump cannot be committed by accident.
+# Migrations are the one exception.
+*.sql
+!supabase/migrations/*.sql
+*.sql.*
+*.psql
+*.pgsql
+!/backup/create-backup-role.psql
+!/backup/grant-backup-role.psql
+*.dump
+*.pgdump
+*.bak
+*.backup
+*.age
+*.sqlite*
+*.db
+backups/
+dumps/
+*.tar
+*.tar.*
+*.tgz
+*.zip
+*.gz
+*.bz2
+*.xz
+*.7z
+*.rar
+
+# Data exports, which may hold member data
+*.csv
+*.tsv
+*.jsonl
+*.ndjson
+*.xls
+*.xlsx
+*.ods
+*.pdf
+
+# Scanner reports, which may quote findings
+gitleaks-report*
+
+# Locally installed tools
+.tools/
+
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~

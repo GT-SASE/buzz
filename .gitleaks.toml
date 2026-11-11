@@ -1,0 +1,10 @@
+# gitleaks' default rules, with its default global allowlist.
+#
+# That allowlist would also apply to any rule added here, excusing lockfiles,
+# PDFs and values containing "false", so project rules live in
+# .gitleaks-custom.toml and are scanned separately.
+
+title = "GTSASE Discord Bot default secret rules"
+
+[extend]
+useDefault = true

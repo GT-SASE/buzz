@@ -1,0 +1,111 @@
+name: Deploy check
+
+# A change to prose alone cannot affect this workflow, so it does not spend Actions
+# minutes on one. ci.yml always runs, because it scans and checks those files. A check
+# GitHub skips this way never reports, so these lines have to go before these checks
+# are made required, as docs/PUBLIC_RELEASE.md says.
+on:
+  pull_request:
+    paths-ignore:
+      - "docs/**"
+      - "README.md"
+      - "SECURITY.md"
+  push:
+    branches: [main, staging]
+    paths-ignore:
+      - "docs/**"
+      - "README.md"
+      - "SECURITY.md"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-check-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  vercel-build:
+    name: vercel build output
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      VERCEL_CLI_VERSION: 65.4.0
+      VERCEL_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: package.json
+      - name: Check the install and deployment settings
+        run: bash scripts/check-deploy-settings.sh
+      # Installed outside the repository so it cannot touch the project's
+      # dependencies or lockfile.
+      - name: Install the Vercel CLI
+        run: npm install --prefix "${RUNNER_TEMP}/vercel-cli" --ignore-scripts --no-audit --no-fund "vercel@${VERCEL_CLI_VERSION}"
+      # A placeholder lets the build run with no account and no token. Nothing
+      # here deploys or contacts a project.
+      - name: Add a placeholder project
+        run: |
+          mkdir -p .vercel
+          printf '{"projectId":"prj_placeholder","orgId":"team_placeholder","settings":{"framework":null}}' > .vercel/project.json
+      - name: Build
+        run: '"${RUNNER_TEMP}/vercel-cli/node_modules/.bin/vercel" build --yes'
+      - name: Check that only robots.txt is published
+        run: |
+          static_files="$(find .vercel/output/static -type f)"
+          if [ "${static_files}" != ".vercel/output/static/robots.txt" ]; then
+            echo "Unexpected static output:"
+            echo "${static_files}"
+            exit 1
+          fi
+      # Vercel turns every file under api/ into a public function, so a new one
+      # has to be added to this list on purpose.
+      - name: Check that only the expected functions are built
+        working-directory: .vercel/output/functions
+        run: |
+          functions="$(find . -name '*.func' -prune -print -o -type f -print | LC_ALL=C sort)"
+          expected="$(printf '%s\n' ./api/cron/reminders.func ./api/interactions.func)"
+          if [ "${functions}" != "${expected}" ]; then
+            echo "Unexpected function output:"
+            echo "${functions}"
+            exit 1
+          fi
+      # Inside the checkout, Node would find a package the tracer missed in the root
+      # node_modules, which a deployed function does not have. So load copies from
+      # outside it, with any symlink replaced by its file, since Node resolves imports
+      # from where a symlink points.
+      - name: Check that the built functions load and export only what they should
+        run: |
+          copy="${RUNNER_TEMP}/built-functions"
+          mkdir -p "${copy}"
+          cp -RL .vercel/output/functions/api/interactions.func "${copy}/"
+          cp -RL .vercel/output/functions/api/cron/reminders.func "${copy}/"
+          cd "${copy}"
+          node --input-type=module --eval '
+            const base = process.cwd();
+            const { POST } = await import(`${base}/interactions.func/api/interactions.js`);
+            if (typeof POST !== "function") {
+              throw new Error("The interactions function does not export POST");
+            }
+            const cron = await import(`${base}/reminders.func/api/cron/reminders.js`);
+            if (typeof cron.GET !== "function" || "POST" in cron) {
+              throw new Error("The cron function must export GET and not POST");
+            }
+          '
+      - name: Check that the cron schedules are in the build
+        run: |
+          node --input-type=module --eval '
+            import { readFileSync } from "node:fs";
+            const { crons } = JSON.parse(readFileSync(".vercel/output/config.json", "utf8"));
+            const found = JSON.stringify(crons);
+            const expected = JSON.stringify([
+              { path: "/api/cron/reminders", schedule: "0 14 * * *" },
+              { path: "/api/cron/reminders", schedule: "0 16 * * *" },
+            ]);
+            if (found !== expected) {
+              throw new Error("The build does not hold the expected cron entries");
+            }
+          '

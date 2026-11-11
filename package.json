@@ -1,0 +1,43 @@
+{
+  "name": "gtsase-discord-bot",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Discord bot that tracks events, tasks and deadlines for a student organisation's events team.",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": "24.x"
+  },
+  "scripts": {
+    "gitleaks:install": "bash scripts/install-gitleaks.sh",
+    "hooks:install": "git config core.hooksPath .githooks",
+    "test:history-scan": "bash scripts/test-gitleaks-full-history.sh",
+    "test:hooks": "bash scripts/test-pre-push-hook.sh",
+    "test:secret-rules": "bash scripts/test-gitleaks-rules.sh",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "format:check": "prettier --check .",
+    "lint": "eslint . --max-warnings 0 && bash scripts/check-discord-urls.sh",
+    "test:db": "vitest run --config vitest.db.config.ts",
+    "test:db:concurrency": "vitest run --config vitest.concurrency.config.ts",
+    "test:postgrest": "vitest run --config vitest.postgrest.config.ts",
+    "commands:register": "node --env-file-if-exists=.env scripts/register-commands.ts"
+  },
+  "type": "module",
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.11",
+    "@eslint/js": "10.0.1",
+    "@types/node": "24.19.2",
+    "@types/pg": "8.23.1",
+    "eslint": "10.13.0",
+    "pg": "8.23.1",
+    "prettier": "3.9.10",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.1",
+    "vitest": "5.0.5"
+  },
+  "dependencies": {
+    "@supabase/postgrest-js": "2.118.0",
+    "@vercel/functions": "2.2.4",
+    "discord-api-types": "0.38.57"
+  }
+}
