@@ -6,10 +6,7 @@ import {
   hasPermission,
 } from "./channel-permissions.ts";
 import type { GuildChannel, GuildRole, PermissionOverwrite } from "./client.ts";
-
-function fakeId(n: number): string {
-  return String(10n ** 17n + BigInt(n));
-}
+import { fakeId } from "../../test/support/ids.ts";
 
 const GUILD = fakeId(1);
 const ROLE = fakeId(2);

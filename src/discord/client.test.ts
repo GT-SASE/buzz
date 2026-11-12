@@ -1,6 +1,7 @@
 import { generateKeyPairSync, sign } from "node:crypto";
 import { inspect } from "node:util";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { jsonObject } from "../../test/support/json.ts";
 import { ConfigError } from "../lib/config-error.ts";
 import {
   actionForFailure,
@@ -8,6 +9,7 @@ import {
   DiscordClientError,
   DiscordErrorCode,
   messageUrl,
+  unsafeBodyReason,
 } from "./client.ts";
 import type {
   ChannelTarget,
@@ -17,27 +19,39 @@ import type {
   ManagedChannelCheck,
   ThreadTarget,
 } from "./client.ts";
+import type { OutboundBody, OutboundKind } from "./outbound.ts";
 import {
+  actionRow,
+  autocompleteResult,
+  button,
   channelMessage,
+  channelSelect,
   deferredEphemeralReply,
   deferredReply,
+  deferredUpdate,
   ephemeralReply,
   followUp,
   interactionReply,
   messageEdit,
-  OutboundBodyError,
+  modal,
   pong,
+  roleSelect,
+  stringSelect,
+  textInputRow,
   threadCreate,
   updateMessage,
 } from "./outbound.ts";
-import { escapeUserText, plain, safe } from "./safe-text.ts";
+import {
+  escapeUserText,
+  plain,
+  plainLabel,
+  roleMention,
+  safe,
+  userMention,
+} from "./safe-text.ts";
 import { verifiedInteractionFrom, verifySignedRequest } from "./verify.ts";
 import type { VerifiedInteraction } from "./verify.ts";
-
-// Built at runtime: the secret scan refuses any literal shaped like a Discord ID.
-function fakeId(n: number): string {
-  return String(10n ** 17n + BigInt(n));
-}
+import { fakeId } from "../../test/support/ids.ts";
 
 const TOKEN = "unit-test-bot-token-value";
 const INTERACTION_TOKEN = "unit-test-interaction-token/with+symbols";
@@ -190,10 +204,7 @@ function requests(): SentRequest[] {
     url: url as string,
     method: init?.method,
     headers: init?.headers as Record<string, string>,
-    body: JSON.parse((init?.body as string | undefined) ?? "{}") as Record<
-      string,
-      unknown
-    >,
+    body: jsonObject(init?.body ?? "{}", "the request body"),
   }));
 }
 
@@ -304,37 +315,6 @@ describe("requests", () => {
       `${API}/webhooks/${APP_ID}/${ENCODED_TOKEN}/messages/@original`,
     );
     expect(request?.headers.Authorization).toBeUndefined();
-  });
-
-  it("refuses a body that did not come from the builders", async () => {
-    const forged = { kind: "channel-message" as const, toJSON: () => null };
-
-    await expect(
-      // @ts-expect-error A plain object must not be accepted as a body.
-      client().sendMessage(MANAGED, forged),
-    ).rejects.toThrow(OutboundBodyError);
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-
-  it("refuses a body of the wrong kind at runtime", async () => {
-    await expect(
-      // @ts-expect-error An edit body must not be accepted as a new message.
-      client().sendMessage(MANAGED, EDIT_BODY),
-    ).rejects.toThrow(OutboundBodyError);
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-
-  it("refuses a body whose kind was rewritten", async () => {
-    const body = messageEdit({ content: safe`text`, mentionUserIds: [] });
-
-    expect(() => {
-      (body as { kind: string }).kind = "channel-message";
-    }).toThrow(TypeError);
-    await expect(
-      // @ts-expect-error An edit body must not be accepted as a new message.
-      client().sendMessage(MANAGED, body),
-    ).rejects.toThrow(OutboundBodyError);
-    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
 
@@ -867,9 +847,9 @@ describe("ephemeral responses", () => {
       updateMessage({ content: safe`hi`, mentionUserIds: [] }),
     ],
   ])("refuses %s, even in a managed channel", async (_label, body) => {
-    await expect(
-      client().respondEphemerally(IN_MANAGED, body as never),
-    ).rejects.toThrow(OutboundBodyError);
+    expect(
+      await failureOf(client().respondEphemerally(IN_MANAGED, body as never)),
+    ).toEqual({ kind: "not_ephemeral" });
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -877,29 +857,6 @@ describe("ephemeral responses", () => {
     expect(
       await failureOf(client().respondEphemerally(IN_UNMANAGED, pong())),
     ).toEqual({ kind: "not_ephemeral" });
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-
-  it("refuses a body of another kind whose kind is claimed", async () => {
-    const edit = messageEdit({ content: safe`text`, mentionUserIds: [] });
-
-    await expect(
-      // @ts-expect-error An edit body is not a first response.
-      client().respondEphemerally(IN_UNMANAGED, edit),
-    ).rejects.toThrow(OutboundBodyError);
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-
-  it("refuses a forged ephemeral body", async () => {
-    const forged = {
-      kind: "interaction-reply" as const,
-      toJSON: () => ({ type: 4, data: { flags: 64, content: "@everyone" } }),
-    };
-
-    await expect(
-      // @ts-expect-error A plain object must not be accepted as a body.
-      client().respondEphemerally(IN_UNMANAGED, forged),
-    ).rejects.toThrow(OutboundBodyError);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -938,14 +895,6 @@ describe("ephemeral responses", () => {
 
     expect(failure.kind).toBe("unmanaged_target");
     expect(isManaged).toHaveBeenCalledWith(GUILD, UNMANAGED_CHANNEL);
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-
-  it("does not take an ephemeral body on the checked path", async () => {
-    await expect(
-      // @ts-expect-error An ephemeral body goes through respondEphemerally.
-      client().replyToInteraction(IN_MANAGED, EPHEMERAL_BODY),
-    ).rejects.toThrow(OutboundBodyError);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
@@ -1913,6 +1862,369 @@ describe("rate limit scope", () => {
   );
 });
 
+describe("the check made before every send", () => {
+  const ROLE = fakeId(20);
+  const USER = fakeId(21);
+  const SAFE_MENTIONS = { parse: [], users: [USER], roles: [ROLE] };
+
+  /** A body written by hand, as no builder would write it. */
+  function handBuilt<K extends OutboundKind>(
+    kind: K,
+    payload: object,
+  ): OutboundBody<K> {
+    return { kind, payload } as OutboundBody<K>;
+  }
+
+  const BUTTON_ROW = (button: object) => [{ type: 1, components: [button] }];
+
+  it.each<[string, Record<string, unknown>]>([
+    ["no allowed_mentions", { content: "hello" }],
+    [
+      "parse with everyone",
+      {
+        content: "hello",
+        allowed_mentions: { parse: ["everyone"], users: [] },
+      },
+    ],
+    [
+      "parse with users",
+      { content: "hello", allowed_mentions: { parse: ["users"] } },
+    ],
+    ["no parse at all", { content: "hello", allowed_mentions: { users: [] } }],
+    [
+      "a user that is not an ID",
+      { content: "hi", allowed_mentions: { parse: [], users: ["everyone"] } },
+    ],
+    [
+      "a role that is not an ID",
+      { content: "hi", allowed_mentions: { parse: [], roles: ["12ab"] } },
+    ],
+    [
+      "the guild's own ID as a role",
+      { content: "hi", allowed_mentions: { parse: [], roles: [GUILD] } },
+    ],
+    [
+      "a link button",
+      {
+        content: "hi",
+        allowed_mentions: { parse: [], users: [] },
+        components: BUTTON_ROW({
+          type: 2,
+          style: 5,
+          label: "Go",
+          url: "https://example.com",
+        }),
+      },
+    ],
+    [
+      "a link button with no URL",
+      {
+        content: "hi",
+        allowed_mentions: { parse: [], users: [] },
+        components: BUTTON_ROW({ type: 2, style: 5, label: "Go" }),
+      },
+    ],
+    [
+      "a URL on any other button",
+      {
+        content: "hi",
+        allowed_mentions: { parse: [], users: [] },
+        components: BUTTON_ROW({
+          type: 2,
+          style: 1,
+          custom_id: "x",
+          url: "https://example.com",
+        }),
+      },
+    ],
+    [
+      "a live @everyone",
+      { content: "hi @everyone", allowed_mentions: { parse: [], users: [] } },
+    ],
+    [
+      "a live @here",
+      { content: "@here hi", allowed_mentions: { parse: [], users: [] } },
+    ],
+    [
+      "an @everyone after an escaped backslash",
+      {
+        content: "hi \\\\@everyone",
+        allowed_mentions: { parse: [], users: [] },
+      },
+    ],
+    [
+      "components and no allowed_mentions",
+      { components: BUTTON_ROW({ type: 2, style: 1, custom_id: "x" }) },
+    ],
+    ["tts and no allowed_mentions", { flags: 4, tts: false }],
+    [
+      "a ping for the replied-to user",
+      {
+        content: "hi",
+        allowed_mentions: { parse: [], users: [], replied_user: true },
+      },
+    ],
+    [
+      "an embed",
+      {
+        content: "hi",
+        allowed_mentions: { parse: [], users: [] },
+        embeds: [{ description: "hi" }],
+      },
+    ],
+    [
+      "an empty list of embeds",
+      { content: "hi", allowed_mentions: { parse: [], users: [] }, embeds: [] },
+    ],
+    [
+      "a live @everyone in a text display",
+      {
+        flags: 32768,
+        allowed_mentions: { parse: [], users: [] },
+        components: [{ type: 10, content: "Meeting now @everyone" }],
+      },
+    ],
+    [
+      "a live @here in a text display inside a container",
+      {
+        flags: 32768,
+        allowed_mentions: { parse: [], users: [] },
+        components: [
+          { type: 17, components: [{ type: 10, content: "@here look" }] },
+        ],
+      },
+    ],
+    [
+      "a masked link in a text display",
+      {
+        flags: 32768,
+        allowed_mentions: { parse: [], users: [] },
+        components: [{ type: 10, content: "[free](https://example.com)" }],
+      },
+    ],
+    [
+      "a URL on a thumbnail",
+      {
+        flags: 32768,
+        allowed_mentions: { parse: [], users: [] },
+        components: [{ type: 11, media: { url: "https://example.com/a.png" } }],
+      },
+    ],
+    [
+      "a masked link in the content",
+      {
+        content: "[free](https://example.com)",
+        allowed_mentions: { parse: [], users: [] },
+      },
+    ],
+  ])("refuses a body with %s, and sends nothing", async (_label, payload) => {
+    const logged = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    serve();
+
+    const failure = await failureOf(
+      client().sendMessage(MANAGED, handBuilt("channel-message", payload)),
+    );
+
+    expect(failure.kind).toBe("unsafe_body");
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(logged).toHaveBeenCalledTimes(1);
+    expect(String(logged.mock.calls[0]?.[0])).toMatch(
+      /^Refused to send message: /,
+    );
+    expect(JSON.stringify(logged.mock.calls)).not.toContain("example.com");
+  });
+
+  it("checks edits, forum posts, interaction replies and follow-ups too", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    serve({ send: () => new Response(null, { status: 204 }) });
+    const unsafe = { content: "@everyone", allowed_mentions: { parse: [] } };
+    const attempts: Promise<unknown>[] = [
+      client().editMessage(MANAGED, MESSAGE, handBuilt("message-edit", unsafe)),
+      client().createThread(
+        MANAGED,
+        handBuilt("thread-create", { name: "Event", message: unsafe }),
+      ),
+      client().replyToInteraction(
+        IN_MANAGED,
+        handBuilt("checked-response", { type: 4, data: unsafe }),
+      ),
+      client().editInteractionReply(
+        IN_MANAGED,
+        handBuilt("message-edit", unsafe),
+      ),
+      client().sendFollowUp(IN_MANAGED, handBuilt("follow-up", unsafe)),
+      client().respondEphemerally(
+        IN_MANAGED,
+        handBuilt("direct-response", {
+          type: 4,
+          data: { ...unsafe, flags: 64 },
+        }),
+      ),
+      client().editEphemeralReply(
+        IN_MANAGED,
+        handBuilt("message-edit", unsafe),
+      ),
+    ];
+
+    for (const attempt of attempts) {
+      expect((await failureOf(attempt)).kind).toBe("unsafe_body");
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("lets through what the builders make, with escaped @everyone and named pings", () => {
+    const built = channelMessage({
+      content: safe`${escapeUserText("@everyone @here")} hi`,
+      mentionUserIds: [USER],
+      mentionRoleIds: [ROLE],
+      roleGuildId: GUILD,
+    });
+
+    expect(unsafeBodyReason(built.payload, GUILD)).toBeUndefined();
+    expect(
+      unsafeBodyReason(
+        { content: "hi", allowed_mentions: SAFE_MENTIONS },
+        GUILD,
+      ),
+    ).toBeUndefined();
+    expect(unsafeBodyReason(pong().payload, GUILD)).toBeUndefined();
+    expect(
+      unsafeBodyReason(deferredEphemeralReply().payload, GUILD),
+    ).toBeUndefined();
+  });
+
+  it("lets through every builder's body, as it is sent", () => {
+    const hostile = "@everyone [x](https://example.com) <@&1> @here";
+    const text = {
+      content: safe`${escapeUserText(hostile)} ${userMention(USER)} ${roleMention(ROLE)}`,
+      mentionUserIds: [USER],
+      mentionRoleIds: [ROLE],
+      roleGuildId: GUILD,
+      components: [
+        actionRow(
+          button({ customId: "a", label: plainLabel(hostile) }),
+          button({ customId: "b", label: plain`Done`, style: "success" }),
+        ),
+        actionRow(
+          stringSelect({
+            customId: "s",
+            placeholder: plainLabel(hostile),
+            options: [{ label: plainLabel(hostile), value: "v" }],
+          }),
+        ),
+        actionRow(channelSelect({ customId: "c", channelTypes: [15] })),
+        actionRow(roleSelect({ customId: "r" })),
+      ],
+    };
+    const bodies: object[] = [
+      channelMessage(text).payload,
+      messageEdit(text).payload,
+      threadCreate({ ...text, name: plainLabel(hostile) }).payload,
+      interactionReply(text).payload,
+      ephemeralReply(text).payload,
+      updateMessage(text).payload,
+      followUp(text).payload,
+      followUp({ ...text, ephemeral: true }).payload,
+      pong().payload,
+      deferredReply().payload,
+      deferredEphemeralReply().payload,
+      deferredUpdate().payload,
+      autocompleteResult([{ name: plainLabel(hostile), value: "v" }]).payload,
+      modal({
+        customId: "m",
+        title: plainLabel(hostile, 45),
+        rows: [textInputRow({ customId: "t", label: plainLabel(hostile, 45) })],
+      }).payload,
+    ];
+
+    for (const payload of bodies) {
+      const wire: unknown = JSON.parse(JSON.stringify(payload));
+      expect(unsafeBodyReason(wire, GUILD)).toBeUndefined();
+    }
+  });
+
+  it("sends the JSON it checked, not what toJSON or a getter says next", async () => {
+    serve();
+    let reads = 0;
+    const payload = {
+      allowed_mentions: { parse: [], users: [] },
+      get content() {
+        reads += 1;
+        return reads === 1 ? "hello" : "@everyone";
+      },
+    };
+
+    await client().sendMessage(MANAGED, handBuilt("channel-message", payload));
+
+    expect(reads).toBe(1);
+    expect(writes()[0]?.body).toEqual({
+      content: "hello",
+      allowed_mentions: { parse: [], users: [] },
+    });
+  });
+
+  it("checks what toJSON returns, and refuses it", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    serve();
+    const payload = {
+      content: "hello",
+      allowed_mentions: { parse: [], users: [] },
+      toJSON: () => ({ content: "@everyone", allowed_mentions: { parse: [] } }),
+    };
+
+    const failure = await failureOf(
+      client().sendMessage(MANAGED, handBuilt("channel-message", payload)),
+    );
+
+    expect(failure).toEqual({
+      kind: "unsafe_body",
+      reason: "a live @everyone or @here in the content",
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("refuses a body whose toJSON is not an object", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    serve();
+    const payload = { toJSON: () => "@everyone" };
+
+    const failure = await failureOf(
+      client().sendMessage(MANAGED, handBuilt("channel-message", payload)),
+    );
+
+    expect(failure).toEqual({
+      kind: "unsafe_body",
+      reason: "the body is not a JSON object",
+    });
+  });
+
+  it("reads the ephemeral flag from the JSON it sends", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    serve({ send: () => new Response(null, { status: 204 }) });
+    let reads = 0;
+    const data = {
+      content: "hi",
+      allowed_mentions: { parse: [], users: [] },
+      get flags() {
+        reads += 1;
+        return reads === 1 ? 0 : 64;
+      },
+    };
+
+    const failure = await failureOf(
+      client().respondEphemerally(
+        IN_MANAGED,
+        handBuilt("direct-response", { type: 4, data }),
+      ),
+    );
+
+    expect(failure.kind).toBe("not_ephemeral");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
 describe("actionForFailure", () => {
   const limited = (scope: string | undefined): DiscordFailure => ({
     kind: "rate_limited",
@@ -1956,6 +2268,10 @@ describe("actionForFailure", () => {
     [{ kind: "unmanaged_target", channelId: MANAGED_FORUM }, "retry_later"],
     [{ kind: "not_forum", channelId: MANAGED_FORUM }, "retry_later"],
     [{ kind: "not_ephemeral" }, "retry_later"],
+    [
+      { kind: "unsafe_body", reason: "allowed_mentions parses mentions" },
+      "skip_item",
+    ],
   ])("maps %j to %s", (failure, action) => {
     expect(actionForFailure(failure)).toBe(action);
   });
@@ -2130,6 +2446,54 @@ describe("guild reads", () => {
       },
     ]);
     expect(requests()[0]?.url).toBe(`${API}/guilds/${GUILD}/channels`);
+  });
+
+  it("reads one channel of the guild, with its overwrites", async () => {
+    answer({ ...CHANNEL_ROW, guild_id: GUILD });
+
+    await expect(
+      client().getGuildChannel(GUILD, CHANNEL_ROW.id),
+    ).resolves.toEqual({
+      id: CHANNEL_ROW.id,
+      name: "events",
+      type: 15,
+      overwrites: [{ id: GUILD, type: 0, allow: 0n, deny: 1024n }],
+    });
+    expect(requests()[0]?.url).toBe(`${API}/channels/${CHANNEL_ROW.id}`);
+  });
+
+  it.each([
+    ["in another guild", { ...CHANNEL_ROW, guild_id: OTHER_GUILD }],
+    ["in no guild", CHANNEL_ROW],
+    [
+      "with no overwrites",
+      { ...CHANNEL_ROW, guild_id: GUILD, permission_overwrites: undefined },
+    ],
+  ])("refuses one channel %s", async (_label, body) => {
+    answer(body);
+
+    expect(
+      await failureOf(client().getGuildChannel(GUILD, CHANNEL_ROW.id)),
+    ).toEqual({ kind: "invalid_response", status: 200 });
+  });
+
+  it("does not let a refused read stop sends to the channel", async () => {
+    answer({ code: 50001 }, 403);
+    const discord = client();
+
+    expect(
+      (await failureOf(discord.getGuildChannel(GUILD, MANAGED_FORUM))).kind,
+    ).toBe("api");
+    serve();
+    await discord.sendMessage(MANAGED, MESSAGE_BODY);
+    expect(writes()).toHaveLength(1);
+  });
+
+  it("refuses a malformed channel ID before any request", async () => {
+    expect(await failureOf(client().getGuildChannel(GUILD, "../1"))).toEqual({
+      kind: "invalid_target",
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("reads a member's role IDs", async () => {

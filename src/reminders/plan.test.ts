@@ -11,6 +11,8 @@ import {
   type ReminderLogRow,
   type ReminderPlan,
   type ReminderState,
+  slotStart,
+  slotToday,
 } from "./plan.ts";
 
 const NEW_YORK = "America/New_York";
@@ -1167,5 +1169,49 @@ describe("leap days", () => {
     });
 
     expect(kindsSent(result)).toEqual([]);
+  });
+});
+
+describe("slotToday", () => {
+  it.each([
+    // Midnight in Singapore falls between the crons: 23:00 and then 01:00 there.
+    ["Asia/Singapore", "2026-11-10T15:00:00Z", "2026-11-10"],
+    ["Asia/Singapore", "2026-11-10T17:00:00Z", "2026-11-10"],
+    ["Asia/Singapore", "2026-11-11T02:00:00Z", "2026-11-10"],
+    // New York either side of both clock changes, at 10:00 or 11:00 there.
+    ["America/New_York", "2026-03-07T15:00:00Z", "2026-03-07"],
+    ["America/New_York", "2026-03-07T17:00:00Z", "2026-03-07"],
+    ["America/New_York", "2026-03-08T15:00:00Z", "2026-03-08"],
+    ["America/New_York", "2026-03-08T17:00:00Z", "2026-03-08"],
+    ["America/New_York", "2026-10-31T15:00:00Z", "2026-10-31"],
+    ["America/New_York", "2026-10-31T17:00:00Z", "2026-10-31"],
+    ["America/New_York", "2026-11-01T15:00:00Z", "2026-11-01"],
+    ["America/New_York", "2026-11-01T17:00:00Z", "2026-11-01"],
+    // In the repeated hour, before the day's slot begins.
+    ["America/New_York", "2026-11-01T05:30:00Z", "2026-10-31"],
+    ["America/New_York", "2026-11-01T06:30:00Z", "2026-10-31"],
+    ["Pacific/Auckland", "2026-11-04T17:00:00Z", "2026-11-05"],
+  ])("in %s at %s plans for %s", (zone, instant, expected) => {
+    expect(slotToday(new Date(instant), zone)).toBe(expected);
+  });
+
+  it("gives both crons of a slot the same date where the plain date differs", () => {
+    const morning = new Date("2026-11-10T15:00:00Z");
+    const recovery = new Date("2026-11-10T17:00:00Z");
+    expect(todayInZone(recovery, "Asia/Singapore")).not.toBe(
+      todayInZone(morning, "Asia/Singapore"),
+    );
+    expect(slotToday(recovery, "Asia/Singapore")).toBe(
+      slotToday(morning, "Asia/Singapore"),
+    );
+  });
+
+  it("starts each slot at 15:00 UTC", () => {
+    expect(slotStart(new Date("2026-11-10T15:00:00Z"))).toBe(
+      Date.parse("2026-11-10T15:00:00Z"),
+    );
+    expect(slotStart(new Date("2026-11-10T14:59:59Z"))).toBe(
+      Date.parse("2026-11-09T15:00:00Z"),
+    );
   });
 });

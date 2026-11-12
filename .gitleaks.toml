@@ -1,10 +1,29 @@
-# gitleaks' default rules, with its default global allowlist.
-#
-# That allowlist would also apply to any rule added here, excusing lockfiles,
-# PDFs and values containing "false", so project rules live in
-# .gitleaks-custom.toml and are scanned separately.
+# gitleaks' default rules, plus three for this project.
 
-title = "GTSASE Discord Bot default secret rules"
+title = "GTSASE Discord Bot secret rules"
 
 [extend]
 useDefault = true
+
+# No leading anchor, so that a prefix such as tok_ cannot hide a token.
+[[rules]]
+id = "discord-bot-token"
+description = "Discord bot token: encoded user ID, timestamp and HMAC"
+regex = '''[MNO][A-Za-z0-9_-]{23,30}\.[A-Za-z0-9_-]{6,7}\.[A-Za-z0-9_-]{27,}'''
+
+[[rules]]
+id = "discord-webhook-url"
+description = "Discord webhook URL, which anyone can post through"
+regex = '''https?://(?:[a-z]+\.)?discord(?:app)?\.com/api(?:/v[0-9]+)?/webhooks/[0-9]+/[A-Za-z0-9_-]+'''
+keywords = ["webhooks"]
+
+[[rules]]
+id = "postgres-connection-password"
+description = "Password inside a Postgres connection string"
+regex = '''postgres(?:ql)?://[^:@/\s]+:([^@/\s]{4,})@'''
+secretGroup = 1
+keywords = ["postgres"]
+
+[[rules.allowlists]]
+description = "A placeholder in angle brackets, such as <password>, in the docs"
+regexes = ['''^<[a-z][a-z-]*>$''']

@@ -1,12 +1,11 @@
 /**
  * Text an attacker would choose for an event name, a task or a post's title, as
- * [label, text]. Each must come out inert from every renderer. IDs in the mention
- * forms are built at runtime so no long literal is tracked.
+ * [label, text]. Each must come out inert from every renderer.
  */
 
-import { testSnowflake } from "./mock-postgrest.ts";
+import { fakeId } from "./ids.ts";
 
-const SOME_ID = testSnowflake();
+const SOME_ID = fakeId();
 
 export const HOSTILE_TEXT: readonly (readonly [string, string])[] = [
   ["everyone ping", "@everyone free pizza"],
@@ -20,7 +19,7 @@ export const HOSTILE_TEXT: readonly (readonly [string, string])[] = [
   ["masked link", "[Portal login required](https://evil.example/login)"],
   ["bare link", "https://evil.example/login"],
   ["link hidden from previews", "<https://evil.example/login>"],
-  ["invite", `${["discord", "gg"].join(".")}/abcdef join`],
+  ["invite", "discord.gg/abcdef join"],
   ["bare domain", "evil.example sign in"],
   ["heading", "# System notice"],
   ["small text", "-# fine print"],
@@ -77,3 +76,18 @@ export function hasLiveSyntax(content: string): boolean {
     /[\u202A-\u202E\u2066-\u2069\u200B\u{E0001}-\u{E007F}]/u,
   ].some((pattern) => pattern.test(content));
 }
+
+/** Inputs that must never become part of a query's text. */
+export const HOSTILE_STRINGS = [
+  "x' OR '1'='1",
+  "x'); DROP TABLE public.tasks; --",
+  '"; SELECT 1; --',
+  "$1",
+  "x\\",
+  "%",
+  "_",
+  "x\u0000y",
+  "x\ud800y",
+  "",
+  "__proto__",
+];

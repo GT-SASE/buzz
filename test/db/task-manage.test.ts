@@ -31,7 +31,8 @@ import {
   GUILD_ID,
   run,
 } from "../support/interactions.ts";
-import { testSnowflake } from "../support/mock-postgrest.ts";
+import { fakeId } from "../support/ids.ts";
+import { vercelConfig } from "../support/json.ts";
 import { insertEvent } from "./fixtures.ts";
 import { queryAs } from "./harness.ts";
 import {
@@ -79,7 +80,7 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
     world;
   const { today } = world;
   const publicMessage = () => ({
-    message: { id: testSnowflake(), flags: SUPPRESS_EMBEDS },
+    message: { id: fakeId(), flags: SUPPRESS_EMBEDS },
   });
 
   async function choices(
@@ -98,7 +99,7 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
 
   function assignPayload(
     {
-      person = testSnowflake(),
+      person = fakeId(),
       description = "Book the room",
       due = FAR_DUE,
       event,
@@ -127,12 +128,12 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
   }
 
   it("sends the interactions function's limit to Vercel, so finish has its time", () => {
-    const config = JSON.parse(
+    const config = vercelConfig(
       readFileSync(
         join(import.meta.dirname, "..", "..", "vercel.json"),
         "utf8",
       ),
-    ) as { functions: Record<string, { maxDuration: number }> };
+    );
     expect(config.functions["api/interactions.ts"]?.maxDuration).toBe(60);
   });
 
@@ -161,8 +162,8 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
     it("takes the event from the post, saves the task, and pings only the assignee", async () => {
       const { eventId, threadId } = await eventWithPost();
       const { client, edits, notices } = fakeClient();
-      const person = testSnowflake();
-      const actor = testSnowflake();
+      const person = fakeId();
+      const actor = fakeId();
 
       const ran = await run(
         world.router,
@@ -223,7 +224,7 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
       ["a thread that is no event's post", { channel: { id: "", type: 11 } }],
     ])("asks an officer to name an event from %s", async (_name, fields) => {
       const { client, edits, notices } = fakeClient();
-      const channelId = testSnowflake();
+      const channelId = fakeId();
 
       await run(
         world.router,
@@ -298,7 +299,7 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
           ],
           [
             "a resolved entry for someone else",
-            () => resolvedHuman(testSnowflake()),
+            () => resolvedHuman(fakeId()),
             "isn't a member",
           ],
         ];
@@ -306,7 +307,7 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
       it.each(cases)("refuses %s", async (_name, resolved, expected) => {
         const { eventId, threadId } = await eventWithPost();
         const { client, edits, notices } = fakeClient();
-        const person = testSnowflake();
+        const person = fakeId();
 
         await run(
           world.router,
@@ -326,7 +327,7 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
       it("accepts a human whose user entry says bot is false", async () => {
         const { eventId, threadId } = await eventWithPost();
         const { client } = fakeClient();
-        const person = testSnowflake();
+        const person = fakeId();
 
         await run(
           world.router,
@@ -344,7 +345,7 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
       it("shows no nickname or username, however hostile", async () => {
         const { threadId } = await eventWithPost();
         const { client, edits, notices } = fakeClient();
-        const person = testSnowflake();
+        const person = fakeId();
         const hostile = "canary-name @everyone [x](https://evil.example)";
 
         await run(
@@ -375,10 +376,10 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
       const hostile: [string, string][] = [
         ["@everyone", "@everyone come to the room"],
         ["@here", "@here come to the room"],
-        ["a role mention", `ping <@&${testSnowflake()}> now`],
-        ["a user mention", `ping <@${testSnowflake()}> now`],
-        ["a channel mention", `see <#${testSnowflake()}>`],
-        ["a command mention", `run </admin:${testSnowflake()}>`],
+        ["a role mention", `ping <@&${fakeId()}> now`],
+        ["a user mention", `ping <@${fakeId()}> now`],
+        ["a channel mention", `see <#${fakeId()}>`],
+        ["a command mention", `run </admin:${fakeId()}>`],
         ["markdown headings and fences", "# System\n> quoted\n```\n-# small"],
         ["spoilers and bold", "||hidden|| **bold** __under__ ~~gone~~"],
         ["bidi characters", "abc\u202Edef\u2066ghi"],
@@ -395,8 +396,8 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
         async (_n, text) => {
           const { eventId, threadId } = await eventWithPost();
           const { client, edits, notices } = fakeClient();
-          const person = testSnowflake();
-          const actor = testSnowflake();
+          const person = fakeId();
+          const actor = fakeId();
 
           await run(
             world.router,
@@ -564,7 +565,7 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
         await run(
           world.router,
           assignPayload({}, { member: officer(), ...inThread(threadId) }),
-          world.racing(client, "POST", async () => {
+          world.racing(client, "insert", async () => {
             unwrap(
               await closeEvent(world.db(), { guildId: GUILD_ID, eventId }),
             );
@@ -629,9 +630,9 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
     it("ignores options named like database parameters", async () => {
       const { eventId, threadId } = await eventWithPost();
       const { client } = fakeClient();
-      const person = testSnowflake();
-      const actor = testSnowflake();
-      const planted = testSnowflake();
+      const person = fakeId();
+      const actor = fakeId();
+      const planted = fakeId();
 
       await run(
         world.router,
@@ -686,9 +687,9 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
       vi.spyOn(console, "error").mockImplementation(() => undefined);
       const { eventId, threadId } = await eventWithPost();
       const { client, edits } = fakeClient({
-        sendMessage: () => Promise.reject(new Error("canary discord failure")),
+        sendMessage: () => Promise.reject(new Error("discord failure")),
       });
-      const person = testSnowflake();
+      const person = fakeId();
 
       await run(
         world.router,
@@ -700,7 +701,6 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
       const reply = edits[0]?.content ?? "";
       expect(reply).toContain("The task is saved");
       expect(reply).toContain(`<@${person}> was not mentioned`);
-      expect(reply).not.toContain("canary");
     });
 
     it("says the person may not have been mentioned when Discord gives no answer", async () => {
@@ -712,7 +712,7 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
             new DiscordClientError("send message", { kind: "network" }),
           ),
       });
-      const person = testSnowflake();
+      const person = fakeId();
 
       await run(
         world.router,
@@ -746,7 +746,7 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
 
     it("still answers if the overview can't be redrawn", async () => {
       vi.spyOn(console, "error").mockImplementation(() => undefined);
-      refreshOverview.mockRejectedValue(new Error("canary overview failure"));
+      refreshOverview.mockRejectedValue(new Error("overview failure"));
       const { eventId, threadId } = await eventWithPost();
       const { client, edits } = fakeClient();
 
@@ -764,7 +764,7 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
       it("states the event limit in the refusal", async () => {
         const { eventId, threadId } = await eventWithPost();
         for (let index = 0; index < MAX_TASKS_PER_EVENT; index += 1) {
-          await newTask(eventId, testSnowflake());
+          await newTask(eventId, fakeId());
         }
         const { client, edits, notices } = fakeClient();
 
@@ -782,7 +782,7 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
 
       it("states the officer limit in the refusal", async () => {
         const { eventId, threadId } = await eventWithPost();
-        const actor = testSnowflake();
+        const actor = fakeId();
         const { client, edits, notices } = fakeClient();
         const dependencies = dependenciesFor(world.db(), client);
         for (let i = 0; i < MAX_TASK_ACTIONS_PER_OFFICER_PER_DAY; i += 1) {
@@ -790,7 +790,7 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
             await createTask(world.db(), {
               guildId: GUILD_ID,
               eventId,
-              assigneeId: testSnowflake(),
+              assigneeId: fakeId(),
               actorId: actor,
               description: "Book the room",
               dueDate: date(FAR_DUE),
@@ -817,7 +817,7 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
         DISCORD_BOT_TOKEN: ["a".repeat(24), "b".repeat(6), "c".repeat(27)].join(
           ".",
         ),
-        DISCORD_APP_ID: testSnowflake(),
+        DISCORD_APP_ID: fakeId(),
       };
 
       function liveWorld(threadId: string, parentId = world.fixture.channelId) {
@@ -847,10 +847,10 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
             }
             if (method === "GET") {
               return Promise.resolve(
-                Response.json({ id: testSnowflake(), flags: EPHEMERAL }),
+                Response.json({ id: fakeId(), flags: EPHEMERAL }),
               );
             }
-            return Promise.resolve(Response.json({ id: testSnowflake() }));
+            return Promise.resolve(Response.json({ id: fakeId() }));
           },
         );
         const discord = createDiscordClient({
@@ -868,7 +868,7 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
       it("posts in a managed forum's thread with a named-user mention only", async () => {
         const { threadId } = await eventWithPost();
         const { calls, dependencies } = liveWorld(threadId);
-        const person = testSnowflake();
+        const person = fakeId();
 
         await run(
           world.router,
@@ -889,25 +889,25 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
 
       it("sends nothing to a forum that has been removed, and keeps the task", async () => {
         vi.spyOn(console, "error").mockImplementation(() => undefined);
-        const removedForum = testSnowflake();
+        const removedForum = fakeId();
         const config = await queryAs<{ version: number }>(
           world.backend.connection,
-          "service_role",
+          "bot_app",
           `SELECT version FROM public.guild_config WHERE guild_id = $1`,
           [GUILD_ID],
         );
         const version = config[0]?.version ?? 0;
         await queryAs(
           world.backend.connection,
-          "service_role",
+          "bot_app",
           `SELECT public.apply_config_change($1, $2, $3, NULL, ARRAY[$4]::text[])`,
-          [GUILD_ID, version, testSnowflake(), removedForum],
+          [GUILD_ID, version, fakeId(), removedForum],
         );
         const eventId = await insertEvent(world.backend.connection, {
           ...world.fixture,
           channelId: removedForum,
         });
-        const threadId = testSnowflake();
+        const threadId = fakeId();
         unwrap(
           await setEventThread(world.db(), {
             guildId: GUILD_ID,
@@ -917,9 +917,9 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
         );
         await queryAs(
           world.backend.connection,
-          "service_role",
+          "bot_app",
           `SELECT public.apply_config_change($1, $2, $3, NULL, NULL, ARRAY[$4]::text[])`,
-          [GUILD_ID, version + 1, testSnowflake(), removedForum],
+          [GUILD_ID, version + 1, fakeId(), removedForum],
         );
         const { calls, dependencies } = liveWorld(threadId, removedForum);
 
@@ -956,7 +956,7 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
 
     it("refuses a non-officer, even the assignee", async () => {
       const { eventId } = await eventWithPost();
-      const assignee = testSnowflake();
+      const assignee = fakeId();
       const task = await newTask(eventId, assignee);
       const { client, edits } = fakeClient();
 
@@ -977,7 +977,7 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
 
     it("changes the description and says nothing about reminders", async () => {
       const { eventId } = await eventWithPost();
-      const task = await newTask(eventId, testSnowflake());
+      const task = await newTask(eventId, fakeId());
       const { client, edits, notices } = fakeClient();
 
       await run(
@@ -1003,7 +1003,7 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
 
     it("says that moving the due date restarts reminders", async () => {
       const { eventId } = await eventWithPost();
-      const task = await newTask(eventId, testSnowflake());
+      const task = await newTask(eventId, fakeId());
       const { client, edits } = fakeClient();
 
       await run(
@@ -1018,8 +1018,8 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
 
     it("pings the new assignee alone, and pings nobody for other edits", async () => {
       const { eventId, threadId } = await eventWithPost();
-      const before = testSnowflake();
-      const after = testSnowflake();
+      const before = fakeId();
+      const after = fakeId();
       const task = await newTask(eventId, before);
       const { client, edits, notices } = fakeClient();
 
@@ -1043,10 +1043,10 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
     it("keeps the change and says so when the new assignee can't be told", async () => {
       vi.spyOn(console, "error").mockImplementation(() => undefined);
       const { eventId } = await eventWithPost();
-      const task = await newTask(eventId, testSnowflake());
-      const after = testSnowflake();
+      const task = await newTask(eventId, fakeId());
+      const after = fakeId();
       const { client, edits } = fakeClient({
-        sendMessage: () => Promise.reject(new Error("canary discord failure")),
+        sendMessage: () => Promise.reject(new Error("discord failure")),
       });
 
       await run(
@@ -1057,15 +1057,14 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
 
       expect((await row(task.id))?.assignee_id).toBe(after);
       expect(edits[0]?.content).toContain("was not mentioned");
-      expect(edits[0]?.content).not.toContain("canary");
     });
 
     it("stops pinging at the officer's limit, writing nothing and saying why", async () => {
       const { eventId } = await eventWithPost();
-      const a = testSnowflake();
-      const b = testSnowflake();
+      const a = fakeId();
+      const b = fakeId();
       const task = await newTask(eventId, a);
-      const actor = testSnowflake();
+      const actor = fakeId();
       const { client, edits, notices } = fakeClient();
       const dependencies = dependenciesFor(world.db(), client);
 
@@ -1097,8 +1096,8 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
 
     it("does not count an edit that leaves the person alone", async () => {
       const { eventId } = await eventWithPost();
-      const task = await newTask(eventId, testSnowflake());
-      const actor = testSnowflake();
+      const task = await newTask(eventId, fakeId());
+      const actor = fakeId();
       const { client } = fakeClient();
 
       await run(
@@ -1120,7 +1119,7 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
 
     it("says the event is closed when it closes between the read and the write", async () => {
       const { eventId } = await eventWithPost();
-      const task = await newTask(eventId, testSnowflake());
+      const task = await newTask(eventId, fakeId());
       const { client, edits, notices } = fakeClient();
 
       await run(
@@ -1129,9 +1128,9 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
           task.id,
           { description: "New" },
           { member: officer() },
-          testSnowflake(),
+          fakeId(),
         ),
-        world.racing(client, "PATCH", async () => {
+        world.racing(client, "edit", async () => {
           unwrap(await closeEvent(world.db(), { guildId: GUILD_ID, eventId }));
         }),
       );
@@ -1143,7 +1142,7 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
 
     it("refuses a stale edit, keeping the other person's change", async () => {
       const { eventId } = await eventWithPost();
-      const task = await newTask(eventId, testSnowflake());
+      const task = await newTask(eventId, fakeId());
       const { client, edits, notices } = fakeClient();
 
       await run(
@@ -1152,11 +1151,12 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
           task.id,
           { description: "Written later" },
           { member: officer() },
-          testSnowflake(),
+          fakeId(),
         ),
-        world.racing(client, "PATCH", async () => {
+        world.racing(client, "edit", async () => {
           unwrap(
             await editTask(world.db(), {
+              actorId: fakeId(),
               guildId: GUILD_ID,
               taskId: task.id,
               expectedUpdatedAt: task.updated_at,
@@ -1186,7 +1186,7 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
       "writes nothing at all given %s",
       async (_name, values) => {
         const { eventId } = await eventWithPost();
-        const task = await newTask(eventId, testSnowflake());
+        const task = await newTask(eventId, fakeId());
         const { client, edits } = fakeClient();
 
         await run(
@@ -1209,9 +1209,9 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
       ["a non-member", (id: string) => ({ users: { [id]: { id } } })],
     ])("refuses %s as the new person", async (_name, resolved) => {
       const { eventId } = await eventWithPost();
-      const task = await newTask(eventId, testSnowflake());
+      const task = await newTask(eventId, fakeId());
       const { client, notices } = fakeClient();
-      const person = testSnowflake();
+      const person = fakeId();
 
       await run(
         world.router,
@@ -1234,7 +1234,7 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
 
     it("says so when an edit changes nothing", async () => {
       const { eventId } = await eventWithPost();
-      const task = await newTask(eventId, testSnowflake());
+      const task = await newTask(eventId, fakeId());
       const { client, edits, notices } = fakeClient();
       const dependencies = dependenciesFor(world.db(), client);
 
@@ -1263,9 +1263,9 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
 
     it("refuses a task that is done, or on a closed event", async () => {
       const done = await eventWithPost();
-      const doneTask = await newTask(done.eventId, testSnowflake());
+      const doneTask = await newTask(done.eventId, fakeId());
       const closed = await eventWithPost();
-      const closedTask = await newTask(closed.eventId, testSnowflake());
+      const closedTask = await newTask(closed.eventId, fakeId());
       await world.backend.connection.query(
         `UPDATE public.tasks SET status = 'done', completed_at = now() WHERE id = $1`,
         [doneTask.id],
@@ -1314,14 +1314,14 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
       if (value === "foreign") {
         const rows = await queryAs<{ id: string }>(
           world.backend.connection,
-          "service_role",
+          "bot_app",
           `INSERT INTO public.tasks (event_id, guild_id, assignee_id, description, due_date, created_by)
            VALUES ($1, $2, $3, 'Foreign', '2040-01-01', $3) RETURNING id`,
-          [world.foreignEventId, world.foreign.guildId, testSnowflake()],
+          [world.foreignEventId, world.foreign.guildId, fakeId()],
         );
         taskId = rows[0]?.id ?? "";
       } else if (value === "deleted") {
-        const task = await newTask(eventId, testSnowflake());
+        const task = await newTask(eventId, fakeId());
         unwrap(
           await softDeleteTask(world.db(), {
             guildId: GUILD_ID,
@@ -1344,15 +1344,10 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
 
     it("gives a replay one ping", async () => {
       const { eventId } = await eventWithPost();
-      const task = await newTask(eventId, testSnowflake());
+      const task = await newTask(eventId, fakeId());
       const { client, edits, notices } = fakeClient();
       const dependencies = dependenciesFor(world.db(), client);
-      const payload = editPayload(
-        task.id,
-        {},
-        { member: officer() },
-        testSnowflake(),
-      );
+      const payload = editPayload(task.id, {}, { member: officer() }, fakeId());
 
       await run(world.router, payload, dependencies);
       await run(world.router, payload, dependencies);
@@ -1381,7 +1376,7 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
 
     it("deletes only on Confirm, softly, keeping the row", async () => {
       const { eventId } = await eventWithPost();
-      const task = await newTask(eventId, testSnowflake());
+      const task = await newTask(eventId, fakeId());
 
       const prompt = await promptFor(task.id);
       expect(prompt.content).toContain("Delete this task?");
@@ -1411,7 +1406,7 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
 
     it("refuses a non-officer at the command, showing nothing", async () => {
       const { eventId } = await eventWithPost();
-      const assignee = testSnowflake();
+      const assignee = fakeId();
       const task = await newTask(eventId, assignee);
       const { client, edits } = fakeClient();
 
@@ -1427,8 +1422,8 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
 
     it("checks Confirm from its own payload, so a lost role counts", async () => {
       const { eventId } = await eventWithPost();
-      const task = await newTask(eventId, testSnowflake());
-      const actor = testSnowflake();
+      const task = await newTask(eventId, fakeId());
+      const actor = fakeId();
       const { client, edits } = fakeClient();
 
       const ran = await run(
@@ -1446,11 +1441,12 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
 
     it("refuses a Confirm for a task edited since it was shown, and keeps the task", async () => {
       const { eventId } = await eventWithPost();
-      const task = await newTask(eventId, testSnowflake());
+      const task = await newTask(eventId, fakeId());
       const stale = confirmId(task);
       await new Promise((resolve) => setTimeout(resolve, 5));
       unwrap(
         await editTask(world.db(), {
+          actorId: fakeId(),
           guildId: GUILD_ID,
           taskId: task.id,
           expectedUpdatedAt: task.updated_at,
@@ -1476,15 +1472,16 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
 
     it("refuses when the task is edited between the read and the delete", async () => {
       const { eventId } = await eventWithPost();
-      const task = await newTask(eventId, testSnowflake());
+      const task = await newTask(eventId, fakeId());
       const { client, edits } = fakeClient();
 
       await run(
         world.router,
         componentPayload(confirmId(task), { member: officer() }),
-        world.racing(client, "PATCH", async () => {
+        world.racing(client, "update", async () => {
           unwrap(
             await editTask(world.db(), {
+              actorId: fakeId(),
               guildId: GUILD_ID,
               taskId: task.id,
               expectedUpdatedAt: task.updated_at,
@@ -1505,7 +1502,7 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
       ["a bad fingerprint", (id: string) => `task.delete-yes:${id}:xyz`],
     ])("refuses a Confirm with %s", async (_name, build) => {
       const { eventId } = await eventWithPost();
-      const task = await newTask(eventId, testSnowflake());
+      const task = await newTask(eventId, fakeId());
       const { client } = fakeClient();
 
       const ran = await run(
@@ -1520,7 +1517,7 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
 
     it("does not let the assignee Confirm their own task's delete", async () => {
       const { eventId } = await eventWithPost();
-      const assignee = testSnowflake();
+      const assignee = fakeId();
       const task = await newTask(eventId, assignee);
       const { client } = fakeClient();
 
@@ -1538,14 +1535,14 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
 
     it("refuses a Confirm on a message others can see", async () => {
       const { eventId } = await eventWithPost();
-      const task = await newTask(eventId, testSnowflake());
+      const task = await newTask(eventId, fakeId());
       const { client } = fakeClient();
 
       const ran = await run(
         world.router,
         componentPayload(confirmId(task), {
           member: officer(),
-          message: { id: testSnowflake(), flags: 0 },
+          message: { id: fakeId(), flags: 0 },
         }),
         dependenciesFor(world.db(), client),
       );
@@ -1556,7 +1553,7 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
 
     it("gives a second Confirm and a replay the same quiet result", async () => {
       const { eventId } = await eventWithPost();
-      const task = await newTask(eventId, testSnowflake());
+      const task = await newTask(eventId, fakeId());
       const { client, edits } = fakeClient();
       const dependencies = dependenciesFor(world.db(), client);
       const payload = componentPayload(confirmId(task), {
@@ -1583,10 +1580,10 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
     it("refuses another guild's task named in a crafted Confirm", async () => {
       const rows = await queryAs<{ id: string }>(
         world.backend.connection,
-        "service_role",
+        "bot_app",
         `INSERT INTO public.tasks (event_id, guild_id, assignee_id, description, due_date, created_by)
          VALUES ($1, $2, $3, 'Foreign', '2040-01-01', $3) RETURNING id`,
-        [world.foreignEventId, world.foreign.guildId, testSnowflake()],
+        [world.foreignEventId, world.foreign.guildId, fakeId()],
       );
       const { client, edits } = fakeClient();
 
@@ -1607,7 +1604,7 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
 
     it("refuses on a closed event at both steps", async () => {
       const { eventId } = await eventWithPost();
-      const task = await newTask(eventId, testSnowflake());
+      const task = await newTask(eventId, fakeId());
       unwrap(await closeEvent(world.db(), { guildId: GUILD_ID, eventId }));
       const { client, edits } = fakeClient();
       const dependencies = dependenciesFor(world.db(), client);
@@ -1633,7 +1630,7 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
 
   it("works from the button that /task assign posted", async () => {
     const { eventId, threadId } = await eventWithPost();
-    const person = testSnowflake();
+    const person = fakeId();
     const { client, notices } = fakeClient();
     const dependencies = dependenciesFor(world.db(), client);
     await run(
@@ -1663,7 +1660,7 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
     "offers a non-officer nothing for /task %s",
     async (name) => {
       const { eventId } = await eventWithPost();
-      const me = testSnowflake();
+      const me = fakeId();
       await newTask(eventId, me, "Officeronly thing");
 
       expect(
@@ -1682,7 +1679,7 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
         eventId: closed.eventId,
       }),
     );
-    const task = await newTask(eventId, testSnowflake(), "Officerpick thing");
+    const task = await newTask(eventId, fakeId(), "Officerpick thing");
 
     const forEdit = await choices("edit", "Officerpick", {
       member: officer(),

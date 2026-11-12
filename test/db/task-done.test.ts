@@ -14,12 +14,11 @@ import { markDoneButton, markDoneRow } from "../../src/tasks/done.ts";
 import {
   commandPayload,
   componentPayload,
-  configRow,
   dependenciesFor,
   GUILD_ID,
   run,
 } from "../support/interactions.ts";
-import { mockPostgrest, testSnowflake } from "../support/mock-postgrest.ts";
+import { fakeId } from "../support/ids.ts";
 import { insertEvent, withoutQuotas } from "./fixtures.ts";
 import { queryAs } from "./harness.ts";
 import {
@@ -48,7 +47,7 @@ describe("marking tasks done and reading them, on the real schema", () => {
 
   describe("/task done and the button", () => {
     const publicMessage = () => ({
-      message: { id: testSnowflake(), flags: SUPPRESS_EMBEDS },
+      message: { id: fakeId(), flags: SUPPRESS_EMBEDS },
     });
 
     function doneCommand(taskId: string, fields: Record<string, unknown>) {
@@ -67,7 +66,7 @@ describe("marking tasks done and reading them, on the real schema", () => {
         content: safe`Task`,
         mentionUserIds: [],
         components: [markDoneRow(UNKNOWN_ID)],
-      }).toJSON() as Notice;
+      }).payload as Notice;
       expect(body.components[0]?.components[0]).toMatchObject({
         custom_id: `task.done:${UNKNOWN_ID}`,
         label: "\u2705 Mark done",
@@ -79,7 +78,7 @@ describe("marking tasks done and reading them, on the real schema", () => {
 
     it("lets the assignee finish by command", async () => {
       const { eventId } = await eventWithPost();
-      const assignee = testSnowflake();
+      const assignee = fakeId();
       const task = await newTask(eventId, assignee);
       const { client, edits } = fakeClient();
 
@@ -96,7 +95,7 @@ describe("marking tasks done and reading them, on the real schema", () => {
 
     it("lets the assignee click on a public message, answering privately in a new reply", async () => {
       const { eventId } = await eventWithPost();
-      const assignee = testSnowflake();
+      const assignee = fakeId();
       const task = await newTask(eventId, assignee);
       const { client, edits, notices } = fakeClient();
 
@@ -120,7 +119,7 @@ describe("marking tasks done and reading them, on the real schema", () => {
       ["an admin", admin],
     ])("lets %s finish someone else's task", async (_name, build) => {
       const { eventId } = await eventWithPost();
-      const task = await newTask(eventId, testSnowflake());
+      const task = await newTask(eventId, fakeId());
       const { client } = fakeClient();
 
       await run(
@@ -134,7 +133,7 @@ describe("marking tasks done and reading them, on the real schema", () => {
 
     it("refuses a non-assignee who clicks, privately and with no change", async () => {
       const { eventId } = await eventWithPost();
-      const task = await newTask(eventId, testSnowflake());
+      const task = await newTask(eventId, fakeId());
       const { client, edits } = fakeClient();
 
       const ran = await run(
@@ -153,7 +152,7 @@ describe("marking tasks done and reading them, on the real schema", () => {
 
     it("refuses a non-assignee by command too", async () => {
       const { eventId } = await eventWithPost();
-      const task = await newTask(eventId, testSnowflake());
+      const task = await newTask(eventId, fakeId());
       const { client, edits } = fakeClient();
 
       const ran = await run(
@@ -168,7 +167,7 @@ describe("marking tasks done and reading them, on the real schema", () => {
 
     it("makes marking twice a friendly no-op, for button and command", async () => {
       const { eventId } = await eventWithPost();
-      const assignee = testSnowflake();
+      const assignee = fakeId();
       const task = await newTask(eventId, assignee);
       const { client, edits } = fakeClient();
       const dependencies = dependenciesFor(world.db(), client);
@@ -197,7 +196,7 @@ describe("marking tasks done and reading them, on the real schema", () => {
 
     it("gives a replayed click one change and one reply", async () => {
       const { eventId } = await eventWithPost();
-      const assignee = testSnowflake();
+      const assignee = fakeId();
       const task = await newTask(eventId, assignee);
       const { client, edits } = fakeClient();
       const dependencies = dependenciesFor(world.db(), client);
@@ -217,7 +216,7 @@ describe("marking tasks done and reading them, on the real schema", () => {
       ["uppercase hex", "task.done:ABCDEF12-3456-4789-8ABC-DEF123456789"],
       ["a property name", "task.done:__proto__"],
       ["a filter", "task.done:x,status.eq.done"],
-      ["a Discord ID in place of a task", `task.done:${testSnowflake()}`],
+      ["a Discord ID in place of a task", `task.done:${fakeId()}`],
       ["100 characters", `task.done:${"a".repeat(90)}`],
       ["over the limit", `task.done:${"a".repeat(200)}`],
       ["another route's prefix", `TASK.DONE:${UNKNOWN_ID}`],
@@ -251,10 +250,10 @@ describe("marking tasks done and reading them, on the real schema", () => {
     });
 
     it("gives another guild's task the same refusal as an unknown ID", async () => {
-      const assignee = testSnowflake();
+      const assignee = fakeId();
       const rows = await queryAs<{ id: string }>(
         world.backend.connection,
-        "service_role",
+        "bot_app",
         `INSERT INTO public.tasks (event_id, guild_id, assignee_id, description, due_date, created_by)
          VALUES ($1, $2, $3, 'Foreign', '2040-01-01', $3) RETURNING id`,
         [world.foreignEventId, world.foreign.guildId, assignee],
@@ -273,7 +272,7 @@ describe("marking tasks done and reading them, on the real schema", () => {
 
     it("refuses a deleted task, even for its assignee", async () => {
       const { eventId } = await eventWithPost();
-      const assignee = testSnowflake();
+      const assignee = fakeId();
       const task = await newTask(eventId, assignee);
       unwrap(
         await softDeleteTask(world.db(), {
@@ -295,7 +294,7 @@ describe("marking tasks done and reading them, on the real schema", () => {
 
     it("refuses a task on a closed event, with a reason, for those allowed", async () => {
       const { eventId } = await eventWithPost();
-      const assignee = testSnowflake();
+      const assignee = fakeId();
       const task = await newTask(eventId, assignee);
       unwrap(await closeEvent(world.db(), { guildId: GUILD_ID, eventId }));
       const { client, edits } = fakeClient();
@@ -312,17 +311,18 @@ describe("marking tasks done and reading them, on the real schema", () => {
 
     it("stops a click when the task is reassigned between the read and the write", async () => {
       const { eventId } = await eventWithPost();
-      const assignee = testSnowflake();
-      const replacement = testSnowflake();
+      const assignee = fakeId();
+      const replacement = fakeId();
       const task = await newTask(eventId, assignee);
       const { client, edits } = fakeClient();
 
       await run(
         world.router,
         click(task.id, { member: plainMember(assignee) }),
-        world.racing(client, "PATCH", async () => {
+        world.racing(client, "update", async () => {
           unwrap(
             await editTask(world.db(), {
+              actorId: fakeId(),
               guildId: GUILD_ID,
               taskId: task.id,
               expectedUpdatedAt: task.updated_at,
@@ -343,14 +343,14 @@ describe("marking tasks done and reading them, on the real schema", () => {
 
     it("says the event is closed when it closes between the read and the write", async () => {
       const { eventId } = await eventWithPost();
-      const assignee = testSnowflake();
+      const assignee = fakeId();
       const task = await newTask(eventId, assignee);
       const { client, edits } = fakeClient();
 
       await run(
         world.router,
         click(task.id, { member: plainMember(assignee) }),
-        world.racing(client, "PATCH", async () => {
+        world.racing(client, "update", async () => {
           unwrap(await closeEvent(world.db(), { guildId: GUILD_ID, eventId }));
         }),
       );
@@ -362,14 +362,14 @@ describe("marking tasks done and reading them, on the real schema", () => {
 
     it("calls it a no-op when someone else finishes it between the read and the write", async () => {
       const { eventId } = await eventWithPost();
-      const assignee = testSnowflake();
+      const assignee = fakeId();
       const task = await newTask(eventId, assignee);
       const { client, edits } = fakeClient();
 
       await run(
         world.router,
         click(task.id, { member: plainMember(assignee) }),
-        world.racing(client, "PATCH", async () => {
+        world.racing(client, "update", async () => {
           await world.backend.connection.query(
             `UPDATE public.tasks SET status = 'done', completed_at = now() WHERE id = $1`,
             [task.id],
@@ -387,8 +387,8 @@ describe("marking tasks done and reading them, on the real schema", () => {
     }
 
     it("lists only the caller's open tasks on open events, from the signed member", async () => {
-      const me = testSnowflake();
-      const other = testSnowflake();
+      const me = fakeId();
+      const other = fakeId();
       const open = await eventWithPost();
       const closed = await eventWithPost();
       const removed = await eventWithPost();
@@ -400,7 +400,7 @@ describe("marking tasks done and reading them, on the real schema", () => {
       await newTask(removed.eventId, me, "On a deleted event");
       await queryAs(
         world.backend.connection,
-        "service_role",
+        "bot_app",
         `INSERT INTO public.tasks (event_id, guild_id, assignee_id, description, due_date, created_by)
          VALUES ($1, $2, $3, 'In another guild', '2040-01-01', $3)`,
         [world.foreignEventId, world.foreign.guildId, me],
@@ -462,7 +462,7 @@ describe("marking tasks done and reading them, on the real schema", () => {
     });
 
     it("works in a channel the bot does not manage, with nothing public", async () => {
-      const me = testSnowflake();
+      const me = fakeId();
       const { eventId } = await eventWithPost();
       await newTask(eventId, me, "Anywhere");
       const { client, edits, notices } = fakeClient();
@@ -471,7 +471,7 @@ describe("marking tasks done and reading them, on the real schema", () => {
         world.router,
         mytasks({
           member: plainMember(me),
-          channel: { id: testSnowflake(), type: 0 },
+          channel: { id: fakeId(), type: 0 },
         }),
         dependenciesFor(world.db(), client),
       );
@@ -481,17 +481,14 @@ describe("marking tasks done and reading them, on the real schema", () => {
     });
 
     it("renders hostile task and event text inert", async () => {
-      const me = testSnowflake();
+      const me = fakeId();
       const eventId = await insertEvent(
         world.backend.connection,
         world.fixture,
       );
       await world.backend.connection.query(
         `UPDATE public.events SET name = $1 WHERE id = $2`,
-        [
-          `@everyone <@&${testSnowflake()}> [login](https://evil.example)`,
-          eventId,
-        ],
+        [`@everyone <@&${fakeId()}> [login](https://evil.example)`, eventId],
       );
       await newTask(eventId, me, "# fake\n@here ||x|| \u202Eabc");
       const { client, edits } = fakeClient();
@@ -511,7 +508,7 @@ describe("marking tasks done and reading them, on the real schema", () => {
     });
 
     it("says how many are hidden when they don't fit one message", async () => {
-      const me = testSnowflake();
+      const me = fakeId();
       const { eventId } = await eventWithPost();
       for (let index = 0; index < 30; index += 1) {
         await newTask(eventId, me, "*".repeat(200));
@@ -533,7 +530,7 @@ describe("marking tasks done and reading them, on the real schema", () => {
     });
 
     it("says at least, when there are more than can even be read", async () => {
-      const me = testSnowflake();
+      const me = fakeId();
       const first = await insertEvent(world.backend.connection, world.fixture);
       const second = await insertEvent(world.backend.connection, world.fixture);
       for (const eventId of [first, second]) {
@@ -541,7 +538,7 @@ describe("marking tasks done and reading them, on the real schema", () => {
           `INSERT INTO public.tasks (event_id, guild_id, assignee_id, description, due_date, created_by)
            SELECT $1::uuid, $2::text, $3::text, 'Volume', date '2040-01-01', ($4::bigint + n)::text
            FROM generate_series(1, 60) AS n`,
-          [eventId, GUILD_ID, me, testSnowflake()],
+          [eventId, GUILD_ID, me, fakeId()],
         );
       }
       const { client, edits } = fakeClient();
@@ -572,7 +569,7 @@ describe("marking tasks done and reading them, on the real schema", () => {
     });
 
     it("gives a replayer no content in the HTTP reply", async () => {
-      const me = testSnowflake();
+      const me = fakeId();
       const { eventId } = await eventWithPost();
       await newTask(eventId, me, "Private work");
       const { client } = fakeClient();
@@ -606,14 +603,10 @@ describe("marking tasks done and reading them, on the real schema", () => {
     }
 
     it("limits task.done to a member's own tasks, and shows an officer all", async () => {
-      const me = testSnowflake();
+      const me = fakeId();
       const { eventId } = await eventWithPost();
       const mine = await newTask(eventId, me, "Pickertest mine");
-      const theirs = await newTask(
-        eventId,
-        testSnowflake(),
-        "Pickertest theirs",
-      );
+      const theirs = await newTask(eventId, fakeId(), "Pickertest theirs");
 
       const asMember = await choices("done", "Pickertest", {
         member: plainMember(me),
@@ -629,7 +622,7 @@ describe("marking tasks done and reading them, on the real schema", () => {
     });
 
     it("shows a short ID and the due date", async () => {
-      const me = testSnowflake();
+      const me = fakeId();
       const { eventId } = await eventWithPost();
       const task = await newTask(eventId, me, "Labeltest print signs");
 
@@ -644,7 +637,7 @@ describe("marking tasks done and reading them, on the real schema", () => {
     });
 
     it("cleans hostile text out of a label and keeps it valid", async () => {
-      const me = testSnowflake();
+      const me = fakeId();
       const { eventId } = await eventWithPost();
       const symbols = await newTask(eventId, me, "Hostiletest ***");
       const onlySymbols = await newTask(eventId, me, "***");
@@ -675,7 +668,7 @@ describe("marking tasks done and reading them, on the real schema", () => {
     });
 
     it("leaves out deleted tasks, finished tasks, closed events and other guilds", async () => {
-      const me = testSnowflake();
+      const me = fakeId();
       const open = await eventWithPost();
       const closed = await eventWithPost();
       const kept = await newTask(open.eventId, me, "Scopetest kept");
@@ -684,7 +677,7 @@ describe("marking tasks done and reading them, on the real schema", () => {
       await newTask(closed.eventId, me, "Scopetest closed");
       await queryAs(
         world.backend.connection,
-        "service_role",
+        "bot_app",
         `INSERT INTO public.tasks (event_id, guild_id, assignee_id, description, due_date, created_by)
          VALUES ($1, $2, $3, 'Scopetest foreign', '2040-01-01', $3)`,
         [world.foreignEventId, world.foreign.guildId, me],
@@ -714,14 +707,10 @@ describe("marking tasks done and reading them, on the real schema", () => {
 
     describe("by the start of an ID", () => {
       it("finds a task by its short ID, first, and only within the caller's rows", async () => {
-        const me = testSnowflake();
+        const me = fakeId();
         const { eventId } = await eventWithPost();
         const mine = await newTask(eventId, me, "Idsearch mine");
-        const theirs = await newTask(
-          eventId,
-          testSnowflake(),
-          "Idsearch theirs",
-        );
+        const theirs = await newTask(eventId, fakeId(), "Idsearch theirs");
 
         const asMember = await choices("done", mine.id.slice(0, 8), {
           member: plainMember(me),
@@ -743,7 +732,7 @@ describe("marking tasks done and reading them, on the real schema", () => {
       });
 
       it("lists a row once when both its ID and its text match", async () => {
-        const me = testSnowflake();
+        const me = fakeId();
         const { eventId } = await eventWithPost();
         const task = await newTask(eventId, me, "placeholder");
         const start = task.id.slice(0, 8);
@@ -760,7 +749,7 @@ describe("marking tasks done and reading them, on the real schema", () => {
       });
 
       it("treats longer hex, and capitals, as text alone", async () => {
-        const me = testSnowflake();
+        const me = fakeId();
         const { eventId } = await eventWithPost();
         // An all-digit prefix has no capitals, so it would still be a valid prefix.
         let task = await newTask(eventId, me, "Plain text");
@@ -782,7 +771,7 @@ describe("marking tasks done and reading them, on the real schema", () => {
     });
 
     it("never offers more than 25", async () => {
-      const me = testSnowflake();
+      const me = fakeId();
       const { eventId } = await eventWithPost();
       for (let index = 0; index < 30; index += 1) {
         await newTask(eventId, me, "Capped row");
@@ -807,10 +796,10 @@ describe("marking tasks done and reading them, on the real schema", () => {
       ["over the limit", "x".repeat(101)],
       ["not a string", 5],
     ])("stays inside the caller's rows for %s", async (_name, typed) => {
-      const me = testSnowflake();
+      const me = fakeId();
       const { eventId } = await eventWithPost();
       const mine = await newTask(eventId, me, "Hostileterm row");
-      await newTask(eventId, testSnowflake(), "Hostileterm other");
+      await newTask(eventId, fakeId(), "Hostileterm other");
 
       const found = await choices("done", typed, { member: plainMember(me) });
 
@@ -821,11 +810,10 @@ describe("marking tasks done and reading them, on the real schema", () => {
 
     describe("what a keystroke costs", () => {
       function countingWorld(typed: unknown, member: Record<string, unknown>) {
-        const { db: mock, requests } = mockPostgrest((request) => {
-          const path = request.target.split("?")[0] ?? "";
-          return path.endsWith("/guild_config")
-            ? { body: [configRow()] }
-            : { body: [] };
+        const counted = { statements: 0 };
+        const db = world.backend.dbWith(() => {
+          counted.statements += 1;
+          return Promise.resolve();
         });
         const discordCalls: string[] = [];
         const refuse = new Proxy(
@@ -838,55 +826,46 @@ describe("marking tasks done and reading them, on the real schema", () => {
           },
         ) as DiscordClient;
         return {
-          requests,
+          counted,
           discordCalls,
           ran: run(
             world.router,
             pickerPayload("done", typed, { member }),
-            dependenciesFor(mock, refuse),
+            dependenciesFor(db, refuse),
           ),
         };
       }
 
-      it("reads twice, writes nothing and calls Discord never", async () => {
-        const { ran, requests, discordCalls } = countingWorld(
+      it("sends two statements and calls Discord never", async () => {
+        const { ran, counted, discordCalls } = countingWorld(
           "room",
           plainMember(),
         );
 
         await ran;
 
-        expect(requests.map((request) => request.method)).toEqual([
-          "GET",
-          "GET",
-        ]);
+        expect(counted.statements).toBe(2);
         expect(discordCalls).toEqual([]);
       });
 
-      it("adds one read, and no write, for text that could start an ID", async () => {
-        const { ran, requests } = countingWorld("abc", plainMember());
+      it("adds one statement for text that could start an ID", async () => {
+        const { ran, counted } = countingWorld("abc", plainMember());
 
         await ran;
 
-        expect(requests.map((request) => request.method)).toEqual([
-          "GET",
-          "GET",
-          "GET",
-        ]);
+        expect(counted.statements).toBe(3);
       });
 
       it.each([
         ["NUL", "x\u0000y"],
         ["a lone surrogate", "x\ud800y"],
-      ])("sends %s to no database query", async (_name, typed) => {
-        const { ran, requests } = countingWorld(typed, plainMember());
+      ])("reads no task for %s", async (_name, typed) => {
+        const { ran, counted } = countingWorld(typed, plainMember());
 
         const { reply } = await ran;
 
         expect(reply.data?.choices).toEqual([]);
-        expect(
-          requests.filter((request) => request.target.includes("/tasks")),
-        ).toEqual([]);
+        expect(counted.statements).toBe(1);
       });
 
       it("stays inside the budget on a large table with a pathological term", async () => {
@@ -899,7 +878,7 @@ describe("marking tasks done and reading them, on the real schema", () => {
             `INSERT INTO public.tasks (event_id, guild_id, assignee_id, description, due_date, created_by)
              SELECT $1::uuid, $2::text, $3::text, 'Volume %_ row', date '2050-01-01' + (n % 700), $3::text
              FROM generate_series(1, 5000) AS n`,
-            [seededEvent, GUILD_ID, testSnowflake()],
+            [seededEvent, GUILD_ID, fakeId()],
           ),
         );
         await world.backend.connection.exec("ANALYZE public.tasks;");
@@ -919,16 +898,17 @@ describe("marking tasks done and reading them, on the real schema", () => {
 
   it("re-reads a task submitted from a list that has since gone stale", async () => {
     const { eventId } = await eventWithPost();
-    const assignee = testSnowflake();
+    const assignee = fakeId();
     const task = await newTask(eventId, assignee);
     unwrap(
       await editTask(world.db(), {
+        actorId: fakeId(),
         guildId: GUILD_ID,
         taskId: task.id,
         expectedUpdatedAt: task.updated_at,
         description: task.description,
         dueDate: task.due_date,
-        assigneeId: testSnowflake(),
+        assigneeId: fakeId(),
       }),
     );
     const { client, edits } = fakeClient();

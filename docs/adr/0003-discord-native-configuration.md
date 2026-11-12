@@ -8,7 +8,7 @@ Channels and scope must be set after launch, not hard-coded, and by the club's a
 
 ## Decision
 
-Configure the bot with a `/config` panel made of Discord components, with no website in v1. The panel covers managed forums, reminders on or off (which doubles as a kill switch), and the last 5 changes. `/setup` separately binds the officer and admin roles, and every other command refuses until it is done.
+Configure the bot with a `/config` panel made of Discord components, with no website in v1. The panel covers managed forums, reminders on or off (which doubles as a kill switch), and the last 5 changes. `/setup` separately binds the club's five roles: E-board, Events Directors, Events Committee, Treasury Committee and Marketing Committee. The club has no separate admin role, so `/setup` also saves the E-board role as the admin role. Every other command refuses until it is done.
 
 All configuration writes go through one Postgres function that does the version check and the audit row together, so two open panels cannot overwrite each other. Removing a forum stops all bot posts there, including reminders. Its data is kept, the panel warns with the open-task count, and re-adding the forum resumes. Re-adding also redraws the forum's 10 most recently changed posts, because a change made while it was removed never reached them, and a closed event has no later change to do it.
 

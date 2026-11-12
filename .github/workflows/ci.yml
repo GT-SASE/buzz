@@ -3,52 +3,82 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main, staging]
+    branches: [main]
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  quality:
-    name: ${{ matrix.check }}
+  checks:
+    name: typecheck, lint, format, test and build
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    strategy:
-      fail-fast: false
-      matrix:
-        check: [typecheck, lint, "format:check", test]
+    timeout-minutes: 20
+    env:
+      VERCEL_CLI_VERSION: 65.4.0
+      VERCEL_TELEMETRY_DISABLED: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # Installs the pnpm that package.json pins, by version and hash.
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: package.json
-          cache: npm
-      - run: npm ci --ignore-scripts
-      - run: npm run "${CHECK}"
-        env:
-          CHECK: ${{ matrix.check }}
-
-  secret-rules:
-    name: gitleaks canary and script tests
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version-file: package.json
-      - run: bash scripts/install-gitleaks.sh
-      - run: npm run test:secret-rules
-      - run: npm run test:hooks
-      - run: npm run test:history-scan
+          cache: pnpm
+      # Each check runs even if an earlier one failed, so one run reports them all.
+      - id: install
+        if: ${{ !cancelled() }}
+        run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+      - run: pnpm lint
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+      - run: pnpm format:check
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+      - run: pnpm test
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+      - run: pnpm test:db
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+      # Installed outside the repository, with npm, so it cannot touch the project's
+      # dependencies or lockfile. The build itself installs with pnpm, as Vercel does.
+      - name: Install the Vercel CLI
+        if: ${{ !cancelled() }}
+        run: npm install --prefix "${RUNNER_TEMP}/vercel-cli" --ignore-scripts --no-audit --no-fund "vercel@${VERCEL_CLI_VERSION}"
+      # A placeholder lets the build run with no account and no token. Nothing
+      # here deploys or contacts a project.
+      - name: Add a placeholder project
+        run: |
+          mkdir -p .vercel
+          printf '{"projectId":"prj_placeholder","orgId":"team_placeholder","settings":{"framework":null}}' > .vercel/project.json
+      - name: Build
+        run: '"${RUNNER_TEMP}/vercel-cli/node_modules/.bin/vercel" build --yes'
+      # Inside the checkout, Node would find a package the tracer missed in the root
+      # node_modules, which a deployed function does not have. So load copies from
+      # outside it, with any symlink replaced by its file, since Node resolves imports
+      # from where a symlink points.
+      - name: Check that the built functions load and export only what they should
+        run: |
+          copy="${RUNNER_TEMP}/built-functions"
+          mkdir -p "${copy}"
+          cp -RL .vercel/output/functions/api/interactions.func "${copy}/"
+          cp -RL .vercel/output/functions/api/cron/reminders.func "${copy}/"
+          cd "${copy}"
+          node --input-type=module --eval '
+            const base = process.cwd();
+            const { POST } = await import(`${base}/interactions.func/api/interactions.js`);
+            if (typeof POST !== "function") {
+              throw new Error("The interactions function does not export POST");
+            }
+            const cron = await import(`${base}/reminders.func/api/cron/reminders.js`);
+            if (typeof cron.GET !== "function" || "POST" in cron) {
+              throw new Error("The cron function must export GET and not POST");
+            }
+          '
 
   secret-history:
     name: gitleaks full history
@@ -60,4 +90,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - run: bash scripts/install-gitleaks.sh
-      - run: bash scripts/gitleaks-full-history.sh
+      - name: Refuse a .gitleaksignore file
+        run: test ! -e .gitleaksignore
+      - name: Scan every commit on every ref
+        run: .tools/gitleaks git . --config .gitleaks.toml --redact --ignore-gitleaks-allow --no-banner --log-opts="--all -m --text --no-color"

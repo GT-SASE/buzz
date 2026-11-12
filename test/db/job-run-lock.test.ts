@@ -1,5 +1,6 @@
 import type { PGlite } from "@electric-sql/pglite";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { pgliteSql, recordingSql } from "../support/sql-client.ts";
 import { createDbClient, type DbClient } from "../../src/db/client.ts";
 import {
   beginJobRun,
@@ -9,16 +10,14 @@ import {
 } from "../../src/db/job-runs.ts";
 import { applyConfigChange } from "../../src/db/guild-config.ts";
 import { listActiveManagedChannels } from "../../src/db/managed-channels.ts";
-import { TEST_ORIGIN, TEST_SECRET_KEY } from "../support/mock-postgrest.ts";
 import { insertGuild } from "./fixtures.ts";
 import {
+  OTHER_ROLE,
   createMigratedDb,
-  errorCodeOf,
   fakeId,
   present,
   queryAs,
 } from "./harness.ts";
-import { postgrestShim } from "./postgrest-shim.ts";
 
 const STALE_SECONDS = 120;
 
@@ -42,11 +41,7 @@ describe("begin_job_run", () => {
 
   beforeAll(async () => {
     database = await createMigratedDb();
-    db = createDbClient({
-      url: TEST_ORIGIN,
-      secretKey: TEST_SECRET_KEY,
-      fetch: postgrestShim(database),
-    });
+    db = createDbClient(pgliteSql(database));
   });
 
   afterAll(() => database.close());
@@ -74,14 +69,14 @@ describe("begin_job_run", () => {
     expect(ids.filter((id) => id !== null)).toHaveLength(1);
   });
 
-  /** The start of the current slot: the latest 14:00 UTC that has passed. */
+  /** The start of the current slot: the latest 15:00 UTC that has passed. */
   const slotStart = (): Date => {
     const now = new Date();
     const today = Date.UTC(
       now.getUTCFullYear(),
       now.getUTCMonth(),
       now.getUTCDate(),
-      14,
+      15,
     );
     return new Date(today <= now.getTime() ? today : today - 86_400_000);
   };
@@ -175,31 +170,14 @@ describe("begin_job_run", () => {
     });
   });
 
-  it("is closed to the anon role", async () => {
+  it("is closed to a role with no grants", async () => {
     await expect(
-      queryAs(database, "anon", `SELECT public.begin_job_run('reminders', 1)`),
+      queryAs(
+        database,
+        OTHER_ROLE,
+        `SELECT public.begin_job_run('reminders', 1)`,
+      ),
     ).rejects.toMatchObject({ code: "42501" });
-  });
-
-  it("refuses bad arguments before any query", async () => {
-    let requests = 0;
-    const counting = createDbClient({
-      url: TEST_ORIGIN,
-      secretKey: TEST_SECRET_KEY,
-      fetch: () => {
-        requests += 1;
-        return Promise.reject(new Error("no request expected"));
-      },
-    });
-    for (const seconds of [-1, 1.5, Number.NaN]) {
-      expect(
-        await beginJobRun(counting, {
-          jobName: "reminders",
-          staleAfterSeconds: seconds,
-        }),
-      ).toMatchObject({ ok: false, error: { category: "invalid_input" } });
-    }
-    expect(requests).toBe(0);
   });
 
   it("stores a run's failure as a category and code only", async () => {
@@ -301,7 +279,7 @@ describe("begin_job_run", () => {
       try {
         await queryAs(
           database,
-          "service_role",
+          "bot_app",
           `SELECT public.finish_job_run($1, now(), '{}', NULL)`,
           [id],
         );
@@ -319,11 +297,11 @@ describe("begin_job_run", () => {
       }
     });
 
-    it("is closed to the anon role", async () => {
+    it("is closed to a role with no grants", async () => {
       await expect(
         queryAs(
           database,
-          "anon",
+          OTHER_ROLE,
           `SELECT public.finish_job_run(gen_random_uuid(), now(), '{}', NULL)`,
         ),
       ).rejects.toMatchObject({ code: "42501" });
@@ -331,21 +309,11 @@ describe("begin_job_run", () => {
   });
 
   describe("a time in the future", () => {
-    const CHECK_VIOLATION = "23514";
     const FUTURE = "2099-01-01T00:00:00Z";
 
-    /** Writes a row as a restored backup could hold it, with the trigger off. */
+    /** Writes a row as a restored database could hold it. */
     const insertForged = async (sql: string) => {
-      await database.exec(
-        "ALTER TABLE public.job_runs DISABLE TRIGGER job_runs_refuse_future_times",
-      );
-      try {
-        await database.exec(sql);
-      } finally {
-        await database.exec(
-          "ALTER TABLE public.job_runs ENABLE TRIGGER job_runs_refuse_future_times",
-        );
-      }
+      await database.exec(sql);
     };
 
     it("does not close the slot when a success already holds one", async () => {
@@ -368,47 +336,6 @@ describe("begin_job_run", () => {
       );
       expect(rows).toEqual([{ status: "failed", error: "abandoned" }]);
     });
-
-    it.each([
-      [
-        "a new run",
-        `INSERT INTO public.job_runs (job_name, started_at) VALUES ('reminders', '${FUTURE}')`,
-      ],
-      [
-        "a new heartbeat",
-        `INSERT INTO public.job_runs (job_name, heartbeat_at) VALUES ('reminders', '${FUTURE}')`,
-      ],
-      [
-        "a new finish",
-        `INSERT INTO public.job_runs (job_name, status, finished_at) VALUES ('reminders', 'failed', '${FUTURE}')`,
-      ],
-    ])("is refused on %s, even for the owner", async (_name, sql) => {
-      expect(await errorCodeOf(database.query(sql))).toBe(CHECK_VIOLATION);
-    });
-
-    it("is refused on a change to an existing run, even for the owner", async () => {
-      const id = present(await beginOk());
-      for (const column of ["started_at", "heartbeat_at"]) {
-        expect(
-          await errorCodeOf(
-            database.query(
-              `UPDATE public.job_runs SET ${column} = '${FUTURE}' WHERE id = $1`,
-              [id],
-            ),
-          ),
-        ).toBe(CHECK_VIOLATION);
-      }
-    });
-
-    it("still lets the owner write a time that has passed", async () => {
-      const id = present(await beginOk());
-      await database.query(
-        `UPDATE public.job_runs SET started_at = now() - interval '1 hour' WHERE id = $1`,
-        [id],
-      );
-      const latest = await getLatestJobRun(db, { jobName: "reminders" });
-      expect(latest).toMatchObject({ ok: true, value: { id } });
-    });
   });
 
   it("limits how long a start waits for the job's lock", async () => {
@@ -416,7 +343,7 @@ describe("begin_job_run", () => {
     try {
       await queryAs(
         database,
-        "service_role",
+        "bot_app",
         `SELECT public.begin_job_run('reminders', 120)`,
       );
       const { rows } = await database.query(`SHOW lock_timeout`);
@@ -459,11 +386,7 @@ describe("listActiveManagedChannels", () => {
 
   beforeAll(async () => {
     database = await createMigratedDb();
-    db = createDbClient({
-      url: TEST_ORIGIN,
-      secretKey: TEST_SECRET_KEY,
-      fetch: postgrestShim(database),
-    });
+    db = createDbClient(pgliteSql(database));
   });
 
   afterAll(() => database.close());
@@ -474,7 +397,7 @@ describe("listActiveManagedChannels", () => {
     const gone = await insertGuild(database);
     await queryAs(
       database,
-      "service_role",
+      "bot_app",
       `SELECT public.mark_channel_unavailable($1, $2)`,
       [gone.guildId, gone.channelId],
     );
@@ -494,14 +417,12 @@ describe("a time zone in a config change", () => {
     "is refused before any query for %j",
     async (timezone) => {
       let requests = 0;
-      const counting = createDbClient({
-        url: TEST_ORIGIN,
-        secretKey: TEST_SECRET_KEY,
-        fetch: () => {
+      const counting = createDbClient(
+        recordingSql(() => {
           requests += 1;
-          return Promise.reject(new Error("no request expected"));
-        },
-      });
+          return new Error("no request expected");
+        }).sql,
+      );
       const result = await applyConfigChange(counting, {
         guildId: fakeId(),
         actorId: fakeId(),

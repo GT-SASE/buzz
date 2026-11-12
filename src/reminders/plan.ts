@@ -1,4 +1,9 @@
-import { daysBetween, parseIsoDate, type DateOnly } from "../lib/dates.ts";
+import {
+  daysBetween,
+  parseIsoDate,
+  todayInZone,
+  type DateOnly,
+} from "../lib/dates.ts";
 
 /** Least urgent first. The later a kind appears, the more urgent it is. */
 export const REMINDER_KINDS = [
@@ -14,6 +19,33 @@ export type ReminderState = "claimed" | "sent" | "skipped";
 
 /** A claim older than this was left behind by a crashed run. */
 export const STALE_CLAIM_MS = 3_600_000;
+
+const MS_PER_DAY = 86_400_000;
+/** When a schedule slot starts: the first cron. Must match `begin_job_run`. */
+export const SLOT_START_HOUR_UTC = 15;
+
+/** The start of the schedule slot this instant falls in, as in `begin_job_run`. */
+export function slotStart(now: Date): number {
+  const today = Date.UTC(
+    now.getUTCFullYear(),
+    now.getUTCMonth(),
+    now.getUTCDate(),
+    SLOT_START_HOUR_UTC,
+  );
+  return today <= now.getTime() ? today : today - MS_PER_DAY;
+}
+
+/**
+ * The guild's local date that a run plans for: the date in its zone when the run's slot
+ * began, not when the run itself started. The 15:00 UTC run and the 17:00 UTC recovery
+ * run of one slot then plan the same day everywhere. Taking each run's own date would
+ * put the recovery run on the next local day in zones where midnight falls between the
+ * two, such as Asia/Singapore, and lose that slot's reminders. Throws a RangeError for a
+ * zone the runtime does not know.
+ */
+export function slotToday(now: Date, timeZone: string): DateOnly {
+  return todayInZone(new Date(slotStart(now)), timeZone);
+}
 
 /** The number of days before the due date at which each kind becomes due. */
 const OPENS_AT_DAYS_BEFORE: Record<ReminderKind, number> = {

@@ -7,8 +7,5 @@ process.env.TZ = "America/New_York";
 export default defineConfig({
   test: {
     include: ["src/**/*.test.ts", "scripts/**/*.test.ts", "test/*.test.ts"],
-    // Many tests spawn bash or git. They take well under a second alone, but the default
-    // 5 seconds runs out when other suites are using every core at once.
-    testTimeout: 30_000,
   },
 });

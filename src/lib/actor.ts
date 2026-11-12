@@ -39,7 +39,7 @@ function parseRoleIds(value: unknown): ReadonlySet<string> | undefined {
 
 /**
  * Takes a GuildInteraction so that the caller must have run the allowed-server
- * guard first. Returns undefined if the roles or permissions are missing or
+ * parser first. Returns undefined if the roles or permissions are missing or
  * malformed, and the caller must then refuse. There is no partial Actor, because
  * guessing at either field would turn a surprise from Discord into access.
  */

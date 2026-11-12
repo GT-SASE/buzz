@@ -13,6 +13,7 @@ import {
   renderMessages,
   renderReminderLine,
 } from "./render.ts";
+import { fakeId } from "../../test/support/ids.ts";
 
 function date(value: string): DateOnly {
   const parsed = parseIsoDate(value);
@@ -22,12 +23,8 @@ function date(value: string): DateOnly {
   return parsed;
 }
 
-function id(offset: number): string {
-  return (10n ** 17n + BigInt(offset)).toString();
-}
-
 const TODAY = date("2026-11-04");
-const USER = id(1);
+const USER = fakeId(1);
 
 const TASK = "11111111-1111-4111-8111-111111111111";
 
@@ -102,7 +99,7 @@ describe("hostile task text", () => {
   });
 
   it("pings only the assignee, whatever the text names", () => {
-    const victim = id(2);
+    const victim = fakeId(2);
     const rendered = line(`<@${victim}> @everyone`);
     expect(rendered.mentionUserIds).toEqual([USER]);
     const [message] = renderMessages(renderEventHeader("Meeting"), [rendered]);
@@ -110,7 +107,7 @@ describe("hostile task text", () => {
       throw new Error("expected a message");
     }
     expect(message.mentionUserIds).toEqual([USER]);
-    expect(channelMessage(message).toJSON()).toMatchObject({
+    expect(channelMessage(message).payload).toMatchObject({
       allowed_mentions: { parse: [], users: [USER] },
       flags: 4,
     });
@@ -218,7 +215,7 @@ describe("packBatches", () => {
 
   it("starts a new batch at the mention limit", () => {
     const lines = Array.from({ length: 250 }, (_, index) =>
-      line("t", id(index + 10)),
+      line("t", fakeId(index + 10)),
     );
     const batches = packBatches(header, lines, asLine);
     expect(batches.flatMap((batch) => batch.items)).toEqual(lines);
@@ -268,7 +265,7 @@ describe("the Mark done button", () => {
       content: safe`x`,
       mentionUserIds: [],
       components: [row],
-    }).toJSON() as {
+    }).payload as {
       components: { components: { custom_id: string; label: string }[] }[];
     };
     return body.components[0]?.components[0];

@@ -9,7 +9,7 @@
  * environment.
  *
  * Usage:
- *   npm run commands:register -- <guild-id> [<guild-id>...]
+ *   pnpm commands:register <guild-id> [<guild-id>...]
  */
 
 import { parseArgs } from "node:util";

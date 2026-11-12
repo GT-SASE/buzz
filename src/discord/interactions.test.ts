@@ -12,10 +12,7 @@ import {
   selectedValues,
   type ChatInputCommand,
 } from "./interactions.ts";
-
-function fakeId(n: number): string {
-  return String(10n ** 17n + BigInt(n));
-}
+import { fakeId } from "../../test/support/ids.ts";
 
 const ROLE = fakeId(1);
 const CHANNEL = fakeId(2);

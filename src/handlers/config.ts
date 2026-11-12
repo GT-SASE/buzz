@@ -38,11 +38,15 @@ import {
 import type { MessageInput, Part, SelectOption } from "../discord/outbound.ts";
 import {
   channelMention,
+  DISCORD_LIMITS,
   escapeUserText,
+  isWithinLimit,
   plain,
   plainLabel,
+  roleMention,
   safe,
   SafeTextError,
+  safeTextValue,
   userMention,
 } from "../discord/safe-text.ts";
 import type { PlainText, SafeText } from "../discord/safe-text.ts";
@@ -59,7 +63,16 @@ import {
 import { countOpenTasksInChannel } from "../db/tasks.ts";
 import type { ConfigChange, GuildConfig, ManagedChannel } from "../db/types.ts";
 import { refreshOverview } from "../events/overview.ts";
+import { retryHandoffs } from "../events/workflow.ts";
 import { isSnowflake } from "../lib/snowflake.ts";
+import {
+  ADMIN_LABEL,
+  boundRole,
+  chooseRoleText,
+  CLUB_ROLES,
+  EBOARD_ADMIN_LABEL,
+  EBOARD_ROLE,
+} from "./club-roles.ts";
 import { commaList, lines } from "./render.ts";
 import {
   commandRoute,
@@ -71,8 +84,8 @@ import {
   type Handler,
 } from "./router.ts";
 
-// Mentions and warnings of this many forums fit a message with room for the changes.
-const MAX_FORUMS_SHOWN = 15;
+// How many forums to list, most first: the most that leaves room for the roles and changes.
+const FORUMS_SHOWN = [15, 10, 5, 0] as const;
 const MAX_SELECT_OPTIONS = 25;
 // The panel only ever changes one forum at a time, but an audit row can name up to 25.
 const MAX_CHANNELS_PER_CHANGE = 3;
@@ -186,10 +199,55 @@ function remindersValue(values: unknown): unknown {
     : undefined;
 }
 
+function roleValue(values: unknown, column: string): unknown {
+  return typeof values === "object" && values !== null
+    ? (values as Record<string, unknown>)[column]
+    : undefined;
+}
+
+/** Whether a row's admin role is its E-board role, so E-board's label covers it. */
+function adminIsEboard(values: unknown): boolean {
+  return (
+    roleValue(values, "admin_role_id") === roleValue(values, EBOARD_ROLE.column)
+  );
+}
+
+/**
+ * Names the roles a binding changed, by label only, so a line stays short. A row from
+ * before a role existed has no value for it, which counts as unchanged. Admin is named
+ * only where it was or became a role apart from E-board.
+ */
+function rolesSummary(change: ConfigChange): SafeText {
+  if (typeof change.old_values !== "object" || change.old_values === null) {
+    return safe`chose the roles`;
+  }
+  const differs = (column: string) => {
+    const after = roleValue(change.new_values, column);
+    return (
+      after !== undefined && after !== roleValue(change.old_values, column)
+    );
+  };
+  const adminApart =
+    !adminIsEboard(change.old_values) || !adminIsEboard(change.new_values);
+  const changed = [
+    ...(adminApart && differs("admin_role_id") ? [ADMIN_LABEL] : []),
+    ...CLUB_ROLES.filter((clubRole) => differs(clubRole.column)).map(
+      (clubRole) => clubRole.label,
+    ),
+  ];
+  const list = commaList(changed);
+  if (list === undefined) {
+    return safe`saved the roles unchanged`;
+  }
+  return changed.length === 1
+    ? safe`changed the ${list} role`
+    : safe`changed the roles: ${list}`;
+}
+
 /** Describes one audit row. Only IDs and fixed words reach the message. */
 function changeSummary(change: ConfigChange): SafeText {
   if (change.action === "role_bindings") {
-    return safe`changed the roles`;
+    return rolesSummary(change);
   }
   // A row saved before the explicit lists existed only has the active forums to compare.
   // Those miss a forum that was already unavailable, which is why the lists were added.
@@ -221,8 +279,46 @@ function changeSummary(change: ConfigChange): SafeText {
   return commaList(parts) ?? safe`changed settings`;
 }
 
+/**
+ * Mentions only render the role's name: the panel's allowed mentions ping nobody.
+ * /setup saves E-board as the admin role too, so E-board is shown as the admin. An
+ * older row can hold a different admin role, which is then shown on its own line.
+ */
+function roleLines(config: GuildConfig): SafeText {
+  const adminApart = config.admin_role_id !== config.eboard_role_id;
+  const adminLine = isSnowflake(config.admin_role_id)
+    ? safe`${ADMIN_LABEL}: ${roleMention(config.admin_role_id)}`
+    : safe`${ADMIN_LABEL}: ${chooseRoleText(EBOARD_ROLE)}`;
+  return (
+    lines([
+      ...(adminApart ? [adminLine] : []),
+      ...CLUB_ROLES.map((clubRole) => {
+        const label =
+          clubRole === EBOARD_ROLE && !adminApart
+            ? EBOARD_ADMIN_LABEL
+            : clubRole.label;
+        const roleId = boundRole(config, clubRole);
+        return roleId === null || !isSnowflake(roleId)
+          ? safe`${label}: ${chooseRoleText(clubRole)}`
+          : safe`${label}: ${roleMention(roleId)}`;
+      }),
+    ]) ?? safe``
+  );
+}
+
+/**
+ * The UTC day of a timestamp. Its text carries the offset of the session that read it,
+ * so the first ten characters are that zone's day, not UTC's.
+ */
+function utcDay(timestamp: string): string {
+  const time = new Date(timestamp);
+  return Number.isNaN(time.getTime())
+    ? "unknown day"
+    : time.toISOString().slice(0, 10);
+}
+
 function changeLine(change: ConfigChange): SafeText {
-  const day = escapeUserText(change.created_at.slice(0, 10));
+  const day = escapeUserText(utcDay(change.created_at));
   return safe`- ${day}, ${userMention(change.actor_id)}: ${changeSummary(change)}`;
 }
 
@@ -294,30 +390,43 @@ async function renderPanel(
     (forum) => forum.status !== "removed",
   );
 
-  const forumLines =
-    lines(
-      shown
-        .slice(0, MAX_FORUMS_SHOWN)
-        .map((forum) => forumLine(forum, guildId, view)),
-    ) ?? safe`None yet. The bot posts only in managed forums.`;
-  const more = shown.length - MAX_FORUMS_SHOWN;
+  const forumSection = (limit: number): SafeText => {
+    const forumLines =
+      lines(
+        shown.slice(0, limit).map((forum) => forumLine(forum, guildId, view)),
+      ) ?? safe`None yet. The bot posts only in managed forums.`;
+    const more = shown.length - limit;
+    return safe`${forumLines}${more > 0 ? safe`\nAnd ${escapeUserText(String(more))} more.` : safe``}`;
+  };
   const changeLines =
     lines(valueOf(changes).rows.map(changeLine)) ?? safe`None yet.`;
   const reminders = current.reminders_enabled ? safe`on` : safe`off`;
   // The run closes the day's slot even with nothing to send, and the slot stays closed.
   const whenOff = current.reminders_enabled
     ? safe``
-    : safe`\nTurning them on after the day's run (around 14:00 UTC) does not reopen it: they resume with the next day's run.`;
-  const body = safe`**Bot settings**
+    : safe`\nTurning them on after the day's run (around 15:00 UTC) does not reopen it: they resume with the next day's run.`;
+  const compose = (limit: number): SafeText => {
+    const body = safe`**Bot settings**
 Reminders: **${reminders}**${whenOff}
 
+**Roles**
+${roleLines(current)}
+
 **Managed forums**
-${forumLines}${more > 0 ? safe`\nAnd ${escapeUserText(String(more))} more.` : safe``}${view.channels === undefined ? safe`\nCould not read this server's channels, so deleted and visible forums are not flagged.` : safe``}
+${forumSection(limit)}${view.channels === undefined ? safe`\nCould not read this server's channels, so deleted and visible forums are not flagged.` : safe``}
 
 **Last changes**
 ${changeLines}`;
+    return note === undefined ? body : safe`${note}\n\n${body}`;
+  };
+  // Roles and the last changes can leave less room, so fewer forums are listed then.
+  // The removal select below still offers them.
+  const content =
+    FORUMS_SHOWN.map(compose).find((text) =>
+      isWithinLimit(safeTextValue(text), DISCORD_LIMITS.content),
+    ) ?? compose(0);
   return {
-    content: note === undefined ? body : safe`${note}\n\n${body}`,
+    content,
     // The panel names members only as text. Nobody is pinged.
     mentionUserIds: [],
     components: panelRows(current, shown, view),
@@ -362,7 +471,8 @@ async function applyChange(
 /**
  * What changed while a forum was removed never reached its posts, and a closed event has
  * no later change to bring its post up to date. So re-adding redraws the most recently
- * changed posts, and says how far it got. The forum is already added and stays added.
+ * changed posts, sends the hand-offs their active events are owed, and says how far it
+ * got. The forum is already added and stays added.
  */
 async function refreshForumPosts(
   ctx: FinishContext,
@@ -380,12 +490,7 @@ async function refreshForumPosts(
     );
     return safe` Its event posts could not be checked, so some may be out of date.`;
   }
-  const { rows, truncated, excluded } = events.value;
-  if (excluded.length > 0) {
-    console.error(
-      `Forum post refresh: ${String(excluded.length)} row(s) failed their checks`,
-    );
-  }
+  const { rows, truncated } = events.value;
   const deadline = Date.now() + POST_REFRESH_BUDGET_MS;
   let updated = 0;
   for (const event of rows) {
@@ -395,8 +500,12 @@ async function refreshForumPosts(
     if (await refreshOverview(ctx, event)) {
       updated += 1;
     }
+    // A step finished while the forum was removed told nobody, and is owed it now.
+    if (event.status === "active") {
+      await retryHandoffs(ctx, event);
+    }
   }
-  const missed = rows.length + excluded.length - updated;
+  const missed = rows.length - updated;
   if (missed === 0 && !truncated) {
     return updated === 0
       ? safe``
@@ -477,7 +586,7 @@ const remindersOn = componentRoute({
       ctx,
       version,
       { remindersEnabled: true },
-      safe`Reminders are on. If the day's run (around 14:00 UTC) has already happened, they resume with the next day's run.`,
+      safe`Reminders are on. If the day's run (around 15:00 UTC) has already happened, they resume with the next day's run.`,
     ),
 });
 

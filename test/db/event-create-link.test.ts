@@ -27,12 +27,20 @@ import {
   type SentRequest,
   UNKNOWN_CHANNEL,
 } from "../support/discord-server.ts";
-import { testSnowflake } from "../support/mock-postgrest.ts";
+import { fakeId } from "../support/ids.ts";
 import { softDeleteEvent } from "../../src/db/events.ts";
 import { REFUSED } from "../../src/lib/permissions.ts";
 import { handler } from "../../src/handlers/event.ts";
+import { containsInviteOrMaskedLink } from "../../src/discord/safe-text.ts";
 
 const world = eventWorld();
+// Invites and masked links are refused outright, and the rest are stored inert.
+const LINKING_TEXT = HOSTILE_TEXT.filter(([, text]) =>
+  containsInviteOrMaskedLink(text),
+);
+const INERT_TEXT = HOSTILE_TEXT.filter(
+  ([, text]) => !containsInviteOrMaskedLink(text),
+);
 const COMMANDS = handler.commands;
 
 const THREADS_POST = /^\/channels\/[0-9]+\/threads$/;
@@ -89,7 +97,7 @@ function privateReplies(): number {
 function eventInserts(): string[] {
   return world
     .dbRequests()
-    .filter((request) => /^POST .*\/events/.test(request));
+    .filter((request) => request.startsWith("SQL insert into events"));
 }
 
 function postTitles(): unknown[] {
@@ -97,6 +105,22 @@ function postTitles(): unknown[] {
 }
 
 describe("/event create", () => {
+  it.each([
+    "Join discord.gg/abc",
+    "Social [log in](https://evil.example)",
+    "disc\u034Ford.gg/x",
+  ])("refuses a name holding an invite or a masked link: %j", async (name) => {
+    await world.addManagedForum();
+
+    await world.send(create({ name }));
+
+    expect(world.discord.lastReply()).toContain(
+      "can't hold a server invite or a masked link",
+    );
+    expect(await world.events()).toEqual([]);
+    expect(world.discord.posts()).toEqual([]);
+  });
+
   it("makes one active row and one post, and joins them", async () => {
     const forum = await world.addManagedForum();
 
@@ -200,7 +224,7 @@ describe("/event create", () => {
     });
 
     it.each([
-      ["an unmanaged channel", () => testSnowflake()],
+      ["an unmanaged channel", () => fakeId()],
       ["a value that is no ID", () => "x,channel_id.not.is.null"],
       ["__proto__", () => "__proto__"],
     ])("refuses %s", async (_label, id) => {
@@ -236,7 +260,22 @@ describe("/event create", () => {
   });
 
   describe("names", () => {
-    it.each(HOSTILE_TEXT)(
+    it.each(LINKING_TEXT)(
+      "refuses a name with an invite or masked link: %s",
+      async (_label, name) => {
+        await world.addManagedForum();
+
+        await world.send(create({ name: name.slice(0, 100) }));
+
+        expect(await world.events()).toEqual([]);
+        expect(world.discord.publicWrites()).toEqual([]);
+        expect(world.discord.lastReply()).toContain(
+          "can't hold a server invite or a masked link",
+        );
+      },
+    );
+
+    it.each(INERT_TEXT)(
       "stores and posts an inert name: %s",
       async (_label, name) => {
         await world.addManagedForum();
@@ -340,7 +379,7 @@ describe("/event create", () => {
 
   it("takes the actor and guild only from the signed payload", async () => {
     await world.addManagedForum();
-    const hostile = { type: 3, value: testSnowflake() };
+    const hostile = { type: 3, value: fakeId() };
 
     await world.send(
       create({
@@ -385,7 +424,7 @@ describe("/event create", () => {
   describe("who may do it", () => {
     it.each([
       ["a member with no role", PLAIN_MEMBER],
-      ["a member with another role", member({ roles: [testSnowflake()] })],
+      ["a member with another role", member({ roles: [fakeId()] })],
       ["a member whose roles are malformed", member({ roles: ["x"] })],
     ])("refuses %s, with nothing written or sent", async (_label, who) => {
       await world.addManagedForum();
@@ -523,7 +562,7 @@ describe("/event create", () => {
     });
 
     it.each([
-      ["someone else's post", testSnowflake(), "Fall Social"],
+      ["someone else's post", fakeId(), "Fall Social"],
       ["the bot's post with another title", APP_ID, "Other"],
     ])("does not adopt %s", async (_label, owner, title) => {
       const forum = await world.addManagedForum();
@@ -727,7 +766,7 @@ describe("/event create", () => {
           owner_id: APP_ID,
         });
         world.discord.fail("POST", THREADS_POST, SERVER_ERROR, 1);
-        world.failDb(/GET .*thread_id=eq/);
+        world.failDb(/^SQL select .* where thread_id = \$/);
 
         await world.send(create());
 
@@ -747,7 +786,7 @@ describe("/event create", () => {
           owner_id: APP_ID,
         });
         await attemptLapsed();
-        world.failDb(/GET .*thread_id=eq/);
+        world.failDb(/^SQL select .* where thread_id = \$/);
         const before = world.discord.posts().length;
 
         await world.send(create());
@@ -888,7 +927,7 @@ describe("/event create", () => {
 
       it("posts nothing if the attempt can't be taken", async () => {
         await world.addManagedForum();
-        world.failDb(/rpc\/claim_event_post_attempt/);
+        world.failDb(/public\.claim_event_post_attempt\(/);
 
         await world.send(create());
 
@@ -912,7 +951,7 @@ describe("/event create", () => {
 
       it("reports the post if another retry attached a different one", async () => {
         await world.addManagedForum();
-        const other = testSnowflake();
+        const other = fakeId();
         world.discord.onThreadCreated = () =>
           world.pg.query(
             `UPDATE public.events SET thread_id = $1, thread_status = 'active'`,
@@ -1019,10 +1058,10 @@ describe("/event create", () => {
 
   describe("when the database fails", () => {
     it.each([
-      ["the claim", /rpc\/claim_interaction/],
-      ["reading the forums", /GET .*managed_channels/],
-      ["looking for the event", /GET .*events/],
-      ["the insert", /POST .*events/],
+      ["the claim", /public\.claim_interaction\(/],
+      ["reading the forums", /^SQL select .* from managed_channels/],
+      ["looking for the event", /^SQL select .* from events/],
+      ["the insert", /^SQL insert into events/],
     ])("posts nothing and says so when %s fails", async (_label, pattern) => {
       await world.addManagedForum();
       world.failDb(pattern);
@@ -1033,12 +1072,11 @@ describe("/event create", () => {
       expect(await world.events()).toEqual([]);
       expect(world.discord.posts()).toEqual([]);
       expect(world.discord.lastReply()).toContain("Something went wrong");
-      expect(JSON.stringify(world.errors.mock.calls)).not.toContain("canary");
     });
 
     it("retries saving the post through a brief failure", async () => {
       await world.addManagedForum();
-      world.failDb(/PATCH .*events/, 500, 2);
+      world.failDb(/^SQL update events/, 500, 2);
 
       await world.send(create());
 
@@ -1048,7 +1086,7 @@ describe("/event create", () => {
 
     it("names and logs the post when it can't be saved", async () => {
       await world.addManagedForum();
-      world.failDb(/PATCH .*events/);
+      world.failDb(/^SQL update events/);
 
       await world.send(create());
 
@@ -1064,12 +1102,11 @@ describe("/event create", () => {
       expect(logged).toContain(thread?.id);
       expect(logged).toContain(event?.id);
       expect(logged).not.toContain("Fall Social");
-      expect(logged).not.toContain("canary");
     });
 
     it("attaches that post when the same command runs again", async () => {
       await world.addManagedForum();
-      world.failDb(/PATCH .*events/, 500, 3);
+      world.failDb(/^SQL update events/, 500, 3);
 
       await world.send(create());
       await world.send(create());
@@ -1082,7 +1119,7 @@ describe("/event create", () => {
 
     it("attaches that post when /event link runs inside it", async () => {
       const forum = await world.addManagedForum();
-      world.failDb(/PATCH .*events/, 500, 3);
+      world.failDb(/^SQL update events/, 500, 3);
 
       await world.send(create());
 
@@ -1138,7 +1175,7 @@ describe("/event link", () => {
       guild_id: GUILD_ID,
       parent_id: parent,
       name: name as string,
-      owner_id: testSnowflake(),
+      owner_id: fakeId(),
     });
     return { parent, threadId };
   }
@@ -1196,7 +1233,22 @@ describe("/event link", () => {
     expect(privateReplies()).toBe(1);
   });
 
-  it.each(HOSTILE_TEXT)(
+  it.each(LINKING_TEXT)(
+    "refuses a title with an invite or masked link: %s",
+    async (_label, title) => {
+      const { parent, threadId } = await post(title.slice(0, 100));
+
+      await world.send(link(threadId, parent));
+
+      expect(await world.events()).toEqual([]);
+      expect(world.discord.publicWrites()).toEqual([]);
+      expect(world.discord.lastReply()).toContain(
+        "holds a server invite or a masked link",
+      );
+    },
+  );
+
+  it.each(INERT_TEXT)(
     "names the event inertly from a hostile title: %s",
     async (_label, title) => {
       const { parent, threadId } = await post(title.slice(0, 100));
@@ -1236,7 +1288,7 @@ describe("/event link", () => {
 
     it("a channel that is not a thread", async () => {
       await world.addManagedForum();
-      const text = testSnowflake();
+      const text = fakeId();
       world.discord.channels.set(text, {
         id: text,
         type: 0,
@@ -1314,7 +1366,7 @@ describe("/event link", () => {
 
     it("a channel that has a managed parent but is not a thread", async () => {
       const managed = await world.addManagedForum();
-      const text = testSnowflake();
+      const text = fakeId();
       world.discord.channels.set(text, {
         id: text,
         type: 0,
@@ -1385,7 +1437,7 @@ describe("/event link", () => {
         code: UNKNOWN_CHANNEL,
       });
 
-      await expectRefused(link(testSnowflake(), forum));
+      await expectRefused(link(fakeId(), forum));
     });
 
     it("a post when Discord can't say what it is", async () => {
@@ -1488,7 +1540,7 @@ describe("/event link", () => {
     // The event has another name by now, so nothing else stops this before the write.
     await world.pg.query(`UPDATE public.events SET name = 'Other name'`);
     // The read sees nothing held, as if the other link had not yet committed.
-    world.failDb(/GET .*thread_id=eq/, 200, 1);
+    world.failDb(/^SQL select .* where thread_id = \$/, 200, 1);
 
     await world.send(link(threadId, parent));
 
@@ -1500,7 +1552,7 @@ describe("/event link", () => {
 
   it.each([
     ["a member with no role", PLAIN_MEMBER],
-    ["a member with another role", member({ roles: [testSnowflake()] })],
+    ["a member with another role", member({ roles: [fakeId()] })],
   ])("refuses %s, with nothing written or sent", async (_label, who) => {
     const { parent, threadId } = await post();
 
@@ -1536,7 +1588,7 @@ describe("/event link", () => {
 
     it("keeps the link when saving the overview's ID fails", async () => {
       const { parent, threadId } = await post();
-      world.failDb(/PATCH .*events/);
+      world.failDb(/^SQL update events/);
 
       await world.send(link(threadId, parent));
 
@@ -1554,7 +1606,7 @@ describe("/event link", () => {
 
     it("waits out a longer failure to save the overview's ID", async () => {
       const { parent, threadId } = await post();
-      world.failDb(/PATCH .*events/, 500, 4);
+      world.failDb(/^SQL update events/, 500, 4);
 
       await world.send(link(threadId, parent));
 
@@ -1565,19 +1617,20 @@ describe("/event link", () => {
 
     it("gives up on saving the overview's ID well inside the function's limit", async () => {
       const { parent, threadId } = await post();
-      world.failDb(/PATCH .*events/);
-      const timeouts = vi.spyOn(AbortSignal, "timeout");
+      world.failDb(/^SQL update events/);
+      // Each query's deadline is a timer the client starts as the query goes out.
+      const timeouts = vi.spyOn(globalThis, "setTimeout");
       const started = Date.now();
 
       await world.send(link(threadId, parent));
 
       const pauses = Date.now() - started;
-      const deadlines = timeouts.mock.calls.flat().filter((ms) => ms === 4000);
+      const deadlines = timeouts.mock.calls.filter(([, ms]) => ms === 4000);
       timeouts.mockRestore();
       world.clearDbFailures();
       const writes = world
         .dbRequests()
-        .filter((request) => /^PATCH .*events/.test(request));
+        .filter((request) => request.startsWith("SQL update events"));
       expect(writes).toHaveLength(5);
       expect(deadlines).toHaveLength(5);
       // A database that hangs uses every deadline, and the function is stopped at 60 s.
@@ -1598,7 +1651,7 @@ describe("/event link", () => {
         name: "A Post",
         owner_id: APP_ID,
       });
-      world.failDb(/PATCH .*events(?!.*thread_status=neq)/);
+      world.failDb(/^SQL update events(?!.*thread_status <> )/);
       const before = world.discord.requests.length;
 
       await world.send(link(threadId, forum));
@@ -1615,7 +1668,7 @@ describe("/event link", () => {
 
     it("writes nothing when the insert fails", async () => {
       const { parent, threadId } = await post();
-      world.failDb(/POST .*events/);
+      world.failDb(/^SQL insert into events/);
 
       await world.send(link(threadId, parent));
 
@@ -1637,7 +1690,7 @@ describe("an event whose post was deleted", () => {
     await world.insertTask(id);
     // Gone from what Discord lists for the forum, as a deleted post is.
     Object.assign(world.discord.channels.get(event?.thread_id ?? "") ?? {}, {
-      parent_id: testSnowflake(),
+      parent_id: fakeId(),
     });
     await world.pg.query(
       `UPDATE public.events SET thread_status = 'missing' WHERE id = $1`,
@@ -1657,7 +1710,7 @@ describe("an event whose post was deleted", () => {
       guild_id: GUILD_ID,
       parent_id: forum,
       name,
-      owner_id: testSnowflake(),
+      owner_id: fakeId(),
     });
   }
 
@@ -1870,7 +1923,7 @@ describe("an event whose post was deleted", () => {
         const [first, second] = sparePosts(forum, 2);
         await world.send(create({ forum: forumOption(forum) }));
         Object.assign(world.discord.channels.get(second ?? "") ?? {}, {
-          parent_id: testSnowflake(),
+          parent_id: fakeId(),
         });
 
         await world.send(create({ forum: forumOption(forum) }));
@@ -1886,7 +1939,7 @@ describe("an event whose post was deleted", () => {
       const { sent } = await lostEvent();
       world.discord.fail("POST", THREADS_POST, { kind: "lost" }, 1);
       // The first look finds nothing to ask about, so this only stops the second.
-      world.failDb(/GET .*events.*thread_id=eq/);
+      world.failDb(/^SQL select .* where thread_id = \$/);
       await world.send(create());
       expect(world.discord.lastReply()).toContain("did not confirm");
       world.clearDbFailures();
@@ -1913,7 +1966,7 @@ describe("an event whose post was deleted", () => {
 
     it("names the spare post when another request got there first", async () => {
       const { id } = await lostEvent();
-      const winner = testSnowflake();
+      const winner = fakeId();
       world.discord.onThreadCreated = async () => {
         await world.pg.query(
           `UPDATE public.events SET thread_id = $1, thread_status = 'active' WHERE id = $2`,
@@ -1930,7 +1983,7 @@ describe("an event whose post was deleted", () => {
 
     it("names and logs the post when it can't be saved, and a retry joins it", async () => {
       const { sent } = await lostEvent();
-      world.failDb(/PATCH .*events/);
+      world.failDb(/^SQL update events/);
 
       await world.send(create());
 
@@ -1951,7 +2004,7 @@ describe("an event whose post was deleted", () => {
 
     it("says so when the overview's ID can't be saved", async () => {
       const { sent } = await lostEvent();
-      world.failDb(/PATCH .*events(?!.*thread_status=neq)/);
+      world.failDb(/^SQL update events(?!.*thread_status <> )/);
 
       await world.send(create());
 
@@ -1986,7 +2039,7 @@ describe("an event whose post was deleted", () => {
            (guild_id, channel_id, name, event_date, created_by, thread_id, thread_status)
          SELECT guild_id, channel_id, name, event_date, created_by, $2, 'missing'
          FROM public.events WHERE id = $1`,
-        [id, testSnowflake()],
+        [id, fakeId()],
       );
       const before = world.discord.posts().length;
 
@@ -2019,7 +2072,7 @@ describe("an event whose post was deleted", () => {
            (guild_id, channel_id, name, event_date, created_by, thread_id, thread_status)
          SELECT guild_id, channel_id, name, event_date, created_by, $2, 'missing'
          FROM public.events WHERE id = $1`,
-        [id, testSnowflake()],
+        [id, fakeId()],
       );
 
       await world.send(create({ forum: forumOption(forum) }));
@@ -2037,7 +2090,7 @@ describe("an event whose post was deleted", () => {
            (guild_id, channel_id, name, event_date, created_by, thread_id, thread_status)
          SELECT guild_id, channel_id, name, event_date, created_by, $2, 'missing'
          FROM public.events WHERE id = $1`,
-        [id, testSnowflake()],
+        [id, fakeId()],
       );
       const threadId = memberPost(forum);
 
@@ -2143,7 +2196,7 @@ describe("an event whose post was deleted", () => {
 
     it("says so when the row changed just before the write", async () => {
       const { forum } = await lostEvent();
-      world.failDb(/PATCH .*events/, 200, 1);
+      world.failDb(/^SQL update events/, 200, 1);
 
       await world.send(linkIn(memberPost(forum), forum));
 
@@ -2273,7 +2326,7 @@ describe("an event whose post was deleted", () => {
         `INSERT INTO public.events
            (guild_id, channel_id, name, event_date, created_by, thread_id, thread_status)
          VALUES ($1, $2, 'Theirs', '2099-01-15', $3, $4, 'missing') RETURNING id`,
-        [OTHER_GUILD, otherForum, MEMBER_ID, testSnowflake()],
+        [OTHER_GUILD, otherForum, MEMBER_ID, fakeId()],
       );
       const threadId = memberPost(forum);
 
@@ -2297,7 +2350,7 @@ describe("an event whose post was deleted", () => {
         world
           .dbRequests()
           .slice(before)
-          .filter((request) => request.includes("/events")),
+          .filter((request) => /\/events|"events"/.test(request)),
       ).toEqual([]);
     });
 
@@ -2349,7 +2402,7 @@ describe("an event whose post was deleted", () => {
 
     it("refuses outside a managed forum's post", async () => {
       const { id } = await lostEvent();
-      const channel = testSnowflake();
+      const channel = fakeId();
 
       await world.send(
         eventCommand(

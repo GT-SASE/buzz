@@ -142,7 +142,7 @@ describe("schema constraints", () => {
     const code = await errorCodeOf(
       queryAs(
         db,
-        "service_role",
+        "bot_app",
         `INSERT INTO public.events (guild_id, channel_id, name, event_date, created_by)
          VALUES ($1, $2, 'Social', '2030-02-01', $3)`,
         [guild.guildId, other.channelId, fakeId()],
@@ -163,7 +163,7 @@ describe("schema constraints", () => {
     const link = (eventId: string, threadId: string) =>
       queryAs(
         db,
-        "service_role",
+        "bot_app",
         `UPDATE public.events SET thread_id = $2, thread_status = 'active' WHERE id = $1`,
         [eventId, threadId],
       );
@@ -177,7 +177,7 @@ describe("schema constraints", () => {
     });
 
     const softDelete = (eventId: string) =>
-      queryAs(db, "service_role", `SELECT public.soft_delete_event($1, $2)`, [
+      queryAs(db, "bot_app", `SELECT public.soft_delete_event($1, $2)`, [
         eventId,
         guild.guildId,
       ]);
@@ -220,7 +220,7 @@ describe("schema constraints", () => {
     const code = await errorCodeOf(
       queryAs(
         db,
-        "service_role",
+        "bot_app",
         `UPDATE public.events SET thread_status = 'active' WHERE id = $1`,
         [eventId],
       ),
@@ -231,12 +231,9 @@ describe("schema constraints", () => {
   it("keeps completed_at in step with task status", async () => {
     const taskId = await insertTask(db, guild, await insertEvent(db, guild));
     const update = (set: string) =>
-      queryAs(
-        db,
-        "service_role",
-        `UPDATE public.tasks SET ${set} WHERE id = $1`,
-        [taskId],
-      );
+      queryAs(db, "bot_app", `UPDATE public.tasks SET ${set} WHERE id = $1`, [
+        taskId,
+      ]);
     expect(await errorCodeOf(update(`status = 'done'`))).toBe(CHECK_VIOLATION);
     expect(await errorCodeOf(update(`completed_at = now()`))).toBe(
       CHECK_VIOLATION,
@@ -256,7 +253,7 @@ describe("schema constraints", () => {
     const insertDue = (dueDate: string) =>
       queryAs(
         db,
-        "service_role",
+        "bot_app",
         `INSERT INTO public.tasks (event_id, guild_id, assignee_id, description, due_date, created_by)
          VALUES ($1, $2, $3, 'Dated', $4::date, $3)`,
         [eventId, guild.guildId, fakeId(), dueDate],
@@ -281,7 +278,7 @@ describe("schema constraints", () => {
       const code = await errorCodeOf(
         queryAs(
           db,
-          "service_role",
+          MIGRATION_OWNER,
           `UPDATE public.tasks SET due_date = 'infinity' WHERE id = $1`,
           [taskId],
         ),
@@ -297,7 +294,7 @@ describe("schema constraints", () => {
     const insertEventNamed = (name: string) =>
       queryAs(
         db,
-        "service_role",
+        "bot_app",
         `INSERT INTO public.events (guild_id, channel_id, name, event_date, created_by)
          VALUES ($1, $2, $3, '2030-02-01', $4)`,
         [guild.guildId, guild.channelId, name, fakeId()],
@@ -307,7 +304,7 @@ describe("schema constraints", () => {
       const eventId = await insertEvent(db, guild);
       return queryAs(
         db,
-        "service_role",
+        "bot_app",
         `INSERT INTO public.tasks (event_id, guild_id, assignee_id, description, due_date, created_by)
          VALUES ($1, $2, $3, $4, '2030-01-10', $3)`,
         [eventId, guild.guildId, fakeId(), description],
@@ -374,7 +371,7 @@ describe("schema constraints", () => {
         const code = await errorCodeOf(
           queryAs(
             db,
-            "service_role",
+            "bot_app",
             `INSERT INTO public.events (guild_id, channel_id, name, event_date, created_by)
            VALUES ($1, $2, 'Dated', $3::date, $4)`,
             [guild.guildId, guild.channelId, date, fakeId()],
@@ -389,7 +386,7 @@ describe("schema constraints", () => {
       const code = await errorCodeOf(
         queryAs(
           db,
-          "service_role",
+          "bot_app",
           `UPDATE public.events SET event_date = 'infinity' WHERE id = $1`,
           [eventId],
         ),
@@ -418,7 +415,7 @@ describe("schema constraints", () => {
     );
   });
 
-  it("refreshes updated_at when service_role updates a row, without EXECUTE on the trigger function", async () => {
+  it("refreshes updated_at when bot_app updates a row, without EXECUTE on the trigger function", async () => {
     const eventId = await insertEvent(db, guild);
     const taskId = await insertTask(db, guild, eventId);
     await db.exec(
@@ -426,8 +423,8 @@ describe("schema constraints", () => {
     );
     await queryAs(
       db,
-      "service_role",
-      `UPDATE public.tasks SET description = 'Changed' WHERE id = $1`,
+      "bot_app",
+      `UPDATE public.tasks SET status = 'done', completed_at = now() WHERE id = $1`,
       [taskId],
     );
     const { rows } = await db.query<{ refreshed: boolean }>(
@@ -510,7 +507,7 @@ describe("schema constraints", () => {
     const plannedIds = async (): Promise<string[]> => {
       const rows = await queryAs<{ id: string }>(
         db,
-        "service_role",
+        "bot_app",
         plannerQuery("2030-01-10"),
       );
       return rows.map((row) => row.id);
@@ -565,7 +562,7 @@ describe("schema constraints", () => {
       const { taskId } = await setUp();
       await queryAs(
         db,
-        "service_role",
+        "bot_app",
         `SELECT public.claim_reminder($1, 'one_day', '2030-01-10')`,
         [taskId],
       );
@@ -573,7 +570,7 @@ describe("schema constraints", () => {
 
       await queryAs(
         db,
-        "service_role",
+        MIGRATION_OWNER,
         `UPDATE public.tasks SET due_date = '2030-01-09' WHERE id = $1`,
         [taskId],
       );
@@ -582,7 +579,7 @@ describe("schema constraints", () => {
 
     describe("with realistic volume", () => {
       const assigneeId = fakeId();
-      const otherAssigneeBase = (10n ** 17n * 2n).toString();
+      const otherAssigneeBase = fakeId();
 
       beforeAll(async () => {
         // The planner ignores indexes on tiny tables, so plans need realistic volume.

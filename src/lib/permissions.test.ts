@@ -6,6 +6,8 @@ import {
   assertPublicRowsUnscoped,
   authorize,
   autocompleteScope,
+  canApproveBudget,
+  canCompleteStep,
   COMMAND_POLICY,
   holdsTierFor,
   isAction,
@@ -29,12 +31,16 @@ const ADMIN_ROLE = "4".repeat(18);
 const UNRELATED_ROLE = "5".repeat(18);
 const USER = "6".repeat(18);
 const OTHER_USER = "7".repeat(18);
+const EBOARD_ROLE = "8".repeat(18);
+const TREASURY_ROLE = "9".repeat(18);
 const DELETED_AT = "2026-01-01T00:00:00Z";
 
 const CONFIG: AuthorizationConfig = {
   guild_id: GUILD,
   officer_role_id: OFFICER_ROLE,
   admin_role_id: ADMIN_ROLE,
+  eboard_role_id: EBOARD_ROLE,
+  treasury_role_id: TREASURY_ROLE,
 };
 
 const EVENT: EventResource = { guild_id: GUILD, deleted_at: null };
@@ -55,7 +61,9 @@ const MEMBER = actor({ roleIds: new Set([UNRELATED_ROLE]) });
 const OFFICER = actor({ roleIds: new Set([OFFICER_ROLE]) });
 const ADMIN = actor({ roleIds: new Set([ADMIN_ROLE]) });
 const ADMINISTRATOR = actor({ isAdministrator: true });
-const EVERY_KIND = [MEMBER, OFFICER, ADMIN, ADMINISTRATOR];
+const EBOARD = actor({ roleIds: new Set([EBOARD_ROLE]) });
+const TREASURY = actor({ roleIds: new Set([TREASURY_ROLE]) });
+const EVERY_KIND = [MEMBER, OFFICER, EBOARD, TREASURY, ADMIN, ADMINISTRATOR];
 
 /** Written out by hand, so a slip in the policy would have to be made twice. */
 const EXPECTED_ACTIONS: readonly (readonly [string, Tier, Scope])[] = [
@@ -68,6 +76,11 @@ const EXPECTED_ACTIONS: readonly (readonly [string, Tier, Scope])[] = [
   ["event.list", "officer", "none"],
   ["event.close", "officer", "event"],
   ["event.delete", "officer", "event"],
+  ["event.assign", "officer", "event"],
+  ["event.unassign", "officer", "event"],
+  ["event.pickup", "officer", "event"],
+  ["event.approve_budget", "budget", "event"],
+  ["event.step_done", "self", "none"],
   ["task.assign", "officer", "event"],
   ["task.edit", "officer", "task"],
   ["task.delete", "officer", "task"],
@@ -238,7 +251,8 @@ describe("tiers", () => {
   const allowedBy: Record<Tier, readonly Actor[]> = {
     public: EVERY_KIND,
     self: EVERY_KIND,
-    officer: [OFFICER, ADMIN, ADMINISTRATOR],
+    officer: [OFFICER, EBOARD, ADMIN, ADMINISTRATOR],
+    budget: [OFFICER, EBOARD, TREASURY, ADMIN, ADMINISTRATOR],
     admin: [ADMIN, ADMINISTRATOR],
     bindings: [ADMINISTRATOR],
   };
@@ -534,6 +548,50 @@ describe("object-scoped actions", () => {
   });
 });
 
+describe("the event workflow actions", () => {
+  it("lets only the officer tier assign people and set the pickup time", () => {
+    for (const action of [
+      "event.assign",
+      "event.unassign",
+      "event.pickup",
+    ] as const) {
+      expect(authorize(action, OFFICER, CONFIG, EVENT).allowed).toBe(true);
+      expect(authorize(action, EBOARD, CONFIG, EVENT).allowed).toBe(true);
+      expect(authorize(action, TREASURY, CONFIG, EVENT)).toBe(REFUSED);
+      expect(authorize(action, MEMBER, CONFIG, EVENT)).toBe(REFUSED);
+    }
+  });
+
+  it("lets Treasury approve a budget, on a live row of its own guild only", () => {
+    expect(
+      authorize("event.approve_budget", TREASURY, CONFIG, EVENT).allowed,
+    ).toBe(true);
+    expect(authorize("event.approve_budget", MEMBER, CONFIG, EVENT)).toBe(
+      REFUSED,
+    );
+    expect(
+      authorize("event.approve_budget", TREASURY, CONFIG, {
+        ...EVENT,
+        deleted_at: DELETED_AT,
+      }),
+    ).toBe(REFUSED);
+    expect(
+      authorize("event.approve_budget", TREASURY, CONFIG, {
+        ...EVENT,
+        guild_id: OTHER_GUILD,
+      }),
+    ).toBe(REFUSED);
+  });
+
+  it("leaves marking a step done to the handler's check on the assignees", () => {
+    // Anyone in a set-up guild gets past the gate. canCompleteStep decides.
+    expect(authorize("event.step_done", MEMBER, CONFIG).allowed).toBe(true);
+    expect(authorize("event.step_done", MEMBER, null)).toBe(REFUSED);
+    expect(canCompleteStep(MEMBER, CONFIG, [])).toBe(false);
+    expect(canCompleteStep(MEMBER, CONFIG, [USER])).toBe(true);
+  });
+});
+
 describe("autocompleteScope", () => {
   const OFFICER_COMMANDS: readonly AutocompleteCommand[] = [
     "task.assign",
@@ -541,6 +599,9 @@ describe("autocompleteScope", () => {
     "event.status",
     "event.close",
     "event.delete",
+    "event.assign",
+    "event.unassign",
+    "event.pickup",
     "task.edit",
     "task.delete",
   ];
@@ -781,6 +842,8 @@ describe("holdsTierFor", () => {
     guild_id: GUILD,
     officer_role_id: OFFICER_ROLE_ID,
     admin_role_id: ADMIN_ROLE_ID,
+    eboard_role_id: null,
+    treasury_role_id: null,
   };
   const actorWith = (roleIds: string[], isAdministrator = false) => ({
     userId: USER,
@@ -814,5 +877,71 @@ describe("holdsTierFor", () => {
     expect(
       holdsTierFor("constructor" as "ping", actorWith([], true), config),
     ).toBe(false);
+  });
+});
+
+describe("the event workflow roles", () => {
+  it("gives the E-board role officer rights, and not admin rights", () => {
+    expect(isOfficer(EBOARD, CONFIG)).toBe(true);
+    expect(authorize("event.create", EBOARD, CONFIG).allowed).toBe(true);
+    expect(authorize("task.edit", EBOARD, CONFIG, OTHERS_TASK).allowed).toBe(
+      true,
+    );
+    expect(authorize("config.view", EBOARD, CONFIG)).toBe(REFUSED);
+    expect(authorize("setup", EBOARD, CONFIG)).toBe(REFUSED);
+  });
+
+  it("gives the Treasury role budget approval and nothing an officer has", () => {
+    expect(canApproveBudget(TREASURY, CONFIG)).toBe(true);
+    expect(isOfficer(TREASURY, CONFIG)).toBe(false);
+    expect(authorize("event.create", TREASURY, CONFIG)).toBe(REFUSED);
+    expect(authorize("task.assign", TREASURY, CONFIG, EVENT)).toBe(REFUSED);
+  });
+
+  it.each([
+    ["a member", MEMBER, false],
+    ["Events Directors", OFFICER, true],
+    ["E-board", EBOARD, true],
+    ["Treasury", TREASURY, true],
+    ["admin_role_id", ADMIN, true],
+    ["the Administrator bit", ADMINISTRATOR, true],
+  ] as const)("budget approval for %s is %s", (_label, who, expected) => {
+    expect(canApproveBudget(who, CONFIG)).toBe(expected);
+  });
+
+  it("grants nothing for a role that is not set up", () => {
+    const unset = { ...CONFIG, eboard_role_id: null, treasury_role_id: null };
+    expect(isOfficer(EBOARD, unset)).toBe(false);
+    expect(canApproveBudget(TREASURY, unset)).toBe(false);
+    expect(canApproveBudget(OFFICER, unset)).toBe(true);
+  });
+
+  it("never counts an E-board or Treasury role bound to @everyone", () => {
+    const everyone = actor({ roleIds: new Set([GUILD]) });
+    const bound = { ...CONFIG, eboard_role_id: GUILD, treasury_role_id: GUILD };
+    expect(isOfficer(everyone, bound)).toBe(false);
+    expect(canApproveBudget(everyone, bound)).toBe(false);
+  });
+
+  it("refuses with no config, or another guild's", () => {
+    for (const check of [
+      (config: AuthorizationConfig | null) =>
+        canApproveBudget(TREASURY, config),
+      (config: AuthorizationConfig | null) =>
+        canCompleteStep(OFFICER, config, [USER]),
+    ]) {
+      expect(check(null)).toBe(false);
+      expect(check({ ...CONFIG, guild_id: OTHER_GUILD })).toBe(false);
+    }
+  });
+
+  it("lets an assignee or the officer tier complete a step, and no one else", () => {
+    expect(canCompleteStep(MEMBER, CONFIG, [USER])).toBe(true);
+    expect(canCompleteStep(MEMBER, CONFIG, [OTHER_USER])).toBe(false);
+    expect(canCompleteStep(MEMBER, CONFIG, [])).toBe(false);
+    expect(canCompleteStep(TREASURY, CONFIG, [])).toBe(false);
+    expect(canCompleteStep(EBOARD, CONFIG, [])).toBe(true);
+    expect(canCompleteStep(OFFICER, CONFIG, [])).toBe(true);
+    expect(canCompleteStep(ADMINISTRATOR, CONFIG, [])).toBe(true);
   });
 });

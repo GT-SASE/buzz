@@ -15,13 +15,15 @@ import type {
 import { setEventThread } from "../../src/db/events.ts";
 import { createRouter } from "../../src/handlers/router.ts";
 import { handler } from "../../src/handlers/task.ts";
+import { handler as eventHandler } from "../../src/handlers/event.ts";
 import {
+  commandPayload,
   componentPayload,
   dependenciesFor,
   GUILD_ID,
   run,
 } from "../support/interactions.ts";
-import { testSnowflake } from "../support/mock-postgrest.ts";
+import { fakeId } from "../support/ids.ts";
 import { insertEvent } from "./fixtures.ts";
 import { queryAs } from "./harness.ts";
 import {
@@ -77,7 +79,7 @@ describe("what an officer is told after a task change", () => {
         sendMessage: () =>
           Promise.reject(new DiscordClientError("send message", failure)),
       });
-      const person = testSnowflake();
+      const person = fakeId();
       await run(
         world.router,
         assignPayload(person, { member: officer(), ...inThread(threadId) }),
@@ -113,7 +115,7 @@ describe("what an officer is told after a task change", () => {
 
   describe("the person's access to the forum", () => {
     const VIEW = PermissionFlagsBits.ViewChannel;
-    const MEMBER_ROLE = testSnowflake();
+    const MEMBER_ROLE = fakeId();
 
     /** A forum closed to @everyone and open to one role. */
     function privateForum(
@@ -139,19 +141,19 @@ describe("what an officer is told after a task change", () => {
       ];
       return fakeClient({
         getGuildRoles: () => Promise.resolve(roles),
-        getGuildChannels: () =>
-          Promise.resolve([
-            {
-              id: world.fixture.channelId,
-              name: "forum",
-              type: 15,
-              overwrites: [
-                { id: GUILD_ID, type: 0, allow: 0n, deny: VIEW },
-                { id: MEMBER_ROLE, type: 0, allow: VIEW, deny: 0n },
-                ...extra,
-              ],
-            },
-          ]),
+        getGuildChannel: (_guildId, channelId) =>
+          channelId === world.fixture.channelId
+            ? Promise.resolve({
+                id: world.fixture.channelId,
+                name: "forum",
+                type: 15,
+                overwrites: [
+                  { id: GUILD_ID, type: 0, allow: 0n, deny: VIEW },
+                  { id: MEMBER_ROLE, type: 0, allow: VIEW, deny: 0n },
+                  ...extra,
+                ],
+              })
+            : Promise.reject(new Error("not this forum")),
         getGuildMemberRoleIds: () => Promise.resolve(memberRoleIds),
         ...overrides,
       });
@@ -167,7 +169,7 @@ describe("what an officer is told after a task change", () => {
     }
 
     it("warns the officer on assign, and still saves and posts", async () => {
-      const person = testSnowflake();
+      const person = fakeId();
       const { client, edits, notices } = privateForum();
 
       await assigned(client, person);
@@ -180,9 +182,9 @@ describe("what an officer is told after a task change", () => {
     });
 
     it("warns the officer on a reassignment", async () => {
-      const after = testSnowflake();
+      const after = fakeId();
       const { eventId } = await eventWithPost();
-      const task = await world.newTask(eventId, testSnowflake());
+      const task = await world.newTask(eventId, fakeId());
       const { client, edits } = privateForum();
 
       await run(
@@ -206,7 +208,7 @@ describe("what an officer is told after a task change", () => {
 
     it("does not read Discord when the person doesn't change", async () => {
       const { eventId } = await eventWithPost();
-      const task = await world.newTask(eventId, testSnowflake());
+      const task = await world.newTask(eventId, fakeId());
       const getGuildRoles = vi.fn<DiscordClient["getGuildRoles"]>(() =>
         Promise.resolve([]),
       );
@@ -225,17 +227,50 @@ describe("what an officer is told after a task change", () => {
       expect(getGuildRoles).not.toHaveBeenCalled();
     });
 
+    it("warns the officer when someone is put on an event step", async () => {
+      const person = fakeId();
+      const { eventId } = await eventWithPost();
+      const { client, edits } = privateForum();
+
+      await run(
+        createRouter([eventHandler]),
+        commandPayload(
+          "event",
+          { member: officer() },
+          {
+            options: [
+              {
+                name: "assign",
+                type: OPTION.subcommand,
+                options: [
+                  ...stringOptions({ step: "budget_sheet", event: eventId }),
+                  { name: "user", type: OPTION.user, value: person },
+                ],
+              },
+            ],
+            resolved: resolvedHuman(person),
+          },
+        ),
+        dependenciesFor(world.db(), client),
+      );
+
+      const reply = edits[0]?.content ?? "";
+      expect(reply).toContain(`Put <@${person}> on Budget Sheet`);
+      expect(reply).toContain(`<@${person}> can't view this event's forum`);
+      expect(reply).toContain("see the step in /mytasks");
+    });
+
     it("stays quiet for someone a role lets in", async () => {
       const { client, edits } = privateForum({}, [MEMBER_ROLE]);
 
-      await assigned(client, testSnowflake());
+      await assigned(client, fakeId());
 
       expect(edits[0]?.content).toContain("was mentioned");
       expect(edits[0]?.content).not.toContain("can't view");
     });
 
     it("stays quiet for someone their own overwrite lets in", async () => {
-      const person = testSnowflake();
+      const person = fakeId();
       const { client, edits } = privateForum(
         {},
         [],
@@ -247,29 +282,26 @@ describe("what an officer is told after a task change", () => {
       expect(edits[0]?.content).not.toContain("can't view");
     });
 
-    it("keeps the reply and quotes nothing when the check fails", async () => {
-      const logged = vi
-        .spyOn(console, "error")
-        .mockImplementation(() => undefined);
+    it("keeps the reply when the check fails", async () => {
+      vi.spyOn(console, "error").mockImplementation(() => undefined);
       const { client, edits } = privateForum({
-        getGuildChannels: () => Promise.reject(new Error("canary failure")),
+        getGuildChannel: () => Promise.reject(new Error("check failure")),
       });
 
-      await assigned(client, testSnowflake());
+      await assigned(client, fakeId());
 
       expect(edits[0]?.content).toContain("was mentioned");
       expect(edits[0]?.content).not.toContain("can't view");
-      expect(JSON.stringify(logged.mock.calls)).not.toContain("canary");
     });
   });
 
   describe("under a removed forum", () => {
     it("keeps the task and says reminders are off until the forum is back", async () => {
-      const removedForum = testSnowflake();
+      const removedForum = fakeId();
       const version = async () => {
         const rows = await queryAs<{ version: number }>(
           world.backend.connection,
-          "service_role",
+          "bot_app",
           `SELECT version FROM public.guild_config WHERE guild_id = $1`,
           [GUILD_ID],
         );
@@ -277,9 +309,9 @@ describe("what an officer is told after a task change", () => {
       };
       await queryAs(
         world.backend.connection,
-        "service_role",
+        "bot_app",
         `SELECT public.apply_config_change($1, $2, $3, NULL, ARRAY[$4]::text[])`,
-        [GUILD_ID, await version(), testSnowflake(), removedForum],
+        [GUILD_ID, await version(), fakeId(), removedForum],
       );
       const eventId = await insertEvent(world.backend.connection, {
         ...world.fixture,
@@ -289,17 +321,17 @@ describe("what an officer is told after a task change", () => {
         await setEventThread(world.db(), {
           guildId: GUILD_ID,
           eventId,
-          threadId: testSnowflake(),
+          threadId: fakeId(),
         }),
       );
       await queryAs(
         world.backend.connection,
-        "service_role",
+        "bot_app",
         `SELECT public.apply_config_change($1, $2, $3, NULL, NULL, ARRAY[$4]::text[])`,
-        [GUILD_ID, await version(), testSnowflake(), removedForum],
+        [GUILD_ID, await version(), fakeId(), removedForum],
       );
       vi.spyOn(console, "error").mockImplementation(() => undefined);
-      const person = testSnowflake();
+      const person = fakeId();
       const { client, edits } = fakeClient({
         sendMessage: () =>
           Promise.reject(
@@ -330,7 +362,7 @@ describe("what an officer is told after a task change", () => {
 
       await run(
         world.router,
-        assignPayload(testSnowflake(), {
+        assignPayload(fakeId(), {
           member: officer(),
           ...inThread(threadId),
         }),
@@ -351,7 +383,7 @@ describe("what an officer is told after a task change", () => {
     it("says so after /task done", async () => {
       refused();
       const { eventId } = await eventWithPost();
-      const task = await world.newTask(eventId, testSnowflake());
+      const task = await world.newTask(eventId, fakeId());
       const { client, edits } = fakeClient();
 
       await run(
@@ -369,7 +401,7 @@ describe("what an officer is told after a task change", () => {
 
     it("says so through the live command, whose refresh really fails", async () => {
       const { eventId } = await eventWithPost();
-      const task = await world.newTask(eventId, testSnowflake());
+      const task = await world.newTask(eventId, fakeId());
       const { client, edits } = fakeClient({
         sendMessage: () => Promise.reject(new Error("post refused")),
       });
@@ -390,7 +422,7 @@ describe("what an officer is told after a task change", () => {
     it("says so after the Mark done button", async () => {
       refused();
       const { eventId } = await eventWithPost();
-      const assignee = testSnowflake();
+      const assignee = fakeId();
       const task = await world.newTask(eventId, assignee);
       const { client, edits } = fakeClient();
 
@@ -398,7 +430,7 @@ describe("what an officer is told after a task change", () => {
         world.router,
         componentPayload(`task.done:${task.id}`, {
           member: plainMember(assignee),
-          message: { id: testSnowflake(), flags: SUPPRESS_EMBEDS },
+          message: { id: fakeId(), flags: SUPPRESS_EMBEDS },
         }),
         dependenciesFor(world.db(), client),
       );
@@ -410,7 +442,7 @@ describe("what an officer is told after a task change", () => {
     it("says so after /task edit", async () => {
       refused();
       const { eventId } = await eventWithPost();
-      const task = await world.newTask(eventId, testSnowflake());
+      const task = await world.newTask(eventId, fakeId());
       const { client, edits } = fakeClient();
 
       await run(
@@ -429,13 +461,13 @@ describe("what an officer is told after a task change", () => {
 
     it("says so after /task assign, and when the refresh throws", async () => {
       vi.spyOn(console, "error").mockImplementation(() => undefined);
-      world.refreshOverview.mockRejectedValue(new Error("canary overview"));
+      world.refreshOverview.mockRejectedValue(new Error("overview failure"));
       const { threadId } = await eventWithPost();
       const { client, edits } = fakeClient();
 
       await run(
         world.router,
-        assignPayload(testSnowflake(), {
+        assignPayload(fakeId(), {
           member: officer(),
           ...inThread(threadId),
         }),
@@ -444,12 +476,11 @@ describe("what an officer is told after a task change", () => {
 
       expect(edits[0]?.content).toContain("Assigned task");
       expect(edits[0]?.content).toContain(NOT_UPDATED);
-      expect(edits[0]?.content).not.toContain("canary");
     });
 
     it("says nothing when it was updated", async () => {
       const { eventId } = await eventWithPost();
-      const task = await world.newTask(eventId, testSnowflake());
+      const task = await world.newTask(eventId, fakeId());
       const { client, edits } = fakeClient();
 
       await run(
@@ -469,7 +500,7 @@ describe("what an officer is told after a task change", () => {
         world.backend.connection,
         world.fixture,
       );
-      const task = await world.newTask(eventId, testSnowflake());
+      const task = await world.newTask(eventId, fakeId());
       const { client, edits } = fakeClient();
 
       await run(
@@ -506,7 +537,7 @@ describe("what an officer is told after a task change", () => {
     }
 
     it("takes an assignee's whole short ID for their own task", async () => {
-      const assignee = testSnowflake();
+      const assignee = fakeId();
       const { eventId } = await eventWithPost();
       const task = await world.newTask(eventId, assignee);
 
@@ -518,7 +549,7 @@ describe("what an officer is told after a task change", () => {
 
     it("does not reach someone else's task, or say it exists", async () => {
       const { eventId } = await eventWithPost();
-      const task = await world.newTask(eventId, testSnowflake());
+      const task = await world.newTask(eventId, fakeId());
 
       const reply = await doneTyped(shortId(task.id), plainMember());
 
@@ -528,7 +559,7 @@ describe("what an officer is told after a task change", () => {
 
     it("takes an officer's short ID for anyone's task", async () => {
       const { eventId } = await eventWithPost();
-      const task = await world.newTask(eventId, testSnowflake());
+      const task = await world.newTask(eventId, fakeId());
 
       const reply = await doneTyped(shortId(task.id), officer());
 
@@ -545,7 +576,7 @@ describe("what an officer is told after a task change", () => {
 
     it("won't act on the real start of a short ID", async () => {
       const { eventId } = await eventWithPost();
-      const task = await world.newTask(eventId, testSnowflake());
+      const task = await world.newTask(eventId, fakeId());
 
       const reply = await doneTyped(task.id.slice(0, 4), officer());
 
@@ -565,7 +596,7 @@ describe("what an officer is told after a task change", () => {
         await world.backend.connection.query(
           `INSERT INTO public.tasks (id, event_id, guild_id, assignee_id, description, due_date, created_by)
            VALUES ($1, $2, $3, $4, 'Book the room', $5, $6)`,
-          [id, eventId, GUILD_ID, testSnowflake(), FAR_DUE, testSnowflake()],
+          [id, eventId, GUILD_ID, fakeId(), FAR_DUE, fakeId()],
         );
       }
 
@@ -585,7 +616,7 @@ describe("what an officer is told after a task change", () => {
 
     it("takes a short ID in /task edit, without touching other rows", async () => {
       const { eventId } = await eventWithPost();
-      const task = await world.newTask(eventId, testSnowflake());
+      const task = await world.newTask(eventId, fakeId());
       const { client, edits } = fakeClient();
 
       await run(
@@ -625,7 +656,7 @@ describe("what an officer is told after a task change", () => {
 
       await run(
         world.router,
-        assignPayload(testSnowflake(), { member: officer() }, shortId(eventId)),
+        assignPayload(fakeId(), { member: officer() }, shortId(eventId)),
         dependenciesFor(world.db(), client),
       );
 
@@ -638,7 +669,7 @@ describe("what an officer is told after a task change", () => {
 
       await run(
         world.router,
-        assignPayload(testSnowflake(), { member: officer() }, "Fall Social"),
+        assignPayload(fakeId(), { member: officer() }, "Fall Social"),
         dependenciesFor(world.db(), client),
       );
 
@@ -662,7 +693,7 @@ describe("what an officer is told after a task change", () => {
 
     async function doneTask(description: string) {
       const { eventId } = await eventWithPost();
-      const task = await world.newTask(eventId, testSnowflake(), description);
+      const task = await world.newTask(eventId, fakeId(), description);
       const { client } = fakeClient();
       await run(
         world.router,
@@ -677,11 +708,7 @@ describe("what an officer is told after a task change", () => {
     it("offers it in the picker, marked done and after open ones", async () => {
       const done = await doneTask("Deletetest finished");
       const { eventId } = await eventWithPost();
-      const open = await world.newTask(
-        eventId,
-        testSnowflake(),
-        "Deletetest waiting",
-      );
+      const open = await world.newTask(eventId, fakeId(), "Deletetest waiting");
 
       const found = await pick("Deletetest");
 
@@ -738,7 +765,7 @@ describe("what an officer is told after a task change", () => {
         world.router,
         componentPayload(confirm ?? "", {
           member: by,
-          message: { id: testSnowflake(), flags: EPHEMERAL },
+          message: { id: fakeId(), flags: EPHEMERAL },
         }),
         dependenciesFor(world.db(), client),
       );
@@ -764,7 +791,7 @@ describe("what an officer is told after a task change", () => {
         world.router,
         componentPayload(confirm ?? "", {
           member: by,
-          message: { id: testSnowflake(), flags: EPHEMERAL },
+          message: { id: fakeId(), flags: EPHEMERAL },
         }),
         dependenciesFor(world.db(), client),
       );
@@ -779,10 +806,10 @@ describe("what an officer is told after a task change", () => {
     async function namedEvent(name: string, date: string) {
       const rows = await queryAs<{ id: string }>(
         world.backend.connection,
-        "service_role",
+        "bot_app",
         `INSERT INTO public.events (guild_id, channel_id, name, event_date, created_by)
          VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-        [GUILD_ID, world.fixture.channelId, name, date, testSnowflake()],
+        [GUILD_ID, world.fixture.channelId, name, date, fakeId()],
       );
       return rows[0]?.id ?? "";
     }

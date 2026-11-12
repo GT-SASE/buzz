@@ -19,7 +19,7 @@ const STOPPERS: [
     (db, own) =>
       queryAs(
         db,
-        "service_role",
+        "bot_app",
         `SELECT public.apply_config_change($1, 2, $1, false)`,
         [own.guildId],
       ),
@@ -37,19 +37,17 @@ const STOPPERS: [
   [
     "the channel unavailable",
     (db, own) =>
-      queryAs(
-        db,
-        "service_role",
-        `SELECT public.mark_channel_unavailable($1, $2)`,
-        [own.guildId, own.channelId],
-      ),
+      queryAs(db, "bot_app", `SELECT public.mark_channel_unavailable($1, $2)`, [
+        own.guildId,
+        own.channelId,
+      ]),
   ],
   [
     "the event closed",
     (db, _own, eventId) =>
       queryAs(
         db,
-        "service_role",
+        "bot_app",
         `UPDATE public.events SET status = 'closed' WHERE id = $1`,
         [eventId],
       ),
@@ -87,7 +85,7 @@ describe("reminder claims check the task's parents", () => {
   const claim = async (taskId: string, kind = "due_day") => {
     const rows = await queryAs<{ token: string | null }>(
       db,
-      "service_role",
+      "bot_app",
       `SELECT public.claim_reminder($1, $2, '${DUE}') AS token`,
       [taskId, kind],
     );
@@ -97,7 +95,7 @@ describe("reminder claims check the task's parents", () => {
   const reclaim = async (taskId: string, token: string) => {
     const rows = await queryAs<{ token: string | null }>(
       db,
-      "service_role",
+      "bot_app",
       `SELECT public.reclaim_reminder($1, 'due_day', '${DUE}', $2) AS token`,
       [taskId, token],
     );
@@ -146,14 +144,14 @@ describe("reminder claims check the task's parents", () => {
     const { own, taskId } = await setUp();
     await queryAs(
       db,
-      "service_role",
+      "bot_app",
       `SELECT public.apply_config_change($1, 2, $1, false)`,
       [own.guildId],
     );
     expect(await claim(taskId)).toBeNull();
     await queryAs(
       db,
-      "service_role",
+      "bot_app",
       `SELECT public.apply_config_change($1, 3, $1, true)`,
       [own.guildId],
     );
@@ -165,7 +163,7 @@ describe("reminder claims check the task's parents", () => {
     const other = await insertGuild(db);
     await queryAs(
       db,
-      "service_role",
+      "bot_app",
       `SELECT public.apply_config_change($1, 2, $1, false)`,
       [other.guildId],
     );

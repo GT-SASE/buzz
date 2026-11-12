@@ -1,7 +1,9 @@
 version: 2
 
-# Commit prefixes keep these updates within the Conventional Commits check in CI.
+# Commit prefixes keep these updates in the Conventional Commits format.
 updates:
+  # The npm ecosystem reads package.json and updates pnpm-lock.yaml with the pnpm that
+  # package.json pins.
   - package-ecosystem: npm
     directory: /
     schedule:

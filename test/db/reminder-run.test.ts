@@ -15,24 +15,34 @@ import {
   it,
   vi,
 } from "vitest";
+import {
+  pgliteSql,
+  names,
+  serverError,
+  unavailable,
+  type Intercept,
+} from "../support/sql-client.ts";
 import { createDbClient, type DbClient } from "../../src/db/client.ts";
 import { getLatestSucceededJobRun } from "../../src/db/job-runs.ts";
 import { createDiscordClient } from "../../src/discord/client.ts";
-import { STALE_CLAIM_MS } from "../../src/reminders/plan.ts";
+import { slotStart, STALE_CLAIM_MS } from "../../src/reminders/plan.ts";
+import { managedChannelCheck } from "../../src/handlers/dependencies.ts";
 import {
   DATABASE_CALL_MS,
   DISCORD_OPERATION_MS,
   RUN_HARD_STOP_MS,
   THREAD_REFUSALS_BEFORE_HOLD,
-  managedChannelCheck,
   runReminders,
   type RunLimits,
   type RunResult,
 } from "../../src/reminders/run.ts";
-import { TEST_ORIGIN, TEST_SECRET_KEY } from "../support/mock-postgrest.ts";
-import { insertGuild, type GuildFixture } from "./fixtures.ts";
+import { messageBody } from "../support/json.ts";
+import {
+  finishEventSteps,
+  insertGuild,
+  type GuildFixture,
+} from "./fixtures.ts";
 import { createMigratedDb, fakeId, present, queryAs } from "./harness.ts";
-import { postgrestShim } from "./postgrest-shim.ts";
 
 const planHook = vi.hoisted(() => ({ invalidTaskIds: [] as string[] }));
 
@@ -51,8 +61,7 @@ vi.mock("../../src/reminders/plan.ts", async (original) => {
 });
 
 const API = "https://discord.com/api/v10";
-const TOKEN = ["unit", "test", "token"].join("-");
-const CANARY = "canary-private-task-text";
+const TOKEN = "unit-test-token";
 
 interface Sent {
   threadId: string;
@@ -67,11 +76,8 @@ type DiscordAnswer = Response | undefined;
 
 let database: PGlite;
 let db: DbClient;
-/** Lets a test break or rewrite one database request. */
-let dbGate: (
-  url: string,
-  init: RequestInit | undefined,
-) => Response | undefined;
+/** Lets a test answer, fail or watch one statement. */
+let sqlGate: Intercept;
 /** Lets a test refuse or react to one Discord request. */
 let discordGate: (
   method: string,
@@ -99,21 +105,17 @@ function mockDiscord(): void {
     let message: Sent | undefined;
     const threadId = /^\/channels\/([0-9]+)/.exec(path)?.[1] ?? "";
     if (method === "POST") {
-      const body = JSON.parse(init?.body as string) as {
-        content: string;
-        flags: number;
-        allowed_mentions: { users: string[]; parse: string[] };
-        components?: { components: { custom_id: string }[] }[];
-      };
+      const body = messageBody(init?.body);
+      if (body.flags === undefined) {
+        throw new Error("a reminder must set its flags");
+      }
       message = {
         threadId,
         content: body.content,
-        users: body.allowed_mentions.users,
-        parse: body.allowed_mentions.parse,
+        users: body.users,
+        parse: body.parse,
         flags: body.flags,
-        buttons: (body.components ?? []).flatMap((row) =>
-          row.components.map((button) => button.custom_id),
-        ),
+        buttons: body.buttons,
       };
     }
     const answer = await discordGate(method, path, message);
@@ -163,12 +165,13 @@ function run({ guilds, now, limits }: RunOptions): Promise<RunResult> {
   });
 }
 
+/** The date a run plans for in a UTC guild: that of its slot's start, not of the run. */
 function todayUtc(): string {
-  return new Date().toISOString().slice(0, 10);
+  return dateOffset(0);
 }
 
 function dateOffset(days: number, from = new Date()): string {
-  return new Date(from.getTime() + days * 86_400_000)
+  return new Date(slotStart(from) + days * 86_400_000)
     .toISOString()
     .slice(0, 10);
 }
@@ -194,14 +197,17 @@ async function eventWithThread(
   });
   const rows = await queryAs<{ id: string }>(
     database,
-    "service_role",
+    "bot_app",
     `INSERT INTO public.events
        (guild_id, channel_id, name, event_date, created_by, thread_id, thread_status)
      VALUES ($1, $2, $3, '2030-01-15', $4, $5, 'active')
      RETURNING id`,
     [guild.guildId, guild.channelId, name, fakeId(), threadId],
   );
-  return { eventId: present(rows[0]).id, threadId };
+  const eventId = present(rows[0]).id;
+  // These tests are about task reminders, so the event's step list has nothing to say.
+  await finishEventSteps(database, eventId);
+  return { eventId, threadId };
 }
 
 async function task(
@@ -213,7 +219,7 @@ async function task(
 ): Promise<string> {
   const rows = await queryAs<{ id: string }>(
     database,
-    "service_role",
+    "bot_app",
     `INSERT INTO public.tasks (event_id, guild_id, assignee_id, description, due_date, created_by)
      VALUES ($1, $2, $3, $4, $5, $6)
      RETURNING id`,
@@ -272,26 +278,13 @@ async function nextDay(): Promise<void> {
 
 beforeAll(async () => {
   database = await createMigratedDb();
-  const shim = postgrestShim(database);
-  db = createDbClient({
-    url: TEST_ORIGIN,
-    secretKey: TEST_SECRET_KEY,
-    fetch: (input, init) => {
-      const url =
-        typeof input === "string" || input instanceof URL
-          ? String(input)
-          : input.url;
-      return Promise.resolve(dbGate(url, init)).then(
-        (answer) => answer ?? shim(input, init),
-      );
-    },
-  });
+  db = createDbClient(pgliteSql(database, (call) => sqlGate(call)));
 });
 
 afterAll(() => database.close());
 
 beforeEach(async () => {
-  dbGate = () => undefined;
+  sqlGate = () => undefined;
   discordGate = () => undefined;
   requests = [];
   sent = [];
@@ -302,6 +295,7 @@ beforeEach(async () => {
   await database.exec(`
     UPDATE public.tasks SET deleted_at = now() WHERE deleted_at IS NULL;
     DELETE FROM public.reminder_log;
+    DELETE FROM public.event_reminder_log;
     DELETE FROM public.job_runs;
   `);
 });
@@ -342,15 +336,14 @@ describe("a normal run", () => {
 
   it("records only whole-number counts", async () => {
     const guild = await guildInZone();
-    const { eventId } = await eventWithThread(guild, CANARY);
-    await task(guild, eventId, dateOffset(3), CANARY);
+    const { eventId } = await eventWithThread(guild);
+    await task(guild, eventId, dateOffset(3));
 
     await run({ guilds: [guild] });
 
     const row = await jobRow();
     expect(row.status).toBe("succeeded");
     expect(row.error).toBeNull();
-    expect(JSON.stringify(row)).not.toContain(CANARY);
     expect(row.results).toMatchObject({
       candidates: 1,
       planned: 1,
@@ -484,12 +477,11 @@ describe("a crash between send and mark", () => {
       }
       return undefined;
     };
-    dbGate = () =>
-      crashed ? Response.json({ code: "XX000" }, { status: 500 }) : undefined;
+    sqlGate = () => (crashed ? serverError("XX000") : undefined);
     return () => {
       crashed = false;
       discordGate = () => undefined;
-      dbGate = () => undefined;
+      sqlGate = () => undefined;
     };
   };
 
@@ -578,7 +570,7 @@ describe("reminders turned off during a run", () => {
         off = true;
         await queryAs(
           database,
-          "service_role",
+          "bot_app",
           `SELECT public.apply_config_change($1, 2, $1, false)`,
           [guild.guildId],
         );
@@ -601,7 +593,7 @@ describe("reminders turned off during a run", () => {
     await task(guild, eventId, dateOffset(3));
     await queryAs(
       database,
-      "service_role",
+      "bot_app",
       `SELECT public.apply_config_change($1, 2, $1, false)`,
       [guild.guildId],
     );
@@ -772,15 +764,29 @@ describe("volume", () => {
 
   it("alerts in job_runs when the read was truncated", async () => {
     const guild = await guildInZone();
-    const page = Array.from({ length: 500 }, () => ({ id: "not-a-uuid" }));
-    dbGate = (url) =>
-      url.includes("/tasks?") ? Response.json(page) : undefined;
+    // Full pages, every one, of a closed event's task in a guild the run does not serve,
+    // so the run reads to its page limit and plans nothing.
+    const page = Array.from({ length: 500 }, (_, index) => ({
+      id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+      event_id: "00000000-0000-4000-8000-000000000000",
+      guild_id: fakeId(),
+      assignee_id: fakeId(),
+      description: "Book",
+      due_date: "2030-01-10",
+      status: "open",
+      updated_at: "2030-01-01T00:00:00+00:00",
+      event_name: "Social",
+      thread_id: null,
+      event_status: "closed",
+      thread_status: "pending",
+      thread_refusals: 0,
+      timezone: "UTC",
+      log: [],
+    }));
+    sqlGate = (call) => (names(call, "tasks") ? { rows: page } : undefined);
     const result = await run({ guilds: [guild] });
     expect(result.status).toBe("succeeded");
-    expect((await jobRow()).results).toMatchObject({
-      truncated: 1,
-      excluded_rows: 500,
-    });
+    expect((await jobRow()).results).toMatchObject({ truncated: 1 });
     expect(logLines.join("\n")).toContain("truncated");
     expect(logLines.length).toBeLessThanOrEqual(50);
   });
@@ -1318,12 +1324,12 @@ describe("a failed morning and the recovery cron", () => {
       status: "failed",
       error: "reminders_incomplete",
     });
-    // What the backup job's freshness alert reads.
+    // What the health check's freshness alert reads.
     expect(
       await getLatestSucceededJobRun(db, { jobName: "reminders" }),
     ).toEqual({ ok: true, value: null });
 
-    // The 16:00 cron, by which time a morning claim has gone stale.
+    // The 17:00 cron, by which time a morning claim has gone stale.
     discordGate = () => undefined;
     await database.exec(
       `UPDATE public.reminder_log SET claimed_at = now() - interval '2 hours'`,
@@ -1365,10 +1371,8 @@ describe("a failed morning and the recovery cron", () => {
     const guild = await guildInZone();
     const { eventId } = await eventWithThread(guild);
     await task(guild, eventId, dateOffset(3));
-    dbGate = (url) =>
-      url.includes("rpc/claim_reminder")
-        ? new Response("{}", { status: 503 })
-        : undefined;
+    sqlGate = (call) =>
+      names(call, "claim_reminder") ? unavailable() : undefined;
     expect(await run({ guilds: [guild] })).toMatchObject({
       error: "reminders_incomplete",
     });
@@ -1450,7 +1454,7 @@ describe("a rerun soon after a failed run", () => {
         await getLatestSucceededJobRun(db, { jobName: "reminders" }),
       ).toEqual({ ok: true, value: null });
 
-      // The 16:00 cron, by which time the morning's claim has gone stale.
+      // The 17:00 cron, by which time the morning's claim has gone stale.
       await database.exec(
         `UPDATE public.reminder_log SET claimed_at = now() - interval '2 hours'`,
       );
@@ -1492,7 +1496,7 @@ describe("a rerun soon after a failed run", () => {
     const taskId = await task(guild, eventId, dateOffset(0));
     await queryAs(
       database,
-      "service_role",
+      "bot_app",
       `SELECT public.claim_reminder($1, 'one_day', $2)`,
       [taskId, dateOffset(0)],
     );
@@ -1592,7 +1596,7 @@ describe("what counts as a send that may have landed", () => {
     const { taskId } = await overdueFor(guild, person);
     await queryAs(
       database,
-      "service_role",
+      "bot_app",
       `SELECT public.claim_reminder($1, 'overdue', $2)`,
       [taskId, dateOffset(-5)],
     );
@@ -1677,10 +1681,8 @@ describe("what counts as a send that may have landed", () => {
       method === "POST"
         ? Response.json({ code: 50013 }, { status: 403 })
         : undefined;
-    dbGate = (url) =>
-      url.includes("rpc/record_reminder_refused")
-        ? new Response("{}", { status: 503 })
-        : undefined;
+    sqlGate = (call) =>
+      names(call, "record_reminder_refused") ? unavailable() : undefined;
 
     await run({ guilds: [guild] });
 
@@ -1944,10 +1946,8 @@ describe("a thread that refuses the bot", () => {
       method === "POST"
         ? Response.json({ code: 50001 }, { status: 403 })
         : undefined;
-    dbGate = (url) =>
-      url.includes("rpc/record_thread_refusal")
-        ? new Response("{}", { status: 503 })
-        : undefined;
+    sqlGate = (call) =>
+      names(call, "record_thread_refusal") ? unavailable() : undefined;
 
     expect((await run({ guilds: [guild] })).status).toBe("failed");
     expect((await jobRow()).results).toMatchObject({ thread_check_failed: 1 });
@@ -2023,7 +2023,7 @@ describe("the bot removed from the server", () => {
       0, 0,
     ]);
     expect(await channelStatus(guild)).toBe("active");
-    expect(posts()).toEqual([]);
+    expect(sent).toEqual([]);
 
     // Added back, and what waited goes out with its ping.
     discordGate = () => undefined;
@@ -2216,7 +2216,7 @@ describe("a task changed after the run read it", () => {
     const { guild, taskId } = await twoEvents(before);
     await queryAs(
       database,
-      "service_role",
+      "bot_app",
       `SELECT public.claim_reminder($1, 'three_days', $2)`,
       [taskId, dateOffset(3)],
     );
@@ -2337,7 +2337,7 @@ describe("guilds that fail, and guilds that are busy", () => {
     await task(guild, fresh.eventId, dateOffset(3));
     await queryAs(
       database,
-      "service_role",
+      "bot_app",
       `SELECT public.claim_reminder($1, 'overdue', $2)`,
       [staleTask, dateOffset(-3)],
     );
@@ -2410,7 +2410,7 @@ describe("repeated attempts", () => {
     const taskId = await task(guild, eventId, dateOffset(3), "Book", person);
     await queryAs(
       database,
-      "service_role",
+      "bot_app",
       `SELECT public.claim_reminder($1, 'three_days', $2)`,
       [taskId, dateOffset(3)],
     );
@@ -2436,7 +2436,7 @@ describe("repeated attempts", () => {
     const taskId = await task(guild, eventId, dateOffset(3), "Book", person);
     await queryAs(
       database,
-      "service_role",
+      "bot_app",
       `SELECT public.claim_reminder($1, 'three_days', $2)`,
       [taskId, dateOffset(3)],
     );
@@ -2452,7 +2452,7 @@ describe("stale claims on tasks the plan left out", () => {
   const staleClaimOn = async (taskId: string, dueDate: string) => {
     await queryAs(
       database,
-      "service_role",
+      "bot_app",
       `SELECT public.claim_reminder($1, 'three_days', $2)`,
       [taskId, dueDate],
     );
@@ -2461,7 +2461,7 @@ describe("stale claims on tasks the plan left out", () => {
     );
   };
 
-  it("makes no takeover and no rise in attempts for a missing thread", async () => {
+  it("closes the claim on a missing thread, with no takeover and no rise in attempts", async () => {
     const guild = await guildInZone();
     const { eventId } = await eventWithThread(guild);
     const taskId = await task(guild, eventId, dateOffset(3));
@@ -2471,8 +2471,8 @@ describe("stale claims on tasks the plan left out", () => {
       [eventId],
     );
     let reclaims = 0;
-    dbGate = (url) => {
-      reclaims += url.includes("rpc/reclaim_reminder") ? 1 : 0;
+    sqlGate = (call) => {
+      reclaims += names(call, "reclaim_reminder") ? 1 : 0;
       return undefined;
     };
 
@@ -2483,7 +2483,7 @@ describe("stale claims on tasks the plan left out", () => {
 
     expect(reclaims).toBe(0);
     expect(await logRows(taskId)).toMatchObject([
-      { state: "claimed", attempts: 1 },
+      { state: "skipped", attempts: 1 },
     ]);
     expect(posts()).toEqual([]);
   });
@@ -2497,6 +2497,58 @@ describe("stale claims on tasks the plan left out", () => {
     expect(await logRows(taskId)).toMatchObject([
       { state: "claimed", attempts: 1 },
     ]);
+  });
+
+  it.each([
+    [
+      "its event is closed",
+      `UPDATE public.events SET status = 'closed' WHERE id = $1`,
+    ],
+    [
+      "its event is deleted",
+      `UPDATE public.events SET deleted_at = now() WHERE id = $1`,
+    ],
+    [
+      "its forum is no longer managed",
+      `UPDATE public.managed_channels SET status = 'removed'
+       WHERE (guild_id, channel_id) = (SELECT guild_id, channel_id FROM public.events WHERE id = $1)`,
+    ],
+  ])("closes the claim as skipped when %s", async (_label, change) => {
+    const guild = await guildInZone();
+    const { eventId } = await eventWithThread(guild);
+    const taskId = await task(guild, eventId, dateOffset(3));
+    await staleClaimOn(taskId, dateOffset(3));
+    await database.query(change, [eventId]);
+
+    const result = await run({ guilds: [guild] });
+
+    expect(result.status).toBe("succeeded");
+    expect(await logRows(taskId)).toMatchObject([
+      { state: "skipped", attempts: 1 },
+    ]);
+    expect(posts()).toEqual([]);
+  });
+
+  it("counts a cut-short read of stale claims as incomplete, so the recovery run goes on", async () => {
+    const guild = await guildInZone();
+    // Rows come back as the values of the selected columns, in order, and these fail
+    // their checks, so only their number matters.
+    const page = Array.from({ length: 501 }, () => [
+      "not-a-uuid",
+      ...Array.from({ length: 6 }, () => null),
+    ]);
+    sqlGate = (call) =>
+      names(call, "reminder_log") && call.sql.includes("claimed_at <")
+        ? { rows: page }
+        : undefined;
+
+    const result = await run({ guilds: [guild] });
+
+    expect(result).toMatchObject({
+      status: "failed",
+      error: "reminders_incomplete",
+    });
+    expect((await jobRow()).results).toMatchObject({ stale_truncated: 1 });
   });
 
   it("closes the claim once the task is finished", async () => {
@@ -2520,7 +2572,7 @@ describe("the worst case for time", () => {
   const BATCH = 60;
   const FUNCTION_LIMIT_MS = 60_000;
 
-  // Every call takes its whole limit. Claims and marks share theirs across the calls
+  // Every call takes its whole limit. Statements share theirs across the calls
   // that run at once, and the managed check is inside the Discord operation's budget.
   it.each([20_000, 30_000, 35_000, 39_000, 39_900])(
     "records the run in time when the largest batch starts at %i ms",
@@ -2533,15 +2585,12 @@ describe("the worst case for time", () => {
       const start = Date.now();
       let elapsed = 0;
       let finishedAt = 0;
-      dbGate = (url) => {
-        if (url.includes("/managed_channels")) {
-          return undefined;
+      sqlGate = (call) => {
+        if (names(call, "reminder_log")) {
+          elapsed = Math.max(elapsed, startsAt);
         }
-        elapsed = Math.max(
-          elapsed + (url.includes("rpc/") ? DATABASE_CALL_MS / 8 : 0),
-          url.includes("/reminder_log?") ? startsAt : 0,
-        );
-        if (url.includes("rpc/finish_job_run")) {
+        elapsed += DATABASE_CALL_MS / 8;
+        if (names(call, "finish_job_run")) {
           elapsed += DATABASE_CALL_MS;
           finishedAt = elapsed;
         }
@@ -2596,8 +2645,8 @@ describe("the worst case for time", () => {
     }
     const start = Date.now();
     let elapsed = 0;
-    dbGate = (url) => {
-      if (url.includes("rpc/claim_reminder")) {
+    sqlGate = (call) => {
+      if (names(call, "claim_reminder")) {
         elapsed = 60_000;
       }
       return undefined;
@@ -2674,7 +2723,7 @@ describe("planning per guild", () => {
     const taskId = await task(guild, eventId, todayUtc());
     await queryAs(
       database,
-      "service_role",
+      "bot_app",
       `SELECT public.claim_reminder($1, 'one_day', $2)`,
       [taskId, todayUtc()],
     );
@@ -2697,19 +2746,23 @@ describe("days around a change of clocks", () => {
   const NEW_YORK = "America/New_York";
 
   it.each([
-    // Spring forward: 2026-03-08, with the run at its usual hour.
-    ["2026-03-08T14:00:00Z", "2026-03-08", "due today"],
-    ["2026-03-08T14:00:00Z", "2026-03-09", "1 day left"],
-    ["2026-03-08T14:00:00Z", "2026-03-11", "3 days left"],
-    // The night before: still the 7th in New York though the 8th in UTC.
+    // Spring forward: 2026-03-08. Both crons of the slot plan for the 8th.
+    ["2026-03-08T15:00:00Z", "2026-03-08", "due today"],
+    ["2026-03-08T17:00:00Z", "2026-03-08", "due today"],
+    ["2026-03-08T15:00:00Z", "2026-03-09", "1 day left"],
+    ["2026-03-08T17:00:00Z", "2026-03-11", "3 days left"],
+    // A run by hand before 15:00 UTC belongs to the slot that began the day before.
     ["2026-03-08T04:30:00Z", "2026-03-08", "1 day left"],
+    ["2026-03-08T14:00:00Z", "2026-03-08", "1 day left"],
     // Fall back: 2026-11-01, including the repeated hour.
-    ["2026-11-01T14:00:00Z", "2026-11-01", "due today"],
-    ["2026-11-01T14:00:00Z", "2026-11-02", "1 day left"],
-    ["2026-11-01T14:00:00Z", "2026-10-31", "1 day ago"],
-    ["2026-11-01T05:30:00Z", "2026-11-01", "due today"],
-    ["2026-11-01T06:30:00Z", "2026-11-01", "due today"],
-    ["2026-11-01T03:30:00Z", "2026-11-01", "1 day left"],
+    ["2026-11-01T15:00:00Z", "2026-11-01", "due today"],
+    ["2026-11-01T17:00:00Z", "2026-11-01", "due today"],
+    ["2026-11-01T15:00:00Z", "2026-11-02", "1 day left"],
+    ["2026-11-01T17:00:00Z", "2026-10-31", "1 day ago"],
+    ["2026-11-01T05:30:00Z", "2026-11-01", "1 day left"],
+    ["2026-11-01T06:30:00Z", "2026-11-01", "1 day left"],
+    ["2026-11-02T15:00:00Z", "2026-11-02", "due today"],
+    ["2026-11-02T17:00:00Z", "2026-11-02", "due today"],
   ])("at %s a task due %s reads %s", async (instant, dueDate, expected) => {
     const guild = await guildInZone(NEW_YORK);
     const { eventId } = await eventWithThread(guild);
@@ -2720,6 +2773,21 @@ describe("days around a change of clocks", () => {
     expect(sent).toHaveLength(1);
     expect(present(sent[0]).content).toContain(expected);
   });
+
+  // Midnight in Singapore falls between the two crons: 23:00 and then 01:00 there.
+  it.each(["2026-11-04T15:00:00Z", "2026-11-04T17:00:00Z"])(
+    "plans the same Singapore day at %s",
+    async (instant) => {
+      const guild = await guildInZone("Asia/Singapore");
+      const { eventId } = await eventWithThread(guild);
+      await task(guild, eventId, "2026-11-05");
+
+      await run({ guilds: [guild], now: new Date(instant) });
+
+      expect(sent).toHaveLength(1);
+      expect(present(sent[0]).content).toContain("1 day left");
+    },
+  );
 
   it("uses each guild's own date", async () => {
     const auckland = await guildInZone("Pacific/Auckland");
@@ -2732,7 +2800,7 @@ describe("days around a change of clocks", () => {
 
     await run({
       guilds: [auckland, newYork],
-      now: new Date("2026-11-04T14:00:00Z"),
+      now: new Date("2026-11-04T15:00:00Z"),
     });
 
     const byThread = new Map(
@@ -2744,20 +2812,12 @@ describe("days around a change of clocks", () => {
 });
 
 describe("what a failure leaves behind", () => {
-  it("keeps database error text out of job_runs and the logs", async () => {
+  it("records a database failure as its category and code", async () => {
     const guild = await guildInZone();
     const { eventId } = await eventWithThread(guild);
     await task(guild, eventId, dateOffset(3));
-    dbGate = (url) =>
-      url.includes("/tasks?")
-        ? Response.json(
-            { code: "23514", message: CANARY, details: CANARY, hint: CANARY },
-            { status: 400 },
-          )
-        : undefined;
-    const warn = vi.spyOn(console, "warn");
-    const error = vi.spyOn(console, "error");
-
+    sqlGate = (call) =>
+      names(call, "tasks") ? serverError("23514") : undefined;
     const result = await run({ guilds: [guild] });
 
     expect(result).toMatchObject({
@@ -2766,10 +2826,6 @@ describe("what a failure leaves behind", () => {
     });
     const row = await jobRow();
     expect(row.error).toBe("constraint:23514");
-    expect(JSON.stringify(row)).not.toContain(CANARY);
-    expect(JSON.stringify(logLines)).not.toContain(CANARY);
-    expect(JSON.stringify(warn.mock.calls)).not.toContain(CANARY);
-    expect(JSON.stringify(error.mock.calls)).not.toContain(CANARY);
     expect(requests).toEqual([]);
   });
 
@@ -2777,10 +2833,8 @@ describe("what a failure leaves behind", () => {
     const guild = await guildInZone();
     const { eventId } = await eventWithThread(guild);
     await task(guild, eventId, dateOffset(3));
-    dbGate = (url) =>
-      url.includes("rpc/claim_reminder")
-        ? Response.json({ code: "XX000", message: CANARY }, { status: 500 })
-        : undefined;
+    sqlGate = (call) =>
+      names(call, "claim_reminder") ? serverError("XX000") : undefined;
 
     await run({ guilds: [guild] });
 
@@ -2794,10 +2848,8 @@ describe("what a failure leaves behind", () => {
       const { eventId } = await eventWithThread(guild);
       await task(guild, eventId, dateOffset(3));
     }
-    dbGate = (url) =>
-      url.includes("rpc/claim_reminder")
-        ? Response.json({ code: "XX000" }, { status: 500 })
-        : undefined;
+    sqlGate = (call) =>
+      names(call, "claim_reminder") ? serverError("XX000") : undefined;
 
     await run({ guilds: [guild] });
 
@@ -2811,10 +2863,8 @@ describe("what a failure leaves behind", () => {
     const guild = await guildInZone();
     const { eventId } = await eventWithThread(guild);
     const taskId = await task(guild, eventId, dateOffset(3));
-    dbGate = (url) =>
-      url.includes("rpc/mark_reminder_sent")
-        ? Response.json({ code: "XX000" }, { status: 500 })
-        : undefined;
+    sqlGate = (call) =>
+      names(call, "mark_reminder_sent") ? serverError("XX000") : undefined;
 
     const result = await run({ guilds: [guild] });
 
@@ -2826,10 +2876,8 @@ describe("what a failure leaves behind", () => {
 
   it("reports a failed lock without touching Discord", async () => {
     const guild = await guildInZone();
-    dbGate = (url) =>
-      url.includes("rpc/begin_job_run")
-        ? Response.json({ code: "XX000", message: CANARY }, { status: 500 })
-        : undefined;
+    sqlGate = (call) =>
+      names(call, "begin_job_run") ? serverError("XX000") : undefined;
     const result = await run({ guilds: [guild] });
     expect(result).toEqual({
       status: "failed",

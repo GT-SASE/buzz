@@ -5,9 +5,9 @@ export default defineConfig({
   test: {
     include: ["test/db-concurrency/**/*.test.ts"],
     allowOnly: false,
-    // Each file bootstraps its own database, but roles belong to the whole cluster, so two
-    // files setting up at once fail with "tuple concurrently updated".
-    fileParallelism: false,
+    // Makes the cluster's roles and a migrated template once. Each file then copies the
+    // template into its own database, so the files can run in parallel.
+    globalSetup: ["test/db-concurrency/global-setup.ts"],
     testTimeout: 30_000,
     hookTimeout: 120_000,
   },

@@ -8,13 +8,13 @@ import { errorSummary } from "../db/errors.ts";
 import { expireInteractionClaims } from "../db/interaction-claims.ts";
 import { createDiscordClient, type DiscordClient } from "../discord/client.ts";
 import { ConfigError } from "../lib/config-error.ts";
+import { managedChannelCheck } from "../handlers/dependencies.ts";
 import { getAllowedGuildIds } from "../lib/env.ts";
 import { jobFreshness, runHealthCheck } from "./health.ts";
 import {
   DATABASE_CALL_MS,
   DEFAULT_LIMITS,
   DISCORD_OPERATION_MS,
-  managedChannelCheck,
   runReminders,
 } from "./run.ts";
 
@@ -28,7 +28,10 @@ function log(line: string): void {
   console.warn(line);
 }
 
-/** Built on each call, so a warm function cannot carry a client's memory to tomorrow. */
+/**
+ * Built on each call, so a warm function cannot carry the Discord client's memory, such
+ * as a refused token, to the next run.
+ */
 function productionDependencies(): DailyDependencies {
   const db = getDb();
   return {

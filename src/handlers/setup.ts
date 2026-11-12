@@ -1,11 +1,19 @@
 /**
- * /setup chooses the officer and admin roles.
+ * /setup chooses the five roles: E-board, Events Directors (stored as the officer
+ * role), Events Committee, Treasury Committee and Marketing Committee. The club has no
+ * separate admin role, so E-board is saved as the admin role too. Discord's
+ * Administrator permission still counts as admin.
  *
  * Discord hides the command from non-administrators by default, but a server admin
  * can change that, so the router's gate checks the Administrator bit from the signed
  * payload at each step: the command and the Confirm click alike. Guild and actor only
- * ever come from that payload. Role IDs come from the options or the custom_id and
- * are checked again against Discord before they are saved.
+ * ever come from that payload.
+ *
+ * Five role IDs do not fit a custom_id, so /setup saves them as a draft for this member
+ * and Confirm carries only the config version and the draft's fingerprint. Confirm
+ * reads the draft back for the member who clicked and that fingerprint, so it applies
+ * exactly the roles that member was shown, or nothing. The roles are checked again
+ * against Discord before they are saved.
  *
  * Two admins can race. The version shown is carried in Confirm's custom_id and
  * compared with the database's: whoever was shown an old one gets a refresh message,
@@ -24,8 +32,15 @@ import { actionRow, button } from "../discord/outbound.ts";
 import type { MessageInput } from "../discord/outbound.ts";
 import { plain, safe } from "../discord/safe-text.ts";
 import type { SafeText } from "../discord/safe-text.ts";
-import { applyRoleBindings } from "../db/guild-config.ts";
-import { commaList, escapedName } from "./render.ts";
+import {
+  applyRoleBindings,
+  draftRoles,
+  getSetupDraft,
+  saveSetupDraft,
+  type SetupRoles,
+} from "../db/guild-config.ts";
+import { chosenLabel, CLUB_ROLES, type ClubRole } from "./club-roles.ts";
+import { commaList, escapedName, lines } from "./render.ts";
 import {
   commandRoute,
   componentRoute,
@@ -36,11 +51,12 @@ import {
 } from "./router.ts";
 
 const MAX_GRANTERS_SHOWN = 8;
-// Two chosen names and up to eight granters must fit one message.
+// Five chosen names and up to eight granters must fit one message.
 const CHOSEN_NAME_LENGTH = 100;
 const GRANTER_NAME_LENGTH = 50;
 
 const STALE = safe`Someone else changed the roles after this was shown, so nothing was changed. Run /setup again to see the current state.`;
+const NO_DRAFT = safe`This Confirm no longer matches your latest /setup: it is over an hour old, someone ran /setup again since, or it was shown to another member. Nothing was changed. Run /setup again.`;
 
 interface BindableRole {
   readonly id: string;
@@ -71,24 +87,58 @@ function bindingProblem(
   return undefined;
 }
 
-type Checked<R> =
-  { readonly officer: R; readonly admin: R } | { readonly problem: SafeText };
+type Chosen<R> = readonly (readonly [ClubRole, R])[];
 
+type Checked<R> =
+  { readonly chosen: Chosen<R> } | { readonly problem: SafeText };
+
+/** Runs the same checks on every role, in the order they are asked for. */
 function checkBindings<R extends BindableRole>(
   guildId: string,
-  officer: R | undefined,
-  admin: R | undefined,
+  find: (role: ClubRole) => R | undefined,
 ): Checked<R> {
-  if (officer === undefined) {
-    return { problem: notFound(safe`officer`) };
+  const chosen: (readonly [ClubRole, R])[] = [];
+  for (const clubRole of CLUB_ROLES) {
+    const role = find(clubRole);
+    if (role === undefined) {
+      return { problem: notFound(clubRole.label) };
+    }
+    chosen.push([clubRole, role]);
   }
-  if (admin === undefined) {
-    return { problem: notFound(safe`admin`) };
+  for (const [clubRole, role] of chosen) {
+    const problem = bindingProblem(guildId, clubRole.label, role);
+    if (problem !== undefined) {
+      return { problem };
+    }
   }
-  const problem =
-    bindingProblem(guildId, safe`officer`, officer) ??
-    bindingProblem(guildId, safe`admin`, admin);
-  return problem === undefined ? { officer, admin } : { problem };
+  return { chosen };
+}
+
+function setupRoles(chosen: Chosen<BindableRole>): SetupRoles {
+  const ids = new Map(
+    chosen.map(([clubRole, role]) => [clubRole.field, role.id]),
+  );
+  const id = (field: ClubRole["field"]) => ids.get(field) ?? "";
+  return {
+    officerRoleId: id("officerRoleId"),
+    // E-board is the admin role.
+    adminRoleId: id("eboardRoleId"),
+    eboardRoleId: id("eboardRoleId"),
+    eventsCommitteeRoleId: id("eventsCommitteeRoleId"),
+    treasuryRoleId: id("treasuryRoleId"),
+    marketingRoleId: id("marketingRoleId"),
+  };
+}
+
+function chosenLines(chosen: Chosen<BindableRole>): SafeText {
+  return (
+    lines(
+      chosen.map(
+        ([clubRole, role]) =>
+          safe`${chosenLabel(clubRole)}: ${escapedName(role.name, CHOSEN_NAME_LENGTH)}`,
+      ),
+    ) ?? safe``
+  );
 }
 
 /**
@@ -110,7 +160,7 @@ export function rolesThatMayGrant(
 
 function grantersLine(roles: readonly GuildRole[] | undefined): SafeText {
   if (roles === undefined) {
-    return safe`Roles that may be able to grant this: could not check, so review this in Server Settings. The server owner may also be able to.`;
+    return safe`Roles that may be able to grant these: could not check, so review this in Server Settings. The server owner may also be able to.`;
   }
   const granters = rolesThatMayGrant(roles);
   const shown = commaList(
@@ -119,11 +169,11 @@ function grantersLine(roles: readonly GuildRole[] | undefined): SafeText {
       .map((role) => escapedName(role.name, GRANTER_NAME_LENGTH)),
   );
   if (shown === undefined) {
-    return safe`Roles that may be able to grant this: none found. The server owner may also be able to.`;
+    return safe`Roles that may be able to grant these: none found. The server owner may also be able to.`;
   }
   return granters.length > MAX_GRANTERS_SHOWN
-    ? safe`Roles that may be able to grant this: ${shown} and more. The server owner may also be able to.`
-    : safe`Roles that may be able to grant this: ${shown}. The server owner may also be able to.`;
+    ? safe`Roles that may be able to grant these: ${shown} and more. The server owner may also be able to.`
+    : safe`Roles that may be able to grant these: ${shown}. The server owner may also be able to.`;
 }
 
 async function rolesOrUndefined(
@@ -150,14 +200,28 @@ function optionRole(
 
 const confirm = componentRoute({
   prefix: "setup.confirm",
-  fields: ["version", "snowflake", "snowflake"],
+  fields: ["version", "fingerprint"],
   gate: noRow("setup"),
   changesState: true,
-  finish: async (ctx, _resource, [version, officerRoleId, adminRoleId]) => {
+  finish: async (ctx, _resource, [version, fingerprint]) => {
     const { guildId, userId } = ctx.actor;
     if ((ctx.config?.version ?? 0) !== version) {
       return message(STALE);
     }
+
+    // Only the draft this member saved, with the fingerprint this button carries.
+    const draft = valueOf(
+      await getSetupDraft(ctx.db, {
+        guildId,
+        actorId: userId,
+        fingerprint,
+        now: new Date(),
+      }),
+    );
+    if (draft === null) {
+      return message(NO_DRAFT);
+    }
+    const ids = draftRoles(draft);
 
     const roles = await rolesOrUndefined(ctx);
     if (roles === undefined) {
@@ -165,30 +229,25 @@ const confirm = componentRoute({
         safe`Could not check those roles with Discord, so nothing was changed. Click Confirm again in a moment.`,
       );
     }
-    const checked = checkBindings(
-      guildId,
-      roles.find((role) => role.id === officerRoleId),
-      roles.find((role) => role.id === adminRoleId),
+    const checked = checkBindings(guildId, (clubRole) =>
+      roles.find((role) => role.id === ids[clubRole.field]),
     );
     if ("problem" in checked) {
       return message(checked.problem);
     }
 
-    // Literal arguments, from the signed payload and the checks above.
+    // Literal arguments, from the signed payload, the draft and the checks above.
     const saved = await applyRoleBindings(ctx.db, {
       guildId,
       actorId: userId,
       expectedVersion: version,
-      officerRoleId,
-      adminRoleId,
+      ...setupRoles(checked.chosen),
     });
     if (!saved.ok && saved.error.category === "stale_version") {
       return message(STALE);
     }
     valueOf(saved);
-    return message(
-      safe`Saved. Officer role: ${escapedName(checked.officer.name, CHOSEN_NAME_LENGTH)}. Admin role: ${escapedName(checked.admin.name, CHOSEN_NAME_LENGTH)}.`,
-    );
+    return message(safe`Saved.\n${chosenLines(checked.chosen)}`);
   },
 });
 
@@ -196,23 +255,15 @@ export const handler: Handler = {
   commands: [
     {
       name: "setup",
-      description: "Choose the officer and admin roles for this bot",
+      description: "Choose the club's roles for this bot",
       // Hidden unless a server admin changes it. Never relied on: see the gate.
       default_member_permissions: "0",
-      options: [
-        {
-          type: ApplicationCommandOptionType.Role,
-          name: "officer_role",
-          description: "Who can create events and assign tasks",
-          required: true,
-        },
-        {
-          type: ApplicationCommandOptionType.Role,
-          name: "admin_role",
-          description: "Who can change this bot's settings",
-          required: true,
-        },
-      ],
+      options: CLUB_ROLES.map((clubRole) => ({
+        type: ApplicationCommandOptionType.Role,
+        name: clubRole.option,
+        description: clubRole.description,
+        required: true,
+      })),
     },
   ],
   routes: [
@@ -221,33 +272,31 @@ export const handler: Handler = {
       gate: noRow("setup"),
       changesState: false,
       finish: async (ctx) => {
-        const checked = checkBindings(
-          ctx.actor.guildId,
-          optionRole(ctx, "officer_role"),
-          optionRole(ctx, "admin_role"),
+        const checked = checkBindings(ctx.actor.guildId, (clubRole) =>
+          optionRole(ctx, clubRole.option),
         );
         if ("problem" in checked) {
           return message(checked.problem);
         }
-        const { officer, admin } = checked;
 
+        // A pending choice for Confirm to read back. The settings are not changed yet.
+        const fingerprint = valueOf(
+          await saveSetupDraft(ctx.db, {
+            guildId: ctx.actor.guildId,
+            actorId: ctx.actor.userId,
+            roles: setupRoles(checked.chosen),
+          }),
+        );
         const roles = await rolesOrUndefined(ctx);
-        const officerName = escapedName(officer.name, CHOSEN_NAME_LENGTH);
-        const adminName = escapedName(admin.name, CHOSEN_NAME_LENGTH);
         return {
           content: safe`**Check these roles, then click Confirm.**
-Officer role: ${officerName}
-Admin role: ${adminName}
+${chosenLines(checked.chosen)}
 ${grantersLine(roles)}`,
           mentionUserIds: [],
           components: [
             actionRow(
               button({
-                customId: confirm.id(
-                  ctx.config?.version ?? 0,
-                  officer.id,
-                  admin.id,
-                ),
+                customId: confirm.id(ctx.config?.version ?? 0, fingerprint),
                 label: plain`Confirm`,
                 style: "success",
               }),

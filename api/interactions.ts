@@ -11,8 +11,8 @@
 
 import { waitUntil } from "@vercel/functions";
 import {
-  isAllowedGuildInteraction,
   isPingInteraction,
+  parseAllowedGuildInteraction,
 } from "../src/discord/interactions.ts";
 import { pong, serializeDirectResponse } from "../src/discord/outbound.ts";
 import type { OutboundBody } from "../src/discord/outbound.ts";
@@ -41,8 +41,11 @@ const MAX_BODY_BYTES = 64 * 1024;
  * this path, so it takes only bodies that cannot post anything others can see.
  * Anything public defers first, then sends through the REST client.
  */
-function respond(body: OutboundBody<"direct-response">): Response {
-  return new Response(serializeDirectResponse(body), {
+function respond(
+  body: OutboundBody<"direct-response">,
+  guildId: string | undefined,
+): Response {
+  return new Response(serializeDirectResponse(body, guildId), {
     headers: { "content-type": "application/json" },
   });
 }
@@ -90,21 +93,20 @@ async function handle(request: Request): Promise<Response> {
     return invalidSignature();
   }
 
-  const interaction = signed.payload;
-  if (interaction === undefined) {
+  if (signed.payload === undefined) {
     return new Response("invalid request body", { status: 400 });
   }
 
-  if (isPingInteraction(interaction)) {
-    return respond(pong());
+  if (isPingInteraction(signed.payload)) {
+    return respond(pong(), undefined);
   }
 
-  const allowed = isAllowedGuildInteraction(interaction, {
+  const interaction = parseAllowedGuildInteraction(signed.payload, {
     applicationId: getDiscordAppId(),
     allowedGuildIds: getAllowedGuildIds(),
   });
-  const verified = allowed ? verifiedInteractionFrom(signed) : undefined;
-  if (!allowed || verified === undefined) {
+  const verified = interaction && verifiedInteractionFrom(signed);
+  if (interaction === undefined || verified === undefined) {
     return forbidden();
   }
 
@@ -119,7 +121,7 @@ async function handle(request: Request): Promise<Response> {
   if (after !== undefined) {
     waitUntil(after());
   }
-  return respond(reply);
+  return respond(reply, verified.guildId);
 }
 
 export async function POST(request: Request): Promise<Response> {

@@ -1,25 +1,18 @@
 /**
- * Builds every body the bot sends to Discord, whether through the REST client or
- * as the endpoint's HTTP response.
+ * Builds every body the bot sends to Discord. Build bodies only with these
+ * functions; never write one by hand.
  *
- * Message text only arrives as `SafeText`, so hostile text is inert before it gets
- * here. Every body with text sets `allowed_mentions` to exactly the users named by
- * the caller, and `SUPPRESS_EMBEDS` so that no link unfurls. Responses with no text
- * carry neither, and the edit that fills in a deferred response is built here too.
+ * Message text must be `SafeText`, so user text is already escaped. Every message
+ * goes through `messageFields`, which sets `allowed_mentions` to only the users and
+ * roles the caller names (never @everyone) and turns off link previews.
  *
- * `OutboundBody` is exported as a type only and is nominal through its private
- * field, so a plain object does not type-check in its place. Its constructor also
- * demands a key private to this module and refuses subclasses, so it cannot be
- * reached through `body.constructor`. Instances are frozen, and
- * `serializeOutboundBody` checks the body again at runtime.
- *
- * A response has one of two kinds. A "direct-response" cannot post anything others
- * can see, so the endpoint may return it as its HTTP response with no managed
- * channel check. A "checked-response" can, so it only goes through the REST client,
- * which runs the check.
+ * A "direct-response" cannot post anything others can see, so the endpoint may
+ * return it as its HTTP response. A "checked-response" can, so it goes through the
+ * REST client, which checks the channel is managed first.
  */
 
 import { isSnowflake } from "../lib/snowflake.ts";
+import { checkedWireJson } from "./body-check.ts";
 import {
   DISCORD_LIMITS,
   isWithinLimit,
@@ -30,7 +23,6 @@ import type { PlainText, SafeText } from "./safe-text.ts";
 
 const SUPPRESS_EMBEDS_FLAG = 4;
 const EPHEMERAL_FLAG = 64;
-const MINT = Symbol("OutboundBody");
 
 const ResponseType = {
   Pong: 1,
@@ -104,130 +96,79 @@ function isDirectPayload(payload: unknown): boolean {
   );
 }
 
-class OutboundBody<K extends OutboundKind> {
+// A type-only mark that only the builders in this file set, so that a body or part
+// written by hand needs an explicit `as` to pass for one.
+declare const built: unique symbol;
+
+/** A body ready to send. `payload` is the JSON Discord receives. */
+export interface OutboundBody<K extends OutboundKind> {
   readonly kind: K;
-  readonly #json: string;
-
-  constructor(key: symbol, kind: K, payload: object) {
-    if (key !== MINT || new.target !== OutboundBody) {
-      throw new OutboundBodyError(
-        "Outbound bodies can only be made by the outbound builders",
-      );
-    }
-    this.kind = kind;
-    this.#json = JSON.stringify(payload);
-    Object.freeze(this);
-  }
-
-  /** Returns a copy, so that a caller cannot change what will be sent. */
-  toJSON(): unknown {
-    return JSON.parse(this.#json);
-  }
-
-  static serialize(body: object, expected: OutboundKind): string {
-    if (!(#json in body) || body.kind !== expected) {
-      throw new OutboundBodyError(
-        `Refused a body that is not an outbound ${expected} body`,
-      );
-    }
-    return body.#json;
-  }
-
-  static isSilent(body: object): boolean {
-    return #json in body && isDirectPayload(JSON.parse(body.#json));
-  }
-
-  static serializeDirect(body: object): string {
-    if (!OutboundBody.isSilent(body) || !(#json in body)) {
-      throw new OutboundBodyError(
-        "Refused a response that could post publicly without the managed check",
-      );
-    }
-    return body.#json;
-  }
-
-  static isEphemeralInitialResponse(body: object): boolean {
-    if (!(#json in body)) {
-      return false;
-    }
-    return isEphemeralFirstPayload(JSON.parse(body.#json));
-  }
+  readonly payload: object;
+  readonly [built]: true;
 }
 
-Object.freeze(OutboundBody.prototype);
-Object.freeze(OutboundBody);
-
-export type { OutboundBody };
-
-export function serializeOutboundBody<K extends OutboundKind>(
-  body: OutboundBody<K>,
-  expected: NoInfer<K>,
-): string {
-  return OutboundBody.serialize(body, expected);
+function body<K extends OutboundKind>(
+  kind: K,
+  payload: object,
+): OutboundBody<K> {
+  return { kind, payload } as OutboundBody<K>;
 }
 
 /**
  * True only for a body that cannot post anything others can see: a pong, an
  * ephemeral first response, autocomplete results, a modal, or an acknowledgement
- * that changes nothing. Reads what will actually be sent, never `kind`.
+ * that changes nothing. Reads the payload, never `kind`.
  */
 export function isSilentResponse(
-  body: OutboundBody<"direct-response" | "checked-response">,
+  response: OutboundBody<"direct-response" | "checked-response">,
 ): boolean {
-  return OutboundBody.isSilent(body);
+  return isDirectPayload(response.payload);
 }
 
 /**
- * For the endpoint's HTTP response, which runs no managed channel check. Throws
- * unless `isSilentResponse` holds for the body.
+ * For the endpoint's HTTP response, which runs no managed channel check. Throws unless
+ * `isSilentResponse` holds for the body and it passes the same check the REST client
+ * makes before every send. Both read the JSON that is returned, not the payload object.
+ * `guildId` is the signed interaction's guild, or undefined for Discord's ping.
  */
 export function serializeDirectResponse(
-  body: OutboundBody<"direct-response">,
+  response: OutboundBody<"direct-response">,
+  guildId: string | undefined,
 ): string {
-  return OutboundBody.serializeDirect(body);
+  const checked = checkedWireJson(response.payload, guildId);
+  if (!checked.ok) {
+    throw new OutboundBodyError(`Refused a response: ${checked.reason}`);
+  }
+  if (!isDirectPayload(checked.wire)) {
+    throw new OutboundBodyError(
+      "Refused a response that could post publicly without the managed check",
+    );
+  }
+  return checked.json;
 }
 
 /**
- * True only for a first response to an interaction that Discord shows to the
- * invoking user alone. Reads what will actually be sent, never `kind`. Updates
- * (types 6 and 7) and follow-ups never qualify.
+ * True only for a first response that Discord shows to the invoking user alone.
+ * Reads the payload, never `kind`. Updates and follow-ups never qualify.
  */
 export function isEphemeralInitialResponse(
-  body: OutboundBody<"direct-response" | "checked-response">,
+  response: OutboundBody<"direct-response" | "checked-response">,
 ): boolean {
-  return OutboundBody.isEphemeralInitialResponse(body);
+  return isEphemeralFirstPayload(response.payload);
 }
 
 type PartKind = "button" | "select" | "row" | "modal-row";
 
-/** A piece of a message or modal layout, only made by the builders below. */
-class Part<K extends PartKind> {
+/** A piece of a message or modal layout, made by the builders below. */
+export interface Part<K extends PartKind> {
   readonly kind: K;
-  readonly #payload: string;
-
-  constructor(key: symbol, kind: K, payload: object) {
-    if (key !== MINT || new.target !== Part) {
-      throw new OutboundBodyError(
-        "Components can only be made by the outbound builders",
-      );
-    }
-    this.kind = kind;
-    this.#payload = JSON.stringify(payload);
-    Object.freeze(this);
-  }
-
-  static read(part: object, expected: readonly PartKind[]): unknown {
-    if (!(#payload in part) || !expected.includes(part.kind)) {
-      throw new OutboundBodyError("Refused a component not made here");
-    }
-    return JSON.parse(part.#payload);
-  }
+  readonly component: object;
+  readonly [built]: true;
 }
 
-Object.freeze(Part.prototype);
-Object.freeze(Part);
-
-export type { Part };
+function part<K extends PartKind>(kind: K, component: object): Part<K> {
+  return { kind, component } as Part<K>;
+}
 
 function componentId(value: string, limit: number): string {
   if (
@@ -261,7 +202,7 @@ export interface ButtonInput {
 
 /** Link buttons are left out on purpose: no message should carry a user's URL. */
 export function button(input: ButtonInput): Part<"button"> {
-  return new Part(MINT, "button", {
+  return part("button", {
     type: ComponentType.Button,
     style: ButtonStyle[input.style ?? "secondary"],
     custom_id: componentId(input.customId, DISCORD_LIMITS.customId),
@@ -286,7 +227,7 @@ export function stringSelect(input: {
       `A select needs 1 to ${String(DISCORD_LIMITS.selectOptions)} options`,
     );
   }
-  return new Part(MINT, "select", {
+  return part("select", {
     type: ComponentType.StringSelect,
     custom_id: componentId(input.customId, DISCORD_LIMITS.customId),
     ...placeholder(input.placeholder),
@@ -318,7 +259,7 @@ export function channelSelect(input: {
   readonly channelTypes: readonly number[];
   readonly placeholder?: PlainText;
 }): Part<"select"> {
-  return new Part(MINT, "select", {
+  return part("select", {
     type: ComponentType.ChannelSelect,
     custom_id: componentId(input.customId, DISCORD_LIMITS.customId),
     channel_types: [...input.channelTypes],
@@ -330,7 +271,7 @@ export function roleSelect(input: {
   readonly customId: string;
   readonly placeholder?: PlainText;
 }): Part<"select"> {
-  return new Part(MINT, "select", {
+  return part("select", {
     type: ComponentType.RoleSelect,
     custom_id: componentId(input.customId, DISCORD_LIMITS.customId),
     ...placeholder(input.placeholder),
@@ -341,7 +282,7 @@ export function roleSelect(input: {
 export function actionRow(
   ...items: readonly Part<"button">[] | readonly [Part<"select">]
 ): Part<"row"> {
-  const components = items.map((item) => Part.read(item, ["button", "select"]));
+  const components = items.map((item) => item.component);
   const isOneSelect =
     items.length === 1 && items.every((item) => item.kind === "select");
   const isButtons =
@@ -353,7 +294,7 @@ export function actionRow(
       `A row holds 1 to ${String(DISCORD_LIMITS.buttonsPerRow)} buttons or one select`,
     );
   }
-  return new Part(MINT, "row", { type: ComponentType.ActionRow, components });
+  return part("row", { type: ComponentType.ActionRow, components });
 }
 
 export function textInputRow(input: {
@@ -363,7 +304,7 @@ export function textInputRow(input: {
   readonly required?: boolean;
   readonly maxLength?: number;
 }): Part<"modal-row"> {
-  return new Part(MINT, "modal-row", {
+  return part("modal-row", {
     type: ComponentType.ActionRow,
     components: [
       {
@@ -388,6 +329,16 @@ export interface MessageInput {
   readonly content: SafeText;
   /** The only users this message may ping. Pass an empty list for nobody. */
   readonly mentionUserIds: readonly string[];
+  /**
+   * The only roles this message may ping. Left out, it pings none. Each ID must come
+   * from the signed guild's config row, and `roleGuildId` must name that guild.
+   */
+  readonly mentionRoleIds?: readonly string[];
+  /**
+   * The guild of `mentionRoleIds`, needed with any role. A role whose ID equals it is
+   * @everyone, which is always refused.
+   */
+  readonly roleGuildId?: string;
   readonly components?: readonly Part<"row">[];
 }
 
@@ -395,20 +346,49 @@ export interface ThreadInput extends MessageInput {
   readonly name: PlainText;
 }
 
-function rows<K extends "row" | "modal-row">(
-  parts: readonly Part<K>[],
-  kind: K,
-): unknown[] {
+function rows(parts: readonly Part<"row" | "modal-row">[]): unknown[] {
   if (parts.length > DISCORD_LIMITS.actionRows) {
     throw new OutboundBodyError(
       `A message or modal holds at most ${String(DISCORD_LIMITS.actionRows)} rows`,
     );
   }
-  return parts.map((part) => Part.read(part, [kind]));
+  return parts.map((row) => row.component);
+}
+
+/** The roles a message may ping. Throws for any role that could reach everyone. */
+function mentionedRoles(
+  roleIds: readonly string[] | undefined,
+  guildId: string | undefined,
+): string[] {
+  if (roleIds === undefined || roleIds.length === 0) {
+    return [];
+  }
+  if (!isSnowflake(guildId)) {
+    throw new OutboundBodyError("A role mention needs the guild it belongs to");
+  }
+  if (!roleIds.every(isSnowflake)) {
+    throw new OutboundBodyError("Every mentioned role must be a Discord ID");
+  }
+  if (roleIds.includes(guildId)) {
+    throw new OutboundBodyError("A message cannot mention @everyone");
+  }
+  const roles = [...new Set(roleIds)];
+  if (roles.length > DISCORD_LIMITS.mentionedRoles) {
+    throw new OutboundBodyError(
+      `A message can mention at most ${String(DISCORD_LIMITS.mentionedRoles)} roles, got ${String(roles.length)}`,
+    );
+  }
+  return roles;
 }
 
 function messageFields(
-  { content, mentionUserIds, components }: MessageInput,
+  {
+    content,
+    mentionUserIds,
+    mentionRoleIds,
+    roleGuildId,
+    components,
+  }: MessageInput,
   extraFlags = 0,
 ) {
   const text = safeTextValue(content);
@@ -426,40 +406,39 @@ function messageFields(
       `A message can mention at most ${String(DISCORD_LIMITS.mentionedUsers)} users, got ${String(users.length)}`,
     );
   }
+  const roles = mentionedRoles(mentionRoleIds, roleGuildId);
   return {
     content: text,
-    allowed_mentions: { parse: [], users },
+    allowed_mentions:
+      roles.length === 0 ? { parse: [], users } : { parse: [], users, roles },
     flags: SUPPRESS_EMBEDS_FLAG | extraFlags,
-    ...(components === undefined
-      ? {}
-      : { components: rows(components, "row") }),
+    ...(components === undefined ? {} : { components: rows(components) }),
   };
 }
 
 export function channelMessage(
   input: MessageInput,
 ): OutboundBody<"channel-message"> {
-  return new OutboundBody(MINT, "channel-message", messageFields(input));
+  return body("channel-message", messageFields(input));
 }
 
 /** For an edit to a channel message or to the original interaction reply. */
 export function messageEdit(input: MessageInput): OutboundBody<"message-edit"> {
-  return new OutboundBody(MINT, "message-edit", messageFields(input));
+  return body("message-edit", messageFields(input));
 }
 
 /** A new forum post, whose first message is nested in the thread body. */
 export function threadCreate(
   input: ThreadInput,
 ): OutboundBody<"thread-create"> {
-  return new OutboundBody(MINT, "thread-create", {
+  return body("thread-create", {
     name: label(input.name, DISCORD_LIMITS.threadName, "A thread name"),
     message: messageFields(input),
   });
 }
 
 function direct(type: number, data?: object): OutboundBody<"direct-response"> {
-  return new OutboundBody(
-    MINT,
+  return body(
     "direct-response",
     data === undefined ? { type } : { type, data },
   );
@@ -469,8 +448,7 @@ function checked(
   type: number,
   data?: object,
 ): OutboundBody<"checked-response"> {
-  return new OutboundBody(
-    MINT,
+  return body(
     "checked-response",
     data === undefined ? { type } : { type, data },
   );
@@ -558,7 +536,7 @@ export function modal(input: {
   return direct(ResponseType.Modal, {
     custom_id: componentId(input.customId, DISCORD_LIMITS.customId),
     title: label(input.title, DISCORD_LIMITS.modalTitle, "A modal title"),
-    components: rows(input.rows, "modal-row"),
+    components: rows(input.rows),
   });
 }
 
@@ -566,8 +544,7 @@ export function modal(input: {
 export function followUp(
   input: MessageInput & { readonly ephemeral?: boolean },
 ): OutboundBody<"follow-up"> {
-  return new OutboundBody(
-    MINT,
+  return body(
     "follow-up",
     messageFields(input, input.ephemeral === true ? EPHEMERAL_FLAG : 0),
   );

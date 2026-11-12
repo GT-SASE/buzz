@@ -11,6 +11,7 @@ import {
   verifySignedRequest,
 } from "./verify.ts";
 import type { SignedPayload, VerifiedInteraction } from "./verify.ts";
+import { fakeId } from "../../test/support/ids.ts";
 
 const { publicKey, privateKey } = generateKeyPairSync("ed25519");
 const publicKeyHex = publicKey
@@ -259,7 +260,6 @@ describe("verifySignedRequest", () => {
 
 describe("verifiedInteractionFrom", () => {
   const nowMs = Number(timestamp) * 1000;
-  const fakeId = (n: number) => String(10n ** 17n + BigInt(n));
   const TOKEN = "unit-test-interaction-token";
   const PAYLOAD = {
     id: fakeId(1),

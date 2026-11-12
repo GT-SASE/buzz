@@ -29,18 +29,9 @@ import {
   member,
   OFFICER_ROLE,
 } from "../support/interactions.ts";
-import {
-  TEST_ORIGIN,
-  TEST_SECRET_KEY,
-  testSnowflake,
-} from "../support/mock-postgrest.ts";
-import {
-  createMigratedDb,
-  fakeId,
-  MIGRATION_OWNER,
-  queryAs,
-} from "./harness.ts";
-import { postgrestShim } from "./postgrest-shim.ts";
+import { fakeId } from "../support/ids.ts";
+import { createMigratedDb, MIGRATION_OWNER, queryAs } from "./harness.ts";
+import { testDatabaseUrl } from "../support/sql-client.ts";
 
 const pending = vi.hoisted(() => ({ work: [] as Promise<unknown>[] }));
 
@@ -49,6 +40,24 @@ vi.mock("@vercel/functions", () => ({
     pending.work.push(work);
   },
 }));
+
+/** The migrated database, for the client the function builds from its settings. */
+const current = vi.hoisted(() => ({
+  database: undefined as PGlite | undefined,
+}));
+
+vi.mock("../../src/db/neon.ts", async () => {
+  const { pgliteSql } = await import("../support/sql-client.ts");
+  return {
+    neonRunner: () =>
+      pgliteSql(() => {
+        if (current.database === undefined) {
+          throw new Error("the database is not set up");
+        }
+        return current.database;
+      }),
+  };
+});
 
 const { publicKey, privateKey } = generateKeyPairSync("ed25519");
 
@@ -73,7 +82,7 @@ function signed(payload: unknown): Request {
 }
 
 function assign(eventId: string): Record<string, unknown> {
-  const person = testSnowflake();
+  const person = fakeId();
   const text = {
     description: "Book the room",
     due: "2099-01-10",
@@ -121,7 +130,7 @@ async function eventWithPost() {
   });
   const rows = await queryAs<{ id: string }>(
     database,
-    "service_role",
+    "bot_app",
     `INSERT INTO public.events
        (guild_id, channel_id, name, event_date, created_by, thread_id, thread_status)
      VALUES ($1, $2, 'General meeting', '2099-01-15', $3, $4, 'active')
@@ -141,10 +150,11 @@ async function assignOn(eventId: string): Promise<void> {
 describe("the client built by liveDependencies", () => {
   beforeAll(async () => {
     database = await createMigratedDb();
+    current.database = database;
     await queryAs(
       database,
-      "service_role",
-      `SELECT public.apply_role_bindings($1, 0, $2, $3, $4)`,
+      "bot_app",
+      `SELECT public.apply_role_bindings($1, 0, $2, $3, $4, NULL, NULL, NULL, NULL)`,
       [GUILD_ID, fakeId(), OFFICER_ROLE, ADMIN_ROLE],
     );
   });
@@ -163,17 +173,10 @@ describe("the client built by liveDependencies", () => {
     );
     vi.stubEnv("DISCORD_APP_ID", APP_ID);
     vi.stubEnv("ALLOWED_GUILD_IDS", GUILD_ID);
-    vi.stubEnv("DISCORD_BOT_TOKEN", ["test", "bot", "token"].join("-"));
-    vi.stubEnv("SUPABASE_URL", TEST_ORIGIN);
-    vi.stubEnv("SUPABASE_SECRET_KEY", TEST_SECRET_KEY);
-    const shim = postgrestShim(database);
-    vi.stubGlobal("fetch", ((input, init) =>
-      (typeof input === "string" || input instanceof URL
-        ? String(input)
-        : input.url
-      ).startsWith(TEST_ORIGIN)
-        ? shim(input, init)
-        : discord.fetch(input, init)) satisfies typeof fetch);
+    vi.stubEnv("DISCORD_BOT_TOKEN", "test-bot-token");
+    vi.stubEnv("DATABASE_URL", testDatabaseUrl());
+    // Only Discord is reached over HTTP. The database is the mocked pool above.
+    vi.stubGlobal("fetch", discord.fetch satisfies typeof fetch);
     // The router logs a failed send's type, which is what the second test causes.
     vi.spyOn(console, "error").mockImplementation(() => undefined);
   });

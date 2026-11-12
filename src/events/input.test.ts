@@ -5,11 +5,75 @@ import {
   UNSTORABLE_TEXT,
 } from "../../test/support/hostile-text.ts";
 import { plainTextValue, safeTextValue } from "../discord/safe-text.ts";
-import { normaliseEventName, parseEventDate } from "./input.ts";
+import {
+  hasInviteOrMaskedLink,
+  normaliseEventName,
+  parseEventDate,
+  parsePickupTime,
+} from "./input.ts";
+
+describe("parsePickupTime", () => {
+  it.each([
+    ["5:30 PM", "17:30"],
+    ["5:30pm", "17:30"],
+    ["5 pm", "17:00"],
+    ["5:30 p.m.", "17:30"],
+    [" 11:15 AM ", "11:15"],
+    ["12:00 AM", "00:00"],
+    ["12:30 PM", "12:30"],
+    ["17:30", "17:30"],
+    ["09:05", "09:05"],
+    ["00:00", "00:00"],
+  ])("reads %j as %s", (typed, stored) => {
+    expect(parsePickupTime(typed)).toEqual({ ok: true, time: stored });
+  });
+
+  it.each([
+    "5:30",
+    "13:00 PM",
+    "24:00",
+    "17:60",
+    "0:30 AM",
+    "half five",
+    "",
+    "5:30 PM tomorrow",
+    "1".repeat(40),
+  ])("refuses %j", (typed) => {
+    const parsed = parsePickupTime(typed);
+
+    expect(parsed.ok).toBe(false);
+    expect(!parsed.ok && safeTextValue(parsed.problem)).toContain(
+      "Enter the pickup time",
+    );
+  });
+
+  it("refuses a value that is not text", () => {
+    expect(parsePickupTime(1730).ok).toBe(false);
+    expect(parsePickupTime(undefined).ok).toBe(false);
+  });
+});
 
 const ZONE = "America/New_York";
 // 04:30 UTC on the 16th is still the 15th in New York.
 const NOW = new Date("2026-11-16T04:30:00.000Z");
+
+describe("hasInviteOrMaskedLink", () => {
+  it.each([
+    "discord.gg/abc",
+    "Social [log in](https://evil.example)",
+    "disc\u034Ford.gg/x",
+    "discord\uFE00.gg/x",
+  ])("finds one in %j", (name) => {
+    expect(hasInviteOrMaskedLink(name)).toBe(true);
+  });
+
+  it.each(["Fall Social", "Budget (draft) [v2]", 42, undefined])(
+    "finds none in %j",
+    (name) => {
+      expect(hasInviteOrMaskedLink(name)).toBe(false);
+    },
+  );
+});
 
 describe("normaliseEventName", () => {
   it("keeps an ordinary name as it is", () => {

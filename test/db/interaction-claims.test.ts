@@ -4,6 +4,7 @@ import type { PGlite } from "@electric-sql/pglite";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   INSUFFICIENT_PRIVILEGE,
+  OTHER_ROLE,
   createMigratedDb,
   errorCodeOf,
   fakeId,
@@ -24,7 +25,7 @@ describe("claim_interaction", () => {
   const claim = async (interactionId: string) => {
     const rows = await queryAs<{ claimed: boolean }>(
       db,
-      "service_role",
+      "bot_app",
       "SELECT public.claim_interaction($1) AS claimed",
       [interactionId],
     );
@@ -73,28 +74,25 @@ describe("claim_interaction", () => {
     expect(rows).toEqual([{ prosecdef: true, proconfig: ['search_path=""'] }]);
   });
 
-  it("service_role has no direct access to the table", async () => {
+  it("bot_app has no direct access to the table", async () => {
     for (const sql of [
       "SELECT * FROM public.interaction_claims",
       `INSERT INTO public.interaction_claims (interaction_id) VALUES ('${fakeId()}')`,
       "DELETE FROM public.interaction_claims",
       "TRUNCATE public.interaction_claims",
     ]) {
-      expect(await errorCodeOf(queryAs(db, "service_role", sql))).toBe(
+      expect(await errorCodeOf(queryAs(db, "bot_app", sql))).toBe(
         INSUFFICIENT_PRIVILEGE,
       );
     }
   });
 
-  it.each(["anon", "authenticated"] as const)(
-    "%s cannot call it",
-    async (role) => {
-      const code = await errorCodeOf(
-        queryAs(db, role, `SELECT public.claim_interaction('${fakeId()}')`),
-      );
-      expect(code).toBe(INSUFFICIENT_PRIVILEGE);
-    },
-  );
+  it.each([OTHER_ROLE])("%s cannot call it", async (role) => {
+    const code = await errorCodeOf(
+      queryAs(db, role, `SELECT public.claim_interaction('${fakeId()}')`),
+    );
+    expect(code).toBe(INSUFFICIENT_PRIVILEGE);
+  });
 
   it("states its retention rule in the migration", () => {
     const sql = readFileSync(
@@ -102,9 +100,9 @@ describe("claim_interaction", () => {
         import.meta.dirname,
         "..",
         "..",
-        "supabase",
+        "db",
         "migrations",
-        "20261104000004_interaction_claims.sql",
+        "20261111000000_baseline.sql",
       ),
       "utf8",
     );
@@ -136,7 +134,7 @@ describe("claim_interaction", () => {
 
       const rows = await queryAs<{ deleted: number }>(
         db,
-        "service_role",
+        "bot_app",
         "SELECT public.expire_interaction_claims() AS deleted",
       );
 
@@ -145,15 +143,12 @@ describe("claim_interaction", () => {
       expect(await exists(recent)).toBe(true);
     });
 
-    it.each(["anon", "authenticated"] as const)(
-      "is closed to %s",
-      async (role) => {
-        expect(
-          await errorCodeOf(
-            queryAs(db, role, "SELECT public.expire_interaction_claims()"),
-          ),
-        ).toBe(INSUFFICIENT_PRIVILEGE);
-      },
-    );
+    it.each([OTHER_ROLE])("is closed to %s", async (role) => {
+      expect(
+        await errorCodeOf(
+          queryAs(db, role, "SELECT public.expire_interaction_claims()"),
+        ),
+      ).toBe(INSUFFICIENT_PRIVILEGE);
+    });
   });
 });

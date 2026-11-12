@@ -4,7 +4,8 @@
  * armed per route, so a test can break any one step of a flow.
  */
 
-import { testSnowflake } from "./mock-postgrest.ts";
+import { jsonObject } from "./json.ts";
+import { fakeId } from "./ids.ts";
 
 const THREAD_TYPE = 11;
 const DISCORD_EPOCH_MS = 1420070400000;
@@ -65,6 +66,8 @@ export interface DiscordServer {
   threadAgeMs: number;
   /** Runs when a post is made, before Discord answers: another retry could get in. */
   onThreadCreated?: (threadId: string) => Promise<unknown>;
+  /** Runs as a request arrives, before it is answered, as another change could. */
+  onRequest?: (method: string, path: string) => Promise<unknown>;
   fail: (
     method: string,
     path: RegExp,
@@ -178,7 +181,7 @@ export function discordServer(appId: string): DiscordServer {
       if (!channels.has(messages[1] ?? "")) {
         return answer(NOT_FOUND_CHANNEL);
       }
-      const id = testSnowflake();
+      const id = fakeId();
       messageIds.add(id);
       return json({ id });
     }
@@ -194,7 +197,7 @@ export function discordServer(appId: string): DiscordServer {
         : answer({ kind: "respond", status: 404, code: UNKNOWN_MESSAGE });
     }
     if (path.endsWith("/messages/@original")) {
-      return json({ id: testSnowflake(), flags: EPHEMERAL_FLAG });
+      return json({ id: fakeId(), flags: EPHEMERAL_FLAG });
     }
     throw new Error(`The test server has no route for ${method} ${path}`);
   }
@@ -223,7 +226,7 @@ export function discordServer(appId: string): DiscordServer {
           request.path.endsWith("/messages/@original"),
       )?.body?.content as string | undefined,
     addForum(guildId, name = "events") {
-      const id = testSnowflake();
+      const id = fakeId();
       channels.set(id, { id, type: 15, guild_id: guildId, name });
       return id;
     },
@@ -246,26 +249,37 @@ export function discordServer(appId: string): DiscordServer {
       const path = url.pathname.replace(/^\/api\/v[0-9]+/, "");
       const body =
         typeof init?.body === "string"
-          ? (JSON.parse(init.body) as Record<string, unknown>)
+          ? jsonObject(init.body, `the body of ${method} ${path}`)
           : undefined;
       requests.push({ method, path, body });
-      const failure = failureFor(method, path);
-      if (failure === undefined) {
-        const response = route(method, path, body);
-        const made = takeLastThread();
-        return made !== undefined && server.onThreadCreated !== undefined
-          ? server.onThreadCreated(made).then(() => response)
-          : Promise.resolve(response);
-      }
-      if (failure.kind === "network") {
-        return Promise.reject(new TypeError("fetch failed"));
-      }
-      if (failure.kind === "lost") {
-        route(method, path, body);
-        return Promise.reject(new TypeError("fetch failed"));
-      }
-      return Promise.resolve(answer(failure));
+      const before = server.onRequest?.(method, path);
+      return before === undefined
+        ? answerRequest(method, path, body)
+        : before.then(() => answerRequest(method, path, body));
     },
   };
+
+  function answerRequest(
+    method: string,
+    path: string,
+    body: Record<string, unknown> | undefined,
+  ): Promise<Response> {
+    const failure = failureFor(method, path);
+    if (failure === undefined) {
+      const response = route(method, path, body);
+      const made = takeLastThread();
+      return made !== undefined && server.onThreadCreated !== undefined
+        ? server.onThreadCreated(made).then(() => response)
+        : Promise.resolve(response);
+    }
+    if (failure.kind === "network") {
+      return Promise.reject(new TypeError("fetch failed"));
+    }
+    if (failure.kind === "lost") {
+      route(method, path, body);
+      return Promise.reject(new TypeError("fetch failed"));
+    }
+    return Promise.resolve(answer(failure));
+  }
   return server;
 }

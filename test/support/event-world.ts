@@ -5,6 +5,7 @@
  */
 
 import { afterAll, afterEach, beforeAll, beforeEach, expect, vi } from "vitest";
+import { pgliteSql, serverError } from "./sql-client.ts";
 import type { MockInstance } from "vitest";
 import { createDbClient, type DbClient } from "../../src/db/client.ts";
 import type { EventRow } from "../../src/db/types.ts";
@@ -12,13 +13,7 @@ import { createDiscordClient } from "../../src/discord/client.ts";
 import { managedChannelCheck } from "../../src/handlers/dependencies.ts";
 import { ROUTER } from "../../src/handlers/registry.ts";
 import type { RouterDependencies } from "../../src/handlers/router.ts";
-import {
-  createMigratedDb,
-  fakeId,
-  MIGRATION_OWNER,
-  queryAs,
-} from "../db/harness.ts";
-import { postgrestShim } from "../db/postgrest-shim.ts";
+import { createMigratedDb, MIGRATION_OWNER, queryAs } from "../db/harness.ts";
 import { discordServer, type DiscordServer } from "./discord-server.ts";
 import {
   ADMIN_ROLE,
@@ -29,17 +24,12 @@ import {
   run,
   type Ran,
 } from "./interactions.ts";
-import {
-  TEST_ORIGIN,
-  TEST_SECRET_KEY,
-  testSnowflake,
-} from "./mock-postgrest.ts";
+import { fakeId } from "./ids.ts";
 
-// Built at runtime: the secret scan refuses a literal value for this setting.
-const TOKEN = ["test", "bot", "token"].join("-");
+const TOKEN = "test-bot-token";
 
 export const FUTURE = "2099-01-15";
-export const OTHER_GUILD = testSnowflake();
+export const OTHER_GUILD = fakeId();
 
 type Database = Awaited<ReturnType<typeof createMigratedDb>>;
 
@@ -50,7 +40,8 @@ export interface World {
   readonly errors: MockInstance<typeof console.error>;
   /**
    * Fails database requests whose decoded target matches, until cleared. Status 200
-   * instead answers as if no row matched, as a read just before another write would.
+   * instead answers as if no row matched, as a read just before another write would. A
+   * statement has the target `SQL <its text on one line>`.
    */
   failDb(pattern: RegExp, status?: number, times?: number): void;
   clearDbFailures(): void;
@@ -64,6 +55,11 @@ export interface World {
     fields?: { description?: string; assignee?: string },
   ): Promise<string>;
   setForumStatus(channelId: string, status: string): Promise<void>;
+  /**
+   * Lets this test's messages ping these users and roles, and no others. Every other
+   * test may ping nobody at all.
+   */
+  allowPings(pings: { users?: string[]; roles?: string[] }): void;
 }
 
 export type StoredEvent = EventRow & { event_date: string };
@@ -76,53 +72,43 @@ const EVENT_SELECT = `SELECT id, guild_id, channel_id, name, event_date::text AS
 /** Call once per test file. The fields are ready inside each test. */
 export function eventWorld(): World {
   let pg: Database;
-  let shim: ReturnType<typeof postgrestShim>;
   let server: DiscordServer;
   let errorSpy: MockInstance<typeof console.error>;
   let dbFailures: { pattern: RegExp; status: number; times: number }[] = [];
   let seen: string[] = [];
+  let allowed = { users: new Set<string>(), roles: new Set<string>() };
 
-  const db = createDbClient({
-    url: TEST_ORIGIN,
-    secretKey: TEST_SECRET_KEY,
-    fetch: (input, init) => {
-      const url = new URL(
-        typeof input === "string" || input instanceof URL ? input : input.url,
-      );
-      const target = `${init?.method ?? "GET"} ${decodeURIComponent(url.pathname + url.search)}`;
-      seen.push(target);
-      const failure = dbFailures.find(
-        (entry) => entry.times > 0 && entry.pattern.test(target),
-      );
-      if (failure !== undefined) {
-        failure.times -= 1;
-        if (failure.status === 200) {
-          return Promise.resolve(Response.json([]));
-        }
-        return Promise.resolve(
-          Response.json(
-            { code: "XX000", message: "canary row text" },
-            { status: failure.status },
-          ),
+  const db = createDbClient(
+    pgliteSql(
+      () => pg,
+      ({ sql }) => {
+        // On one line, so a pattern can match across the statement's line breaks.
+        const target = `SQL ${sql.replace(/\s+/g, " ").trim()}`;
+        seen.push(target);
+        const failure = dbFailures.find(
+          (entry) => entry.times > 0 && entry.pattern.test(target),
         );
-      }
-      return shim(input, init);
-    },
-  });
+        if (failure === undefined) {
+          return undefined;
+        }
+        failure.times -= 1;
+        return failure.status === 200 ? { rows: [] } : serverError("XX000");
+      },
+    ),
+  );
 
   beforeAll(async () => {
     pg = await createMigratedDb();
-    shim = postgrestShim(pg);
     await queryAs(
       pg,
-      "service_role",
-      `SELECT public.apply_role_bindings($1, 0, $2, $3, $4)`,
+      "bot_app",
+      `SELECT public.apply_role_bindings($1, 0, $2, $3, $4, NULL, NULL, NULL, NULL)`,
       [GUILD_ID, fakeId(), OFFICER_ROLE, ADMIN_ROLE],
     );
     await queryAs(
       pg,
-      "service_role",
-      `SELECT public.apply_role_bindings($1, 0, $2, $3, $4)`,
+      "bot_app",
+      `SELECT public.apply_role_bindings($1, 0, $2, $3, $4, NULL, NULL, NULL, NULL)`,
       [OTHER_GUILD, fakeId(), fakeId(), fakeId()],
     );
   });
@@ -143,6 +129,7 @@ export function eventWorld(): World {
     vi.stubGlobal("fetch", server.fetch);
     dbFailures = [];
     seen = [];
+    allowed = { users: new Set(), roles: new Set() };
     errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
   });
 
@@ -154,7 +141,17 @@ export function eventWorld(): World {
           ? body
           : (body.message as Record<string, unknown>);
       if (typeof message?.content === "string") {
-        expect(message.allowed_mentions).toEqual({ parse: [], users: [] });
+        const mentions = message.allowed_mentions as {
+          users: string[];
+          roles?: string[];
+        };
+        const named = {
+          users: mentions.users.filter((id) => allowed.users.has(id)),
+          ...(mentions.roles === undefined
+            ? {}
+            : { roles: mentions.roles.filter((id) => allowed.roles.has(id)) }),
+        };
+        expect(mentions).toEqual({ parse: [], ...named });
         expect(Number(message.flags) & 4).toBe(4);
       }
     }
@@ -215,13 +212,16 @@ export function eventWorld(): World {
     ) {
       const rows = await queryAs<{ id: string }>(
         pg,
-        "service_role",
+        "bot_app",
         `INSERT INTO public.tasks
            (event_id, guild_id, assignee_id, description, due_date, created_by)
          VALUES ($1, $2, $3, $4, '2099-01-10', $5) RETURNING id`,
         [eventId, GUILD_ID, assignee, description, fakeId()],
       );
       return (rows[0] as { id: string }).id;
+    },
+    allowPings({ users = [], roles = [] }) {
+      allowed = { users: new Set(users), roles: new Set(roles) };
     },
     async setForumStatus(channelId, status) {
       await queryAs(

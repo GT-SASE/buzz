@@ -1,0 +1,4 @@
+# Checked out with LF on every platform. Shell scripts fail under bash with CRLF.
+*.sql text eol=lf
+*.sh text eol=lf
+.githooks/* text eol=lf

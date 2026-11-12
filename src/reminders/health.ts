@@ -212,7 +212,6 @@ export async function runHealthCheck(
   let error: JobRunError | null = null;
   const channels = await listActiveManagedChannels(db);
   if (channels.ok) {
-    results.excluded_rows = channels.value.excluded.length;
     if (channels.value.truncated) {
       count("truncated");
     }

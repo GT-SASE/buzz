@@ -5,6 +5,7 @@
  */
 
 import {
+  containsInviteOrMaskedLink,
   DISCORD_LIMITS,
   plainLabel,
   plainTextValue,
@@ -14,6 +15,7 @@ import {
 import type { PlainText, SafeText } from "../discord/safe-text.ts";
 import {
   isDbDate,
+  isPickupTime,
   isStoredText,
   MAX_EVENT_NAME_LENGTH,
 } from "../db/validate.ts";
@@ -56,6 +58,16 @@ export function normaliseEventName(raw: unknown): EventName | undefined {
   }
 }
 
+/**
+ * Whether a name as typed, or a post's title, holds a server invite or a masked link.
+ * The stored name could never keep one, since `normaliseEventName` drops the `.`, `/`
+ * and brackets they need, but a name that meant one is refused rather than quietly
+ * turned into something else. The same check guards task descriptions.
+ */
+export function hasInviteOrMaskedLink(raw: unknown): boolean {
+  return typeof raw === "string" && containsInviteOrMaskedLink(raw);
+}
+
 export type EventDateResult =
   | { readonly ok: true; readonly date: DateOnly }
   | { readonly ok: false; readonly problem: SafeText };
@@ -85,4 +97,40 @@ export function parseEventDate(
   return isDbDate(parsed.date)
     ? { ok: true, date: parsed.date }
     : { ok: false, problem: BAD_DATE };
+}
+
+/** Longest pickup time worth reading: `12:30 p.m.` with room for stray spaces. */
+export const MAX_PICKUP_INPUT_LENGTH = 16;
+
+export type PickupTimeResult =
+  | { readonly ok: true; readonly time: string }
+  | { readonly ok: false; readonly problem: SafeText };
+
+const BAD_TIME = safe`Enter the pickup time like 5:30 PM, or on a 24-hour clock like 17:30.`;
+const TWELVE_HOUR = /^(1[0-2]|0?[1-9])(?::([0-5][0-9]))? ?([ap])\.? ?m\.?$/;
+const TWENTY_FOUR_HOUR = /^([01][0-9]|2[0-3]):([0-5][0-9])$/;
+
+/**
+ * A wall-clock time on the event's day, in the guild's own time zone, as the `HH:MM`
+ * the database stores. Takes "5:30 PM", "5pm", "5:30 p.m." or "17:30". A time with no
+ * AM or PM needs a two-digit hour, so "5:30" is refused rather than guessed.
+ */
+export function parsePickupTime(raw: unknown): PickupTimeResult {
+  if (typeof raw !== "string" || raw.length > MAX_PICKUP_INPUT_LENGTH) {
+    return { ok: false, problem: BAD_TIME };
+  }
+  const text = raw.trim().toLowerCase().replace(/\s+/g, " ");
+  const twelve = TWELVE_HOUR.exec(text);
+  const twentyFour = TWENTY_FOUR_HOUR.exec(text);
+  let time: string | undefined;
+  if (twelve !== null) {
+    const [, hour = "", minutes = "00", half] = twelve;
+    const hours = (Number(hour) % 12) + (half === "p" ? 12 : 0);
+    time = `${String(hours).padStart(2, "0")}:${minutes}`;
+  } else if (twentyFour !== null) {
+    time = text;
+  }
+  return isPickupTime(time)
+    ? { ok: true, time }
+    : { ok: false, problem: BAD_TIME };
 }

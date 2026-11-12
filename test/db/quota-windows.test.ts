@@ -6,11 +6,11 @@
  */
 
 import { afterAll, beforeAll, expect, it } from "vitest";
+import { reassignAs } from "./task-edits.ts";
 import type { DbClient } from "../../src/db/client.ts";
 import {
   createTask,
   MAX_TASK_ACTIONS_PER_OFFICER_PER_DAY,
-  recordReassignment,
 } from "../../src/db/tasks.ts";
 import { parseIsoDate } from "../../src/lib/dates.ts";
 import { openBackend, type Backend } from "./backend.ts";
@@ -50,7 +50,7 @@ function newTask(eventId: string, actorId: string) {
 }
 
 function reassign(taskId: string, actorId: string) {
-  return recordReassignment(db, { guildId: guild.guildId, actorId, taskId });
+  return reassignAs(db, { guildId: guild.guildId, actorId, taskId });
 }
 
 async function taskIdOn(eventId: string): Promise<string> {

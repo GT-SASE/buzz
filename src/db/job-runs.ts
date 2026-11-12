@@ -1,14 +1,13 @@
 import type { DbClient } from "./client.ts";
-import { rest } from "./internal.ts";
+import { callFunction, changedRow, firstRow, query, sql } from "./internal.ts";
 import {
   errorSummary,
   refused,
   type DbError,
   type DbResult,
 } from "./errors.ts";
-import { exactlyOne, nullableUuidValue, oneOrNone } from "./result.ts";
-import { parseJobRun, type JobRun } from "./types.ts";
-import { isInstant, isUuid } from "./validate.ts";
+import type { JobRun } from "./types.ts";
+import { isUuid } from "./validate.ts";
 
 export type JobName = "reminders" | "health_check";
 
@@ -24,10 +23,6 @@ const MAX_RESULT_KEYS = 100;
 export const MAX_EVENT_IDS_IN_RESULTS = 25;
 const ERROR_CATEGORY = /^[a-z_]{1,64}$/;
 const ERROR_CODE = /^[0-9A-Za-z_]{1,16}$/;
-
-function isJobName(value: unknown): value is JobName {
-  return value === "reminders" || value === "health_check";
-}
 
 function areJobResults(results: JobResults): boolean {
   const entries = Object.entries(results);
@@ -63,10 +58,6 @@ function isJobRunError(error: JobRunError): boolean {
   );
 }
 
-function isWholeNumber(value: number): boolean {
-  return Number.isSafeInteger(value) && value >= 0;
-}
-
 /**
  * Takes the job's lock and starts a run, the only way to start one. Null means the job
  * is already running, or succeeded in the current schedule slot, so this invocation
@@ -82,14 +73,10 @@ export async function beginJobRun(
     staleAfterSeconds: number;
   },
 ): Promise<DbResult<string | null>> {
-  if (!isJobName(jobName) || !isWholeNumber(staleAfterSeconds)) {
-    return refused();
-  }
-  return nullableUuidValue(
-    await rest(db).rpc("begin_job_run", {
-      p_job_name: jobName,
-      p_stale_after_seconds: staleAfterSeconds,
-    }),
+  return callFunction<string | null>(
+    db,
+    sql`select public.begin_job_run(p_job_name => ${jobName},
+      p_stale_after_seconds => ${staleAfterSeconds}) as value`,
   );
 }
 
@@ -109,42 +96,32 @@ export async function finishJobRun(
   db: DbClient,
   { id, now, results, error }: JobRunOutcome,
 ): Promise<DbResult<JobRun>> {
-  if (
-    !isUuid(id) ||
-    !isInstant(now) ||
-    !areJobResults(results) ||
-    (error !== null && !isJobRunError(error))
-  ) {
+  if (!areJobResults(results) || (error !== null && !isJobRunError(error))) {
     return refused();
   }
-  return exactlyOne(
-    await rest(db).rpc("finish_job_run", {
-      p_id: id,
-      p_finished_at: now.toISOString(),
-      p_results: results,
-      p_error: error === null ? null : errorSummary(error),
-    }),
-    parseJobRun,
+  // The function returns the finished row in a JSON array, empty if it finished nothing.
+  const finished = await callFunction<JobRun[]>(
+    db,
+    sql`select public.finish_job_run(p_id => ${id},
+      p_finished_at => ${now.toISOString()},
+      p_results => ${JSON.stringify(results)}::jsonb,
+      p_error => ${error === null ? null : errorSummary(error)}) as value`,
   );
+  return changedRow(finished);
 }
 
 export async function getLatestJobRun(
   db: DbClient,
   { jobName }: { jobName: JobName },
 ): Promise<DbResult<JobRun | null>> {
-  if (!isJobName(jobName)) {
-    return refused();
-  }
-  return oneOrNone(
-    await rest(db)
-      .from("job_runs")
-      .select(
-        "id,job_name,status,started_at,heartbeat_at,finished_at,results,error",
-      )
-      .eq("job_name", jobName)
-      .order("started_at", { ascending: false })
-      .limit(1),
-    parseJobRun,
+  return firstRow(
+    await query<JobRun>(
+      db,
+      sql`select id, job_name, status, started_at, heartbeat_at, finished_at, results,
+        error
+      from job_runs where job_name = ${jobName}
+      order by started_at desc limit 1`,
+    ),
   );
 }
 
@@ -153,19 +130,13 @@ export async function getLatestSucceededJobRun(
   db: DbClient,
   { jobName }: { jobName: JobName },
 ): Promise<DbResult<JobRun | null>> {
-  if (!isJobName(jobName)) {
-    return refused();
-  }
-  return oneOrNone(
-    await rest(db)
-      .from("job_runs")
-      .select(
-        "id,job_name,status,started_at,heartbeat_at,finished_at,results,error",
-      )
-      .eq("job_name", jobName)
-      .eq("status", "succeeded")
-      .order("started_at", { ascending: false })
-      .limit(1),
-    parseJobRun,
+  return firstRow(
+    await query<JobRun>(
+      db,
+      sql`select id, job_name, status, started_at, heartbeat_at, finished_at, results,
+        error
+      from job_runs where job_name = ${jobName} and status = 'succeeded'
+      order by started_at desc limit 1`,
+    ),
   );
 }

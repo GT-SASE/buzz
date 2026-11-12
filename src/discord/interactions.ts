@@ -1,10 +1,11 @@
 /**
- * Parsing and type guards for interaction payloads. Payloads are only inspected
- * after their signature has passed, but the guards still check each field they
- * vouch for, so a change on Discord's side ends in a refusal and not a crash.
+ * Parsing for interaction payloads, checked with Zod schemas. Payloads are only
+ * inspected after their signature has passed, but the parsers still check each
+ * field they vouch for, so a change on Discord's side ends in a refusal and not a
+ * crash.
  *
- * Each guard narrows to exactly the fields it checked. Anything else on the
- * payload stays unknown until a guard has looked at it.
+ * Each parser types exactly the fields it checked. Anything else on the payload
+ * stays unknown until a parser has looked at it.
  */
 
 import {
@@ -14,46 +15,13 @@ import {
   InteractionContextType,
   InteractionType,
 } from "discord-api-types/v10";
+import { z } from "zod";
 import { parsePermissions } from "../lib/actor.ts";
 import { isSnowflake } from "../lib/snowflake.ts";
-
-export interface PingInteraction {
-  type: InteractionType.Ping;
-}
-
-export interface GuildInteraction {
-  application_id: string;
-  guild_id: string;
-  context: InteractionContextType.Guild;
-  authorizing_integration_owners: {
-    [ApplicationIntegrationType.GuildInstall]: string;
-  };
-  member: { user: { id: string } };
-}
 
 export interface GuildAccessPolicy {
   applicationId: string;
   allowedGuildIds: ReadonlySet<string>;
-}
-
-export interface ChatInputCommand {
-  type: InteractionType.ApplicationCommand;
-  data: { type: ApplicationCommandType.ChatInput; name: string };
-}
-
-export interface AutocompleteRequest {
-  type: InteractionType.ApplicationCommandAutocomplete;
-  data: { type: ApplicationCommandType.ChatInput; name: string };
-}
-
-export interface ComponentInteraction {
-  type: InteractionType.MessageComponent;
-  data: { custom_id: string };
-}
-
-export interface ModalInteraction {
-  type: InteractionType.ModalSubmit;
-  data: { custom_id: string };
 }
 
 /** A role from `resolved`, with its name still untrusted text. */
@@ -85,17 +53,104 @@ export interface ResolvedPerson {
   readonly isBot: boolean;
 }
 
-export interface FocusedOption {
-  readonly name: string;
-  readonly value: string;
-}
-
 const EPHEMERAL_FLAG = 64;
 const MAX_OPTIONS = 25;
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
+const Snowflake = z.string().refine(isSnowflake);
+/** Any JSON object. Arrays and null are refused. */
+const AnyObject = z.looseObject({});
+
+// Loose objects keep the fields a later step reads, such as the member's roles and
+// the command's options and resolved data.
+const Guild = z.looseObject({
+  application_id: Snowflake,
+  guild_id: Snowflake,
+  context: z.literal(InteractionContextType.Guild),
+  authorizing_integration_owners: z.object({
+    [ApplicationIntegrationType.GuildInstall]: z.unknown().optional(),
+  }),
+  member: z.looseObject({ user: z.object({ id: Snowflake }) }),
+});
+export type GuildInteraction = z.infer<typeof Guild>;
+
+const ChatInputData = z.looseObject({
+  type: z.literal(ApplicationCommandType.ChatInput),
+  name: z.string(),
+});
+const ChatInput = z.object({
+  type: z.literal(InteractionType.ApplicationCommand),
+  data: ChatInputData,
+});
+export type ChatInputCommand = z.infer<typeof ChatInput>;
+
+const Autocomplete = z.object({
+  type: z.literal(InteractionType.ApplicationCommandAutocomplete),
+  data: ChatInputData,
+});
+export type AutocompleteRequest = z.infer<typeof Autocomplete>;
+
+const CustomIdData = z.object({ custom_id: z.string() });
+const Component = z.object({
+  type: z.literal(InteractionType.MessageComponent),
+  data: CustomIdData,
+});
+export type ComponentInteraction = z.infer<typeof Component>;
+
+const Modal = z.object({
+  type: z.literal(InteractionType.ModalSubmit),
+  data: CustomIdData,
+});
+export type ModalInteraction = z.infer<typeof Modal>;
+
+const WithData = z.object({ data: z.unknown().optional() });
+const WithOptions = z.object({
+  options: z.array(z.unknown()).max(MAX_OPTIONS),
+});
+const Subcommand = z.looseObject({
+  type: z.literal(ApplicationCommandOptionType.Subcommand),
+});
+const SubcommandGroup = z.object({
+  type: z.literal(ApplicationCommandOptionType.SubcommandGroup),
+});
+const NamedOption = z.looseObject({ name: z.string() });
+const FocusedFlag = z.object({ focused: z.literal(true) });
+const FocusedValue = z.object({ name: z.string(), value: z.string() });
+export type FocusedOption = z.infer<typeof FocusedValue>;
+
+const WithResolved = z.object({
+  data: z.object({
+    resolved: z.object({
+      roles: z.unknown().optional(),
+      channels: z.unknown().optional(),
+      users: z.unknown().optional(),
+      members: z.unknown().optional(),
+    }),
+  }),
+});
+const RoleEntry = z.object({
+  id: z.string(),
+  name: z.string(),
+  managed: z.boolean(),
+  position: z.number(),
+  permissions: z.unknown().optional(),
+});
+const ChannelEntry = z.object({
+  id: z.string(),
+  type: z.number(),
+  guild_id: Snowflake.optional(),
+  app_permissions: z.unknown().optional(),
+});
+const UserEntry = z.object({
+  id: z.string(),
+  bot: z.unknown().optional(),
+  system: z.unknown().optional(),
+});
+
+const SelectValues = z.object({
+  values: z.array(z.string()).max(MAX_OPTIONS),
+});
+const ComponentTypeData = z.object({ component_type: z.number() });
+const EphemeralFlags = z.object({ message: z.object({ flags: z.number() }) });
 
 /** Returns undefined for anything that is not UTF-8 encoded JSON. */
 export function parseInteractionBody(body: Uint8Array): unknown {
@@ -106,90 +161,73 @@ export function parseInteractionBody(body: Uint8Array): unknown {
   }
 }
 
-export function isPingInteraction(value: unknown): value is PingInteraction {
-  return isRecord(value) && value.type === InteractionType.Ping;
+export function isPingInteraction(value: unknown): boolean {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "type" in value &&
+    value.type === InteractionType.Ping
+  );
 }
 
 /**
- * The interaction is for this application, from a member inside an allowed
+ * The interaction, if it is for this application, from a member inside an allowed
  * server, and the server itself installed the application.
  */
-export function isAllowedGuildInteraction(
+export function parseAllowedGuildInteraction(
   value: unknown,
   { applicationId, allowedGuildIds }: GuildAccessPolicy,
-): value is GuildInteraction {
-  return (
-    isRecord(value) &&
-    isSnowflake(value.application_id) &&
-    value.application_id === applicationId &&
-    isSnowflake(value.guild_id) &&
-    allowedGuildIds.has(value.guild_id) &&
-    value.context === InteractionContextType.Guild &&
-    isRecord(value.authorizing_integration_owners) &&
-    value.authorizing_integration_owners[
+): GuildInteraction | undefined {
+  const parsed = Guild.safeParse(value);
+  if (!parsed.success) {
+    return undefined;
+  }
+  const guild = parsed.data;
+  const allowed =
+    guild.application_id === applicationId &&
+    allowedGuildIds.has(guild.guild_id) &&
+    guild.authorizing_integration_owners[
       ApplicationIntegrationType.GuildInstall
-    ] === value.guild_id &&
-    isRecord(value.member) &&
-    isRecord(value.member.user) &&
-    isSnowflake(value.member.user.id)
-  );
+    ] === guild.guild_id;
+  return allowed ? guild : undefined;
 }
 
-export function isChatInputCommand(value: unknown): value is ChatInputCommand {
-  return (
-    isRecord(value) &&
-    value.type === InteractionType.ApplicationCommand &&
-    isRecord(value.data) &&
-    value.data.type === ApplicationCommandType.ChatInput &&
-    typeof value.data.name === "string"
-  );
-}
-
-export function isAutocompleteRequest(
+export function parseChatInputCommand(
   value: unknown,
-): value is AutocompleteRequest {
-  return (
-    isRecord(value) &&
-    value.type === InteractionType.ApplicationCommandAutocomplete &&
-    isRecord(value.data) &&
-    value.data.type === ApplicationCommandType.ChatInput &&
-    typeof value.data.name === "string"
-  );
+): ChatInputCommand | undefined {
+  return ChatInput.safeParse(value).data;
 }
 
-function hasCustomId(value: Record<string, unknown>): boolean {
-  return isRecord(value.data) && typeof value.data.custom_id === "string";
-}
-
-export function isComponentInteraction(
+export function parseAutocompleteRequest(
   value: unknown,
-): value is ComponentInteraction {
-  return (
-    isRecord(value) &&
-    value.type === InteractionType.MessageComponent &&
-    hasCustomId(value)
-  );
+): AutocompleteRequest | undefined {
+  return Autocomplete.safeParse(value).data;
 }
 
-export function isModalInteraction(value: unknown): value is ModalInteraction {
-  return (
-    isRecord(value) &&
-    value.type === InteractionType.ModalSubmit &&
-    hasCustomId(value)
-  );
+export function parseComponentInteraction(
+  value: unknown,
+): ComponentInteraction | undefined {
+  return Component.safeParse(value).data;
 }
 
+export function parseModalInteraction(
+  value: unknown,
+): ModalInteraction | undefined {
+  return Modal.safeParse(value).data;
+}
+
+function dataOf(payload: unknown): unknown {
+  return WithData.safeParse(payload).data?.data;
+}
+
+/** The options of a command or subcommand, or none if they are malformed. */
 function optionList(container: unknown): readonly unknown[] {
-  const options = isRecord(container) ? container.options : undefined;
-  return Array.isArray(options) && options.length <= MAX_OPTIONS ? options : [];
+  return WithOptions.safeParse(container).data?.options ?? [];
 }
 
 function subcommandOf(data: unknown): Record<string, unknown> | undefined {
   const [first] = optionList(data);
-  return isRecord(first) &&
-    first.type === ApplicationCommandOptionType.Subcommand
-    ? first
-    : undefined;
+  return Subcommand.safeParse(first).data;
 }
 
 /**
@@ -200,10 +238,7 @@ export function commandPath(
   command: ChatInputCommand | AutocompleteRequest,
 ): string | undefined {
   const [first] = optionList(command.data);
-  if (
-    isRecord(first) &&
-    first.type === ApplicationCommandOptionType.SubcommandGroup
-  ) {
+  if (SubcommandGroup.safeParse(first).success) {
     return undefined;
   }
   const subcommand = subcommandOf(command.data);
@@ -228,78 +263,62 @@ export function commandOptionValue(
   name: string,
   type: ApplicationCommandOptionType,
 ): unknown {
-  const data = isRecord(payload) ? payload.data : undefined;
-  const matches = leafOptions(data).filter(
-    (option) => isRecord(option) && option.name === name,
-  );
+  const matches = leafOptions(dataOf(payload)).flatMap((option) => {
+    const named = NamedOption.safeParse(option).data;
+    return named?.name === name ? [named] : [];
+  });
   const [only] = matches;
-  return matches.length === 1 && isRecord(only) && only.type === type
-    ? only.value
-    : undefined;
+  return matches.length === 1 && only?.type === type ? only.value : undefined;
 }
 
 /** The option being typed in an autocomplete request. */
 export function focusedOption(payload: unknown): FocusedOption | undefined {
-  const data = isRecord(payload) ? payload.data : undefined;
-  const focused = leafOptions(data).filter(
-    (option) => isRecord(option) && option.focused === true,
+  const focused = leafOptions(dataOf(payload)).filter(
+    (option) => FocusedFlag.safeParse(option).success,
   );
   const [only] = focused;
-  return focused.length === 1 &&
-    isRecord(only) &&
-    typeof only.name === "string" &&
-    typeof only.value === "string"
-    ? { name: only.name, value: only.value }
-    : undefined;
+  return focused.length === 1 ? FocusedValue.safeParse(only).data : undefined;
 }
 
 /**
- * An entry of `data.resolved`. The ID must have the shape of a Discord ID and the
- * entry must be the map's own, so `__proto__` and `constructor` find nothing.
+ * An entry of a map in `data.resolved`. The ID must have the shape of a Discord ID
+ * and the entry must be the map's own, so `__proto__` and `constructor` find nothing.
  */
-function resolvedEntry(
-  payload: unknown,
-  kind: "roles" | "channels",
-  id: string,
-): Record<string, unknown> | undefined {
-  const data = isRecord(payload) ? payload.data : undefined;
-  const resolved = isRecord(data) ? data.resolved : undefined;
-  const entries = isRecord(resolved) ? resolved[kind] : undefined;
-  if (!isSnowflake(id) || !isRecord(entries) || !Object.hasOwn(entries, id)) {
+function ownEntry(map: unknown, id: string): unknown {
+  if (!isSnowflake(id) || !AnyObject.safeParse(map).success) {
     return undefined;
   }
-  const entry = entries[id];
-  return isRecord(entry) && entry.id === id ? entry : undefined;
+  const entries = map as Record<string, unknown>;
+  return Object.hasOwn(entries, id) ? entries[id] : undefined;
+}
+
+function resolvedOf(payload: unknown) {
+  return WithResolved.safeParse(payload).data?.data.resolved;
 }
 
 export function resolvedRole(
   payload: unknown,
   id: string,
 ): ResolvedRole | undefined {
-  const entry = resolvedEntry(payload, "roles", id);
-  if (entry === undefined) {
+  const entry = RoleEntry.safeParse(
+    ownEntry(resolvedOf(payload)?.roles, id),
+  ).data;
+  const permissions = parsePermissions(entry?.permissions);
+  if (entry?.id !== id || permissions === undefined) {
     return undefined;
   }
   const { name, managed, position } = entry;
-  const permissions = parsePermissions(entry.permissions);
-  return typeof name === "string" &&
-    typeof managed === "boolean" &&
-    typeof position === "number" &&
-    permissions !== undefined
-    ? { id, name, managed, position, permissions }
-    : undefined;
+  return { id, name, managed, position, permissions };
 }
 
 export function resolvedChannel(
   payload: unknown,
   id: string,
 ): ResolvedChannel | undefined {
-  const entry = resolvedEntry(payload, "channels", id);
-  if (entry === undefined || typeof entry.type !== "number") {
-    return undefined;
-  }
-  const guildId = entry.guild_id;
-  if (guildId !== undefined && !isSnowflake(guildId)) {
+  const entry = ChannelEntry.safeParse(
+    ownEntry(resolvedOf(payload)?.channels, id),
+  ).data;
+  if (entry?.id !== id) {
     return undefined;
   }
   const appPermissions = parsePermissions(entry.app_permissions);
@@ -307,18 +326,7 @@ export function resolvedChannel(
   if (entry.app_permissions !== undefined && appPermissions === undefined) {
     return undefined;
   }
-  return { id, type: entry.type, guildId, appPermissions };
-}
-
-function ownEntry(
-  map: unknown,
-  id: string,
-): Record<string, unknown> | undefined {
-  if (!isRecord(map) || !Object.hasOwn(map, id)) {
-    return undefined;
-  }
-  const entry = map[id];
-  return isRecord(entry) ? entry : undefined;
+  return { id, type: entry.type, guildId: entry.guild_id, appPermissions };
 }
 
 /** Anything but absent or false counts, so an odd value refuses rather than allows. */
@@ -331,18 +339,14 @@ export function resolvedPerson(
   payload: unknown,
   id: string,
 ): ResolvedPerson | undefined {
-  const data = isRecord(payload) ? payload.data : undefined;
-  const resolved = isRecord(data) ? data.resolved : undefined;
-  if (!isSnowflake(id) || !isRecord(resolved)) {
-    return undefined;
-  }
-  const user = ownEntry(resolved.users, id);
+  const resolved = resolvedOf(payload);
+  const user = UserEntry.safeParse(ownEntry(resolved?.users, id)).data;
   if (user?.id !== id) {
     return undefined;
   }
   return {
     id,
-    isMember: ownEntry(resolved.members, id) !== undefined,
+    isMember: AnyObject.safeParse(ownEntry(resolved?.members, id)).success,
     isBot: isSetFlag(user.bot) || isSetFlag(user.system),
   };
 }
@@ -351,18 +355,13 @@ export function resolvedPerson(
 export function selectedValues(
   payload: unknown,
 ): readonly string[] | undefined {
-  const data = isRecord(payload) ? payload.data : undefined;
-  const values = isRecord(data) ? data.values : undefined;
-  if (!Array.isArray(values) || values.length > MAX_OPTIONS) {
-    return undefined;
-  }
-  const items: unknown[] = values;
-  return items.every((item) => typeof item === "string") ? items : undefined;
+  return SelectValues.safeParse(dataOf(payload)).data?.values;
 }
 
 export function isComponentType(payload: unknown, type: number): boolean {
-  const data = isRecord(payload) ? payload.data : undefined;
-  return isRecord(data) && data.component_type === type;
+  return (
+    ComponentTypeData.safeParse(dataOf(payload)).data?.component_type === type
+  );
 }
 
 /**
@@ -370,9 +369,6 @@ export function isComponentType(payload: unknown, type: number): boolean {
  * deferred updates edit that message, so they must not run on a public one.
  */
 export function isOnEphemeralMessage(payload: unknown): boolean {
-  const message = isRecord(payload) ? payload.message : undefined;
-  const flags = isRecord(message) ? message.flags : undefined;
-  return (
-    typeof flags === "number" && (flags & EPHEMERAL_FLAG) === EPHEMERAL_FLAG
-  );
+  const flags = EphemeralFlags.safeParse(payload).data?.message.flags;
+  return flags !== undefined && (flags & EPHEMERAL_FLAG) === EPHEMERAL_FLAG;
 }

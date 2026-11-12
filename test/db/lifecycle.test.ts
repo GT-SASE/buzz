@@ -35,7 +35,7 @@ describe("task lifecycle", () => {
     const insertEventOn = (channelId: string) =>
       queryAs(
         db,
-        "service_role",
+        "bot_app",
         `INSERT INTO public.events (guild_id, channel_id, name, event_date, created_by)
          VALUES ($1, $2, 'Social', '2030-02-01', $3)`,
         [guild.guildId, channelId, fakeId()],
@@ -54,12 +54,10 @@ describe("task lifecycle", () => {
 
     it("rejects a task on a deleted event", async () => {
       const eventId = await insertEvent(db, guild);
-      await queryAs(
-        db,
-        "service_role",
-        `SELECT public.soft_delete_event($1, $2)`,
-        [eventId, guild.guildId],
-      );
+      await queryAs(db, "bot_app", `SELECT public.soft_delete_event($1, $2)`, [
+        eventId,
+        guild.guildId,
+      ]);
       expect(await errorCodeOf(insertTask(db, guild, eventId))).toBe(
         PARENT_UNAVAILABLE,
       );
@@ -69,7 +67,7 @@ describe("task lifecycle", () => {
       const eventId = await insertEvent(db, guild);
       await queryAs(
         db,
-        "service_role",
+        "bot_app",
         `UPDATE public.events SET status = 'closed' WHERE id = $1`,
         [eventId],
       );
@@ -123,7 +121,7 @@ describe("task lifecycle", () => {
     const softDelete = async (eventId: string, guildId = guild.guildId) => {
       const rows = await queryAs<{ deleted: number | null }>(
         db,
-        "service_role",
+        "bot_app",
         `SELECT public.soft_delete_event($1, $2) AS deleted`,
         [eventId, guildId],
       );
@@ -193,7 +191,7 @@ describe("task lifecycle", () => {
     const claim = async (taskId: string, dueDate = DUE) => {
       const rows = await queryAs<{ token: string | null }>(
         db,
-        "service_role",
+        "bot_app",
         `SELECT public.claim_reminder($1, 'one_day', $2) AS token`,
         [taskId, dueDate],
       );
@@ -203,7 +201,7 @@ describe("task lifecycle", () => {
     const reclaim = async (taskId: string, token: string) => {
       const rows = await queryAs<{ token: string | null }>(
         db,
-        "service_role",
+        "bot_app",
         `SELECT public.reclaim_reminder($1, 'one_day', '${DUE}', $2) AS token`,
         [taskId, token],
       );
@@ -213,7 +211,7 @@ describe("task lifecycle", () => {
     const markSent = async (taskId: string, token: string) => {
       const rows = await queryAs<{ marked: boolean }>(
         db,
-        "service_role",
+        "bot_app",
         `SELECT public.mark_reminder_sent($1, 'one_day', '${DUE}', $2, $3) AS marked`,
         [taskId, token, fakeId()],
       );
@@ -257,7 +255,7 @@ describe("task lifecycle", () => {
       const moved = "2030-03-01";
       await queryAs(
         db,
-        "service_role",
+        MIGRATION_OWNER,
         `UPDATE public.tasks SET due_date = $2 WHERE id = $1`,
         [taskId, moved],
       );
@@ -274,7 +272,7 @@ describe("task lifecycle", () => {
       const taskId = await newTask();
       await queryAs(
         db,
-        "service_role",
+        MIGRATION_OWNER,
         `UPDATE public.tasks SET due_date = '2030-03-01' WHERE id = $1`,
         [taskId],
       );
@@ -288,7 +286,7 @@ describe("task lifecycle", () => {
       const taskId = await newTask();
       await queryAs(
         db,
-        "service_role",
+        "bot_app",
         `UPDATE public.tasks SET ${set} WHERE id = $1`,
         [taskId],
       );
@@ -299,7 +297,7 @@ describe("task lifecycle", () => {
       const markSkipped = async (taskId: string, token: string) => {
         const rows = await queryAs<{ marked: boolean }>(
           db,
-          "service_role",
+          "bot_app",
           `SELECT public.mark_reminder_skipped($1, 'one_day', '${DUE}', $2) AS marked`,
           [taskId, token],
         );
@@ -357,12 +355,12 @@ describe("task lifecycle", () => {
         "steal a claim",
         `UPDATE public.reminder_log SET claim_token = gen_random_uuid() WHERE task_id = $1`,
       ],
-    ])("service_role cannot %s directly", async (_name, sql) => {
+    ])("bot_app cannot %s directly", async (_name, sql) => {
       const taskId = await newTask();
       await claim(taskId);
-      expect(
-        await errorCodeOf(queryAs(db, "service_role", sql, [taskId])),
-      ).toBe("42501");
+      expect(await errorCodeOf(queryAs(db, "bot_app", sql, [taskId]))).toBe(
+        "42501",
+      );
       expect((await logRow(taskId))?.state).toBe("claimed");
     });
 
@@ -445,7 +443,7 @@ describe("task lifecycle", () => {
       await age(taskId, "2 hours");
       await queryAs(
         db,
-        "service_role",
+        "bot_app",
         `UPDATE public.tasks SET status = 'done', completed_at = now() WHERE id = $1`,
         [taskId],
       );

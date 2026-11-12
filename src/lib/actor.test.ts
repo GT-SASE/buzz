@@ -4,7 +4,7 @@ import {
 } from "discord-api-types/v10";
 import { describe, expect, it } from "vitest";
 import {
-  isAllowedGuildInteraction,
+  parseAllowedGuildInteraction,
   type GuildInteraction,
 } from "../discord/interactions.ts";
 import { parseActor } from "./actor.ts";
@@ -18,7 +18,7 @@ const APP = "5".repeat(18);
 const ADMINISTRATOR = 1n << 3n;
 const TWO_TO_53 = 1n << 53n;
 
-/** The guard vouches for the user ID only, so the rest of the member is open. */
+/** The parser vouches for the user ID only, so the rest of the member is open. */
 function interactionWith(member: Record<string, unknown>): GuildInteraction {
   return {
     application_id: APP,
@@ -158,17 +158,17 @@ describe("parseActor", () => {
     expect(after?.roleIds.has(ROLE)).toBe(false);
   });
 
-  it("is reached only through the guard, which refuses a bad user ID", () => {
+  it("is reached only through the parser, which refuses a bad user ID", () => {
     const interaction = {
       ...interactionWith({ roles: [], permissions: "0" }),
       member: { user: { id: "not-an-id" }, roles: [], permissions: "0" },
     };
 
     expect(
-      isAllowedGuildInteraction(interaction, {
+      parseAllowedGuildInteraction(interaction, {
         applicationId: APP,
         allowedGuildIds: new Set([GUILD]),
       }),
-    ).toBe(false);
+    ).toBeUndefined();
   });
 });

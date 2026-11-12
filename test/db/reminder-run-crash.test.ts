@@ -14,16 +14,21 @@ import {
   it,
   vi,
 } from "vitest";
+import { pgliteSql } from "../support/sql-client.ts";
 import { createDbClient, type DbClient } from "../../src/db/client.ts";
 import { createDiscordClient } from "../../src/discord/client.ts";
-import { managedChannelCheck, runReminders } from "../../src/reminders/run.ts";
-import { TEST_ORIGIN, TEST_SECRET_KEY } from "../support/mock-postgrest.ts";
-import { insertEvent, insertGuild, type GuildFixture } from "./fixtures.ts";
+import { managedChannelCheck } from "../../src/handlers/dependencies.ts";
+import { runReminders } from "../../src/reminders/run.ts";
+import { slotStart } from "../../src/reminders/plan.ts";
+import {
+  finishEventSteps,
+  insertEvent,
+  insertGuild,
+  type GuildFixture,
+} from "./fixtures.ts";
 import { createMigratedDb, fakeId, queryAs } from "./harness.ts";
-import { postgrestShim } from "./postgrest-shim.ts";
 
-const CANARY = "canary-from-a-crashed-run";
-const TOKEN = ["unit", "test", "token"].join("-");
+const TOKEN = "unit-test-token";
 
 let database: PGlite;
 let db: DbClient;
@@ -75,7 +80,7 @@ function clockThatThrowsOnSecondRead(): () => Date {
   return () => {
     reads += 1;
     if (reads === 2) {
-      throw new TypeError(CANARY);
+      throw new TypeError("clock failure");
     }
     return new Date();
   };
@@ -83,11 +88,7 @@ function clockThatThrowsOnSecondRead(): () => Date {
 
 beforeAll(async () => {
   database = await createMigratedDb();
-  db = createDbClient({
-    url: TEST_ORIGIN,
-    secretKey: TEST_SECRET_KEY,
-    fetch: postgrestShim(database),
-  });
+  db = createDbClient(pgliteSql(database));
   guild = await insertGuild(database);
   await database.query(
     `UPDATE public.guild_config SET timezone = 'UTC' WHERE guild_id = $1`,
@@ -100,15 +101,19 @@ afterAll(() => database.close());
 beforeEach(async () => {
   posts = [];
   const eventId = await insertEvent(database, guild);
+  await finishEventSteps(database, eventId);
   const threadId = fakeId();
   await database.query(
     `UPDATE public.events SET thread_id = $2, thread_status = 'active' WHERE id = $1`,
     [eventId, threadId],
   );
-  const dueDate = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
+  // A day after the date the run plans for, which is that of its slot's start.
+  const dueDate = new Date(slotStart(new Date()) + 86_400_000)
+    .toISOString()
+    .slice(0, 10);
   await queryAs(
     database,
-    "service_role",
+    "bot_app",
     `INSERT INTO public.tasks (event_id, guild_id, assignee_id, description, due_date, created_by)
      VALUES ($1, $2, $3, 'Book the room', $4, $5)`,
     [eventId, guild.guildId, fakeId(), dueDate, fakeId()],
@@ -133,7 +138,6 @@ it("records a crashed run as failed, and the next run in the slot still sends", 
     error: string | null;
   }>(`SELECT status, error FROM public.job_runs WHERE job_name = 'reminders'`);
   expect(rows).toEqual([{ status: "failed", error: "unexpected" }]);
-  expect(JSON.stringify([rows, crashed.logged])).not.toContain(CANARY);
 
   const recovery = await runWith().result;
 

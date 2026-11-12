@@ -83,25 +83,43 @@ import {
   getManagedChannel,
   listManagedChannels,
 } from "../db/managed-channels.ts";
+import { getEventWorkflow } from "../db/event-steps.ts";
 import { listEventTasks } from "../db/tasks.ts";
 import { REFUSED_TEXT, versionFingerprint } from "../tasks/shared.ts";
 import type { EventChoice, EventRow, ManagedChannel } from "../db/types.ts";
-import { normaliseEventName, parseEventDate } from "../events/input.ts";
+import {
+  hasInviteOrMaskedLink,
+  normaliseEventName,
+  parseEventDate,
+} from "../events/input.ts";
 import type { EventName } from "../events/input.ts";
 import {
   dateText,
   eventStatusText,
   eventTitle,
   fitLines,
+  overviewWorkflow,
   refreshOverview,
   renderOverview,
   threadTarget,
 } from "../events/overview.ts";
+import {
+  assignStartingOwners,
+  assignSubcommand,
+  pickupSubcommand,
+  retryHandoffs,
+  STARTING_OWNER_OPTIONS,
+  startingOwners,
+  unassignSubcommand,
+  workflowRoutes,
+  type StartingOwners,
+} from "../events/workflow.ts";
 import type { OverviewTasks } from "../events/overview.ts";
 import type { DateOnly } from "../lib/dates.ts";
 import { authorize } from "../lib/permissions.ts";
 import type { EventScopedAction } from "../lib/permissions.ts";
 import { snowflakeTime } from "../lib/snowflake.ts";
+import { lines } from "./render.ts";
 import {
   autocompleteRoute,
   commandRoute,
@@ -147,6 +165,8 @@ const NOT_CONFIRMED = safe`Discord could not confirm what this channel is, so no
 const ALREADY_LINKED = safe`This post already belongs to an event, so nothing was changed.`;
 const NO_EVENT_HERE = safe`Run this in an event's post, or choose the event in the event option.`;
 const BAD_POST_NAME = safe`This post's title has no letters or numbers to name an event with. Rename the post, then try again.`;
+const LINK_IN_NAME = safe`An event's name can't hold a server invite or a masked link, because the bot shows it in pings and reminders. Choose a name without one. Nothing was created.`;
+const LINK_IN_POST_NAME = safe`This post's title holds a server invite or a masked link, so it can't name an event. Rename the post, then try again. Nothing was changed.`;
 const MANY_LOST = safe`More than one event with this name and date has lost its post, so nothing was changed. Run /event link inside a replacement post and choose one in the event option.`;
 const NO_DATE = safe`Give the date for a new event, or choose an existing event in the event option. Nothing was changed.`;
 const LOST_AND_CLOSED = safe`An event with this name and date exists, but it is closed and its post has gone, so nothing was changed.`;
@@ -448,10 +468,14 @@ async function makePost(
   if (!valueOf(await claimEventPostAttempt(ctx.db, key))) {
     return message(IN_PROGRESS);
   }
+  const workflow = await overviewWorkflow(ctx.db, event);
   try {
     const post = await ctx.discord.createThread(
       { kind: "channel", guildId: event.guild_id, channelId: event.channel_id },
-      threadCreate({ name: name.title, ...renderOverview(event, NO_TASKS) }),
+      threadCreate({
+        name: name.title,
+        ...renderOverview(event, NO_TASKS, [], workflow),
+      }),
     );
     return await attachPost(ctx, event, {
       threadId: post.id,
@@ -530,10 +554,14 @@ async function postReplacement(
       eventId: event.id,
     }),
   );
+  const workflow = await overviewWorkflow(ctx.db, event);
   try {
     const post = await ctx.discord.createThread(
       { kind: "channel", guildId: event.guild_id, channelId: event.channel_id },
-      threadCreate({ name: name.title, ...renderOverview(event, tasks) }),
+      threadCreate({
+        name: name.title,
+        ...renderOverview(event, tasks, [], workflow),
+      }),
     );
     return { threadId: post.id, messageId: post.firstMessageId };
   } catch (error) {
@@ -637,6 +665,9 @@ async function finishCreate(ctx: FinishContext): Promise<MessageInput> {
     "name",
     ApplicationCommandOptionType.String,
   );
+  if (hasInviteOrMaskedLink(rawName)) {
+    return message(LINK_IN_NAME);
+  }
   const name = normaliseEventName(rawName);
   if (name === undefined) {
     return message(BAD_NAME);
@@ -648,6 +679,11 @@ async function finishCreate(ctx: FinishContext): Promise<MessageInput> {
   if (!date.ok) {
     return message(date.problem);
   }
+  const picked = startingOwners(payload);
+  if ("problem" in picked) {
+    return message(picked.problem);
+  }
+  const { owners } = picked;
   const forum = await chooseForum(ctx);
   if ("problem" in forum) {
     return message(forum.problem);
@@ -658,11 +694,13 @@ async function finishCreate(ctx: FinishContext): Promise<MessageInput> {
     name: name.name,
     eventDate: date.date,
   };
-  const named = valueOf(await listEventsNamed(db, identity)).rows;
+  const named = valueOf(await listEventsNamed(db, identity));
   const cleaned = rawName !== name.name;
   const pending = named.find((row) => row.thread_status === "pending");
   if (pending !== undefined) {
-    return resume(ctx, pending, name, cleaned);
+    return withOwners(ctx, pending, owners, () =>
+      resume(ctx, pending, name, cleaned),
+    );
   }
   const withPost = named.filter((row) => row.thread_status === "active");
   const existing =
@@ -682,7 +720,7 @@ async function finishCreate(ctx: FinishContext): Promise<MessageInput> {
     return message(MANY_LOST);
   }
   if (only !== undefined) {
-    return replacePost(ctx, only, name);
+    return withOwners(ctx, only, owners, () => replacePost(ctx, only, name));
   }
   if (lost.length > 0) {
     return message(LOST_AND_CLOSED);
@@ -694,7 +732,31 @@ async function finishCreate(ctx: FinishContext): Promise<MessageInput> {
   if (!inserted.ok && inserted.error.category === "parent_unavailable") {
     return message(NOT_MANAGED);
   }
-  return makePost(ctx, valueOf(inserted), name, cleaned);
+  // An earlier try of this create committed after the bot gave up on it.
+  if (!inserted.ok && inserted.error.category === "conflict") {
+    return message(IN_PROGRESS);
+  }
+  const event = valueOf(inserted);
+  return withOwners(ctx, event, owners, () =>
+    makePost(ctx, event, name, cleaned),
+  );
+}
+
+/**
+ * Puts the people picked on /event create on their steps before the post is drawn, and
+ * adds what happened to the reply.
+ */
+async function withOwners(
+  ctx: FinishContext,
+  event: EventRow,
+  owners: StartingOwners,
+  next: () => Promise<MessageInput>,
+): Promise<MessageInput> {
+  const notes = await assignStartingOwners(ctx, event, owners);
+  const reply = await next();
+  return notes.length === 0
+    ? reply
+    : { ...reply, content: lines([reply.content, ...notes]) ?? reply.content };
 }
 
 /** What Discord says the channel is, or why that could not be learned. */
@@ -782,7 +844,7 @@ async function linkRow(
     name,
     eventDate: date,
   };
-  const named = valueOf(await listEventsNamed(db, identity)).rows;
+  const named = valueOf(await listEventsNamed(db, identity));
   const pending = named.find((row) => row.thread_status === "pending");
   const live = named.find((row) => row.thread_status === "active");
   if (pending === undefined && typeof live?.thread_id === "string") {
@@ -834,10 +896,11 @@ async function postOverview(
   { adopted, recovered }: { adopted: boolean; recovered: boolean },
 ): Promise<MessageInput> {
   const linked = linkedText(event, recovered);
+  const workflow = await overviewWorkflow(ctx.db, event);
   try {
     const sent = await ctx.discord.sendMessage(
       threadTarget(event.guild_id, threadId),
-      channelMessage(renderOverview(event, NO_TASKS)),
+      channelMessage(renderOverview(event, NO_TASKS, [], workflow)),
     );
     const saved = await saveOverviewId(ctx, event, sent.id);
     if (!saved.ok) {
@@ -876,7 +939,9 @@ async function relinkOwnPost(
   }
   const relinked = valueOf(row);
   const linked = linkedText(relinked, true);
-  return (await refreshOverview(ctx, relinked))
+  const current = await refreshOverview(ctx, relinked);
+  await retryHandoffs(ctx, relinked);
+  return current
     ? message(linked)
     : message(safe`${linked} ${OVERVIEW_BEHIND}`);
 }
@@ -948,8 +1013,22 @@ async function linkChosen(
   });
 }
 
-/** The post is now the event's. What is left is an overview for it. */
+/**
+ * The post is now the event's. What is left is an overview for it, and any hand-off a
+ * done step is still owed because it had no post to go to.
+ */
 async function settleOverview(
+  ctx: FinishContext,
+  event: EventRow,
+  thread: ChannelSummary,
+  how: { adopted: boolean; recovered: boolean },
+): Promise<MessageInput> {
+  const reply = await settleOverviewOnly(ctx, event, thread, how);
+  await retryHandoffs(ctx, event);
+  return reply;
+}
+
+async function settleOverviewOnly(
   ctx: FinishContext,
   event: EventRow,
   thread: ChannelSummary,
@@ -1010,6 +1089,9 @@ async function finishLink(ctx: FinishContext): Promise<MessageInput> {
   }
   if (held !== null) {
     return message(ALREADY_LINKED);
+  }
+  if (hasInviteOrMaskedLink(thread.name)) {
+    return message(LINK_IN_POST_NAME);
   }
   const name = normaliseEventName(thread.name);
   if (name === undefined) {
@@ -1134,7 +1216,7 @@ const eventChoices: AutocompleteRoute["choices"] = async (
   typed,
 ) => {
   const found = await searchEvents(db, { guildId, term: typed });
-  return found.ok ? found.value.rows.map(eventChoice) : [];
+  return found.ok ? found.value.map(eventChoice) : [];
 };
 
 function postLine(event: EventRow): SafeText {
@@ -1169,7 +1251,8 @@ async function finishStatus(
     postLine(event),
     ...(forum?.status === "active" ? [] : [FORUM_NOTE]),
   ];
-  return { ...renderOverview(event, tasks, notes), components: [] };
+  const workflow = valueOf(await getEventWorkflow(db, key)) ?? undefined;
+  return { ...renderOverview(event, tasks, notes, workflow), components: [] };
 }
 
 function listLine(
@@ -1428,6 +1511,7 @@ export const handler: Handler = {
               description: "Where to post, if more than one forum is managed",
               channel_types: [ChannelType.GuildForum],
             },
+            ...STARTING_OWNER_OPTIONS,
           ],
         },
         {
@@ -1469,6 +1553,9 @@ export const handler: Handler = {
           description: "Delete an event and its tasks, after you confirm",
           options: [EVENT_OPTION],
         },
+        assignSubcommand,
+        unassignSubcommand,
+        pickupSubcommand,
       ],
     },
   ],
@@ -1554,6 +1641,22 @@ export const handler: Handler = {
     autocompleteRoute({
       path: "event delete",
       action: "event.delete",
+      choices: eventChoices,
+    }),
+    ...workflowRoutes,
+    autocompleteRoute({
+      path: "event assign",
+      action: "event.assign",
+      choices: eventChoices,
+    }),
+    autocompleteRoute({
+      path: "event unassign",
+      action: "event.unassign",
+      choices: eventChoices,
+    }),
+    autocompleteRoute({
+      path: "event pickup",
+      action: "event.pickup",
       choices: eventChoices,
     }),
   ],

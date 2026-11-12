@@ -11,9 +11,21 @@ import {
 } from "discord-api-types/v10";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { POST } from "../../api/interactions.ts";
+import { testDatabaseUrl } from "../../test/support/sql-client.ts";
 
 const waitUntil = vi.hoisted(() => vi.fn());
 vi.mock("@vercel/functions", () => ({ waitUntil }));
+// The database the endpoint builds from its settings reads nothing, and saves a draft.
+vi.mock("../db/neon.ts", async () => {
+  const { names, recordingSql } =
+    await import("../../test/support/sql-client.ts");
+  return {
+    neonRunner: () =>
+      recordingSql((call) => ({
+        rows: names(call, "save_setup_draft") ? [{ value: true }] : [],
+      })).sql,
+  };
+});
 
 const { publicKey, privateKey } = generateKeyPairSync("ed25519");
 const publicKeyHex = publicKey
@@ -685,8 +697,11 @@ describe("work done after the reply", () => {
         type: ApplicationCommandType.ChatInput,
         name: "setup",
         options: [
-          { name: "officer_role", type: 8, value: ROLE_A },
-          { name: "admin_role", type: 8, value: ROLE_B },
+          { name: "eboard_role", type: 8, value: ROLE_B },
+          { name: "events_directors_role", type: 8, value: ROLE_A },
+          { name: "events_committee_role", type: 8, value: ROLE_A },
+          { name: "treasury_role", type: 8, value: ROLE_A },
+          { name: "marketing_role", type: 8, value: ROLE_A },
         ],
         resolved: {
           roles: { [ROLE_A]: roleRow(ROLE_A), [ROLE_B]: roleRow(ROLE_B) },
@@ -699,9 +714,6 @@ describe("work done after the reply", () => {
     send.mockReset();
     send.mockImplementation((input, init) => {
       const url = input as string;
-      if (url.includes("/rest/v1/")) {
-        return Promise.resolve(Response.json([]));
-      }
       if (url.endsWith("/roles")) {
         return Promise.resolve(Response.json([roleRow(ROLE_A)]));
       }
@@ -710,11 +722,7 @@ describe("work done after the reply", () => {
       );
     });
     vi.stubGlobal("fetch", send);
-    vi.stubEnv("SUPABASE_URL", "https://project.example.test");
-    vi.stubEnv(
-      "SUPABASE_SECRET_KEY",
-      ["sb", "secret", "x".repeat(24)].join("_"),
-    );
+    vi.stubEnv("DATABASE_URL", testDatabaseUrl());
     vi.stubEnv("DISCORD_BOT_TOKEN", "unit-test-bot-token");
   });
 

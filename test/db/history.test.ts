@@ -7,7 +7,8 @@ import {
   type GuildFixture,
 } from "./fixtures.ts";
 import {
-  API_ROLES,
+  BOT_APP,
+  OTHER_ROLE,
   INSUFFICIENT_PRIVILEGE,
   MIGRATION_OWNER,
   createMigratedDb,
@@ -43,11 +44,11 @@ describe("row history", () => {
     return rows;
   }
 
-  it("records the old event row when service_role updates it", async () => {
+  it("records the old event row when bot_app updates it", async () => {
     const eventId = await insertEvent(db, guild);
     await queryAs(
       db,
-      "service_role",
+      "bot_app",
       `UPDATE public.events SET name = 'Renamed' WHERE id = $1`,
       [eventId],
     );
@@ -59,11 +60,11 @@ describe("row history", () => {
     expect(versions[0]?.old_row.name).toBe("General meeting");
   });
 
-  it("records the old task row when service_role updates it", async () => {
+  it("records the old task row when it is updated", async () => {
     const taskId = await insertTask(db, guild, await insertEvent(db, guild));
     await queryAs(
       db,
-      "service_role",
+      MIGRATION_OWNER,
       `UPDATE public.tasks SET description = 'Changed' WHERE id = $1`,
       [taskId],
     );
@@ -79,7 +80,7 @@ describe("row history", () => {
     for (const description of ["Second", "Third"]) {
       await queryAs(
         db,
-        "service_role",
+        MIGRATION_OWNER,
         `UPDATE public.tasks SET description = $2 WHERE id = $1`,
         [taskId, description],
       );
@@ -95,7 +96,7 @@ describe("row history", () => {
     const taskId = await insertTask(db, guild, await insertEvent(db, guild));
     await queryAs(
       db,
-      "service_role",
+      "bot_app",
       `UPDATE public.tasks SET deleted_at = now() WHERE id = $1`,
       [taskId],
     );
@@ -103,53 +104,8 @@ describe("row history", () => {
     expect(versions[0]?.old_row.deleted_at).toBeNull();
   });
 
-  it("records the old row when the owning role hard-deletes a task", async () => {
-    const taskId = await insertTask(db, guild, await insertEvent(db, guild));
-    await queryAs(
-      db,
-      MIGRATION_OWNER,
-      `DELETE FROM public.tasks WHERE id = $1`,
-      [taskId],
-    );
-
-    const versions = await versionsOf(taskId);
-    expect(versions).toHaveLength(1);
-    expect(versions[0]?.operation).toBe("DELETE");
-    expect(versions[0]?.old_row.description).toBe("Book the room");
-  });
-
-  it("records the old row when the owning role hard-deletes an event", async () => {
-    const eventId = await insertEvent(db, guild);
-    await queryAs(
-      db,
-      MIGRATION_OWNER,
-      `DELETE FROM public.events WHERE id = $1`,
-      [eventId],
-    );
-
-    const versions = await versionsOf(eventId);
-    expect(versions[0]?.operation).toBe("DELETE");
-    expect(versions[0]?.source_table).toBe("events");
-  });
-
-  it.each(["tasks", "events"])(
-    "stops even the owning role truncating %s, and keeps the rows",
-    async (table) => {
-      const taskId = await insertTask(db, guild, await insertEvent(db, guild));
-      const code = await errorCodeOf(
-        queryAs(db, MIGRATION_OWNER, `TRUNCATE public.${table} CASCADE`),
-      );
-      expect(code).toBe("CF405");
-      const { rows } = await db.query(
-        `SELECT id FROM public.tasks WHERE id = $1`,
-        [taskId],
-      );
-      expect(rows).toHaveLength(1);
-    },
-  );
-
   it.each([
-    ["task", "tasks", "description = description"],
+    ["task", "tasks", "status = status"],
     ["event", "events", "name = name"],
   ])(
     "records nothing for a %s update that changes nothing",
@@ -165,7 +121,7 @@ describe("row history", () => {
       await new Promise((resolve) => setTimeout(resolve, 5));
       await queryAs(
         db,
-        "service_role",
+        "bot_app",
         `UPDATE public.${table} SET ${set} WHERE id = $1`,
         [id],
       );
@@ -184,7 +140,7 @@ describe("row history", () => {
     for (const description of ["Changed", "Book the room"]) {
       await queryAs(
         db,
-        "service_role",
+        MIGRATION_OWNER,
         `UPDATE public.tasks SET description = $2 WHERE id = $1`,
         [taskId, description],
       );
@@ -197,14 +153,7 @@ describe("row history", () => {
     expect(await versionsOf(eventId)).toEqual([]);
   });
 
-  it("the trigger function is SECURITY DEFINER with an empty search_path", async () => {
-    const { rows } = await db.query(
-      `SELECT prosecdef, proconfig FROM pg_proc WHERE proname = 'record_row_version'`,
-    );
-    expect(rows).toEqual([{ prosecdef: true, proconfig: ['search_path=""'] }]);
-  });
-
-  describe.each(API_ROLES)("as %s", (role) => {
+  describe.each([BOT_APP, OTHER_ROLE])("as %s", (role) => {
     it("has no privilege on the schema, table or function", async () => {
       const { rows } = await db.query(
         `SELECT

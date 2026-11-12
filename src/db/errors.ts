@@ -1,7 +1,7 @@
 /**
- * Database failures as a fixed category and a Postgres code. PostgREST also returns
- * `message`, `details` and `hint`, which can quote the failing row, so those are
- * dropped here and never reach a caller, a log line or `job_runs`.
+ * Database failures as a fixed category and a Postgres code (SQLSTATE). The driver also
+ * gives a message, a detail and a hint, which can quote the failing row or the query,
+ * so those are dropped here and never reach a caller, a log line or `job_runs`.
  */
 
 export type DbErrorCategory =
@@ -19,11 +19,11 @@ export type DbErrorCategory =
   | "event_task_limit"
   /** This officer has created as many tasks as they may for now. */
   | "actor_task_limit"
+  /** The step already has as many people as it may. */
+  | "step_assignee_limit"
   | "conflict"
   | "constraint"
   | "forbidden"
-  /** The database returned a row or value this code cannot read. */
-  | "bad_row"
   | "unavailable"
   | "unexpected";
 
@@ -45,6 +45,7 @@ const CATEGORY_BY_CODE = new Map<string, DbErrorCategory>([
   ["CF412", "task_changed"],
   ["CF429", "event_task_limit"],
   ["CF430", "actor_task_limit"],
+  ["CF431", "step_assignee_limit"],
   ["23505", "conflict"],
   ["23502", "constraint"],
   ["23503", "constraint"],
@@ -55,16 +56,12 @@ const CATEGORY_BY_CODE = new Map<string, DbErrorCategory>([
   ["22007", "constraint"],
   ["22008", "constraint"],
   ["42501", "forbidden"],
-  ["PGRST301", "forbidden"],
-  ["PGRST302", "forbidden"],
   // Lost a lock or was cancelled: nothing was wrong with the request, so try later.
   ["40001", "unavailable"],
   ["40P01", "unavailable"],
   ["55P03", "unavailable"],
   ["57014", "unavailable"],
 ]);
-
-const POSTGRES_CODE = /^(?:[0-9A-Z]{5}|PGRST[0-9]{3})$/;
 
 export function failure(
   category: DbErrorCategory,
@@ -77,30 +74,46 @@ export function refused(): DbFailure {
   return failure("invalid_input");
 }
 
+/** SQLSTATE classes that say the server could not do the work now, not that it was wrong. */
+const UNAVAILABLE_CLASSES = new Set(["08", "53", "57", "58", "XX"]);
+
+/** SQLSTATE classes for a refused login or role, which look like any other refusal. */
+const FORBIDDEN_CLASSES = new Set(["28"]);
+
+const SQLSTATE = /^[0-9A-Z]{5}$/;
+
 /**
- * Reads only the code from a PostgREST error. A status of 0 means the request never
- * got an answer, and the client then fills `code` from the network error instead.
+ * Reads only the SQLSTATE from a failed statement, never its message, which can quote
+ * the statement, its parameters or the failing row. An error the server raised has a
+ * severity. Neon's driver also throws `NeonDbError` with none when the request itself
+ * failed, such as a network error, an HTTP error or an abort, and that is `unavailable`.
+ * Anything else is a fault in the code, such as a TypeError, and is `unexpected` so that
+ * it is not retried as an outage.
  */
-export function failureFromResponse(error: unknown, status: number): DbFailure {
-  if (status === 0) {
+export function failureFromError(error: unknown): DbFailure {
+  if (typeof error !== "object" || error === null) {
+    return failure("unexpected");
+  }
+  const { code, severity, name } = error as {
+    code?: unknown;
+    severity?: unknown;
+    name?: unknown;
+  };
+  if (typeof severity !== "string") {
+    return failure(name === "NeonDbError" ? "unavailable" : "unexpected");
+  }
+  if (typeof code !== "string" || !SQLSTATE.test(code)) {
     return failure("unavailable");
   }
-  const raw =
-    typeof error === "object" && error !== null && "code" in error
-      ? error.code
-      : undefined;
-  if (typeof raw === "string" && POSTGRES_CODE.test(raw)) {
-    return failure(
-      CATEGORY_BY_CODE.get(raw) ??
-        (status >= 500 ? "unavailable" : "unexpected"),
-      raw,
-    );
-  }
-  if (status === 401 || status === 403) {
-    return failure("forbidden");
-  }
+  const codeClass = code.slice(0, 2);
   return failure(
-    status === 429 || status >= 500 ? "unavailable" : "unexpected",
+    CATEGORY_BY_CODE.get(code) ??
+      (FORBIDDEN_CLASSES.has(codeClass)
+        ? "forbidden"
+        : UNAVAILABLE_CLASSES.has(codeClass)
+          ? "unavailable"
+          : "unexpected"),
+    code,
   );
 }
 

@@ -1,15 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import {
-  fakeDb,
-  GUILD_ID,
-  managedRow,
-} from "../../test/support/interactions.ts";
-import { testSnowflake } from "../../test/support/mock-postgrest.ts";
-import {
-  getDb,
-  getInteractionDb,
-  INTERACTION_DEADLINE_MS,
-} from "../db/client.ts";
+import { GUILD_ID, managedRow } from "../../test/support/interactions.ts";
+import { fakeId } from "../../test/support/ids.ts";
+import { serverError } from "../../test/support/sql-client.ts";
+import { stubDb } from "../../test/support/stub-db.ts";
+import { getDb, getInteractionDb } from "../db/client.ts";
 import { createDiscordClient, DiscordClientError } from "../discord/client.ts";
 import { threadCreate } from "../discord/outbound.ts";
 import { plain, safe } from "../discord/safe-text.ts";
@@ -22,18 +16,14 @@ describe("liveDependencies", () => {
     expect(db).toBe(getInteractionDb);
     expect(finishDb).toBe(getDb);
   });
-
-  it("leaves time in Discord's 3 seconds for the fixed reply", () => {
-    expect(INTERACTION_DEADLINE_MS).toBe(1500);
-  });
 });
 
 describe("managedChannelCheck", () => {
-  const CHANNEL = testSnowflake();
+  const CHANNEL = fakeId();
   const TOKEN = "unit-test-bot-token-value";
 
   it("accepts an active forum", async () => {
-    const { db } = fakeDb({ channels: [managedRow(CHANNEL)] });
+    const { db } = stubDb(() => ({ rows: [managedRow(CHANNEL)] }));
 
     await expect(
       managedChannelCheck(db).isManaged(GUILD_ID, CHANNEL),
@@ -43,7 +33,9 @@ describe("managedChannelCheck", () => {
   it.each(["removed", "unavailable"] as const)(
     "refuses a forum that is %s",
     async (status) => {
-      const { db } = fakeDb({ channels: [managedRow(CHANNEL, status)] });
+      const { db } = stubDb(() => ({
+        rows: [managedRow(CHANNEL, status)],
+      }));
 
       await expect(
         managedChannelCheck(db).isManaged(GUILD_ID, CHANNEL),
@@ -52,7 +44,7 @@ describe("managedChannelCheck", () => {
   );
 
   it("refuses a channel with no row", async () => {
-    const { db } = fakeDb();
+    const { db } = stubDb();
 
     await expect(
       managedChannelCheck(db).isManaged(GUILD_ID, CHANNEL),
@@ -60,10 +52,7 @@ describe("managedChannelCheck", () => {
   });
 
   it("throws when the database cannot answer, so it is not read as unmanaged", async () => {
-    const { db } = fakeDb({
-      channels: [managedRow(CHANNEL)],
-      failing: { path: "managed_channels", status: 503 },
-    });
+    const { db } = stubDb(() => serverError("XX000"));
 
     await expect(
       managedChannelCheck(db).isManaged(GUILD_ID, CHANNEL),
@@ -71,10 +60,7 @@ describe("managedChannelCheck", () => {
   });
 
   it("refuses the send as a failed check when the database cannot answer", async () => {
-    const { db } = fakeDb({
-      channels: [managedRow(CHANNEL)],
-      failing: { path: "managed_channels", status: 503 },
-    });
+    const { db } = stubDb(() => serverError("XX000"));
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
       .mockRejectedValue(new TypeError("no network in this test"));
@@ -82,7 +68,7 @@ describe("managedChannelCheck", () => {
       check: managedChannelCheck(db),
       env: {
         DISCORD_BOT_TOKEN: TOKEN,
-        DISCORD_APP_ID: testSnowflake(),
+        DISCORD_APP_ID: fakeId(),
       },
     });
 

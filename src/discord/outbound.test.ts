@@ -19,29 +19,32 @@ import {
   pong,
   roleSelect,
   serializeDirectResponse,
-  serializeOutboundBody,
   stringSelect,
   textInputRow,
   threadCreate,
   updateMessage,
 } from "./outbound.ts";
-import type { MessageInput, OutboundBody, OutboundKind } from "./outbound.ts";
+import type {
+  MessageInput,
+  OutboundBody,
+  OutboundKind,
+  Part,
+} from "./outbound.ts";
 import {
   escapeUserText,
   plain,
   plainLabel,
+  roleMention,
   safe,
   userMention,
 } from "./safe-text.ts";
-
-// Built at runtime: the secret scan refuses any literal shaped like a Discord ID.
-function fakeId(n: number): string {
-  return String(10n ** 17n + BigInt(n));
-}
+import { fakeId } from "../../test/support/ids.ts";
 
 const NAMED_USER = fakeId(1);
 const OTHER_USER = fakeId(2);
 const ROLE = fakeId(3);
+const GUILD = fakeId(4);
+const OTHER_ROLE = fakeId(5);
 
 const HOSTILE_CORPUS = [
   "@everyone",
@@ -64,7 +67,7 @@ const HOSTILE_CORPUS = [
 type Wire = Record<string, unknown>;
 
 function wire(body: OutboundBody<OutboundKind>): Wire {
-  return JSON.parse(JSON.stringify(body)) as Wire;
+  return JSON.parse(JSON.stringify(body.payload)) as Wire;
 }
 
 function hasLiveSyntax(text: string): boolean {
@@ -172,6 +175,99 @@ describe.each(BUILDERS)("%s", (_name, build, message, flags) => {
     },
   );
 
+  it("pings only the named roles, and no role the text merely shows", () => {
+    const content = safe`${roleMention(ROLE)} ${roleMention(OTHER_ROLE)} done`;
+
+    const fields = message(
+      wire(
+        build({
+          content,
+          mentionUserIds: [NAMED_USER],
+          mentionRoleIds: [ROLE, ROLE],
+          roleGuildId: GUILD,
+        }),
+      ),
+    );
+
+    expect(fields.allowed_mentions).toEqual({
+      parse: [],
+      users: [NAMED_USER],
+      roles: [ROLE],
+    });
+  });
+
+  it("leaves roles out of allowed_mentions when none are named", () => {
+    const fields = message(
+      wire(
+        build({
+          content: safe`${roleMention(ROLE)}`,
+          mentionUserIds: [],
+          mentionRoleIds: [],
+          roleGuildId: GUILD,
+        }),
+      ),
+    );
+
+    expect(fields.allowed_mentions).toEqual({ parse: [], users: [] });
+  });
+
+  it("refuses the guild's own ID as a role, since that is @everyone", () => {
+    const attempt = () =>
+      build({
+        content: safe`hi`,
+        mentionUserIds: [],
+        mentionRoleIds: [ROLE, GUILD],
+        roleGuildId: GUILD,
+      });
+
+    expect(attempt).toThrow(OutboundBodyError);
+    expect(attempt).toThrow(/^A message cannot mention @everyone$/);
+  });
+
+  it("refuses a role with no guild to check it against", () => {
+    for (const roleGuildId of [undefined, "", "everyone"]) {
+      const attempt = () =>
+        build({
+          content: safe`hi`,
+          mentionUserIds: [],
+          mentionRoleIds: [ROLE],
+          ...(roleGuildId === undefined ? {} : { roleGuildId }),
+        });
+
+      expect(attempt).toThrow(/^A role mention needs the guild it belongs to$/);
+    }
+  });
+
+  it.each(["everyone", "@here", "", "123", `<@&${ROLE}>`])(
+    "refuses %j as a mentioned role without repeating it",
+    (id) => {
+      const attempt = () =>
+        build({
+          content: safe`hi`,
+          mentionUserIds: [],
+          mentionRoleIds: [id],
+          roleGuildId: GUILD,
+        });
+
+      expect(attempt).toThrow(/^Every mentioned role must be a Discord ID$/);
+    },
+  );
+
+  it("refuses more than 100 mentioned roles", () => {
+    const mentionRoleIds = Array.from({ length: 101 }, (_, index) =>
+      fakeId(100 + index),
+    );
+    const input = (ids: string[]) => ({
+      content: safe`hi`,
+      mentionUserIds: [],
+      mentionRoleIds: ids,
+      roleGuildId: GUILD,
+    });
+
+    expect(() => build(input(mentionRoleIds))).toThrow(OutboundBodyError);
+    expect(() => build(input(mentionRoleIds.slice(0, 100)))).not.toThrow();
+  });
+
   it("refuses more than 100 mentioned users", () => {
     const mentionUserIds = Array.from({ length: 101 }, (_, index) =>
       fakeId(index),
@@ -278,18 +374,6 @@ describe("interaction responses", () => {
     expect(isEphemeralInitialResponse(pong())).toBe(false);
   });
 
-  it("isEphemeralInitialResponse refuses anything not built here", () => {
-    const forged = {
-      kind: "direct-response" as const,
-      type: 4,
-      data: { flags: 64 },
-      toJSON: () => ({ type: 4, data: { flags: 64 } }),
-    };
-
-    // @ts-expect-error A plain object must not be accepted as a body.
-    expect(isEphemeralInitialResponse(forged)).toBe(false);
-  });
-
   it("isEphemeralInitialResponse ignores other body kinds", () => {
     const followed = followUp({ ...text, ephemeral: true });
 
@@ -317,7 +401,9 @@ describe("serializeDirectResponse", () => {
     ],
   ])("accepts %s", (_label, body) => {
     expect(isSilentResponse(body)).toBe(true);
-    expect(JSON.parse(serializeDirectResponse(body))).toEqual(wire(body));
+    expect(JSON.parse(serializeDirectResponse(body, GUILD))).toEqual(
+      wire(body),
+    );
   });
 
   it.each([
@@ -331,7 +417,7 @@ describe("serializeDirectResponse", () => {
     ["a thread", () => threadCreate({ ...text, name: plain`Event` })],
   ])("refuses %s at runtime", (_label, build) => {
     expect(isSilentResponse(build() as never)).toBe(false);
-    expect(() => serializeDirectResponse(build() as never)).toThrow(
+    expect(() => serializeDirectResponse(build() as never, GUILD)).toThrow(
       OutboundBodyError,
     );
   });
@@ -339,11 +425,11 @@ describe("serializeDirectResponse", () => {
   it("refuses public bodies in the types", () => {
     const attempts = [
       // @ts-expect-error A public reply needs the managed check.
-      () => serializeDirectResponse(interactionReply(text)),
+      () => serializeDirectResponse(interactionReply(text), GUILD),
       // @ts-expect-error A public defer needs the managed check.
-      () => serializeDirectResponse(deferredReply()),
+      () => serializeDirectResponse(deferredReply(), GUILD),
       // @ts-expect-error A message update needs the managed check.
-      () => serializeDirectResponse(updateMessage(text)),
+      () => serializeDirectResponse(updateMessage(text), GUILD),
     ];
 
     for (const attempt of attempts) {
@@ -351,23 +437,110 @@ describe("serializeDirectResponse", () => {
     }
   });
 
-  it("refuses a forged body, whatever it claims", () => {
-    const forged = {
-      kind: "direct-response" as const,
-      toJSON: () => ({ type: 4, data: { flags: 64, content: "@everyone" } }),
-    };
+  it("reads the payload, not the kind", () => {
+    const body = { ...deferredReply(), kind: "direct-response" as const };
 
-    // @ts-expect-error A plain object must not be accepted as a body.
-    expect(() => serializeDirectResponse(forged)).toThrow(OutboundBodyError);
+    expect(() => serializeDirectResponse(body, GUILD)).toThrow(
+      OutboundBodyError,
+    );
   });
 
-  it("does not trust the kind of a public body", () => {
-    const body = deferredReply();
+  it("answers Discord's ping with no guild", () => {
+    expect(JSON.parse(serializeDirectResponse(pong(), undefined))).toEqual({
+      type: 1,
+    });
+  });
 
-    expect(() => {
-      (body as { kind: string }).kind = "direct-response";
-    }).toThrow(TypeError);
-    expect(() => serializeDirectResponse(body as never)).toThrow(
+  /** A body written by hand, as no builder would write it. */
+  const direct = (payload: object) =>
+    ({ kind: "direct-response", payload }) as OutboundBody<"direct-response">;
+  const EPHEMERAL = {
+    content: "hi",
+    allowed_mentions: { parse: [], users: [] },
+    flags: 64,
+  };
+
+  it.each<[string, object]>([
+    [
+      "a link button in an ephemeral reply",
+      {
+        type: 4,
+        data: {
+          ...EPHEMERAL,
+          components: [
+            {
+              type: 1,
+              components: [{ type: 2, style: 5, label: "Go", url: "x" }],
+            },
+          ],
+        },
+      },
+    ],
+    [
+      "a link button in a modal",
+      {
+        type: 9,
+        data: {
+          custom_id: "m",
+          title: "Title",
+          components: [{ type: 1, components: [{ type: 2, style: 5 }] }],
+        },
+      },
+    ],
+    [
+      "a live @everyone in a text display",
+      {
+        type: 4,
+        data: { ...EPHEMERAL, components: [{ type: 10, content: "@here" }] },
+      },
+    ],
+    ["an embed", { type: 4, data: { ...EPHEMERAL, embeds: [{}] } }],
+    [
+      "an ephemeral reply with no allowed_mentions",
+      { type: 4, data: { content: "hi", flags: 64 } },
+    ],
+    [
+      "a role named with no guild",
+      {
+        type: 4,
+        data: {
+          ...EPHEMERAL,
+          allowed_mentions: { parse: [], roles: [ROLE] },
+        },
+      },
+    ],
+  ])("refuses %s, as the REST client would", (label, payload) => {
+    const guild = label.endsWith("with no guild") ? undefined : GUILD;
+
+    expect(() => serializeDirectResponse(direct(payload), guild)).toThrow(
+      OutboundBodyError,
+    );
+  });
+
+  it("returns exactly the JSON it checked, whatever a getter says next", () => {
+    let reads = 0;
+    const data = {
+      ...EPHEMERAL,
+      get flags() {
+        reads += 1;
+        return reads === 1 ? 64 : 0;
+      },
+    };
+
+    const json = serializeDirectResponse(direct({ type: 4, data }), GUILD);
+
+    expect(reads).toBe(1);
+    expect(JSON.parse(json)).toEqual({ type: 4, data: EPHEMERAL });
+  });
+
+  it("refuses a public reply hidden behind toJSON", () => {
+    const body = direct({
+      type: 4,
+      data: EPHEMERAL,
+      toJSON: () => ({ type: 4, data: { ...EPHEMERAL, flags: 0 } }),
+    });
+
+    expect(() => serializeDirectResponse(body, GUILD)).toThrow(
       OutboundBodyError,
     );
   });
@@ -709,22 +882,6 @@ describe("components", () => {
     ).toThrow(OutboundBodyError);
   });
 
-  it("refuses a component not made here", () => {
-    const forged = {
-      kind: "row" as const,
-      toJSON: () => ({ type: 2, style: 5, url: "https://evil.example" }),
-    };
-
-    expect(() =>
-      channelMessage({
-        content: safe`hi`,
-        mentionUserIds: [],
-        // @ts-expect-error A plain object must not be accepted as a component.
-        components: [forged],
-      }),
-    ).toThrow(OutboundBodyError);
-  });
-
   it("has no way to make a link button", () => {
     const row = actionRow(
       button({
@@ -745,100 +902,31 @@ describe("components", () => {
   });
 });
 
-describe("OutboundBody", () => {
-  const safeBody = () =>
-    channelMessage({ content: safe`safe`, mentionUserIds: [] });
-  const everyone = {
-    content: "@everyone",
-    allowed_mentions: { parse: ["everyone"] },
-  };
+describe("built bodies", () => {
+  it("refuses a body or part written by hand at compile time", () => {
+    const takesBody = (body: OutboundBody<"channel-message">) => body.kind;
+    const takesButton = (part: Part<"button">) => part.kind;
 
-  it("cannot be changed through its JSON form", () => {
-    const body = safeBody();
+    const attempts = [
+      () =>
+        takesBody(
+          // @ts-expect-error Only the builders make a body.
+          {
+            kind: "channel-message",
+            payload: {
+              content: "@everyone",
+              allowed_mentions: { parse: ["everyone"] },
+            },
+          },
+        ),
+      () =>
+        // @ts-expect-error Only the builders make a part.
+        takesButton({ kind: "button", component: { type: 2 } }),
+    ];
 
-    const copy = body.toJSON() as { allowed_mentions: { parse: string[] } };
-    copy.allowed_mentions.parse.push("everyone");
-
-    expect(JSON.parse(serializeOutboundBody(body, "channel-message"))).toEqual({
-      content: "safe",
-      flags: 4,
-      allowed_mentions: { parse: [], users: [] },
-    });
-  });
-
-  it("is not satisfied by a plain object, in the types or at runtime", () => {
-    const forged = {
-      kind: "channel-message" as const,
-      ...everyone,
-      toJSON: () => null,
-    };
-
-    expect(() =>
-      // @ts-expect-error A plain object must not be accepted as a body.
-      serializeOutboundBody(forged, "channel-message"),
-    ).toThrow(OutboundBodyError);
-  });
-
-  it("cannot be forged through body.constructor", () => {
-    const Forge = safeBody().constructor as new (
-      ...args: unknown[]
-    ) => OutboundBody<"channel-message">;
-
-    for (const args of [
-      ["channel-message", everyone],
-      [Symbol("OutboundBody"), "channel-message", everyone],
-      [undefined, "channel-message", everyone],
-    ]) {
-      expect(() => new Forge(...args)).toThrow(OutboundBodyError);
-    }
-  });
-
-  it("cannot be forged through a subclass", () => {
-    const Parent = safeBody().constructor as new (
-      ...args: unknown[]
-    ) => OutboundBody<"channel-message">;
-    class Forged extends Parent {}
-
-    expect(() => new Forged("channel-message", everyone)).toThrow(
-      OutboundBodyError,
-    );
-    expect(() =>
-      Reflect.construct(Parent, ["channel-message", everyone], Forged),
-    ).toThrow(OutboundBodyError);
-  });
-
-  it("does not let its kind be rewritten", () => {
-    const body = safeBody();
-
-    expect(Object.isFrozen(body)).toBe(true);
-    expect(() => {
-      (body as { kind: string }).kind = "message-edit";
-    }).toThrow(TypeError);
-    expect(body.kind).toBe("channel-message");
-  });
-
-  it("cannot have its class or prototype patched", () => {
-    const body = safeBody();
-
-    expect(Object.isFrozen(body.constructor)).toBe(true);
-    expect(Object.isFrozen(Object.getPrototypeOf(body))).toBe(true);
-  });
-
-  it("is refused when serialized as another kind", () => {
-    const edit = messageEdit({ content: safe`edit`, mentionUserIds: [] });
-
-    expect(() =>
-      // @ts-expect-error An edit body must not be accepted as a new message.
-      serializeOutboundBody(edit, "channel-message"),
-    ).toThrow(OutboundBodyError);
-  });
-
-  it("keeps each kind of body apart in the types", () => {
-    const edit = messageEdit({ content: safe`edit`, mentionUserIds: [] });
-
-    // @ts-expect-error An edit body must not be accepted as a new message.
-    const message: OutboundBody<"channel-message"> = edit;
-
-    expect(message.kind).toBe("message-edit");
+    expect(attempts).toHaveLength(2);
+    expect(
+      takesBody(channelMessage({ content: safe`hi`, mentionUserIds: [] })),
+    ).toBe("channel-message");
   });
 });

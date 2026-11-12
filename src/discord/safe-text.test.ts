@@ -15,14 +15,11 @@ import {
   safeTextValue,
   textLength,
   truncateUserText,
+  roleMention,
   userMention,
 } from "./safe-text.ts";
 import type { ChunkLine, SafeText } from "./safe-text.ts";
-
-// Built at runtime: the secret scan refuses any literal shaped like a Discord ID.
-function fakeId(n: number): string {
-  return String(10n ** 17n + BigInt(n));
-}
+import { fakeId } from "../../test/support/ids.ts";
 
 // The hostile inputs are large enough that linear work ends well inside this limit, even
 // if it can take several seconds on a busy machine, and heavy quadratic work takes longer.
@@ -135,6 +132,18 @@ describe("escapeUserText", () => {
     ["a variation selector on a letter", "a\u{FE0F}b", "ab"],
   ])("removes ZWJ and selectors elsewhere: %s", (_label, raw, expected) => {
     expect(render(raw)).toBe(expected);
+  });
+
+  it.each([
+    ["the combining grapheme joiner", "a\u{34F}b"],
+    ["a variation selector other than VS16", "a\u{FE00}b"],
+    ["VS15", "a\u{FE0E}b"],
+    ["a supplementary variation selector", "a\u{E0100}b"],
+    ["the object replacement character", "a\u{FFFC}b"],
+    ["the null notehead", "a\u{1D159}b"],
+    ["the Mongolian vowel separator", "a\u{180E}b"],
+  ])("removes %s", (_label, raw) => {
+    expect(render(raw)).toBe("ab");
   });
 
   it.each([
@@ -323,7 +332,7 @@ describe("review regressions", () => {
     expect(chunks.length).toBeGreaterThan(0);
   });
 
-  it("normalises again after stripping", () => {
+  it("normalises after stripping", () => {
     expect(render("e​́")).toBe("é");
   });
 
@@ -331,16 +340,27 @@ describe("review regressions", () => {
     ["an unassigned code point", "a\u{50000}b", "ab"],
     ["a null notehead", "a\u{1D159}b", "ab"],
     ["an object replacement", "a\u{FFFC}b", "ab"],
+    ["a variation selector", "a\u{FE00}b", "ab"],
+    ["a combining grapheme joiner", "a\u{034F}b", "ab"],
+    ["a Mongolian vowel separator", "a\u{180E}b", "ab"],
+    ["a Hangul filler", "a\u{3164}b", "ab"],
   ])("strips %s", (_label, raw, expected) => {
     expect(render(raw)).toBe(expected);
   });
 
-  it.each(["\u{1D159}", "\u{FFFC}", "\u{50000}"])(
+  it.each(["\u{1D159}", "\u{FFFC}", "\u{50000}", "\u{034F}", "\u{3164}"])(
     "refuses %j, which has nothing visible",
     (raw) => {
       expect(() => escapeUserText(raw)).toThrow(SafeTextError);
     },
   );
+
+  it("keeps the joiner and VS16 inside an emoji", () => {
+    expect(render("\u{1F469}\u{200D}\u{1F4BB}")).toBe(
+      "\u{1F469}\u{200D}\u{1F4BB}",
+    );
+    expect(render("\u{2764}\u{FE0F}")).toBe("\u{2764}\u{FE0F}");
+  });
 
   it.each([
     ["́Mixer", "Mixer"],
@@ -420,8 +440,16 @@ describe("containsInviteOrMaskedLink", () => {
     "[log in](evil)",
     "[Portal login](https://evil.example)",
     "discord.\u200Bgg/abc",
+    "discord\uFE00.gg/x",
+    "discord.\u034Fgg/x",
     "[log in]\u200B(evil)",
-  ])("finds %s", (text) => {
+    "disc\u034Ford.gg/x",
+    "[log in]\u034F(evil)",
+    "[log in](\u034Fevil)",
+    "discord\uFFFC.gg/x",
+    "discord.\u{1D159}gg/x",
+    "discord\u{E0100}.gg/x",
+  ])("finds %j", (text) => {
     expect(containsInviteOrMaskedLink(text)).toBe(true);
   });
 
@@ -512,6 +540,9 @@ describe("mentions and links", () => {
   it("renders live mention syntax only for a valid ID", () => {
     expect(safeTextValue(userMention(ID))).toBe(`<@${ID}>`);
     expect(safeTextValue(channelMention(ID))).toBe(`<#${ID}>`);
+    expect(safeTextValue(roleMention(ID))).toBe(`<@&${ID}>`);
+    expect(() => roleMention("everyone")).toThrow(SafeTextError);
+    expect(() => roleMention(`${ID}><@1`)).toThrow(SafeTextError);
     expect(() => userMention("everyone")).toThrow(SafeTextError);
     expect(() => userMention(`${ID}><@&1`)).toThrow(SafeTextError);
     expect(() => channelMention("1")).toThrow(SafeTextError);
@@ -603,6 +634,7 @@ describe("the length validator", () => {
       content: 2000,
       threadName: 100,
       mentionedUsers: 100,
+      mentionedRoles: 100,
       buttonLabel: 80,
       customId: 100,
       selectOptionLabel: 100,

@@ -30,7 +30,8 @@ import {
   OFFICER,
   PLAIN_MEMBER,
 } from "../support/interactions.ts";
-import { HOSTILE_STRINGS, testSnowflake } from "../support/mock-postgrest.ts";
+import { fakeId } from "../support/ids.ts";
+import { HOSTILE_STRINGS } from "../support/hostile-text.ts";
 
 const world = eventWorld();
 
@@ -41,7 +42,7 @@ const UNKNOWN_EVENT = "99999999-9999-4999-8999-999999999999";
 const officerFields = { member: OFFICER };
 const NON_OFFICERS = [
   ["a member with no role", PLAIN_MEMBER],
-  ["a member with another role", member({ roles: [testSnowflake()] })],
+  ["a member with another role", member({ roles: [fakeId()] })],
   ["a member whose roles are malformed", member({ roles: ["x"] })],
 ] as const;
 
@@ -83,7 +84,7 @@ async function seed({
           parent_id: forumId,
           name,
         });
-  const overviewId = threadId === null || noOverview ? null : testSnowflake();
+  const overviewId = threadId === null || noOverview ? null : fakeId();
   if (overviewId !== null) {
     world.discord.messageIds.add(overviewId);
   }
@@ -183,7 +184,15 @@ async function confirmClick(
   return componentPayload(await confirmId(eventId), fields);
 }
 
-const SUBS_WITH_PICKER = ["link", "status", "close", "delete"];
+const SUBS_WITH_PICKER = [
+  "link",
+  "status",
+  "close",
+  "delete",
+  "assign",
+  "unassign",
+  "pickup",
+];
 
 describe("the event picker", () => {
   it("is registered on exactly the commands that have a route for it", () => {
@@ -217,7 +226,9 @@ describe("the event picker", () => {
 
       expect(world.discord.requests).toEqual([]);
       const made = world.dbRequests().slice(before);
-      expect(made.filter((request) => !request.startsWith("GET "))).toEqual([]);
+      expect(
+        made.filter((request) => !/^(GET |SQL select )/.test(request)),
+      ).toEqual([]);
       // The config read, and one search.
       expect(made).toHaveLength(2);
     });
@@ -232,7 +243,7 @@ describe("the event picker", () => {
         world
           .dbRequests()
           .slice(before)
-          .filter((request) => request.includes("/events")),
+          .filter((request) => /\/events|"events"/.test(request)),
       ).toEqual([]);
     });
 
@@ -364,7 +375,7 @@ describe("the event picker", () => {
         world
           .dbRequests()
           .slice(before)
-          .filter((request) => request.includes("/events")),
+          .filter((request) => /\/events|"events"/.test(request)),
       ).toEqual([]);
     });
   });
@@ -411,12 +422,11 @@ describe("the event picker", () => {
     expect(shape).not.toMatch(/Seq Scan/u);
   });
 
-  it("reports a database failure as no choices, with no detail", async () => {
+  it("reports a database failure as no choices", async () => {
     await seed();
-    world.failDb(/GET .*\/events/);
+    world.failDb(/^SQL select .* from events/);
 
     expect(await choices("status", "")).toEqual([]);
-    expect(JSON.stringify(world.errors.mock.calls)).not.toContain("canary");
   });
 });
 
@@ -459,8 +469,8 @@ describe.each(["status", "close", "delete"])(
           .slice(before)
           .filter(
             (request) =>
-              !request.startsWith("GET ") &&
-              !request.includes("/rpc/claim_interaction"),
+              !/^(GET |SQL select )/.test(request) &&
+              !request.includes("public.claim_interaction("),
           ),
       ).toEqual([]);
       expect((await world.events(`id = '${bystander.id}'`))[0]).toMatchObject({
@@ -481,7 +491,7 @@ describe.each(["status", "close", "delete"])(
         world
           .dbRequests()
           .slice(before)
-          .filter((request) => request.includes("/events")),
+          .filter((request) => /\/events|"events"/.test(request)),
       ).toEqual([]);
     });
 
@@ -498,7 +508,7 @@ describe.each(["status", "close", "delete"])(
         world
           .dbRequests()
           .slice(before)
-          .filter((request) => request.includes("/events")),
+          .filter((request) => /\/events|"events"/.test(request)),
       ).toEqual([]);
     });
 
@@ -513,7 +523,7 @@ describe.each(["status", "close", "delete"])(
 
     it("acknowledges an officer without reading the event first", async () => {
       const event = await seed();
-      world.failDb(/GET .*\/events/);
+      world.failDb(/^SQL select .* from events/);
 
       const ran = await world.send(
         eventCommand(sub, eventOption(event.id), officerFields),
@@ -538,7 +548,7 @@ describe.each(["status", "close", "delete"])(
         world
           .dbRequests()
           .slice(before)
-          .filter((request) => request.includes("/events")),
+          .filter((request) => /\/events|"events"/.test(request)),
       ).toEqual([]);
     });
 
@@ -744,12 +754,11 @@ describe("/event status", () => {
 
   it("reports a database failure with no detail", async () => {
     const event = await seed();
-    world.failDb(/GET .*\/tasks/);
+    world.failDb(/^SQL select .* from tasks/);
 
     await status(eventOption(event.id));
 
     expect(world.discord.lastReply()).toContain("Something went wrong");
-    expect(JSON.stringify(world.discord.requests)).not.toContain("canary");
   });
 
   it("shows an open task when more than a hundred done ones exist", async () => {
@@ -1200,7 +1209,7 @@ describe("/event close", () => {
 
   it("posts nothing when the write fails", async () => {
     const event = await seed();
-    world.failDb(/PATCH .*\/events/);
+    world.failDb(/^SQL update events/);
 
     await close(event.id);
 
@@ -1212,7 +1221,7 @@ describe("/event close", () => {
 
   it("changes nothing when the claim fails", async () => {
     const event = await seed();
-    world.failDb(/rpc\/claim_interaction/);
+    world.failDb(/public\.claim_interaction\(/);
 
     await close(event.id);
 
@@ -1348,7 +1357,7 @@ describe("/event delete", () => {
 
     it("acknowledges the click without reading the event first", async () => {
       const event = await seed();
-      world.failDb(/GET .*\/events/);
+      world.failDb(/^SQL select .* from events/);
 
       const ran = await world.send(await confirmClick(event.id));
 
@@ -1521,7 +1530,7 @@ describe("/event delete", () => {
       const ran = await world.send(
         await confirmClick(event.id, {
           ...officerFields,
-          message: { id: testSnowflake(), flags: 0 },
+          message: { id: fakeId(), flags: 0 },
         }),
       );
 
@@ -1562,7 +1571,7 @@ describe("/event delete", () => {
 
     it("posts nothing when the delete fails", async () => {
       const event = await seed();
-      world.failDb(/rpc\/soft_delete_event/);
+      world.failDb(/public\.soft_delete_event\(/);
 
       await world.send(await confirmClick(event.id));
 

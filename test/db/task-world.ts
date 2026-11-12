@@ -32,7 +32,7 @@ import {
   member,
   OFFICER_ROLE,
 } from "../support/interactions.ts";
-import { testSnowflake } from "../support/mock-postgrest.ts";
+import { fakeId } from "../support/ids.ts";
 import { openBackend, type Backend } from "./backend.ts";
 import { insertEvent, insertGuild, type GuildFixture } from "./fixtures.ts";
 import { queryAs } from "./harness.ts";
@@ -61,15 +61,15 @@ export function unwrap<T>(result: DbResult<T>): T {
   return result.value;
 }
 
-export function officer(id = testSnowflake()) {
+export function officer(id = fakeId()) {
   return member({ id, roles: [OFFICER_ROLE] });
 }
 
-export function admin(id = testSnowflake()) {
+export function admin(id = fakeId()) {
   return member({ id, roles: [ADMIN_ROLE] });
 }
 
-export function plainMember(id = testSnowflake()) {
+export function plainMember(id = fakeId()) {
   return member({ id });
 }
 
@@ -113,9 +113,9 @@ export function fakeClient(overrides: Partial<DiscordClient> = {}) {
       notices.push({
         channelId:
           target.kind === "thread" ? target.threadId : target.channelId,
-        ...(body.toJSON() as Omit<Notice, "channelId">),
+        ...(body.payload as Omit<Notice, "channelId">),
       });
-      return Promise.resolve({ id: testSnowflake() });
+      return Promise.resolve({ id: fakeId() });
     },
     ...overrides,
   };
@@ -171,7 +171,7 @@ export interface TaskWorld {
   /** Dependencies whose work after the reply runs `stage` once, just before that write. */
   racing: (
     client: DiscordClient,
-    method: "POST" | "PATCH",
+    write: "insert" | "update" | "edit",
     stage: () => Promise<void>,
   ) => RouterDependencies;
   eventWithPost: () => Promise<{ eventId: string; threadId: string }>;
@@ -215,7 +215,7 @@ async function createdTask(
       guildId: GUILD_ID,
       eventId,
       assigneeId,
-      actorId: testSnowflake(),
+      actorId: fakeId(),
       description,
       dueDate: date(FAR_DUE),
     }),
@@ -229,10 +229,16 @@ export function useTaskWorld(): TaskWorld {
 
   world.db = () => world.backend.db;
   world.today = () => todayInZone(new Date(), TIMEZONE);
-  world.racing = (client, method, stage) => {
+  world.racing = (client, write, stage) => {
     let staged = false;
-    const db = world.backend.dbWith(async (sent, path) => {
-      if (!staged && sent === method && path.endsWith("/tasks")) {
+    const statement = {
+      insert: /^insert into tasks/,
+      update: /^update tasks/,
+      // A change of text, date or person goes through this one function.
+      edit: /^select public\.edit_task\(/,
+    }[write];
+    const db = world.backend.dbWith(async (text) => {
+      if (!staged && statement.test(text)) {
         staged = true;
         // PGlite's clock can repeat within a millisecond, and real timestamps do not.
         await new Promise((resolve) => setTimeout(resolve, 5));
@@ -250,7 +256,7 @@ export function useTaskWorld(): TaskWorld {
   });
   world.eventWithPost = async () => {
     const eventId = await insertEvent(world.backend.connection, world.fixture);
-    const threadId = testSnowflake();
+    const threadId = fakeId();
     unwrap(
       await setEventThread(world.db(), {
         guildId: GUILD_ID,
@@ -282,18 +288,18 @@ export function useTaskWorld(): TaskWorld {
 
   beforeAll(async () => {
     world.backend = await openBackend();
-    const forum = testSnowflake();
+    const forum = fakeId();
     await queryAs(
       world.backend.connection,
-      "service_role",
-      `SELECT public.apply_role_bindings($1, 0, $2, $3, $4)`,
-      [GUILD_ID, testSnowflake(), OFFICER_ROLE, ADMIN_ROLE],
+      "bot_app",
+      `SELECT public.apply_role_bindings($1, 0, $2, $3, $4, NULL, NULL, NULL, NULL)`,
+      [GUILD_ID, fakeId(), OFFICER_ROLE, ADMIN_ROLE],
     );
     await queryAs(
       world.backend.connection,
-      "service_role",
+      "bot_app",
       `SELECT public.apply_config_change($1, 1, $2, NULL, ARRAY[$3]::text[])`,
-      [GUILD_ID, testSnowflake(), forum],
+      [GUILD_ID, fakeId(), forum],
     );
     world.fixture = {
       guildId: GUILD_ID,

@@ -1,10 +1,11 @@
 /**
  * Builds interactions the way the endpoint receives them, and runs them through a
- * router with no network: the database answers from memory and Discord is a fake.
+ * router with no network: Discord is a fake.
  */
 
 import { generateKeyPairSync, sign } from "node:crypto";
 import {
+  ApplicationCommandOptionType,
   ApplicationCommandType,
   InteractionContextType,
   InteractionType,
@@ -15,7 +16,7 @@ import type {
   GuildRole,
 } from "../../src/discord/client.ts";
 import {
-  isAllowedGuildInteraction,
+  parseAllowedGuildInteraction,
   type GuildInteraction,
 } from "../../src/discord/interactions.ts";
 import {
@@ -25,11 +26,7 @@ import {
 } from "../../src/discord/verify.ts";
 import type { Router, RouterDependencies } from "../../src/handlers/router.ts";
 import type { DbClient } from "../../src/db/client.ts";
-import {
-  mockPostgrest,
-  testSnowflake,
-  type RecordedRequest,
-} from "./mock-postgrest.ts";
+import { fakeId } from "./ids.ts";
 
 const { publicKey, privateKey } = generateKeyPairSync("ed25519");
 const PUBLIC_KEY_HEX = publicKey
@@ -38,11 +35,11 @@ const PUBLIC_KEY_HEX = publicKey
   .toString("hex");
 const SIGNED_AT = "1700000000";
 
-export const GUILD_ID = testSnowflake();
-export const APP_ID = testSnowflake();
-export const MEMBER_ID = testSnowflake();
-export const OFFICER_ROLE = testSnowflake();
-export const ADMIN_ROLE = testSnowflake();
+export const GUILD_ID = fakeId();
+export const APP_ID = fakeId();
+export const MEMBER_ID = fakeId();
+export const OFFICER_ROLE = fakeId();
+export const ADMIN_ROLE = fakeId();
 export const ADMINISTRATOR_BIT = String(1n << 3n);
 const EPHEMERAL_FLAG = 64;
 
@@ -67,11 +64,11 @@ export const PLAIN_MEMBER = member();
 
 function base(fields: Record<string, unknown>): Record<string, unknown> {
   return {
-    id: testSnowflake(),
+    id: fakeId(),
     token: "test-interaction-token",
     application_id: APP_ID,
     guild_id: GUILD_ID,
-    channel: { id: testSnowflake(), type: 0 },
+    channel: { id: fakeId(), type: 0 },
     context: InteractionContextType.Guild,
     authorizing_integration_owners: { "0": GUILD_ID },
     member: ADMINISTRATOR,
@@ -98,7 +95,7 @@ export function componentPayload(
 ): Record<string, unknown> {
   return base({
     type: InteractionType.MessageComponent,
-    message: { id: testSnowflake(), flags: EPHEMERAL_FLAG },
+    message: { id: fakeId(), flags: EPHEMERAL_FLAG },
     data: { custom_id: customId, component_type: 2, ...data },
     ...fields,
   });
@@ -131,6 +128,53 @@ export function autocompletePayload(
   });
 }
 
+/** The /setup options, in the order the command asks for them. */
+export const SETUP_OPTIONS = [
+  "eboard_role",
+  "events_directors_role",
+  "events_committee_role",
+  "treasury_role",
+  "marketing_role",
+] as const;
+
+export type SetupOption = (typeof SETUP_OPTIONS)[number];
+
+/** A /setup command choosing these roles, each also given in `resolved` as Discord does. */
+export function setupCommandPayload(
+  roles: Record<SetupOption, GuildRole>,
+  fields: Record<string, unknown> = {},
+  extraOptions: unknown[] = [],
+): Record<string, unknown> {
+  return commandPayload("setup", fields, {
+    options: [
+      ...SETUP_OPTIONS.map((name) => ({
+        name,
+        type: ApplicationCommandOptionType.Role,
+        value: roles[name].id,
+      })),
+      ...extraOptions,
+    ],
+    resolved: {
+      roles: Object.fromEntries(
+        SETUP_OPTIONS.map((name) => [
+          roles[name].id,
+          { ...roles[name], permissions: String(roles[name].permissions) },
+        ]),
+      ),
+    },
+  });
+}
+
+/** The custom_id on the first button of a reply, such as /setup's Confirm. */
+export function firstCustomId(
+  edit: { components?: unknown[] } | undefined,
+): string {
+  const [row] = (edit?.components ?? []) as {
+    components: { custom_id: string }[];
+  }[];
+  return row?.components[0]?.custom_id ?? "";
+}
+
 /** Passes the real signature check, which is the only way to get these two values. */
 export function verify(payload: unknown): {
   interaction: GuildInteraction;
@@ -147,15 +191,12 @@ export function verify(payload: unknown): {
     PUBLIC_KEY_HEX,
     Number(SIGNED_AT) * 1000,
   );
-  const interaction = signed?.payload;
   const verified = signed && verifiedInteractionFrom(signed);
-  if (
-    verified === undefined ||
-    !isAllowedGuildInteraction(interaction, {
-      applicationId: APP_ID,
-      allowedGuildIds: new Set([GUILD_ID]),
-    })
-  ) {
+  const interaction = parseAllowedGuildInteraction(signed?.payload, {
+    applicationId: APP_ID,
+    allowedGuildIds: new Set([GUILD_ID]),
+  });
+  if (verified === undefined || interaction === undefined) {
     throw new Error("Test payload was not accepted");
   }
   return { interaction, verified };
@@ -165,6 +206,10 @@ export interface ConfigRow {
   guild_id: string;
   officer_role_id: string;
   admin_role_id: string;
+  eboard_role_id: string | null;
+  events_committee_role_id: string | null;
+  treasury_role_id: string | null;
+  marketing_role_id: string | null;
   timezone: string;
   reminders_enabled: boolean;
   version: number;
@@ -175,6 +220,10 @@ export function configRow(fields: Partial<ConfigRow> = {}): ConfigRow {
     guild_id: GUILD_ID,
     officer_role_id: OFFICER_ROLE,
     admin_role_id: ADMIN_ROLE,
+    eboard_role_id: null,
+    events_committee_role_id: null,
+    treasury_role_id: null,
+    marketing_role_id: null,
     timezone: "America/New_York",
     reminders_enabled: true,
     version: 3,
@@ -182,7 +231,7 @@ export function configRow(fields: Partial<ConfigRow> = {}): ConfigRow {
   };
 }
 
-interface ChannelRow {
+export interface ChannelRow {
   guild_id: string;
   channel_id: string;
   status: "active" | "unavailable" | "removed";
@@ -205,150 +254,17 @@ export interface ChangeRow {
   created_at: string;
 }
 
-export interface DbState {
-  config: ConfigRow | null;
-  channels: ChannelRow[];
-  changes: ChangeRow[];
-  /** Task rows for the open-task count, by channel. */
-  openTasks: Map<string, number>;
-  claimed: Set<string>;
-  /** Event rows, for what reads them by channel or ID. */
-  events?: Record<string, unknown>[];
-  /** Fails a request whose path holds this text, with this status and code. */
-  failing?: { path: string; status: number; code?: string };
-}
-
-const STALE = { status: 400, body: { code: "CF409", message: "row text" } };
-
-/** An in-memory stand-in with the version rules of the real database functions. */
-export function fakeDb(fields: Partial<DbState> = {}): {
-  db: DbClient;
-  state: DbState;
-  requests: RecordedRequest[];
-  rpcBodies: (name: string) => Record<string, unknown>[];
-} {
-  const state: DbState = {
-    config: null,
-    channels: [],
-    changes: [],
-    openTasks: new Map(),
-    claimed: new Set(),
-    ...fields,
-  };
-
-  function roleBindings(args: Record<string, unknown>) {
-    const current = state.config?.version ?? 0;
-    if (args.p_expected_version !== current) {
-      return STALE;
-    }
-    state.config = configRow({
-      officer_role_id: args.p_officer_role_id as string,
-      admin_role_id: args.p_admin_role_id as string,
-      version: current + 1,
-    });
-    return { body: current + 1 };
-  }
-
-  function configChange(args: Record<string, unknown>) {
-    if (
-      state.config === null ||
-      args.p_expected_version !== state.config.version
-    ) {
-      return STALE;
-    }
-    for (const id of args.p_remove_channel_ids as string[]) {
-      const row = state.channels.find(
-        (channel) => channel.channel_id === id && channel.status !== "removed",
-      );
-      if (row === undefined) {
-        return { status: 400, body: { code: "22023", message: "row text" } };
-      }
-      row.status = "removed";
-    }
-    for (const id of args.p_add_channel_ids as string[]) {
-      const row = state.channels.find((channel) => channel.channel_id === id);
-      if (row === undefined) {
-        state.channels.push(managedRow(id));
-      } else {
-        row.status = "active";
-      }
-    }
-    if (typeof args.p_reminders_enabled === "boolean") {
-      state.config.reminders_enabled = args.p_reminders_enabled;
-    }
-    state.config.version += 1;
-    return { body: state.config.version };
-  }
-
-  const { db, requests } = mockPostgrest((request) => {
-    const path = request.target.split("?")[0] ?? "";
-    if (state.failing !== undefined && path.includes(state.failing.path)) {
-      return {
-        status: state.failing.status,
-        body: {
-          code: state.failing.code ?? "XX000",
-          message: "canary row text",
-        },
-      };
-    }
-    const args = (request.body ?? {}) as Record<string, unknown>;
-    if (path.endsWith("/rpc/claim_interaction")) {
-      const id = args.p_interaction_id as string;
-      const first = !state.claimed.has(id);
-      state.claimed.add(id);
-      return { body: first };
-    }
-    if (path.endsWith("/rpc/apply_role_bindings")) {
-      return roleBindings(args);
-    }
-    if (path.endsWith("/rpc/apply_config_change")) {
-      return configChange(args);
-    }
-    if (path.endsWith("/guild_config")) {
-      return { body: state.config === null ? [] : [{ ...state.config }] };
-    }
-    if (path.endsWith("/managed_channels")) {
-      const match = /channel_id=eq\.([0-9]+)/.exec(request.target);
-      return {
-        body: state.channels.filter(
-          (row) => match === null || row.channel_id === match[1],
-        ),
-      };
-    }
-    if (path.endsWith("/events")) {
-      const id = /[?&]id=eq\.([0-9a-f-]+)/.exec(request.target)?.[1];
-      const limit = /[?&]limit=([0-9]+)/.exec(request.target)?.[1];
-      return {
-        body: (state.events ?? [])
-          .filter((row) => id === undefined || row.id === id)
-          .slice(0, limit === undefined ? undefined : Number(limit)),
-      };
-    }
-    if (path.endsWith("/config_audit")) {
-      return { body: state.changes };
-    }
-    if (path.endsWith("/tasks")) {
-      const match = /events\.channel_id=eq\.([0-9]+)/.exec(request.target);
-      const count = state.openTasks.get(match?.[1] ?? "") ?? 0;
-      return {
-        body: Array.from({ length: count }, (_, index) => ({
-          id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
-          events: { channel_id: match?.[1] },
-        })),
-      };
-    }
-    return { status: 500, body: { message: "unexpected test request" } };
-  });
-
-  return {
-    db,
-    state,
-    requests,
-    rpcBodies: (name) =>
-      requests
-        .filter((request) => request.target.startsWith(`/rest/v1/rpc/${name}`))
-        .map((request) => request.body as Record<string, unknown>),
-  };
+export interface DraftRow {
+  guild_id: string;
+  actor_id: string;
+  officer_role_id: string;
+  admin_role_id: string;
+  eboard_role_id: string;
+  events_committee_role_id: string;
+  treasury_role_id: string;
+  marketing_role_id: string;
+  fingerprint: string;
+  created_at: string;
 }
 
 export interface FakeDiscordData {
@@ -359,7 +275,7 @@ export interface FakeDiscordData {
 
 function orFail<T>(value: T | "fail"): Promise<T> {
   return value === "fail"
-    ? Promise.reject(new Error("canary discord failure"))
+    ? Promise.reject(new Error("discord failure"))
     : Promise.resolve(value);
 }
 
@@ -383,17 +299,20 @@ export function fakeDiscord(data: FakeDiscordData = {}): {
     sendFollowUp: refuse,
     respondEphemerally: refuse,
     editEphemeralReply: (_interaction, body) => {
-      edits.push(body.toJSON() as (typeof edits)[number]);
-      return Promise.resolve({ id: testSnowflake() });
+      edits.push(body.payload as (typeof edits)[number]);
+      return Promise.resolve({ id: fakeId() });
     },
     getGuildRoles: () => orFail(data.roles ?? []),
     getGuildChannels: () => orFail(data.channels ?? []),
+    getGuildChannel: (_guildId, channelId) =>
+      orFail(data.channels ?? []).then((channels) => {
+        const found = channels.find((channel) => channel.id === channelId);
+        return found ?? Promise.reject(new Error("discord failure"));
+      }),
     getGuildMemberRoleIds: () => orFail(data.botRoleIds ?? []),
-    describeChannel: () => Promise.reject(new Error("canary discord failure")),
-    listActiveThreads: () =>
-      Promise.reject(new Error("canary discord failure")),
-    listArchivedThreads: () =>
-      Promise.reject(new Error("canary discord failure")),
+    describeChannel: () => Promise.reject(new Error("discord failure")),
+    listActiveThreads: () => Promise.reject(new Error("discord failure")),
+    listArchivedThreads: () => Promise.reject(new Error("discord failure")),
   };
   return { discord, edits };
 }
@@ -421,7 +340,7 @@ export async function run(
   const outcome = await router.handle(interaction, verified, dependencies);
   await outcome.after?.();
   return {
-    reply: outcome.reply.toJSON() as Ran["reply"],
+    reply: outcome.reply.payload as Ran["reply"],
     deferred: outcome.after !== undefined,
   };
 }
