@@ -104,7 +104,15 @@ export function raceDatabase(): RaceDatabase {
     const cluster = new pg.Client({ connectionString: adminUrl });
     await cluster.connect();
     cleanups.unshift(() => cluster.end());
-    await cluster.query(`CREATE DATABASE ${databaseName} TEMPLATE ${template}`);
+    // The copy keeps the template's owner. The migrations revoke schema public from
+    // PUBLIC, so the functions only reach it while their owner owns the database.
+    const owner = await cluster.query<{ owner: string }>(
+      "SELECT pg_get_userbyid(datdba) AS owner FROM pg_database WHERE datname = $1",
+      [template],
+    );
+    await cluster.query(
+      `CREATE DATABASE ${databaseName} TEMPLATE ${template} OWNER ${pg.escapeIdentifier(owner.rows[0]?.owner ?? "")}`,
+    );
     cleanups.unshift(() =>
       cluster.query(`DROP DATABASE IF EXISTS ${databaseName} WITH (FORCE)`),
     );
