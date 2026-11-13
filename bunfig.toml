@@ -8,4 +8,6 @@ linker = "isolated"
 # eslint and prettier are declared once at the root but resolved from every
 # workspace, so they have to sit in a place those workspaces can actually see.
 publicHoistPattern = ["*eslint*", "*prettier*"]
-peer = false
+# Links each peer from the tree (as pnpm did); off, typescript-eslint falls
+# through to the hidden hoist and loads TypeScript 7, which it rejects.
+peer = true
