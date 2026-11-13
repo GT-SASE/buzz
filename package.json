@@ -11,7 +11,7 @@
     "preview": "bun run --cwd sites/web preview",
     "smoke": "bun scripts/smoke.mjs",
     "check": "bun run lint && bun run typecheck && bun run format:check && bun run test",
-    "test": "vitest run",
+    "test": "bun --bun vitest run --project node && vitest run --project jsdom",
     "test:watch": "vitest",
     "test:ci": "bun scripts/ci-test.mjs",
     "lint": "bun run --cwd sites/web next typegen && eslint",

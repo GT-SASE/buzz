@@ -2,7 +2,8 @@
 
 Updated after the semesters and elections pass (27 Sep 2026). Phases **0–5** are in
 the tree. Gates: `bun run check` (lint + typecheck + format + vitest). CI runs the
-same with a Postgres 16 service and `drizzle-kit migrate`.
+same as parallel jobs (lint, types, test, build); the test job starts the
+runner's preinstalled Postgres and runs `drizzle-kit migrate` first.
 
 **No code work is left on the launch path.** Everything under "Remaining" below
 is an ops or board task that has to happen in a console, not in this repo.
