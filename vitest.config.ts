@@ -74,6 +74,8 @@ export default defineConfig({
           fileParallelism: false,
           // Threads, not forks: only the node project needs fork semantics for
           // process.env.TZ, and forking this one times out starting its worker.
+          // `bun run test` runs this project on Node: under `bun --bun` its
+          // jsdom worker fails to start (EventTarget mismatch).
           pool: "threads",
           sequence: { groupOrder: 1 },
         },
