@@ -8,8 +8,8 @@
 
 ## Checklist
 
-- [ ] `pnpm check` passes locally (lint, typecheck, format, tests)
-- [ ] Schema changes went through `pnpm db:generate` and the SQL under `packages/db/drizzle/` is committed
+- [ ] `bun run check` passes locally (lint, typecheck, format, tests)
+- [ ] Schema changes went through `bun run db:generate` and the SQL under `packages/db/drizzle/` is committed
 - [ ] No secret, member email, or check-in code appears in the diff, a log line, or a screenshot
 - [ ] Member-facing queries still exclude `checkInCode` — it is a bearer credential
 - [ ] New or changed behaviour has a test

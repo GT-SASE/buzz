@@ -4,11 +4,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "next build",
-    "dev": "next dev --turbopack",
-    "preview": "next build && next start",
-    "start": "next start",
-    "typecheck": "next typegen && tsrs --noEmit --fast"
+    "build": "bun run --bun next build",
+    "dev": "bun run --bun next dev --turbopack",
+    "preview": "bun run --bun next build && bun run --bun next start",
+    "start": "bun run --bun next start",
+    "typecheck": "next typegen && tsrs --noEmit --fast",
+    "typecheck:tsc": "next typegen && tsc --noEmit"
   },
   "dependencies": {
     "@buzz/api": "workspace:*",

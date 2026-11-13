@@ -1,0 +1,11 @@
+# Bun auto-loads the repo-root .env, which holds the deployment's DATABASE_URL.
+# next.config.ts, drizzle.config.ts and vitest.config.ts already load it
+# explicitly, so nothing needs the implicit load.
+env = false
+
+[install]
+linker = "isolated"
+# eslint and prettier are declared once at the root but resolved from every
+# workspace, so they have to sit in a place those workspaces can actually see.
+publicHoistPattern = ["*eslint*", "*prettier*"]
+peer = false

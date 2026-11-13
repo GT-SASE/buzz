@@ -1,6 +1,7 @@
 {
-  "installCommand": "cd ../.. && pnpm install --frozen-lockfile --prod=false",
-  "buildCommand": "cd ../.. && pnpm vercel-build",
+  "installCommand": "cd ../.. && bun install --frozen-lockfile",
+  "buildCommand": "cd ../.. && bun run vercel-build",
+  "bunVersion": "1.4.x",
   "regions": ["cle1"],
   "env": {
     "AUTH_REDIRECT_PROXY_URL": "https://buzzsase.vercel.app/api/auth"
