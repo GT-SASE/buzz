@@ -5,7 +5,7 @@ Tailwind v4, and [Watermelon UI](https://ui.watermelon.sh) for components.
 
 ## Layout
 
-pnpm workspaces. Packages ship raw TypeScript and are compiled by whoever imports
+Bun workspaces. Packages ship raw TypeScript and are compiled by whoever imports
 them, which is why `sites/web/next.config.ts` lists them under `transpilePackages`.
 
 ```
@@ -25,12 +25,18 @@ components/site/   the editorial layer built on top of them
 data/              chapter copy and constants
 ```
 
-Run everything from the repo root: `pnpm dev`, `pnpm build`, `pnpm check`,
-`pnpm db:migrate`. Each delegates to the workspace that owns it. Schema changes
-go through Drizzle Kit (`pnpm db:generate` → commit SQL → `pnpm db:migrate`).
+Run everything from the repo root: `bun run dev`, `bun run build`,
+`bun run check`, `bun run db:migrate`. Each delegates to the workspace that owns
+it. Spell out `bun run`: bare `bun test` and `bun build` are Bun's own test
+runner and bundler, not these scripts. Bun installs dependencies and runs the
+scripts; vitest, eslint, prettier and the TypeScript CLIs still run on Node 24
+(`.nvmrc`). Schema changes go through Drizzle Kit (`bun run db:generate` →
+commit SQL → `bun run db:migrate`).
 
 Deploying on Vercel: set **Root Directory** to `sites/web`. Vercel installs from
-the repo root, so the workspace packages resolve normally.
+the repo root, so the workspace packages resolve normally. `sites/web/vercel.json`
+installs and builds with Bun and sets `bunVersion`, so functions run on the Bun
+runtime.
 
 ## TypeScript
 
@@ -40,12 +46,12 @@ directly and its peer range stops at `<6.1.0`; `typescript-7` is the alias that
 `tsc` actually runs. `postcss.config.js` is the one file still in JavaScript —
 Next 16.3 only resolves `postcss.config.{js,mjs,json}`.
 
-`pnpm typecheck` runs [tsrs](https://github.com/oxc-project/tsrs), the Rust port
+`bun run typecheck` runs [tsrs](https://github.com/oxc-project/tsrs), the Rust port
 of the TypeScript compiler. It is a beta, so it is pinned exactly in every
-workspace and CI still runs `pnpm typecheck:tsc` as the deciding check. It only
+workspace and CI still runs `bun run typecheck:tsc` as the deciding check. It only
 type-checks: Next compiles the site with SWC and dev uses Turbopack.
 
-`pnpm ui:add @watermelon/<name>` pulls another component into `components/ui`.
+`bun run ui:add @watermelon/<name>` pulls another component into `components/ui`.
 
 ## Two halves
 
@@ -87,7 +93,7 @@ Everything below is what turns the **portal** on.
    drizzle-kit and the test runner point at the same path so the credentials
    exist in exactly one place.
    - `DATABASE_URL` — the connection string for the database below.
-   - `AUTH_SECRET` — `npx auth secret`. Same value as Vercel if you sign in
+   - `AUTH_SECRET` — `bunx auth secret`. Same value as Vercel if you sign in
      from localhost through the Google redirect proxy.
    - `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` — from a Google Cloud OAuth client
      of type "Web application". Google is the only way into the portal, local
@@ -96,14 +102,14 @@ Everything below is what turns the **portal** on.
      Google's callback to the one registered URI.
 2. Start Postgres — `./start-database.sh` runs one in Docker. It reads the file
    from step 1, so that order matters.
-3. `pnpm db:migrate` to apply the committed SQL under `packages/db/drizzle`.
-   Use `pnpm db:push` only for throwaway local experiments — production and CI
+3. `bun run db:migrate` to apply the committed SQL under `packages/db/drizzle`.
+   Use `bun run db:push` only for throwaway local experiments — production and CI
    run migrations.
-4. `pnpm dev`.
+4. `bun run dev`.
 
 ### Running the tests
 
-`pnpm test` reads **`TEST_DATABASE_URL`**, never `DATABASE_URL`. The integration
+`bun run test` reads **`TEST_DATABASE_URL`**, never `DATABASE_URL`. The integration
 and load suites create users, events and check-ins and delete them again, which
 is fine against a scratch database and not fine against the one serving members
 — so the app's database is deliberately unreachable from the suite. With
@@ -151,7 +157,7 @@ that URI and bounces back after Google returns. `@buzz/auth` falls back to
 this same value if the variable is missing. `AUTH_SECRET` must be the same on
 the machine that starts sign-in and on production, or the bounce-back fails.
 
-Production Vercel builds run `pnpm db:migrate` when `DATABASE_URL` is set,
+Production Vercel builds run `bun run db:migrate` when `DATABASE_URL` is set,
 then the Next build. A preview with no database skips migrate so the public
 site still prerenders. `AUTH_SECRET` must be at least 32 characters on
 production. A missing portal variable there fails the build rather than
@@ -187,7 +193,7 @@ A super admin promotes or demotes anyone from their page under
 `/portal/admin/members`. An officer cannot change roles. The role rides on the
 database session, so a change takes effect on their next request.
 
-The first super admin on a fresh database is a `role` edit in `pnpm db:studio`
+The first super admin on a fresh database is a `role` edit in `bun run db:studio`
 (or the seed script locally). After that, the roster is the only way. You cannot
 change your own role, so another super admin has to step you down.
 

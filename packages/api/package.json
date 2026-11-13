@@ -12,7 +12,8 @@
     "./event-length": "./src/event-length.ts"
   },
   "scripts": {
-    "typecheck": "tsrs --noEmit --fast"
+    "typecheck": "tsrs --noEmit --fast",
+    "typecheck:tsc": "tsc --noEmit"
   },
   "dependencies": {
     "@buzz/auth": "workspace:*",

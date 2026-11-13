@@ -21,23 +21,26 @@ describe("vercel deploy", () => {
   it("applies committed migrations before the Next build", () => {
     const vercel = JSON.parse(
       readFileSync("sites/web/vercel.json", "utf8"),
-    ) as { buildCommand: string; installCommand: string };
-    expect(vercel.buildCommand).toContain("pnpm vercel-build");
+    ) as {
+      buildCommand: string;
+      installCommand: string;
+      bunVersion: string;
+    };
+    expect(vercel.buildCommand).toContain("bun run vercel-build");
+    expect(vercel.installCommand).toContain("bun install");
     expect(vercel.installCommand).toContain("frozen-lockfile");
-    // drizzle-kit lives in @buzz/db devDependencies; a production-mode
-    // install would drop it and the migrate step would fail the deploy.
-    expect(vercel.installCommand).toContain("--prod=false");
+    expect(vercel.bunVersion).toBe("1.4.x");
 
     const pkg = JSON.parse(readFileSync("package.json", "utf8")) as {
       scripts: Record<string, string>;
     };
-    expect(pkg.scripts["vercel-build"]).toBe("node scripts/vercel-build.mjs");
+    expect(pkg.scripts["vercel-build"]).toBe("bun scripts/vercel-build.mjs");
 
     const script = readFileSync("scripts/vercel-build.mjs", "utf8");
-    expect(script).toContain("pnpm db:migrate");
+    expect(script).toContain("bun run db:migrate");
 
     const ci = readFileSync(".github/workflows/ci.yml", "utf8");
-    expect(ci).toContain("pnpm vercel-build");
+    expect(ci).toContain("bun run vercel-build");
 
     const journal = readFileSync(
       "packages/db/drizzle/meta/_journal.json",

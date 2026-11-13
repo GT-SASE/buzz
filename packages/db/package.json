@@ -14,9 +14,10 @@
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
-    "db:seed": "node --disable-warning=ExperimentalWarning scripts/seed.ts",
-    "db:seed:calendar": "node --disable-warning=ExperimentalWarning scripts/seed-fall-2026.ts",
+    "db:seed": "bun scripts/seed.ts",
+    "db:seed:calendar": "bun scripts/seed-fall-2026.ts",
     "typecheck": "tsrs --noEmit --fast",
+    "typecheck:tsc": "tsc --noEmit",
     "postgres": "docker run --rm --name buzz-ci-postgres -p 15433:5432 -e POSTGRES_PASSWORD=postgres postgres:16"
   },
   "dependencies": {

@@ -58,7 +58,7 @@ export default tseslint.config(
     },
   },
   {
-    // Vendored from the Watermelon registry via `pnpm ui:add`. `tsc` still
+    // Vendored from the Watermelon registry via `bun run ui:add`. `tsc` still
     // checks these files; only the type-aware lint rules are dropped, because
     // re-adding a component overwrites the file and takes any hand-fix with it.
     files: ["sites/web/src/components/ui/**/*.tsx"],
