@@ -16,7 +16,7 @@ import { siteUrl } from "./site-url.mjs";
  * emails whoever watches the repo.
  */
 const file = process.argv[2];
-if (!file) throw new Error("Usage: node scripts/uptime.mjs <uptime.json>");
+if (!file) throw new Error("Usage: bun scripts/uptime.mjs <uptime.json>");
 
 const base = siteUrl(process.env.UPTIME_URL);
 

@@ -7,5 +7,5 @@
 *.woff binary
 *.woff2 binary
 
-pnpm-lock.yaml linguist-generated=true -diff
+bun.lock linguist-generated=true -diff
 packages/db/drizzle/meta/*.json linguist-generated=true

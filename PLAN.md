@@ -1,7 +1,7 @@
 # Next steps
 
 Updated after the semesters and elections pass (27 Sep 2026). Phases **0–5** are in
-the tree. Gates: `pnpm check` (lint + typecheck + format + vitest). CI runs the
+the tree. Gates: `bun run check` (lint + typecheck + format + vitest). CI runs the
 same with a Postgres 16 service and `drizzle-kit migrate`.
 
 **No code work is left on the launch path.** Everything under "Remaining" below
@@ -67,10 +67,10 @@ is an ops or board task that has to happen in a console, not in this repo.
   orphaned), the deprecated `toDate` alias in `packages/api/src/aggregates.ts`,
   and six unreferenced Watermelon primitives — `checkbox`, `collapsible`,
   `popover`, `switch`, `tabs`, `tooltip`. Re-add any with
-  `pnpm ui:add @watermelon/<name>`.
+  `bun run ui:add @watermelon/<name>`.
 - Stale `.bench-check-in.json` deleted from the working tree.
 - Working tree normalised to LF. With `core.autocrlf=true` and no
-  `.gitattributes`, `pnpm check` failed locally on ~35 files nobody had touched;
+  `.gitattributes`, `bun run check` failed locally on ~35 files nobody had touched;
   it now passes end to end (exit 0).
 - The jsdom test project runs on `pool: "threads"`. Forking it timed out
   starting its worker (`Timeout waiting for worker to respond`) on roughly every
@@ -92,7 +92,7 @@ is an ops or board task that has to happen in a console, not in this repo.
 
 ### Test isolation
 
-- **`pnpm test` used to write to the production database.** `vitest.config.ts`
+- **`bun run test` used to write to the production database.** `vitest.config.ts`
   loaded `sites/web/.env` and handed `DATABASE_URL` to the integration and load
   suites, which create users, events and check-ins by the dozen. Against a
   scratch database that is fine; against the one serving members it is not.
@@ -159,8 +159,8 @@ is an ops or board task that has to happen in a console, not in this repo.
   the Node version read from `.nvmrc` instead of being duplicated in the workflow.
 - `.nvmrc` + `engines.node` so local, CI and Vercel agree on Node 24.
 - `.gitattributes` pinning the checkout to LF. Without it a contributor on
-  Windows gets CRLF and `pnpm check` fails locally on files they never opened.
-- `.github/dependabot.yml` — weekly grouped npm PRs, monthly actions. `next-auth`
+  Windows gets CRLF and `bun run check` fails locally on files they never opened.
+- `.github/dependabot.yml` — weekly grouped PRs, monthly actions. `next-auth`
   and both TypeScript entries are ignored on purpose: the beta pin and the 6.x/7.x
   split are decisions, not chores.
 - `.github/pull_request_template.md`, `SECURITY.md`.
@@ -205,7 +205,7 @@ is an ops or board task that has to happen in a console, not in this repo.
 - Origin check on tRPC mutations; session `maxAge` 30d, `sameSite: "lax"`
 - Seed guard (localhost or `SEED_FORCE=1`); `actedByUserId` audit on check-ins
 - Committed Drizzle migrations (`packages/db/drizzle/`); prefer
-  `pnpm db:migrate` for real deploys, `db:push` for throwaway local DBs
+  `bun run db:migrate` for real deploys, `db:push` for throwaway local DBs
 - Serverless postgres client tuning; marketing/global errors; loading skeletons;
   `sites/web/vercel.json`; `.github/workflows/ci.yml`
 
@@ -238,7 +238,7 @@ DDL helpers (`lower(email)` index, CHECK constraints).
 - Portal skip-to-content link
 - App icons + web manifest (`start_url: /portal`)
 - Destructive actions use the `--destructive` token
-- `format:check` is part of `pnpm check`
+- `format:check` is part of `bun run check`
 - Postgres image pinned to 16 (script + CI)
 - `next typegen` runs before eslint so CI does not fail on image imports
 - jsdom tests for check-in code entry and session-expiry redirect
@@ -280,7 +280,7 @@ DDL helpers (`lower(email)` index, CHECK constraints).
    database had been built with `db:push`, so its migration ledger was empty
    while all six tables existed — `db:migrate` would have tried to replay
    `0000 CREATE TABLE` and failed. It was baselined (the `0000_past_sleeper` row
-   inserted by hand, `created_at 1786411266874`) and `pnpm db:migrate` then
+   inserted by hand, `created_at 1786411266874`) and `bun run db:migrate` then
    applied `0001` alone. Verified afterwards: ledger holds both rows in order,
    all four CHECK constraints are present in `pg_constraint`, row counts
    unchanged. Every future deploy is on the migration path.
@@ -289,13 +289,6 @@ DDL helpers (`lower(email)` index, CHECK constraints).
 6. **Board headshots** / **sponsor logos** when available.
 7. **Custom domain** if registered — update `site.url` + OAuth origins.
 8. **Optional:** retune tier thresholds in `portal.ts` before printing cards.
-
----
-
-## Post-launch experiments
-
-- Bun runtime on Vercel Functions: optional `bunVersion` in `vercel.json`;
-  keep pnpm for installs. Not on the launch path.
 
 ---
 

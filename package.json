@@ -4,29 +4,29 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "pnpm --filter @buzz/web dev",
-    "build": "pnpm --filter @buzz/web build",
-    "vercel-build": "node scripts/vercel-build.mjs",
-    "start": "pnpm --filter @buzz/web start",
-    "preview": "pnpm --filter @buzz/web preview",
-    "smoke": "node scripts/smoke.mjs",
-    "check": "pnpm run lint && pnpm run typecheck && pnpm run format:check && pnpm run test",
+    "dev": "bun run --cwd sites/web dev",
+    "build": "bun run --cwd sites/web build",
+    "vercel-build": "bun scripts/vercel-build.mjs",
+    "start": "bun run --cwd sites/web start",
+    "preview": "bun run --cwd sites/web preview",
+    "smoke": "bun scripts/smoke.mjs",
+    "check": "bun run lint && bun run typecheck && bun run format:check && bun run test",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:ci": "node scripts/ci-test.mjs",
-    "lint": "pnpm --filter @buzz/web exec next typegen && eslint",
-    "lint:fix": "pnpm --filter @buzz/web exec next typegen && eslint --fix",
-    "typecheck": "pnpm -r --if-present run typecheck && tsrs --noEmit --fast -p tsconfig.json",
-    "typecheck:tsc": "pnpm --filter @buzz/web exec next typegen && pnpm -r exec tsc --noEmit && tsc --noEmit -p tsconfig.json",
+    "test:ci": "bun scripts/ci-test.mjs",
+    "lint": "bun run --cwd sites/web next typegen && eslint",
+    "lint:fix": "bun run --cwd sites/web next typegen && eslint --fix",
+    "typecheck": "bun --filter '@buzz/*' typecheck && tsrs --noEmit --fast -p tsconfig.json",
+    "typecheck:tsc": "bun --filter '@buzz/*' typecheck:tsc && tsc --noEmit -p tsconfig.json",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,mjs,cjs,mdx,css}\" --cache",
     "format:write": "prettier --write \"**/*.{ts,tsx,js,jsx,mjs,cjs,mdx,css}\" --cache",
-    "ui:add": "pnpm --filter @buzz/web exec shadcn add",
-    "db:generate": "pnpm --filter @buzz/db db:generate",
-    "db:migrate": "pnpm --filter @buzz/db db:migrate",
-    "db:push": "pnpm --filter @buzz/db db:push",
-    "db:seed": "pnpm --filter @buzz/db db:seed",
-    "db:seed:calendar": "pnpm --filter @buzz/db db:seed:calendar",
-    "db:studio": "pnpm --filter @buzz/db db:studio"
+    "ui:add": "bun run --cwd sites/web shadcn add",
+    "db:generate": "bun run --cwd packages/db db:generate",
+    "db:migrate": "bun run --cwd packages/db db:migrate",
+    "db:push": "bun run --cwd packages/db db:push",
+    "db:seed": "bun run --cwd packages/db db:seed",
+    "db:seed:calendar": "bun run --cwd packages/db db:seed:calendar",
+    "db:studio": "bun run --cwd packages/db db:studio"
   },
   "devDependencies": {
     "@testing-library/dom": "^10.4.2",
@@ -60,5 +60,13 @@
   "engines": {
     "node": ">=24.0.0 <25"
   },
-  "packageManager": "pnpm@10.34.5"
+  "packageManager": "bun@1.4.3",
+  "workspaces": [
+    "packages/*",
+    "sites/*"
+  ],
+  "overrides": {
+    "@vercel/cli-config>zod": "^4.6.7",
+    "@esbuild-kit/core-utils>esbuild": "^0.25.12"
+  }
 }

@@ -10,7 +10,8 @@
     "./config": "./src/config.ts"
   },
   "scripts": {
-    "typecheck": "tsrs --noEmit --fast"
+    "typecheck": "tsrs --noEmit --fast",
+    "typecheck:tsc": "tsc --noEmit"
   },
   "dependencies": {
     "@auth/core": "^0.41.3",

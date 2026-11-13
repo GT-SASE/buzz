@@ -6,7 +6,7 @@ hand and its output is committed. Nothing here runs during `next build`.
 ```sh
 python -m pip install -r scripts/fonts/requirements.txt
 python scripts/fonts/subset.py
-pnpm exec prettier --write sites/web/src/styles/fonts.generated.css
+bunx prettier --write sites/web/src/styles/fonts.generated.css
 ```
 
 Commit `sites/web/public/fonts/`, `sites/web/src/styles/fonts.generated.css` and

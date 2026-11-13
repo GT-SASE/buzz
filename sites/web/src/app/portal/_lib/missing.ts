@@ -6,7 +6,7 @@ import { notFound } from "next/navigation";
  *
  * Duck-typed on `code` rather than `instanceof TRPCError`: the caller and the
  * router may each resolve `@trpc/server` from a different package copy under
- * pnpm, and then `instanceof` lies.
+ * the isolated install, and then `instanceof` lies.
  */
 export async function orNotFound<T>(promise: Promise<T>): Promise<T> {
   try {

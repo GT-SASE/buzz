@@ -21,12 +21,12 @@ vi.mock("../packages/auth/src/index.ts", () => ({
  * Imported by path rather than by the `@buzz/*` specifier the app uses.
  *
  * Vitest resolves a bare specifier from the importing file's directory, and
- * this file sits at the repo root, where pnpm has installed no workspace links
- * and no drizzle-orm — both live in the per-package node_modules under
- * `sites/web` and `packages`. Symlinks resolve to their real path, so these are
- * the same module instances the router itself loads: the `db` below is the very
- * connection the procedures write through, and the operators below build
- * conditions over the same Column objects.
+ * this file sits at the repo root, where the isolated install has linked no
+ * workspace packages and no drizzle-orm — both live in the per-package
+ * node_modules under `sites/web` and `packages`. Symlinks resolve to their
+ * real path, so these are the same module instances the router itself loads:
+ * the `db` below is the very connection the procedures write through, and the
+ * operators below build conditions over the same Column objects.
  */
 const { db, eventCheckIns, events, users } =
   await import("../packages/db/src/index");
