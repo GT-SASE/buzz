@@ -5,16 +5,9 @@
  */
 
 import type { PGlite } from "@electric-sql/pglite";
-import {
-  afterAll,
-  afterEach,
-  beforeAll,
-  beforeEach,
-  expect,
-  it,
-  vi,
-} from "vitest";
+import { afterAll, beforeAll, beforeEach, expect, it } from "bun:test";
 import { pgliteSql } from "../support/sql-client.ts";
+import { stubGlobal } from "../support/stubs.ts";
 import { createDbClient, type DbClient } from "../../src/db/client.ts";
 import { createDiscordClient } from "../../src/discord/client.ts";
 import { managedChannelCheck } from "../../src/handlers/dependencies.ts";
@@ -37,7 +30,7 @@ let posts: string[];
 
 /** Discord as far as one reminder needs it: the thread's parent, and the send. */
 function mockDiscord(threadId: string): void {
-  vi.stubGlobal("fetch", (input: string, init?: RequestInit) => {
+  stubGlobal("fetch", (input: string, init?: RequestInit) => {
     if ((init?.method ?? "GET") === "POST") {
       posts.push(input);
       return Promise.resolve(Response.json({ id: fakeId() }));
@@ -54,21 +47,17 @@ function mockDiscord(threadId: string): void {
 }
 
 function runWith(now?: () => Date) {
-  const logged: string[] = [];
-  return {
-    logged,
-    result: runReminders({
-      db,
-      client: createDiscordClient({
-        check: managedChannelCheck(db),
-        env: { DISCORD_BOT_TOKEN: TOKEN, DISCORD_APP_ID: fakeId() },
-        sleep: () => Promise.resolve(),
-      }),
-      allowedGuildIds: new Set([guild.guildId]),
-      log: (line) => logged.push(line),
-      ...(now === undefined ? {} : { now }),
+  return runReminders({
+    db,
+    client: createDiscordClient({
+      check: managedChannelCheck(db),
+      env: { DISCORD_BOT_TOKEN: TOKEN, DISCORD_APP_ID: fakeId() },
+      sleep: () => Promise.resolve(),
     }),
-  };
+    allowedGuildIds: new Set([guild.guildId]),
+    log: () => undefined,
+    ...(now === undefined ? {} : { now }),
+  });
 }
 
 /**
@@ -121,14 +110,10 @@ beforeEach(async () => {
   mockDiscord(threadId);
 });
 
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
-
 it("records a crashed run as failed, and the next run in the slot still sends", async () => {
   const crashed = runWith(clockThatThrowsOnThirdRead());
 
-  expect(await crashed.result).toMatchObject({
+  expect(await crashed).toMatchObject({
     status: "failed",
     error: "unexpected",
   });
@@ -139,7 +124,7 @@ it("records a crashed run as failed, and the next run in the slot still sends", 
   }>(`SELECT status, error FROM public.job_runs WHERE job_name = 'reminders'`);
   expect(rows).toEqual([{ status: "failed", error: "unexpected" }]);
 
-  const recovery = await runWith().result;
+  const recovery = await runWith();
 
   expect(recovery).toMatchObject({ status: "succeeded" });
   expect(posts).toHaveLength(1);

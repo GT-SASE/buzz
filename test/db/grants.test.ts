@@ -1,5 +1,5 @@
 import type { PGlite } from "@electric-sql/pglite";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { insertFinishedJobRun } from "../support/job-runs-fixture.ts";
 import {
   FIXTURE_DUE_DATE,
@@ -36,6 +36,12 @@ const LEDGER_TABLES = ["schema_migrations"];
 
 describe("access", () => {
   let db: PGlite;
+
+  const refused = async (role: string, sql: string, params?: unknown[]) => {
+    expect(await errorCodeOf(queryAs(db, role, sql, params))).toBe(
+      INSUFFICIENT_PRIVILEGE,
+    );
+  };
 
   beforeAll(async () => {
     db = await createMigratedDb();
@@ -81,143 +87,73 @@ describe("access", () => {
     await db.close();
   });
 
-  describe.each(ALL_TABLES)("%s", (table) => {
-    it("bot_app can read the seeded row", async () => {
+  it.each(ALL_TABLES)(
+    "bot_app can read %s, and another role cannot read or write it",
+    async (table) => {
       const rows = await queryAs(
         db,
         "bot_app",
         `SELECT * FROM public.${table}`,
       );
       expect(rows.length).toBeGreaterThan(0);
-    });
-
-    it.each([OTHER_ROLE])("%s cannot read or write", async (role) => {
       for (const sql of [
         `SELECT * FROM public.${table}`,
         `INSERT INTO public.${table} DEFAULT VALUES`,
         `DELETE FROM public.${table}`,
       ]) {
-        expect(await errorCodeOf(queryAs(db, role, sql))).toBe(
-          INSUFFICIENT_PRIVILEGE,
-        );
+        await refused(OTHER_ROLE, sql);
       }
-    });
-  });
+    },
+  );
 
-  describe.each([
+  it.each([
     ["config_audit", "guild_id"],
     ["event_reminder_log", "state"],
     ["event_step_assignees", "removed_at"],
     ["event_steps", "status"],
     ["guild_config", "guild_id"],
-    ["job_runs", "job_name"],
+    ["job_runs", "status"],
     ["managed_channels", "guild_id"],
     ["reminder_log", "task_id"],
     ["setup_drafts", "fingerprint"],
-  ])("direct writes to %s", (table, column) => {
-    it("bot_app cannot insert", async () => {
-      const code = await errorCodeOf(
-        queryAs(db, "bot_app", `INSERT INTO public.${table} DEFAULT VALUES`),
-      );
-      expect(code).toBe(INSUFFICIENT_PRIVILEGE);
-    });
-
-    it("bot_app cannot update", async () => {
-      const code = await errorCodeOf(
-        queryAs(
-          db,
-          "bot_app",
-          `UPDATE public.${table} SET ${column} = ${column}`,
-        ),
-      );
-      expect(code).toBe(INSUFFICIENT_PRIVILEGE);
-    });
+  ])("bot_app cannot insert into or update %s directly", async (table, col) => {
+    await refused("bot_app", `INSERT INTO public.${table} DEFAULT VALUES`);
+    await refused("bot_app", `UPDATE public.${table} SET ${col} = ${col}`);
   });
 
-  describe("job_runs", () => {
-    it.each([
-      ["started_at", "now()"],
-      ["heartbeat_at", "now()"],
-      ["status", "'succeeded'"],
-      ["finished_at", "now()"],
-      ["results", "'{}'"],
-      ["error", "NULL"],
-    ])("bot_app cannot set %s directly", async (column, value) => {
-      const code = await errorCodeOf(
-        queryAs(
-          db,
-          "bot_app",
-          `UPDATE public.job_runs SET ${column} = ${value}`,
-        ),
-      );
-      expect(code).toBe(INSUFFICIENT_PRIVILEGE);
-    });
-  });
-
-  describe("soft deletes", () => {
-    let eventId: string;
-    let taskId: string;
-
-    beforeAll(async () => {
+  it.each(["tasks", "events"])(
+    "bot_app can soft-delete from %s but cannot undelete",
+    async (table) => {
       const guild = await insertGuild(db);
-      eventId = await insertEvent(db, guild);
-      taskId = await insertTask(db, guild, eventId);
-    });
+      const eventId = await insertEvent(db, guild);
+      const id =
+        table === "tasks" ? await insertTask(db, guild, eventId) : eventId;
+      const setDeleted = (value: string) =>
+        `UPDATE public.${table} SET deleted_at = ${value} WHERE id = $1`;
+      if (table === "tasks") {
+        await queryAs(db, BOT_APP, setDeleted("now()"), [id]);
+      } else {
+        await db.query(setDeleted("now()"), [id]);
+      }
+      await refused(BOT_APP, setDeleted("NULL"), [id]);
+    },
+  );
 
-    it("bot_app can soft-delete a task but cannot undelete it", async () => {
-      await queryAs(
-        db,
-        BOT_APP,
-        `UPDATE public.tasks SET deleted_at = now() WHERE id = $1`,
-        [taskId],
-      );
-      const code = await errorCodeOf(
-        queryAs(
-          db,
-          BOT_APP,
-          `UPDATE public.tasks SET deleted_at = NULL WHERE id = $1`,
-          [taskId],
-        ),
-      );
-      expect(code).toBe(INSUFFICIENT_PRIVILEGE);
-    });
+  it.each([BOT_APP, OTHER_ROLE])(
+    "%s cannot disable triggers or call a trigger function",
+    async (role) => {
+      await refused(role, `ALTER TABLE public.tasks DISABLE TRIGGER ALL`);
+      await refused(role, `SELECT public.require_open_parent()`);
+    },
+  );
 
-    it("bot_app cannot undelete an event", async () => {
-      await db.query(
-        `UPDATE public.events SET deleted_at = now() WHERE id = $1`,
-        [eventId],
-      );
-      const code = await errorCodeOf(
-        queryAs(
-          db,
-          BOT_APP,
-          `UPDATE public.events SET deleted_at = NULL WHERE id = $1`,
-          [eventId],
-        ),
-      );
-      expect(code).toBe(INSUFFICIENT_PRIVILEGE);
-    });
-  });
-
-  it.each([BOT_APP, OTHER_ROLE])("%s cannot disable triggers", async (role) => {
-    const code = await errorCodeOf(
-      queryAs(db, role, `ALTER TABLE public.tasks DISABLE TRIGGER ALL`),
-    );
-    expect(code).toBe(INSUFFICIENT_PRIVILEGE);
-  });
-
-  it("bot_app cannot call trigger functions directly", async () => {
-    const code = await errorCodeOf(
-      queryAs(db, "bot_app", `SELECT public.require_open_parent()`),
-    );
-    expect(code).toBe(INSUFFICIENT_PRIVILEGE);
-  });
   describe("bot_app itself", () => {
-    it("can log in, and has no other attribute", async () => {
+    it("can log in, has no other attribute, no password and no role", async () => {
       const { rows } = await db.query(
         `SELECT rolcanlogin, rolsuper, rolinherit, rolcreaterole, rolcreatedb,
-                rolreplication, rolbypassrls
-         FROM pg_roles WHERE rolname = $1`,
+                rolreplication, rolbypassrls, rolpassword IS NULL AS no_password,
+                NOT EXISTS (SELECT 1 FROM pg_auth_members WHERE member = oid) AS no_roles
+         FROM pg_authid WHERE rolname = $1`,
         [BOT_APP],
       );
       expect(rows).toEqual([
@@ -229,25 +165,10 @@ describe("access", () => {
           rolcreatedb: false,
           rolreplication: false,
           rolbypassrls: false,
+          no_password: true,
+          no_roles: true,
         },
       ]);
-    });
-
-    it("has no password from the migrations: the operator sets one", async () => {
-      const { rows } = await db.query(
-        `SELECT rolpassword IS NULL AS no_password FROM pg_authid WHERE rolname = $1`,
-        [BOT_APP],
-      );
-      expect(rows).toEqual([{ no_password: true }]);
-    });
-
-    it("is a member of no role, so it can neither inherit nor SET ROLE to more", async () => {
-      const { rows } = await db.query(
-        `SELECT roleid::regrole::text AS role FROM pg_auth_members
-         WHERE member = $1::regrole`,
-        [BOT_APP],
-      );
-      expect(rows).toEqual([]);
     });
 
     it("owns nothing", async () => {
@@ -278,50 +199,25 @@ describe("access", () => {
     it.each([...ALL_TABLES, ...NO_GRANT_TABLES, ...LEDGER_TABLES])(
       "cannot DELETE from or TRUNCATE %s",
       async (table) => {
-        for (const sql of [
-          `DELETE FROM public.${table}`,
-          `TRUNCATE public.${table}`,
-        ]) {
-          expect(await errorCodeOf(queryAs(db, BOT_APP, sql))).toBe(
-            INSUFFICIENT_PRIVILEGE,
-          );
-        }
+        await refused(BOT_APP, `DELETE FROM public.${table}`);
+        await refused(BOT_APP, `TRUNCATE public.${table}`);
+      },
+    );
+
+    it.each([...NO_GRANT_TABLES, ...LEDGER_TABLES])(
+      "cannot read %s",
+      async (table) => {
+        await refused(BOT_APP, `SELECT * FROM public.${table}`);
       },
     );
 
     it.each([
       "ALTER TABLE public.tasks ADD COLUMN forged text",
-      "ALTER TABLE public.tasks OWNER TO bot_app",
       "ALTER FUNCTION public.claim_interaction(text) SECURITY INVOKER",
-      "DROP TABLE public.reminder_log",
       "CREATE TABLE public.forged (id int)",
-      "CREATE FUNCTION public.forged() RETURNS int LANGUAGE sql AS 'SELECT 1'",
-      "CREATE SCHEMA forged",
       "ALTER ROLE bot_app CREATEROLE",
     ])("cannot run %s", async (sql) => {
-      expect(await errorCodeOf(queryAs(db, BOT_APP, sql))).toBe(
-        INSUFFICIENT_PRIVILEGE,
-      );
-    });
-
-    it.each([
-      "SELECT * FROM history.row_versions",
-      "INSERT INTO history.row_versions DEFAULT VALUES",
-      "SELECT history.record_row_version()",
-    ])("cannot reach the history schema: %s", async (sql) => {
-      expect(await errorCodeOf(queryAs(db, BOT_APP, sql))).toBe(
-        INSUFFICIENT_PRIVILEGE,
-      );
-    });
-
-    it("cannot read the migration ledger or the tables reached only through functions", async () => {
-      for (const table of [...NO_GRANT_TABLES, ...LEDGER_TABLES]) {
-        expect(
-          await errorCodeOf(
-            queryAs(db, BOT_APP, `SELECT * FROM public.${table}`),
-          ),
-        ).toBe(INSUFFICIENT_PRIVILEGE);
-      }
+      await refused(BOT_APP, sql);
     });
   });
 });

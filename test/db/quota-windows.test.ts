@@ -5,7 +5,7 @@
  * kind could count forever and lock an officer out for good.
  */
 
-import { afterAll, beforeAll, expect, it } from "vitest";
+import { afterAll, beforeAll, expect, it } from "bun:test";
 import { reassignAs } from "./task-edits.ts";
 import type { DbClient } from "../../src/db/client.ts";
 import { createTask } from "../../src/db/tasks.ts";
@@ -21,7 +21,7 @@ const DUE = parseIsoDate("2030-01-10");
 const ACTOR_LIMIT = {
   ok: false,
   error: { category: "actor_task_limit", code: "CF430" },
-};
+} as const;
 
 let backend: Backend;
 let pg: Connection;

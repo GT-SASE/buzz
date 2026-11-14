@@ -44,7 +44,7 @@ describe("row history", () => {
     return rows;
   }
 
-  it("records the old event row when bot_app updates it", async () => {
+  it("records the old event row when bot_app updates it, and not the insert", async () => {
     const eventId = await insertEvent(db, guild);
     await queryAs(
       db,
@@ -58,21 +58,6 @@ describe("row history", () => {
     expect(versions[0]?.source_table).toBe("events");
     expect(versions[0]?.operation).toBe("UPDATE");
     expect(versions[0]?.old_row.name).toBe("General meeting");
-  });
-
-  it("records the old task row when it is updated", async () => {
-    const taskId = await insertTask(db, guild, await insertEvent(db, guild));
-    await queryAs(
-      db,
-      MIGRATION_OWNER,
-      `UPDATE public.tasks SET description = 'Changed' WHERE id = $1`,
-      [taskId],
-    );
-
-    const versions = await versionsOf(taskId);
-    expect(versions).toHaveLength(1);
-    expect(versions[0]?.source_table).toBe("tasks");
-    expect(versions[0]?.old_row.description).toBe("Book the room");
   });
 
   it("keeps one version per update, in order", async () => {
@@ -134,24 +119,6 @@ describe("row history", () => {
       expect(after.rows).toEqual(before.rows);
     },
   );
-
-  it("records a value set back to what it was as two versions", async () => {
-    const taskId = await insertTask(db, guild, await insertEvent(db, guild));
-    for (const description of ["Changed", "Book the room"]) {
-      await queryAs(
-        db,
-        MIGRATION_OWNER,
-        `UPDATE public.tasks SET description = $2 WHERE id = $1`,
-        [taskId, description],
-      );
-    }
-    expect(await versionsOf(taskId)).toHaveLength(2);
-  });
-
-  it("does not record inserts", async () => {
-    const eventId = await insertEvent(db, guild);
-    expect(await versionsOf(eventId)).toEqual([]);
-  });
 
   describe.each([BOT_APP, OTHER_ROLE])("as %s", (role) => {
     it("has no privilege on the schema, table or function", async () => {

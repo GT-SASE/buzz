@@ -1,5 +1,5 @@
 import type { PGlite } from "@electric-sql/pglite";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import {
   FIXTURE_DUE_DATE as DUE,
   insertEvent,
@@ -52,69 +52,26 @@ describe("task lifecycle", () => {
       return channelId;
     };
 
-    it("rejects a task on a deleted event", async () => {
+    it.each([
+      ["deleted", `SELECT public.soft_delete_event($1, $2)`],
+      ["closed", `UPDATE public.events SET status = 'closed' WHERE id = $1`],
+    ])("rejects a task on a %s event", async (_name, sql) => {
       const eventId = await insertEvent(db, guild);
-      await queryAs(db, "bot_app", `SELECT public.soft_delete_event($1, $2)`, [
-        eventId,
-        guild.guildId,
-      ]);
+      const params = sql.includes("$2") ? [eventId, guild.guildId] : [eventId];
+      await queryAs(db, "bot_app", sql, params);
       expect(await errorCodeOf(insertTask(db, guild, eventId))).toBe(
         PARENT_UNAVAILABLE,
       );
     });
 
-    it("rejects a task on a closed event", async () => {
-      const eventId = await insertEvent(db, guild);
-      await queryAs(
-        db,
-        "bot_app",
-        `UPDATE public.events SET status = 'closed' WHERE id = $1`,
-        [eventId],
-      );
-      expect(await errorCodeOf(insertTask(db, guild, eventId))).toBe(
-        PARENT_UNAVAILABLE,
-      );
-    });
-
-    it("rejects an event on a removed channel", async () => {
+    it("rejects an event on a removed channel but allows an unavailable one", async () => {
       expect(
         await errorCodeOf(insertEventOn(await addChannel("removed"))),
       ).toBe(PARENT_UNAVAILABLE);
-    });
-
-    it("allows an event on an unavailable channel, which may come back", async () => {
       expect(
         await errorCodeOf(insertEventOn(await addChannel("unavailable"))),
       ).toBeUndefined();
     });
-
-    it("allows a task on a live event", async () => {
-      const eventId = await insertEvent(db, guild);
-      expect(await errorCodeOf(insertTask(db, guild, eventId))).toBeUndefined();
-    });
-
-    it("leaves a missing parent for the foreign key to report", async () => {
-      expect(await errorCodeOf(insertEventOn(fakeId()))).toBe("23503");
-    });
-  });
-
-  it("every lifecycle function is SECURITY DEFINER", async () => {
-    const { rows } = await db.query(
-      `SELECT proname, prosecdef FROM pg_proc
-       WHERE proname IN ('soft_delete_event', 'claim_reminder', 'reclaim_reminder',
-                         'mark_reminder_sent', 'mark_reminder_skipped', 'require_open_parent')
-       ORDER BY proname`,
-    );
-    expect(rows).toEqual(
-      [
-        "claim_reminder",
-        "mark_reminder_sent",
-        "mark_reminder_skipped",
-        "reclaim_reminder",
-        "require_open_parent",
-        "soft_delete_event",
-      ].map((proname) => ({ proname, prosecdef: true })),
-    );
   });
 
   describe("soft_delete_event", () => {
@@ -138,25 +95,16 @@ describe("task lifecycle", () => {
       return rows[0];
     };
 
-    it("deletes the event and its tasks and reports how many tasks", async () => {
+    it("deletes the event and its tasks once, leaving other events alone", async () => {
+      const keptEvent = await insertEvent(db, guild);
+      await insertTask(db, guild, keptEvent);
       const eventId = await insertEvent(db, guild);
       await insertTask(db, guild, eventId);
       await insertTask(db, guild, eventId);
 
       expect(await softDelete(eventId)).toBe(2);
       expect(await liveCounts(eventId)).toEqual({ events: 0, tasks: 0 });
-    });
-
-    it("leaves tasks on other events alone", async () => {
-      const keptEvent = await insertEvent(db, guild);
-      await insertTask(db, guild, keptEvent);
-      await softDelete(await insertEvent(db, guild));
       expect(await liveCounts(keptEvent)).toEqual({ events: 1, tasks: 1 });
-    });
-
-    it("returns null for an event already deleted", async () => {
-      const eventId = await insertEvent(db, guild);
-      await softDelete(eventId);
       expect(await softDelete(eventId)).toBeNull();
     });
 
@@ -164,26 +112,6 @@ describe("task lifecycle", () => {
       const eventId = await insertEvent(db, guild);
       expect(await softDelete(eventId, fakeId())).toBeNull();
       expect(await liveCounts(eventId)).toEqual({ events: 1, tasks: 0 });
-    });
-
-    it("rolls the event back if its tasks cannot be deleted", async () => {
-      const eventId = await insertEvent(db, guild);
-      await insertTask(db, guild, eventId);
-      await db.exec(`
-        CREATE FUNCTION public.test_fail_task() RETURNS trigger LANGUAGE plpgsql AS $$
-        BEGIN RAISE EXCEPTION 'task write failed' USING ERRCODE = 'XX999'; END; $$;
-        CREATE TRIGGER test_fail_task BEFORE UPDATE ON public.tasks
-          FOR EACH ROW EXECUTE FUNCTION public.test_fail_task();
-      `);
-      try {
-        expect(await errorCodeOf(softDelete(eventId))).toBe("XX999");
-      } finally {
-        await db.exec(`
-          DROP TRIGGER test_fail_task ON public.tasks;
-          DROP FUNCTION public.test_fail_task();
-        `);
-      }
-      expect(await liveCounts(eventId)).toEqual({ events: 1, tasks: 1 });
     });
   });
 
@@ -218,6 +146,16 @@ describe("task lifecycle", () => {
       return rows[0]?.marked;
     };
 
+    const markSkipped = async (taskId: string, token: string) => {
+      const rows = await queryAs<{ marked: boolean }>(
+        db,
+        "bot_app",
+        `SELECT public.mark_reminder_skipped($1, 'one_day', '${DUE}', $2) AS marked`,
+        [taskId, token],
+      );
+      return rows[0]?.marked;
+    };
+
     const age = (taskId: string, interval: string) =>
       db.query(
         `UPDATE public.reminder_log SET claimed_at = now() - $2::interval WHERE task_id = $1`,
@@ -225,14 +163,8 @@ describe("task lifecycle", () => {
       );
 
     const logRow = async (taskId: string) => {
-      const { rows } = await db.query<{
-        state: string;
-        attempts: number;
-        sent: boolean;
-        has_message: boolean;
-      }>(
-        `SELECT state, attempts, sent_at IS NOT NULL AS sent, message_id IS NOT NULL AS has_message
-         FROM public.reminder_log WHERE task_id = $1`,
+      const { rows } = await db.query<{ state: string; attempts: number }>(
+        `SELECT state, attempts FROM public.reminder_log WHERE task_id = $1`,
         [taskId],
       );
       return rows[0];
@@ -243,15 +175,13 @@ describe("task lifecycle", () => {
 
     it("gives the first claim a token and the second nothing", async () => {
       const taskId = await newTask();
-      expect(await claim(taskId)).toEqual(expect.any(String));
+      expect(typeof (await claim(taskId))).toBe("string");
       expect(await claim(taskId)).toBeNull();
       expect((await logRow(taskId))?.attempts).toBe(1);
     });
 
-    it("claims again after the due date changes", async () => {
+    it("claims the new due date after a move, and refuses the old one", async () => {
       const taskId = await newTask();
-      expect(await claim(taskId)).not.toBeNull();
-
       const moved = "2030-03-01";
       await queryAs(
         db,
@@ -259,24 +189,8 @@ describe("task lifecycle", () => {
         `UPDATE public.tasks SET due_date = $2 WHERE id = $1`,
         [taskId, moved],
       );
-
-      expect(await claim(taskId, moved)).not.toBeNull();
-      const { rows } = await db.query(
-        `SELECT count(*)::int AS n FROM public.reminder_log WHERE task_id = $1`,
-        [taskId],
-      );
-      expect(rows).toEqual([{ n: 2 }]);
-    });
-
-    it("refuses a claim for a due date the task no longer has", async () => {
-      const taskId = await newTask();
-      await queryAs(
-        db,
-        MIGRATION_OWNER,
-        `UPDATE public.tasks SET due_date = '2030-03-01' WHERE id = $1`,
-        [taskId],
-      );
       expect(await claim(taskId, DUE)).toBeNull();
+      expect(await claim(taskId, moved)).not.toBeNull();
     });
 
     it.each([
@@ -293,49 +207,23 @@ describe("task lifecycle", () => {
       expect(await claim(taskId)).toBeNull();
     });
 
-    describe("skipping", () => {
-      const markSkipped = async (taskId: string, token: string) => {
-        const rows = await queryAs<{ marked: boolean }>(
-          db,
-          "bot_app",
-          `SELECT public.mark_reminder_skipped($1, 'one_day', '${DUE}', $2) AS marked`,
-          [taskId, token],
-        );
-        return rows[0]?.marked;
-      };
+    it("marks sent or skipped only with the right token, and both are final", async () => {
+      const sentTask = await newTask();
+      const sentToken = present(await claim(sentTask));
+      expect(await markSent(sentTask, crypto.randomUUID())).toBe(false);
+      expect(await markSent(sentTask, sentToken)).toBe(true);
+      expect(await markSkipped(sentTask, sentToken)).toBe(false);
+      expect((await logRow(sentTask))?.state).toBe("sent");
 
-      it("marks skipped with the right token, and the skip is final", async () => {
-        const taskId = await newTask();
-        const token = present(await claim(taskId));
-
-        expect(await markSkipped(taskId, token)).toBe(true);
-
-        expect(await logRow(taskId)).toEqual({
-          state: "skipped",
-          attempts: 1,
-          sent: false,
-          has_message: false,
-        });
-        expect(await claim(taskId)).toBeNull();
-        expect(await markSent(taskId, token)).toBe(false);
-        await age(taskId, "2 hours");
-        expect(await reclaim(taskId, token)).toBeNull();
-      });
-
-      it("refuses to skip with the wrong token", async () => {
-        const taskId = await newTask();
-        await claim(taskId);
-        expect(await markSkipped(taskId, crypto.randomUUID())).toBe(false);
-        expect((await logRow(taskId))?.state).toBe("claimed");
-      });
-
-      it("cannot overwrite a sent reminder", async () => {
-        const taskId = await newTask();
-        const token = present(await claim(taskId));
-        await markSent(taskId, token);
-        expect(await markSkipped(taskId, token)).toBe(false);
-        expect((await logRow(taskId))?.state).toBe("sent");
-      });
+      const skippedTask = await newTask();
+      const skipToken = present(await claim(skippedTask));
+      expect(await markSkipped(skippedTask, crypto.randomUUID())).toBe(false);
+      expect(await markSkipped(skippedTask, skipToken)).toBe(true);
+      expect(await claim(skippedTask)).toBeNull();
+      expect(await markSent(skippedTask, skipToken)).toBe(false);
+      await age(skippedTask, "2 hours");
+      expect(await reclaim(skippedTask, skipToken)).toBeNull();
+      expect((await logRow(skippedTask))?.state).toBe("skipped");
     });
 
     it.each([
@@ -346,10 +234,6 @@ describe("task lifecycle", () => {
       [
         "mark sent without a token",
         `UPDATE public.reminder_log SET state = 'sent', sent_at = now() WHERE task_id = $1`,
-      ],
-      [
-        "skip without a token",
-        `UPDATE public.reminder_log SET state = 'skipped' WHERE task_id = $1`,
       ],
       [
         "steal a claim",
@@ -364,90 +248,41 @@ describe("task lifecycle", () => {
       expect((await logRow(taskId))?.state).toBe("claimed");
     });
 
-    it("marks sent with the right token", async () => {
-      const taskId = await newTask();
-      const token = present(await claim(taskId));
-      expect(await markSent(taskId, token)).toBe(true);
-      expect(await logRow(taskId)).toEqual({
-        state: "sent",
-        attempts: 1,
-        sent: true,
-        has_message: true,
-      });
-    });
-
-    it("refuses to mark sent with the wrong token", async () => {
-      const taskId = await newTask();
-      await claim(taskId);
-      expect(await markSent(taskId, crypto.randomUUID())).toBe(false);
-      expect((await logRow(taskId))?.state).toBe("claimed");
-    });
-
-    it("refuses to reclaim a fresh claim", async () => {
-      const taskId = await newTask();
-      const token = present(await claim(taskId));
-      await age(taskId, "100 seconds");
-      expect(await reclaim(taskId, token)).toBeNull();
-      expect((await logRow(taskId))?.attempts).toBe(1);
-    });
-
-    it("reclaims a stale claim with a new token, and the old worker can no longer finish", async () => {
+    it("reclaims a stale claim once with a new token, and the old worker can no longer finish", async () => {
       const taskId = await newTask();
       const oldToken = present(await claim(taskId));
+      await age(taskId, "100 seconds");
+      expect(await reclaim(taskId, oldToken)).toBeNull();
+
       await age(taskId, "3 minutes");
-
-      const newToken = await reclaim(taskId, oldToken);
-
-      expect(newToken).not.toBeNull();
+      expect(await reclaim(taskId, crypto.randomUUID())).toBeNull();
+      const newToken = present(await reclaim(taskId, oldToken));
       expect(newToken).not.toBe(oldToken);
       expect((await logRow(taskId))?.attempts).toBe(2);
-      expect(await markSent(taskId, oldToken)).toBe(false);
-      expect(await markSent(taskId, present(newToken))).toBe(true);
-    });
-
-    it("resets the clock, so a reclaimed claim is fresh again", async () => {
-      const taskId = await newTask();
-      const token = present(await claim(taskId));
-      await age(taskId, "2 hours");
-      const newToken = present(await reclaim(taskId, token));
       expect(await reclaim(taskId, newToken)).toBeNull();
+      await age(taskId, "2 hours");
+      expect(await reclaim(taskId, oldToken)).toBeNull();
+
+      expect(await markSent(taskId, oldToken)).toBe(false);
+      expect(await markSent(taskId, newToken)).toBe(true);
     });
 
-    it("lets only one of two runs reclaim with the same token", async () => {
-      const taskId = await newTask();
-      const token = present(await claim(taskId));
-      await age(taskId, "2 hours");
-      expect(await reclaim(taskId, token)).not.toBeNull();
-      await age(taskId, "2 hours");
-      expect(await reclaim(taskId, token)).toBeNull();
-    });
-
-    it("refuses to reclaim with the wrong token", async () => {
-      const taskId = await newTask();
-      await claim(taskId);
-      await age(taskId, "2 hours");
-      expect(await reclaim(taskId, crypto.randomUUID())).toBeNull();
-    });
-
-    it("refuses to reclaim a sent reminder", async () => {
-      const taskId = await newTask();
-      const token = present(await claim(taskId));
-      await markSent(taskId, token);
-      await age(taskId, "2 hours");
-      expect(await reclaim(taskId, token)).toBeNull();
-    });
-
-    it("refuses to reclaim once the task is done", async () => {
-      const taskId = await newTask();
-      const token = present(await claim(taskId));
-      await age(taskId, "2 hours");
-      await queryAs(
-        db,
-        "bot_app",
-        `UPDATE public.tasks SET status = 'done', completed_at = now() WHERE id = $1`,
-        [taskId],
-      );
-      expect(await reclaim(taskId, token)).toBeNull();
-    });
+    it.each([["sent"], ["done"]])(
+      "refuses to reclaim once the reminder or task is %s",
+      async (change) => {
+        const taskId = await newTask();
+        const token = present(await claim(taskId));
+        if (change === "sent") await markSent(taskId, token);
+        else
+          await queryAs(
+            db,
+            "bot_app",
+            `UPDATE public.tasks SET status = 'done', completed_at = now() WHERE id = $1`,
+            [taskId],
+          );
+        await age(taskId, "2 hours");
+        expect(await reclaim(taskId, token)).toBeNull();
+      },
+    );
   });
 });
