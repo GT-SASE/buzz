@@ -6,6 +6,7 @@
     "types": ["node", "bun"],
     "noEmit": true,
     "allowImportingTsExtensions": true,
+    // Vercel's build reads this. Without it the deployed functions import .ts files and fail to start.
     "rewriteRelativeImportExtensions": true,
     "erasableSyntaxOnly": true,
     "verbatimModuleSyntax": true,
