@@ -17,8 +17,11 @@ export type ReminderKind = (typeof REMINDER_KINDS)[number];
 
 export type ReminderState = "claimed" | "sent" | "skipped";
 
-/** A claim older than this was left behind by a crashed run. */
-export const STALE_CLAIM_MS = 3_600_000;
+/** Mirrors `maxDuration` in vercel.json for both functions; cron-endpoint.test.ts enforces it. */
+export const FUNCTION_MAX_MS = 60_000;
+
+/** A claim older than this was left behind by a run the platform has since stopped. */
+export const STALE_CLAIM_MS = 2 * FUNCTION_MAX_MS;
 /**
  * A reminder goes out without notifying anyone once this many sends, counting the one about
  * to start, may have reached Discord. A send known to have been refused does not count.

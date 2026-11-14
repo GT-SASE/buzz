@@ -90,7 +90,8 @@ const MAX_SELECT_OPTIONS = 25;
 // The panel only ever changes one forum at a time, but an audit row can name up to 25.
 const MAX_CHANNELS_PER_CHANGE = 3;
 // Re-adding a forum redraws its posts before the panel answers. Each post can take a few
-// Discord calls, so this stops in good time for the panel inside the function's 60 seconds.
+// Discord calls, so this stops in good time for the panel inside the function's time limit
+// (`FUNCTION_MAX_MS`).
 const MAX_POSTS_REFRESHED = 10;
 const POST_REFRESH_BUDGET_MS = 20_000;
 const FORUM_TYPE: number = ChannelType.GuildForum;

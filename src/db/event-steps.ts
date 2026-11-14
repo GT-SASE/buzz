@@ -10,6 +10,7 @@
  */
 
 import type { DateOnly } from "../lib/dates.ts";
+import { STALE_CLAIM_MS } from "../reminders/plan.ts";
 import type { DbClient } from "./client.ts";
 import { failure, refused, type DbResult } from "./errors.ts";
 import {
@@ -467,7 +468,7 @@ export async function claimEventReminder(
   );
 }
 
-/** Takes over a claim over an hour old given its last token. Null if that is not possible. */
+/** Takes over a stale claim given its last token. Null if that is not possible. */
 export async function reclaimEventReminder(
   db: DbClient,
   key: EventReminderKey & { claimToken: string },
@@ -480,7 +481,8 @@ export async function reclaimEventReminder(
     sql`select public.reclaim_event_reminder(p_event_id => ${key.eventId},
       p_kind => ${key.kind},
       p_reminder_date => ${key.reminderDate},
-      p_claim_token => ${key.claimToken}) as value`,
+      p_claim_token => ${key.claimToken},
+      p_stale_after_seconds => ${STALE_CLAIM_MS / 1000}) as value`,
   );
 }
 

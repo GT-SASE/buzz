@@ -202,7 +202,7 @@ describe("task lifecycle", () => {
       const rows = await queryAs<{ token: string | null }>(
         db,
         "bot_app",
-        `SELECT public.reclaim_reminder($1, 'one_day', '${DUE}', $2) AS token`,
+        `SELECT public.reclaim_reminder($1, 'one_day', '${DUE}', $2, 120) AS token`,
         [taskId, token],
       );
       return rows[0]?.token ?? null;
@@ -386,7 +386,7 @@ describe("task lifecycle", () => {
     it("refuses to reclaim a fresh claim", async () => {
       const taskId = await newTask();
       const token = present(await claim(taskId));
-      await age(taskId, "59 minutes");
+      await age(taskId, "100 seconds");
       expect(await reclaim(taskId, token)).toBeNull();
       expect((await logRow(taskId))?.attempts).toBe(1);
     });
@@ -394,7 +394,7 @@ describe("task lifecycle", () => {
     it("reclaims a stale claim with a new token, and the old worker can no longer finish", async () => {
       const taskId = await newTask();
       const oldToken = present(await claim(taskId));
-      await age(taskId, "61 minutes");
+      await age(taskId, "3 minutes");
 
       const newToken = await reclaim(taskId, oldToken);
 

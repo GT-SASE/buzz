@@ -927,7 +927,7 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.reclaim_event_reminder(p_event_id uuid, p_kind public.event_reminder_kind, p_reminder_date date, p_claim_token uuid) RETURNS uuid
+CREATE FUNCTION public.reclaim_event_reminder(p_event_id uuid, p_kind public.event_reminder_kind, p_reminder_date date, p_claim_token uuid, p_stale_after_seconds integer) RETURNS uuid
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO ''
     AS $$
@@ -943,7 +943,7 @@ BEGIN
     AND log.reminder_date = p_reminder_date
     AND log.state = 'claimed'
     AND log.claim_token = p_claim_token
-    AND log.claimed_at < now() - interval '1 hour'
+    AND log.claimed_at < now() - make_interval(secs => p_stale_after_seconds)
     AND public.event_reminder_allowed(p_event_id, p_kind, p_reminder_date)
   RETURNING log.claim_token INTO v_token;
 
@@ -951,7 +951,7 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.reclaim_reminder(p_task_id uuid, p_kind public.reminder_kind, p_due_date date, p_claim_token uuid, p_assignee_id text DEFAULT NULL::text, p_updated_at timestamp with time zone DEFAULT NULL::timestamp with time zone) RETURNS uuid
+CREATE FUNCTION public.reclaim_reminder(p_task_id uuid, p_kind public.reminder_kind, p_due_date date, p_claim_token uuid, p_stale_after_seconds integer, p_assignee_id text DEFAULT NULL::text, p_updated_at timestamp with time zone DEFAULT NULL::timestamp with time zone) RETURNS uuid
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO ''
     AS $$
@@ -982,7 +982,7 @@ BEGIN
     AND log.due_date = p_due_date
     AND log.state = 'claimed'
     AND log.claim_token = p_claim_token
-    AND log.claimed_at < now() - interval '1 hour'
+    AND log.claimed_at < now() - make_interval(secs => p_stale_after_seconds)
     AND EXISTS (
       SELECT 1
       FROM public.tasks AS task
@@ -1795,8 +1795,8 @@ GRANT EXECUTE ON FUNCTION
   public.mark_reminder_sent(uuid, public.reminder_kind, date, uuid, text),
   public.mark_reminder_skipped(uuid, public.reminder_kind, date, uuid),
   public.mark_step_handoff_sent(uuid, text, public.event_step_kind),
-  public.reclaim_event_reminder(uuid, public.event_reminder_kind, date, uuid),
-  public.reclaim_reminder(uuid, public.reminder_kind, date, uuid, text, timestamptz),
+  public.reclaim_event_reminder(uuid, public.event_reminder_kind, date, uuid, integer),
+  public.reclaim_reminder(uuid, public.reminder_kind, date, uuid, integer, text, timestamptz),
   public.record_reminder_refused(uuid, public.reminder_kind, date, uuid),
   public.release_event_post_attempt(uuid, text),
   public.save_setup_draft(text, text, text, text, text, text, text, text, text),

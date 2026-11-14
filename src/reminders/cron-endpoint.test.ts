@@ -7,14 +7,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as endpoint from "../../api/cron/reminders.ts";
 import { vercelConfig } from "../../test/support/json.ts";
 import { testDatabaseUrl } from "../../test/support/sql-client.ts";
-import { STALE_CLAIM_MS } from "./plan.ts";
 import {
-  DATABASE_CALL_MS,
-  DISCORD_OPERATION_MS,
-  LOCK_STALE_SECONDS,
-  RUN_HARD_STOP_MS,
-  RUN_WORK_MS,
-} from "./run.ts";
+  FUNCTION_MAX_MS,
+  SLOT_START_HOUR_UTC,
+  STALE_CLAIM_MS,
+} from "./plan.ts";
 import { fakeId } from "../../test/support/ids.ts";
 
 const SECRET = "c".repeat(40);
@@ -146,35 +143,36 @@ describe("refusals", () => {
 
 describe("deployment settings", () => {
   const vercel = vercelConfig(readFileSync(join(ROOT, "vercel.json"), "utf8"));
-  const maxSeconds =
-    vercel.functions["api/cron/reminders.ts"]?.maxDuration ?? 0;
+  const RECOVERY_HOUR_UTC = SLOT_START_HOUR_UTC + 2;
+  const HOUR_MS = 3_600_000;
 
   it("schedules a morning run and a recovery run of this endpoint", () => {
     expect(vercel.crons).toEqual([
-      { path: "/api/cron/reminders", schedule: "0 15 * * *" },
-      { path: "/api/cron/reminders", schedule: "0 17 * * *" },
+      {
+        path: "/api/cron/reminders",
+        schedule: `0 ${String(SLOT_START_HOUR_UTC)} * * *`,
+      },
+      {
+        path: "/api/cron/reminders",
+        schedule: `0 ${String(RECOVERY_HOUR_UTC)} * * *`,
+      },
     ]);
   });
 
-  it("leaves more than the stale claim age between the two crons", () => {
-    // A claim left by a failed morning run must be stale by the recovery run. Hobby
-    // fires anywhere in the hour, so only one started by 16:00 is sure to be.
-    expect(17 - 15).toBeGreaterThan(STALE_CLAIM_MS / 3_600_000);
-  });
+  it.each(["api/cron/reminders.ts", "api/interactions.ts"])(
+    "gives %s the time limit the code is built for",
+    (path) => {
+      expect((vercel.functions[path]?.maxDuration ?? 0) * 1000).toBe(
+        FUNCTION_MAX_MS,
+      );
+    },
+  );
 
-  it("stops new work with time left for one send and its marks", () => {
+  it("leaves time for a morning run's claims to go stale before the recovery run", () => {
+    // Hobby fires anywhere in the hour, so the morning run may start at 15:59 and the
+    // recovery run at 17:00.
     expect(
-      RUN_WORK_MS + DATABASE_CALL_MS + DISCORD_OPERATION_MS,
-    ).toBeLessThanOrEqual(RUN_HARD_STOP_MS);
-  });
-
-  it("records the run inside the limit, after the last marks that may start", () => {
-    expect(RUN_HARD_STOP_MS + 2 * DATABASE_CALL_MS).toBeLessThanOrEqual(
-      maxSeconds * 1000,
-    );
-  });
-
-  it("treats a run as dead only after the function must have ended", () => {
-    expect(LOCK_STALE_SECONDS).toBeGreaterThan(maxSeconds);
+      (RECOVERY_HOUR_UTC - SLOT_START_HOUR_UTC - 1) * HOUR_MS,
+    ).toBeGreaterThanOrEqual(FUNCTION_MAX_MS + STALE_CLAIM_MS);
   });
 });

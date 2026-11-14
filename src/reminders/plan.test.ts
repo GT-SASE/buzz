@@ -432,12 +432,11 @@ describe("claims", () => {
   it("measures claim age from now, not from today", () => {
     const claimedAt = new Date("2026-11-15T13:30:00Z");
     const log = [row(TODAY, "due_day", "claimed", claimedAt)];
+    const after = (ms: number) => new Date(claimedAt.getTime() + ms);
 
+    expect(kindsSent(plan({ now: after(STALE_CLAIM_MS), log }))).toEqual([]);
     expect(
-      kindsSent(plan({ now: new Date("2026-11-15T14:00:00Z"), log })),
-    ).toEqual([]);
-    expect(
-      kindsSent(plan({ now: new Date("2026-11-15T14:30:01Z"), log })),
+      kindsSent(plan({ now: after(STALE_CLAIM_MS + 1_000), log })),
     ).toEqual(["due_day"]);
   });
 });
@@ -478,12 +477,13 @@ describe("unreadable claim times", () => {
       claimedAt: at as unknown as Date,
     });
 
-    expect(kindsSent(plan({ log: [claimed("2026-11-15T13:30:00Z")] }))).toEqual(
-      [],
-    );
-    expect(kindsSent(plan({ log: [claimed("2026-11-15T12:59:59Z")] }))).toEqual(
-      ["due_day"],
-    );
+    const at = (date: Date) => date.toISOString();
+    expect(
+      kindsSent(plan({ log: [claimed(at(ageAgo(STALE_CLAIM_MS)))] })),
+    ).toEqual([]);
+    expect(
+      kindsSent(plan({ log: [claimed(at(ageAgo(STALE_CLAIM_MS + 1_000)))] })),
+    ).toEqual(["due_day"]);
   });
 
   it("does not affect a sent or skipped row", () => {

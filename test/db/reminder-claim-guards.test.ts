@@ -96,7 +96,7 @@ describe("reminder claims check the task's parents", () => {
     const rows = await queryAs<{ token: string | null }>(
       db,
       "bot_app",
-      `SELECT public.reclaim_reminder($1, 'due_day', '${DUE}', $2) AS token`,
+      `SELECT public.reclaim_reminder($1, 'due_day', '${DUE}', $2, 120) AS token`,
       [taskId, token],
     );
     return rows[0]?.token ?? null;

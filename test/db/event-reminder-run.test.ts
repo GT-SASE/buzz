@@ -664,7 +664,7 @@ describe("claims left by a crashed run", () => {
   it("waits on a fresh claim, and does not call the run complete", async () => {
     const guild = await guildInUtc();
     const made = await event(guild, 4);
-    await claimAgo(made.eventId, "daily_steps", dateOffset(0), 10);
+    await claimAgo(made.eventId, "daily_steps", dateOffset(0), 1);
 
     const result = await run([guild]);
 

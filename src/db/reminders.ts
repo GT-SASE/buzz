@@ -1,4 +1,5 @@
 import type { DateOnly } from "../lib/dates.ts";
+import { STALE_CLAIM_MS } from "../reminders/plan.ts";
 import type { DbClient } from "./client.ts";
 import { refused, type DbResult } from "./errors.ts";
 import { callFunction, capped, firstRow, query, sql } from "./internal.ts";
@@ -205,6 +206,7 @@ export async function reclaimReminder(
       p_kind => ${key.kind},
       p_due_date => ${key.dueDate},
       p_claim_token => ${key.claimToken},
+      p_stale_after_seconds => ${STALE_CLAIM_MS / 1000},
       p_assignee_id => ${key.asRead?.assigneeId ?? null},
       p_updated_at => ${key.asRead?.updatedAt ?? null}) as value`,
   );

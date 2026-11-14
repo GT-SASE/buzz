@@ -52,6 +52,7 @@ import {
   type RunBudget,
 } from "./event-run.ts";
 import {
+  FUNCTION_MAX_MS,
   MAX_ATTEMPTS_WITH_PING,
   slotToday,
   STALE_CLAIM_MS,
@@ -68,18 +69,20 @@ import {
   type Batch,
 } from "./render.ts";
 
+export const DISCORD_OPERATION_MS = 6_000;
+export const DATABASE_CALL_MS = 4_000;
+const WORK_MARGIN_MS = 2_000;
 /**
- * vercel.json gives this function 60 seconds. No new claim or send starts after
+ * Inside the function's time limit (`FUNCTION_MAX_MS`), no new claim or send starts after
  * `RUN_WORK_MS`. What is under way can still take a claim and one Discord operation, and
  * no mark starts after `RUN_HARD_STOP_MS`, which leaves time for the last marks to end
  * and the run to record itself inside that limit.
  */
-export const RUN_WORK_MS = 40_000;
-export const RUN_HARD_STOP_MS = 52_000;
-export const DISCORD_OPERATION_MS = 6_000;
-export const DATABASE_CALL_MS = 4_000;
+export const RUN_HARD_STOP_MS = FUNCTION_MAX_MS - 2 * DATABASE_CALL_MS;
+export const RUN_WORK_MS =
+  RUN_HARD_STOP_MS - DATABASE_CALL_MS - DISCORD_OPERATION_MS - WORK_MARGIN_MS;
 /** Longer than the function can live, so a 'running' row this old is a killed run. */
-export const LOCK_STALE_SECONDS = 120;
+export const LOCK_STALE_SECONDS = (2 * FUNCTION_MAX_MS) / 1000;
 /**
  * Discord's answers that blame the thread, or the bot's place in the server, and not the
  * message. 50001 also comes back for every channel once the bot is removed from the server,
