@@ -8,7 +8,7 @@ Dashboards move. Where a step says **check this in the dashboard**, the label or
 
 You need:
 
-- A Mac or Linux computer with Bun 1.4.4, Git, Bash, curl, OpenSSL and `psql` 16 or later.
+- A Mac or Linux computer with the Bun version in `package.json`, Git, Bash, curl, OpenSSL and `psql` 16 or later.
 - A password manager, and a passkey or security key.
 - A second Discord account, to act as an ordinary member.
 - Administrator on the club's server, or someone who has it.

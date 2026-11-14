@@ -192,7 +192,9 @@ These stay true with every control working:
 
 ## Local development
 
-You need Bun 1.4.4, Git, Bash and curl, on macOS or Linux. Bun installs packages and runs every script, test and CI step, but the functions run on Node 24 on Vercel, because Vercel's Bun runtime is newer; switching later is one setting.
+You need the Bun version in `package.json` (`packageManager`), Git, Bash and curl, on macOS or Linux. Bun installs packages and runs every script, test and CI step.
+
+The functions run on Node 24 on Vercel. Vercel's Bun runtime, in beta, doesn't support automatic source maps, bytecode caching or request metrics for `node:http`/`node:https` yet; switching is `bunVersion` in `vercel.json`.
 
 ```sh
 bun install --frozen-lockfile
@@ -200,7 +202,7 @@ bun run gitleaks:install
 bun run hooks:install
 ```
 
-`bunfig.toml` keeps every install script off, pins new dependencies to exact versions, and gives a flat `node_modules`, which Vercel's function tracing copies whole. It also makes `bun run` start tools with a `node` shebang on Bun, and stops Bun loading `.env` by itself, so only `commands:register` reads it. `hooks:install` turns on a pre-push hook that runs gitleaks over the commits being pushed and blocks the push on a finding. [SECURITY.md](SECURITY.md) lists its limits.
+Settings are in `bunfig.toml`. `hooks:install` turns on a pre-push hook that runs gitleaks over the commits being pushed and blocks the push on a finding. [SECURITY.md](SECURITY.md) lists its limits.
 
 There is no local bot. Discord needs a public HTTPS URL, so tests stand in for it, and real runs happen on the deployment, on a private test server. `.env.example` lists every setting. Copy it to `.env` only when you need to register commands.
 
@@ -216,14 +218,12 @@ There is no local bot. Discord needs a public HTTPS URL, so tests stand in for i
 | `bun run test:db:concurrency` | Races: double Done clicks, retried interactions, overlapping reminder runs, deletes against inserts, config saves and first setup, task quotas at their limit, task changes, lock order | `CONCURRENCY_DATABASE_URL` to a Postgres 17 superuser, and `BOT_APP_PASSWORD` |
 | `bun run db:migrate`          | Applies new files in `db/migrations` with dbmate, in order                                                                                                                              | `DATABASE_URL` for the database's owner role, never `bot_app`                 |
 
-Tests use `bun:test`. Unit tests sit next to the code as `src/**/*.test.ts` and `scripts/*.test.ts`, the PGlite tests are in `test/db/`, the race tests in `test/db-concurrency/`, and shared helpers in `test/support/`. `bunfig.toml` preloads `test/support/setup.ts`, which pins the time zone and undoes stubs after each test, and leaves `test/db/` and `test/db-concurrency/` out of a plain `bun test`. Use the scripts, which run each file in a fresh global. To run one file, give a path starting with `./`, since a bare word only filters file names:
+Tests use `bun:test`. Unit tests sit next to the code as `src/**/*.test.ts` and `scripts/*.test.ts`, the PGlite tests are in `test/db/`, the race tests in `test/db-concurrency/`, and shared helpers in `test/support/`. Every run preloads `test/support/setup.ts`, which pins the time zone and undoes stubs after each test. To run one file, give a path starting with `./`, since a bare word only filters file names:
 
 ```sh
 bun test --isolate ./src/lib/dates.test.ts
-bun test --isolate --timeout 30000 --path-ignore-patterns 'none' ./test/db/history.test.ts
+bun test ./test/db/history.test.ts --timeout 30000
 ```
-
-The second replaces bunfig's ignore list, which would otherwise skip `test/db/`.
 
 `bun run test:db` runs the migration files on PGlite and the tests send the bot's own SQL to it as `bot_app`. The concurrency tests need real Postgres 17. CI's database workflow runs one as a service, makes an owner and a database, runs `bun run db:migrate` and checks nothing is left pending, sets `bot_app`'s password, then runs those tests through `pg`, logged in as `bot_app`. Point `CONCURRENCY_DATABASE_URL` at that migrated database.
 
@@ -254,12 +254,7 @@ To add a command, write a file in `src/handlers/` that exports `handler`, add on
 
 ## Deployment
 
-[docs/SETUP.md](docs/SETUP.md) has the full steps. For the database, in short:
-
-1. Create a Neon project on Postgres 17.
-2. Apply the schema as the project's owner role, such as the default `neondb_owner`, never as `bot_app`: `DATABASE_URL='<owner connection string>' bun run db:migrate`. Neon's Connect dialog shows the owner's string; use the direct one, with pooling off, and `sslmode=verify-full`.
-3. Once, as the owner, in Neon's SQL editor or `psql`, give `bot_app` a long random password: `ALTER ROLE bot_app PASSWORD '<password>';`. The baseline creates `bot_app` with no password.
-4. In Vercel, set `DATABASE_URL` to `bot_app`'s connection string: `postgresql://bot_app:<password>@<host>/<database>?sslmode=verify-full`, with the password from step 3, percent-encoded. The bot sends queries over HTTPS; `sslmode=verify-full` is for `psql` and dbmate.
+[docs/SETUP.md](docs/SETUP.md) has every step, from the Neon project and the migrations to the Vercel project and its settings.
 
 These settings in the repo are easy to break:
 
