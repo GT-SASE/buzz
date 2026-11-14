@@ -10,6 +10,7 @@
  */
 
 import { createPublicKey, verify } from "node:crypto";
+import { ChannelType } from "discord-api-types/v10";
 import { isSnowflake } from "../lib/snowflake.ts";
 import { parseInteractionBody } from "./interactions.ts";
 
@@ -28,6 +29,12 @@ const MINT = Symbol("verify");
 
 // Announcement, public and private threads.
 const THREAD_CHANNEL_TYPES: ReadonlySet<unknown> = new Set([10, 11, 12]);
+
+/** The channel types that hold forum posts. */
+export const FORUM_CHANNEL_TYPES: ReadonlySet<unknown> = new Set([
+  ChannelType.GuildForum,
+  ChannelType.GuildMedia,
+]);
 
 export interface SignedRequest {
   body: Uint8Array;

@@ -22,7 +22,11 @@ import { ConfigError } from "../lib/config-error.ts";
 import { isSnowflake } from "../lib/snowflake.ts";
 import { isEphemeralInitialResponse } from "./outbound.ts";
 import type { OutboundBody } from "./outbound.ts";
-import { interactionToken, isThreadChannelType } from "./verify.ts";
+import {
+  FORUM_CHANNEL_TYPES,
+  interactionToken,
+  isThreadChannelType,
+} from "./verify.ts";
 import type { VerifiedInteraction } from "./verify.ts";
 
 const API_BASE = "https://discord.com/api/v10";
@@ -39,7 +43,6 @@ const EPHEMERAL_FLAG = 64;
 // A deferred reply can take a moment to exist after the acknowledgement, and Discord's
 // webhook routes can fail for a moment. The total stays inside the operation budget.
 const ORIGINAL_RETRY_WAITS_MS = [250, 500, 1000];
-const FORUM_CHANNEL_TYPES: ReadonlySet<unknown> = new Set([15, 16]);
 
 /** Discord error codes that callers are expected to act on. */
 export const DiscordErrorCode = {
