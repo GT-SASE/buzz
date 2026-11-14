@@ -1,12 +1,13 @@
+// Bun 1.4.4 has no vi.stubEnv/vi.stubGlobal, no bunfig unstubEnvs/restoreMocks and no
+// expect.soft, so these small helpers fill the gap until Bun ships them.
+
 /**
- * Stand-ins for settings and globals that a test swaps out, and assertions whose failure
- * waits for the end of the test. test/support/setup.ts, preloaded for every run, undoes
- * the stubs and reports the waiting failures after each test.
+ * Stand-ins for settings and globals that a test swaps out. test/support/setup.ts,
+ * preloaded for every run, undoes them after each test.
  */
 
 const envBefore = new Map<string, string | undefined>();
 const globalsBefore = new Map<PropertyKey, PropertyDescriptor | undefined>();
-const deferred: unknown[] = [];
 
 /** Sets an environment variable, or removes it when the value is undefined. */
 export function stubEnv(name: string, value: string | undefined): void {
@@ -72,30 +73,4 @@ export type FetchLike = (
  */
 export function asFetch(fn: FetchLike): typeof fetch {
   return Object.assign(fn, { preconnect: () => undefined });
-}
-
-/**
- * Runs an assertion now and, if it fails, fails the test when it ends. For checks
- * inside code whose caller catches errors, such as a fetch stand-in.
- */
-export function expectLater(check: () => void): void {
-  try {
-    check();
-  } catch (error) {
-    deferred.push(error);
-  }
-}
-
-/** Throws what expectLater caught during the test, if anything. */
-export function throwDeferred(): void {
-  const errors = deferred.splice(0);
-  if (errors.length === 1) {
-    throw errors[0];
-  }
-  if (errors.length > 1) {
-    throw new AggregateError(
-      errors,
-      `${String(errors.length)} checks failed during the test`,
-    );
-  }
 }

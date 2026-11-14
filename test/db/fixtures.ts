@@ -1,23 +1,5 @@
 import { fakeId, queryAs, type Connection } from "./harness.ts";
 
-/**
- * Runs bulk setup past the task quotas, which would otherwise refuse it and be far too
- * slow row by row. Needs the owner's connection, and turns them back on whatever happens.
- */
-export async function withoutQuotas<T>(
-  db: Connection,
-  fn: () => Promise<T>,
-): Promise<T> {
-  await db.exec("ALTER TABLE public.tasks DISABLE TRIGGER tasks_require_quota");
-  try {
-    return await fn();
-  } finally {
-    await db.exec(
-      "ALTER TABLE public.tasks ENABLE TRIGGER tasks_require_quota",
-    );
-  }
-}
-
 export const FIXTURE_DUE_DATE = "2030-01-10";
 
 export interface GuildFixture {

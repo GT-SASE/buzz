@@ -36,7 +36,7 @@ const MIGRATIONS_DIR = join(
 );
 
 /** Each migration's version and its `-- migrate:up` part, in the order dbmate runs them. */
-export function migrationsUp(): { version: string; sql: string }[] {
+function migrationsUp(): { version: string; sql: string }[] {
   return readdirSync(MIGRATIONS_DIR)
     .filter((name) => name.endsWith(".sql"))
     .sort()
@@ -58,7 +58,7 @@ export function migrationsUp(): { version: string; sql: string }[] {
  * Applies every migration, each in its own transaction, and records it in dbmate's
  * ledger, as `dbmate up` does.
  */
-export async function applyMigrations(db: Connection): Promise<void> {
+async function applyMigrations(db: Connection): Promise<void> {
   await db.exec(
     "CREATE TABLE IF NOT EXISTS public.schema_migrations (version varchar(128) PRIMARY KEY)",
   );
@@ -101,7 +101,7 @@ export const INSUFFICIENT_PRIVILEGE = "42501";
  * may create roles, and owns the database and its public schema, as on Neon. Safe to
  * run more than once in a cluster, and in any database.
  */
-export const SERVER_SETUP = `
+const SERVER_SETUP = `
   DO $$
   BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${MIGRATION_OWNER}') THEN
@@ -117,7 +117,7 @@ export const SERVER_SETUP = `
 `;
 
 /** Applies every migration as the owner, as `bun run db:migrate` does on Neon. */
-export async function migrateAsOwner(db: Connection): Promise<void> {
+async function migrateAsOwner(db: Connection): Promise<void> {
   await db.exec(`SET ROLE ${MIGRATION_OWNER}`);
   try {
     await applyMigrations(db);

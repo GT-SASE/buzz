@@ -8,7 +8,7 @@
 import { expect } from "bun:test";
 import { jsonObject } from "./json.ts";
 import { fakeId } from "./ids.ts";
-import { expectLater, type FetchLike } from "./stubs.ts";
+import type { FetchLike } from "./stubs.ts";
 
 const THREAD_TYPE = 11;
 const DISCORD_EPOCH_MS = 1420070400000;
@@ -39,8 +39,8 @@ export type Failure =
   | { kind: "network" }
   | { kind: "lost" };
 
-export const UNKNOWN_CHANNEL = 10003;
-export const UNKNOWN_MESSAGE = 10008;
+const UNKNOWN_CHANNEL = 10003;
+const UNKNOWN_MESSAGE = 10008;
 export const MISSING_ACCESS = 50001;
 const CANNOT_EDIT = 50005;
 
@@ -110,6 +110,17 @@ export function liveText(json: string): string[] {
 /** Fails the test if Discord would render anything in this body live. */
 export function expectInert(json: string): void {
   expect(liveText(json)).toEqual([]);
+}
+
+// What the fake server found live in the bodies sent during the current test.
+const liveFound: string[] = [];
+
+/**
+ * Fails the test if any body sent to a fake server had live text. The preload calls
+ * it after each test, since the client would catch a failure thrown while it sends.
+ */
+export function expectSentBodiesInert(): void {
+  expect(liveFound.splice(0)).toEqual([]);
 }
 
 const NOT_FOUND_CHANNEL = {
@@ -283,12 +294,9 @@ export function discordServer(appId: string): DiscordServer {
       const path = url.pathname.replace(/^\/api\/v[0-9]+/, "");
       let body: Record<string, unknown> | undefined;
       if (typeof init?.body === "string") {
-        // Fails the test at its end, so the client cannot catch it and turn it into
-        // a failed send.
-        const sent = init.body;
-        expectLater(() => {
-          expect(liveText(sent)).toEqual([]);
-        });
+        liveFound.push(
+          ...liveText(init.body).map((live) => `${method} ${path}: ${live}`),
+        );
         body = jsonObject(init.body, `the body of ${method} ${path}`);
       }
       requests.push({ method, path, body });

@@ -76,18 +76,3 @@ export function hasLiveSyntax(content: string): boolean {
     /[\u202A-\u202E\u2066-\u2069\u200B\u{E0001}-\u{E007F}]/u,
   ].some((pattern) => pattern.test(content));
 }
-
-/** Inputs that must never become part of a query's text. */
-export const HOSTILE_STRINGS = [
-  "x' OR '1'='1",
-  "x'); DROP TABLE public.tasks; --",
-  '"; SELECT 1; --',
-  "$1",
-  "x\\",
-  "%",
-  "_",
-  "x\u0000y",
-  "x\ud800y",
-  "",
-  "__proto__",
-];
