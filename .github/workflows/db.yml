@@ -52,13 +52,18 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # Bun installs the dependencies and runs the scripts. Node runs the code.
+      # Bun installs and runs every script and tool.
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: 1.4.4
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version-file: package.json
+      # The runner has its own Node. A stub that fails goes first on PATH, so a step
+      # that would quietly use it fails instead.
+      - name: Keep the runner's Node out of the job
+        run: |
+          mkdir -p "${RUNNER_TEMP}/no-node"
+          printf '#!/bin/sh\necho "node is not used in CI; run it with bun" >&2\nexit 1\n' > "${RUNNER_TEMP}/no-node/node"
+          chmod +x "${RUNNER_TEMP}/no-node/node"
+          echo "${RUNNER_TEMP}/no-node" >> "${GITHUB_PATH}"
       - run: bun install --frozen-lockfile
       # As on Neon: an owner that may create roles and owns its database, but is not a
       # superuser.
@@ -73,7 +78,7 @@ jobs:
         run: |
           export DATABASE_URL="postgres://migration_owner:${OWNER_PASSWORD}@localhost:5432/bot?sslmode=disable"
           bun run db:migrate
-          bunx --no-install dbmate --migrations-dir db/migrations status --exit-code
+          bunx --bun --no-install dbmate --migrations-dir db/migrations status --exit-code
       # The owner may do this only because it made bot_app, which gave it ADMIN on the
       # role, so this also checks that grant.
       - name: Set bot_app's password as the owner

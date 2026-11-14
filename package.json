@@ -18,7 +18,7 @@
     "test:db": "bun test --parallel --timeout 30000 --path-ignore-patterns 'test/db-concurrency/**' ./test/db",
     "test:db:concurrency": "CI=true bun test --timeout 30000 --preload ./test/db-concurrency/preload.ts --path-ignore-patterns 'test/db/**' ./test/db-concurrency",
     "db:migrate": "dbmate --migrations-dir db/migrations --no-dump-schema up",
-    "commands:register": "node --env-file-if-exists=.env scripts/register-commands.ts"
+    "commands:register": "bun --env-file=.env scripts/register-commands.ts"
   },
   "type": "module",
   "trustedDependencies": [],
@@ -33,8 +33,7 @@
     "pg": "8.23.1",
     "prettier": "3.9.10",
     "typescript": "6.0.3",
-    "typescript-eslint": "8.72.1",
-    "vitest": "5.0.5"
+    "typescript-eslint": "8.72.1"
   },
   "dependencies": {
     "@neondatabase/serverless": "1.2.0",

@@ -6,7 +6,7 @@
  * Reads DATABASE_URL from the environment or .env.
  *
  * Usage:
- *   node --env-file-if-exists=.env scripts/neon-cold-start.ts
+ *   bun --env-file=.env scripts/neon-cold-start.ts
  */
 
 import { getInteractionDb } from "../src/db/client.ts";
