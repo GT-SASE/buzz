@@ -258,7 +258,7 @@ describe("requests", () => {
     await client().sendMessage(MANAGED, MESSAGE_BODY);
 
     expect(requests()[0]?.headers["User-Agent"]).toBe(
-      "DiscordBot (https://github.com/GT-SASE/discordBot, 0.0.0)",
+      "DiscordBot (https://github.com/GT-SASE/discordBot)",
     );
   });
 
