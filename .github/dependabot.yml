@@ -13,10 +13,13 @@ updates:
       prefix: build
       include: scope
     groups:
-      npm:
+      dependencies:
         patterns: ["*"]
         update-types: [minor, patch]
     ignore:
+      # These types follow the Bun version in packageManager, so they move with it
+      # by hand.
+      - dependency-name: "@types/bun"
       # These types follow the Node.js major version in package.json engines.
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]

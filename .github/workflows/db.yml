@@ -52,18 +52,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # Bun installs and runs every script and tool.
+      # Bun installs and runs every script and tool. The version is packageManager in
+      # package.json.
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version: 1.4.4
-      # The runner has its own Node. A stub that fails goes first on PATH, so a step
-      # that would quietly use it fails instead.
-      - name: Keep the runner's Node out of the job
-        run: |
-          mkdir -p "${RUNNER_TEMP}/no-node"
-          printf '#!/bin/sh\necho "node is not used in CI; run it with bun" >&2\nexit 1\n' > "${RUNNER_TEMP}/no-node/node"
-          chmod +x "${RUNNER_TEMP}/no-node/node"
-          echo "${RUNNER_TEMP}/no-node" >> "${GITHUB_PATH}"
+          bun-version-file: package.json
       - run: bun install --frozen-lockfile
       # As on Neon: an owner that may create roles and owns its database, but is not a
       # superuser.

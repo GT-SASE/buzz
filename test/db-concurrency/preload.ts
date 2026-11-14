@@ -1,6 +1,5 @@
 // Preloaded by `bun run test:db:concurrency`. A missing setting or a wrong server
-// stops the run here, once, before any file starts. The script also sets CI=true, so
-// a test.only fails the run instead of skipping the other tests.
+// stops the run here, once, before any file starts.
 import { setUpOnce } from "./global-setup.ts";
 
 try {

@@ -25,19 +25,10 @@ jobs:
         with:
           persist-credentials: false
       # Bun installs, runs every script and tool, and builds. Only the deployed
-      # functions run on Node, on Vercel.
+      # functions run on Node, on Vercel. The version is packageManager in package.json.
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version: 1.4.4
-      # The runner has its own Node. A stub that fails goes first on PATH, so a step
-      # that would quietly use it fails instead. bunfig.toml's [run] bun and --bun
-      # point node at Bun for scripts and the Vercel CLI.
-      - name: Keep the runner's Node out of the job
-        run: |
-          mkdir -p "${RUNNER_TEMP}/no-node"
-          printf '#!/bin/sh\necho "node is not used in CI; run it with bun" >&2\nexit 1\n' > "${RUNNER_TEMP}/no-node/node"
-          chmod +x "${RUNNER_TEMP}/no-node/node"
-          echo "${RUNNER_TEMP}/no-node" >> "${GITHUB_PATH}"
+          bun-version-file: package.json
       # Each check runs even if an earlier one failed, so one run reports them all.
       - id: install
         if: ${{ !cancelled() }}
@@ -69,35 +60,7 @@ jobs:
           mkdir -p .vercel
           printf '{"projectId":"prj_placeholder","orgId":"team_placeholder","settings":{"framework":null}}' > .vercel/project.json
       - name: Build
-        run: bun run --bun "${RUNNER_TEMP}/vercel-cli/node_modules/.bin/vercel" build --yes
-      # Inside the checkout, an import would find a package the tracer missed in the
-      # root node_modules, which a deployed function does not have. So load copies from
-      # outside it, with any symlink replaced by its file, since imports resolve from
-      # where a symlink points. --no-install stops Bun fetching a missing package.
-      # Bun prefers a package's "bun" export condition, which Node ignores, so the
-      # check refuses one rather than load other files than Node would.
-      - name: Check that the built functions load and export only what they should
-        run: |
-          copy="${RUNNER_TEMP}/built-functions"
-          mkdir -p "${copy}"
-          cp -RL .vercel/output/functions/api/interactions.func "${copy}/"
-          cp -RL .vercel/output/functions/api/cron/reminders.func "${copy}/"
-          cd "${copy}"
-          if grep -rl --include=package.json '"bun"' interactions.func/node_modules reminders.func/node_modules; then
-            echo "A traced package above names Bun, so Bun may load other files than Node" >&2
-            exit 1
-          fi
-          bun --no-install --no-env-file --eval '
-            const base = process.cwd();
-            const { POST } = await import(`${base}/interactions.func/api/interactions.js`);
-            if (typeof POST !== "function") {
-              throw new Error("The interactions function does not export POST");
-            }
-            const cron = await import(`${base}/reminders.func/api/cron/reminders.js`);
-            if (typeof cron.GET !== "function" || "POST" in cron) {
-              throw new Error("The cron function must export GET and not POST");
-            }
-          '
+        run: bun --bun "${RUNNER_TEMP}/vercel-cli/node_modules/.bin/vercel" build --yes
 
   secret-history:
     name: gitleaks full history

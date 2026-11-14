@@ -18,6 +18,3 @@ bun = true
 [test]
 # Pins the time zone and undoes stubs after each test.
 preload = ["./test/support/setup.ts"]
-# A bare `bun test` runs the unit tests only. The database suites have their own
-# scripts, which replace this list.
-pathIgnorePatterns = ["test/db/**", "test/db-concurrency/**"]

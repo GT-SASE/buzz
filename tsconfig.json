@@ -6,7 +6,6 @@
     "types": ["node", "bun"],
     "noEmit": true,
     "allowImportingTsExtensions": true,
-    "rewriteRelativeImportExtensions": true,
     "erasableSyntaxOnly": true,
     "verbatimModuleSyntax": true,
     "strict": true,
