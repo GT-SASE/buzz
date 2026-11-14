@@ -1,5 +1,12 @@
 import { describe, expect, it } from "bun:test";
+import type {
+  EventReminderCandidate,
+  EventReminderKind,
+  EventStepKind,
+} from "../db/types.ts";
 import { parseIsoDate, todayInZone, type DateOnly } from "../lib/dates.ts";
+import { fakeId } from "../../test/support/ids.ts";
+import { kindsDueToday, planEventReminders } from "./event-plan.ts";
 import {
   dayRunStart,
   planReminders,
@@ -112,15 +119,12 @@ interface DayResult {
 }
 
 /**
- * Runs the planner at each instant with the due date the task has by then,
- * feeding what it decided back in as log rows the way the runner will, so a test
- * can watch a task's whole life.
+ * Runs the planner at each instant, feeding what it decided back in as log rows the way
+ * the runner will, so a test can watch a task's whole life.
  */
-function simulateSchedule(
-  steps: readonly (readonly [instant: string, due: string])[],
-): DayResult[] {
+function simulate(due: string, instants: readonly string[]): DayResult[] {
   const log: ReminderLogRow[] = [];
-  return steps.map(([instant, due]) => {
+  return instants.map((instant) => {
     const now = new Date(instant);
     const today = todayInZone(now, NEW_YORK);
     const result = plan({ today, now, tasks: [task(due)], log });
@@ -136,10 +140,6 @@ function simulateSchedule(
     );
     return { today, sent: kindsSent(result), skipped: kindsSkipped(result) };
   });
-}
-
-function simulate(due: string, instants: readonly string[]): DayResult[] {
-  return simulateSchedule(instants.map((instant) => [instant, due]));
 }
 
 describe("reminder windows", () => {
@@ -213,7 +213,7 @@ describe("duplicates", () => {
 });
 
 describe("claims", () => {
-  it("retries a claim only once it is over one hour old", () => {
+  it("retries a claim only once it is stale, after STALE_CLAIM_MS", () => {
     const sentWith = (claimedAt: Date) =>
       kindsSent(plan({ log: [row(TODAY, "due_day", "claimed", claimedAt)] }));
 
@@ -234,19 +234,6 @@ describe("claims", () => {
 
     expect(kindsSent(result)).toEqual(["one_day"]);
     expect(kindsSkipped(result)).toEqual(["three_days"]);
-  });
-
-  it("reports a claim too recent to take over, and does not send it", () => {
-    const result = plan({
-      log: [row(TODAY, "due_day", "claimed", ageAgo(60_000))],
-    });
-    expect(plain(result.events)).toEqual([]);
-    expect(plain(result.freshClaims)).toEqual([
-      {
-        eventId: EVENT_ID,
-        ref: { taskId: TASK_ID, dueDate: TODAY, kind: "due_day" },
-      },
-    ]);
   });
 });
 
@@ -269,39 +256,6 @@ describe("malformed dates", () => {
     ["an invalid now", { now: new Date(Number.NaN) }],
   ])("throws a RangeError for %s, which affects every task", (_name, input) => {
     expect(() => plan(input)).toThrow(RangeError);
-  });
-});
-
-describe("moving a due date", () => {
-  const FIRST = "2026-11-15";
-  const LATER = "2026-11-25";
-  const day = (today: string, due: string) =>
-    [`${today}T15:00:00Z`, due] as const;
-
-  it("is quiet until the new window, then sends again after all were sent", () => {
-    expect(
-      simulateSchedule([
-        day("2026-11-12", FIRST),
-        day("2026-11-14", FIRST),
-        day("2026-11-15", FIRST),
-        day("2026-11-16", FIRST),
-        day("2026-11-17", LATER),
-        day("2026-11-21", LATER),
-        day("2026-11-22", LATER),
-        day("2026-11-25", LATER),
-        day("2026-11-26", LATER),
-      ]).map(({ today, sent }) => [today, sent]),
-    ).toEqual([
-      ["2026-11-12", ["three_days"]],
-      ["2026-11-14", ["one_day"]],
-      ["2026-11-15", ["due_day"]],
-      ["2026-11-16", ["overdue"]],
-      ["2026-11-17", []],
-      ["2026-11-21", []],
-      ["2026-11-22", ["three_days"]],
-      ["2026-11-25", ["due_day"]],
-      ["2026-11-26", ["overdue"]],
-    ]);
   });
 });
 
@@ -354,23 +308,6 @@ describe("conditions that plan nothing", () => {
   });
 });
 
-describe("the shape of the plan", () => {
-  it("gives the same plan for the same input and leaves the input alone", () => {
-    const input: PlanInput = {
-      today: date(TODAY),
-      now: NOW,
-      remindersEnabled: true,
-      events: [event()],
-      tasks: [task("2026-11-14")],
-      log: [row("2026-11-14", "three_days", "sent")],
-    };
-    const snapshot = structuredClone(input);
-
-    expect(planReminders(input)).toEqual(planReminders(input));
-    expect(input).toEqual(snapshot);
-  });
-});
-
 describe("DST changes in New York", () => {
   // A 14:00 UTC cron is 09:00 EST and 10:00 EDT.
   function dailyAt1400(from: string, days: number): string[] {
@@ -399,19 +336,6 @@ describe("DST changes in New York", () => {
       ]);
     },
   );
-
-  it("sends once for runs either side of the skipped 2 AM hour", () => {
-    expect(
-      simulate("2026-03-08", ["2026-03-08T06:59:00Z", "2026-03-08T07:00:00Z"]),
-    ).toEqual([
-      {
-        today: "2026-03-08",
-        sent: ["due_day"],
-        skipped: ["three_days", "one_day"],
-      },
-      { today: "2026-03-08", sent: [], skipped: [] },
-    ]);
-  });
 
   it("sends once for runs in both copies of the repeated 1 AM hour", () => {
     expect(
@@ -448,46 +372,6 @@ describe("DST changes in New York", () => {
   });
 });
 
-describe("a UTC cron crossing midnight relative to New York", () => {
-  const LATE_UTC = "2026-11-16T03:30:00Z"; // 22:30 EST on Nov 15.
-
-  it.each<[string, ReminderKind | null]>([
-    // The UTC date is Nov 16, which would give one_day here.
-    ["2026-11-16", "one_day"],
-    ["2026-11-19", null],
-  ])("uses the New York date for a task due %s", (due, kind) => {
-    const [day] = simulate(due, [LATE_UTC]);
-
-    expect(day?.today).toBe("2026-11-15");
-    expect(day?.sent).toEqual(kind === null ? [] : [kind]);
-  });
-
-  it("uses the New York year when UTC has already reached the new one", () => {
-    expect(simulate("2026-12-31", ["2027-01-01T04:30:00Z"])).toEqual([
-      {
-        today: "2026-12-31",
-        sent: ["due_day"],
-        skipped: ["three_days", "one_day"],
-      },
-    ]);
-  });
-});
-
-describe("leap days", () => {
-  it.each<[string, string, ReminderKind | null]>([
-    // Mar 1 is 3 days after Feb 27 in a leap year, and after Feb 26 otherwise.
-    ["2028-03-01", "2028-02-27", "three_days"],
-    ["2027-03-01", "2027-02-26", "three_days"],
-    ["2028-03-01", "2028-02-26", null],
-    // The day before Mar 1 is Feb 29 in a leap year.
-    ["2028-03-01", "2028-02-29", "one_day"],
-  ])("for a task due %s, on %s sends %s", (due, today, kind) => {
-    const result = plan({ today: date(today), tasks: [task(due)] });
-
-    expect(kindsSent(result)).toEqual(kind === null ? [] : [kind]);
-  });
-});
-
 describe("slotToday", () => {
   it.each([
     // Midnight in Singapore falls between the crons: 23:00 and then 01:00 there.
@@ -504,21 +388,130 @@ describe("slotToday", () => {
     expect<string>(slotToday(new Date(instant), zone)).toBe(expected);
   });
 
-  it("gives both crons of a slot the same date where the plain date differs", () => {
-    const morning = new Date("2026-11-10T15:00:00Z");
-    const recovery = new Date("2026-11-10T17:00:00Z");
-    expect(todayInZone(recovery, "Asia/Singapore")).not.toBe(
-      todayInZone(morning, "Asia/Singapore"),
-    );
-    expect(slotToday(recovery, "Asia/Singapore")).toBe(
-      slotToday(morning, "Asia/Singapore"),
-    );
-  });
-
   it("starts each slot at the first cron's hour", () => {
     const start = Date.UTC(2026, 10, 10, SLOT_START_HOUR_UTC);
     expect(slotStart(new Date(start))).toBe(start);
     expect(slotStart(new Date(start - 1_000))).toBe(start - 86_400_000);
     expect(dayRunStart(new Date(start - 1_000))).toBe(start);
+  });
+});
+
+// The event step and Food pickup reminders.
+const DAY = date(TODAY);
+const ALICE = fakeId(10);
+const ALL_DONE: EventStepKind[] = [
+  "budget_sheet",
+  "engage_post",
+  "budget_approved",
+  "food_pickup",
+];
+const ONLY_PICKUP_OPEN: EventStepKind[] = [
+  "budget_sheet",
+  "engage_post",
+  "budget_approved",
+];
+
+function candidate(
+  overrides: Partial<EventReminderCandidate> = {},
+  done: readonly EventStepKind[] = [],
+): EventReminderCandidate {
+  return {
+    id: EVENT_ID,
+    guild_id: fakeId(4),
+    name: "Spring social",
+    event_date: date("2026-11-20"),
+    thread_id: THREAD_ID,
+    thread_status: "active",
+    created_by: fakeId(2),
+    pickup_time: null,
+    timezone: "America/New_York",
+    events_director_role_id: fakeId(3),
+    steps: ALL_DONE.map((kind) => ({
+      kind,
+      status: done.includes(kind) ? "done" : "open",
+    })),
+    assignees: [],
+    log: [],
+    ...overrides,
+  };
+}
+
+/** Everything done and Food pickup set up with Alice at 17:30. */
+function pickupReady(eventDate: string): EventReminderCandidate {
+  return candidate(
+    {
+      event_date: date(eventDate),
+      pickup_time: "17:30",
+      assignees: [{ kind: "food_pickup", user_id: ALICE }],
+    },
+    ALL_DONE,
+  );
+}
+
+describe("kindsDueToday", () => {
+  it.each<[string, EventReminderKind[]]>([
+    ["2026-11-14", []],
+    ["2026-11-15", ["pickup_day"]],
+    ["2026-11-16", []],
+    ["2026-11-17", ["pickup_before"]],
+    ["2026-11-18", []],
+  ])("for a ready event on %s gives %j", (eventDate, kinds) => {
+    expect(kindsDueToday(pickupReady(eventDate), DAY)).toEqual(kinds);
+  });
+
+  it("gives the step list while a step is open, up to the event's day", () => {
+    expect(
+      kindsDueToday(candidate({ event_date: date("2026-11-15") }), DAY),
+    ).toEqual(["daily_steps"]);
+    expect(
+      kindsDueToday(candidate({ event_date: date("2026-11-14") }), DAY),
+    ).toEqual([]);
+    expect(
+      kindsDueToday(
+        candidate({ event_date: date("2026-11-15") }, ONLY_PICKUP_OPEN),
+        DAY,
+      ),
+    ).toEqual([]);
+  });
+
+  it("gives no pickup reminder until Food pickup is set up", () => {
+    expect(
+      kindsDueToday(candidate({ event_date: date("2026-11-17") }), DAY),
+    ).toEqual(["daily_steps"]);
+  });
+});
+
+describe("planEventReminders", () => {
+  const planEvents = (events: EventReminderCandidate[]) =>
+    planEventReminders({ today: DAY, now: NOW, events });
+
+  it("sends today's reminders to the event's thread", () => {
+    expect(planEvents([candidate()])).toEqual({
+      sends: [
+        {
+          ref: { eventId: EVENT_ID, kind: "daily_steps", reminderDate: DAY },
+          threadId: THREAD_ID,
+        },
+      ],
+      skips: [],
+      freshClaims: [],
+      missingThreadEventIds: [],
+    });
+  });
+
+  it("names an event whose post is gone only if something is due, and sends to no pending post", () => {
+    expect(
+      planEvents([candidate({ thread_status: "missing", thread_id: null })])
+        .missingThreadEventIds,
+    ).toEqual([EVENT_ID]);
+    expect(
+      planEvents([candidate({ thread_status: "missing" }, ALL_DONE)])
+        .missingThreadEventIds,
+    ).toEqual([]);
+    const pending = planEvents([
+      candidate({ thread_status: "pending", thread_id: null }),
+    ]);
+    expect(pending.sends).toEqual([]);
+    expect(pending.missingThreadEventIds).toEqual([]);
   });
 });

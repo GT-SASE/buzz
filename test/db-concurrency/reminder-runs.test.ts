@@ -5,19 +5,27 @@ import { claimReminder } from "../../src/db/reminders.ts";
 import { todayInZone, type DateOnly } from "../../src/lib/dates.ts";
 import { slotStart } from "../../src/reminders/plan.ts";
 import { insertEvent, insertGuild, insertTask } from "../db/fixtures.ts";
-import { raceDatabase } from "./race.ts";
+import { fakeId, present } from "../db/harness.ts";
+import { raceDatabase, settled } from "./race.ts";
+
+const LOCK_NOT_AVAILABLE = "55P03";
+/** The wait begin_job_run and finish_job_run allow themselves, in the migrations. */
+const LOCK_WAIT_MS = 3_000;
+/** Longer than any wait a statement here should make. */
+const LONGEST_WAIT_MS = 10_000;
+const ROUNDS = 25;
 
 /**
  * The morning cron and the recovery cron, or a retried invocation, running at once. The
  * job lock keeps the second run out, and each reminder's claim stops a double send if
- * both get past it, as they can once a run's lock has gone stale. Each test names its
- * own job, since a run left behind by one would hold off the next.
+ * both get past it, as they can once a run's lock has gone stale.
  */
-describe("two overlapping reminder runs", () => {
-  const db = raceDatabase();
-  const beginSql = "SELECT public.begin_job_run($1, 120, $2) AS id";
-  const slot = () => new Date(slotStart(new Date()));
+const db = raceDatabase();
+const beginSql = "SELECT public.begin_job_run($1, 120, $2) AS id";
+const finishSql = `SELECT public.finish_job_run($1, now(), '{}', NULL) AS rows`;
+const slot = () => new Date(slotStart(new Date()));
 
+describe("two overlapping reminder runs", () => {
   it("only one of two starts gets the run", async () => {
     const second = await db.race([beginSql, ["reminders", slot()]], (bot) =>
       beginJobRun(bot, {
@@ -35,14 +43,12 @@ describe("two overlapping reminder runs", () => {
       slot(),
     ]);
 
-    const second = await db.race(
-      ["SELECT public.finish_job_run($1, now(), '{}', NULL)", [rows[0]?.id]],
-      (bot) =>
-        beginJobRun(bot, {
-          jobName: "health_check",
-          staleAfterSeconds: 120,
-          slotStart: slot(),
-        }),
+    const second = await db.race([finishSql, [rows[0]?.id]], (bot) =>
+      beginJobRun(bot, {
+        jobName: "health_check",
+        staleAfterSeconds: 120,
+        slotStart: slot(),
+      }),
     );
 
     expect(second).toEqual({ ok: true, value: null });
@@ -100,5 +106,102 @@ describe("two overlapping reminder runs", () => {
       [eventId],
     );
     expect(rows).toEqual([{ n: 1 }]);
+  });
+});
+
+/**
+ * The job lock against its other users. A wrong lock order shows up as a deadlock or a
+ * wait that never ends, not as a wrong answer. Each test names its own job, so any slot
+ * start before the test began will do.
+ */
+describe("the job lock", () => {
+  const beginOwnSql =
+    "SELECT public.begin_job_run($1, 120, now() - interval '1 hour') AS id";
+  const newJob = () => `lock_order_${fakeId()}`;
+
+  async function startRun(jobName: string): Promise<string> {
+    const { rows } = await db.observer.query<{ id: string }>(beginOwnSql, [
+      jobName,
+    ]);
+    return present(rows[0]?.id);
+  }
+
+  async function statuses(jobName: string): Promise<string[]> {
+    const { rows } = await db.observer.query<{ status: string }>(
+      "SELECT status FROM public.job_runs WHERE job_name = $1 ORDER BY status",
+      [jobName],
+    );
+    return rows.map((row) => row.status);
+  }
+
+  /** Holds the job's lock from another session, until released. */
+  async function holdLockElsewhere(jobName: string): Promise<void> {
+    await db.t1.query(
+      "SELECT pg_advisory_lock(hashtextextended('job_runs:' || $1::text, 0))",
+      [jobName],
+    );
+  }
+
+  it("the waiting start gets the run if the first one rolls back", async () => {
+    const jobName = newJob();
+    await db.t1.query("BEGIN");
+    await db.t1.query(beginOwnSql, [jobName]);
+    const second = settled(db.t2.query(beginOwnSql, [jobName]));
+    try {
+      await db.waitUntilBlocked(db.t2, db.t1);
+    } finally {
+      await db.t1.query("ROLLBACK");
+    }
+    expect(await second).toEqual({
+      rows: [{ id: expect.any(String) as string }],
+    });
+  });
+
+  it("a start never slips in beside a success when fired together", async () => {
+    for (let round = 0; round < ROUNDS; round += 1) {
+      const jobName = newJob();
+      const id = await startRun(jobName);
+      const [finished, started] = await Promise.all([
+        settled(db.t1.query(finishSql, [id])),
+        settled(db.t2.query(beginOwnSql, [jobName])),
+      ]);
+      expect(finished.code).toBeUndefined();
+      expect(started).toEqual({ rows: [{ id: null }] });
+      expect(await statuses(jobName)).toEqual(["succeeded"]);
+    }
+  });
+
+  it("a start gives up on a lock another session holds, and works once it is free", async () => {
+    const jobName = newJob();
+    await holdLockElsewhere(jobName);
+
+    const before = Date.now();
+    const refused = await settled(db.t2.query(beginOwnSql, [jobName]));
+    const waited = Date.now() - before;
+
+    expect(refused.code).toBe(LOCK_NOT_AVAILABLE);
+    expect(waited).toBeGreaterThanOrEqual(LOCK_WAIT_MS - 100);
+    expect(waited).toBeLessThan(LONGEST_WAIT_MS);
+    expect(await statuses(jobName)).toEqual([]);
+
+    await db.t1.query("SELECT pg_advisory_unlock_all()");
+    expect(await settled(db.t2.query(beginOwnSql, [jobName]))).toEqual({
+      rows: [{ id: expect.any(String) as string }],
+    });
+  });
+
+  it("a finish gives up on a lock another session holds, and leaves the run open", async () => {
+    const jobName = newJob();
+    const id = await startRun(jobName);
+    await holdLockElsewhere(jobName);
+
+    const refused = await settled(db.t2.query(finishSql, [id]));
+
+    expect(refused.code).toBe(LOCK_NOT_AVAILABLE);
+    expect(await statuses(jobName)).toEqual(["running"]);
+
+    await db.t1.query("SELECT pg_advisory_unlock_all()");
+    expect((await settled(db.t2.query(finishSql, [id]))).code).toBeUndefined();
+    expect(await statuses(jobName)).toEqual(["succeeded"]);
   });
 });
