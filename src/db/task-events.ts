@@ -1,69 +1,25 @@
 /** What the task commands read about events: the post they run in, and the picker. */
 
-import { isSnowflake } from "../lib/snowflake.ts";
+import { DISCORD_LIMITS } from "../discord/safe-text.ts";
 import type { DbClient } from "./client.ts";
-import { rest } from "./internal.ts";
+import { EVENT_CHOICE_COLUMNS, EVENT_COLUMNS } from "./events.ts";
+import { firstRow, query, sql } from "./internal.ts";
 import { refused, type DbResult } from "./errors.ts";
-import { oneOrNone, rowList, type RowList } from "./result.ts";
-import {
-  parseEvent,
-  parseEventChoice,
-  type EventChoice,
-  type EventRow,
-} from "./types.ts";
-import {
-  idPrefixRange,
-  isIdPrefix,
-  isSearchTerm,
-  searchPattern,
-} from "./validate.ts";
-
-/** Discord's limit for autocomplete choices. */
-const MAX_CHOICES = 25;
+import type { EventChoice, EventRow } from "./types.ts";
+import { idPrefixRange, isSearchTerm, searchPattern } from "./validate.ts";
 
 /** The live event a thread belongs to in this guild, whether open or closed. */
 export async function findEventByThread(
   db: DbClient,
   { guildId, threadId }: { guildId: string; threadId: string },
 ): Promise<DbResult<EventRow | null>> {
-  if (!isSnowflake(guildId) || !isSnowflake(threadId)) {
-    return refused();
-  }
-  return oneOrNone(
-    await rest(db)
-      .from("events")
-      .select(
-        "id,guild_id,channel_id,name,event_date,thread_id,overview_message_id,status,thread_status,created_by,deleted_at,created_at",
-      )
-      .eq("thread_id", threadId)
-      .eq("guild_id", guildId)
-      .is("deleted_at", null)
-      .limit(1),
-    parseEvent,
-  );
-}
-
-/**
- * Any event this thread has belonged to and still names, live or soft-deleted. A deleted
- * event's post stays in the forum, so this tells it apart from a post nothing ever claimed.
- */
-export async function findEventEverOnThread(
-  db: DbClient,
-  { guildId, threadId }: { guildId: string; threadId: string },
-): Promise<DbResult<EventRow | null>> {
-  if (!isSnowflake(guildId) || !isSnowflake(threadId)) {
-    return refused();
-  }
-  return oneOrNone(
-    await rest(db)
-      .from("events")
-      .select(
-        "id,guild_id,channel_id,name,event_date,thread_id,overview_message_id,status,thread_status,created_by,deleted_at,created_at",
-      )
-      .eq("thread_id", threadId)
-      .eq("guild_id", guildId)
-      .limit(1),
-    parseEvent,
+  return firstRow(
+    await query<EventRow>(
+      db,
+      sql`select ${EVENT_COLUMNS} from events
+      where thread_id = ${threadId} and guild_id = ${guildId} and deleted_at is null
+      limit 1`,
+    ),
   );
 }
 
@@ -71,23 +27,14 @@ export async function findEventEverOnThread(
 export async function searchOpenEventsByIdPrefix(
   db: DbClient,
   { guildId, prefix }: { guildId: string; prefix: string },
-): Promise<DbResult<RowList<EventChoice>>> {
-  if (!isSnowflake(guildId) || !isIdPrefix(prefix)) {
-    return refused();
-  }
+): Promise<DbResult<EventChoice[]>> {
   const { low, high } = idPrefixRange(prefix);
-  return rowList(
-    await rest(db)
-      .from("events")
-      .select("id,name,event_date,status")
-      .eq("guild_id", guildId)
-      .eq("status", "active")
-      .is("deleted_at", null)
-      .gte("id", low)
-      .lte("id", high)
-      .order("id")
-      .limit(MAX_CHOICES),
-    parseEventChoice,
+  return await query<EventChoice>(
+    db,
+    sql`select ${EVENT_CHOICE_COLUMNS} from events
+      where guild_id = ${guildId} and status = 'active' and deleted_at is null
+        and id >= ${low} and id <= ${high}
+      order by id limit ${DISCORD_LIMITS.autocompleteChoices}`,
   );
 }
 
@@ -98,21 +45,15 @@ export async function searchOpenEventsByIdPrefix(
 export async function searchOpenEvents(
   db: DbClient,
   { guildId, term }: { guildId: string; term: string },
-): Promise<DbResult<RowList<EventChoice>>> {
-  if (!isSnowflake(guildId) || !isSearchTerm(term)) {
+): Promise<DbResult<EventChoice[]>> {
+  if (!isSearchTerm(term)) {
     return refused();
   }
-  return rowList(
-    await rest(db)
-      .from("events")
-      .select("id,name,event_date,status")
-      .eq("guild_id", guildId)
-      .eq("status", "active")
-      .is("deleted_at", null)
-      .ilike("name", searchPattern(term))
-      .order("event_date", { ascending: false })
-      .order("id")
-      .limit(MAX_CHOICES),
-    parseEventChoice,
+  return await query<EventChoice>(
+    db,
+    sql`select ${EVENT_CHOICE_COLUMNS} from events
+      where guild_id = ${guildId} and status = 'active' and deleted_at is null
+        and name ilike ${searchPattern(term)}
+      order by event_date desc, id limit ${DISCORD_LIMITS.autocompleteChoices}`,
   );
 }

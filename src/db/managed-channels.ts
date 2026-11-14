@@ -1,20 +1,8 @@
-import { isSnowflake } from "../lib/snowflake.ts";
 import type { DbClient } from "./client.ts";
-import { rest } from "./internal.ts";
-import { refused, type DbResult } from "./errors.ts";
-import {
-  booleanValue,
-  cappedList,
-  oneOrNone,
-  type CappedList,
-} from "./result.ts";
-import {
-  parseEvent,
-  parseManagedChannel,
-  type EventRow,
-  type ManagedChannel,
-} from "./types.ts";
-import { isSnowflakeList, snowflakeList } from "./validate.ts";
+import { EVENT_COLUMNS } from "./events.ts";
+import { callFunction, capped, firstRow, query, sql } from "./internal.ts";
+import type { DbResult } from "./errors.ts";
+import type { CappedList, EventRow, ManagedChannel } from "./types.ts";
 
 const MAX_CHANNELS = 500;
 
@@ -22,17 +10,12 @@ export async function getManagedChannel(
   db: DbClient,
   { guildId, channelId }: { guildId: string; channelId: string },
 ): Promise<DbResult<ManagedChannel | null>> {
-  if (!isSnowflake(guildId) || !isSnowflake(channelId)) {
-    return refused();
-  }
-  return oneOrNone(
-    await rest(db)
-      .from("managed_channels")
-      .select("guild_id,channel_id,status")
-      .eq("guild_id", guildId)
-      .eq("channel_id", channelId)
-      .limit(1),
-    parseManagedChannel,
+  return firstRow(
+    await query<ManagedChannel>(
+      db,
+      sql`select guild_id, channel_id, status from managed_channels
+      where guild_id = ${guildId} and channel_id = ${channelId} limit 1`,
+    ),
   );
 }
 
@@ -40,17 +23,13 @@ export async function listManagedChannels(
   db: DbClient,
   { guildId }: { guildId: string },
 ): Promise<DbResult<CappedList<ManagedChannel>>> {
-  if (!isSnowflake(guildId)) {
-    return refused();
-  }
-  return cappedList(
-    await rest(db)
-      .from("managed_channels")
-      .select("guild_id,channel_id,status")
-      .eq("guild_id", guildId)
-      .order("channel_id")
-      .limit(MAX_CHANNELS + 1),
-    parseManagedChannel,
+  return capped(
+    await query<ManagedChannel>(
+      db,
+      sql`select guild_id, channel_id, status from managed_channels
+      where guild_id = ${guildId}
+      order by channel_id limit ${MAX_CHANNELS + 1}`,
+    ),
     MAX_CHANNELS,
   );
 }
@@ -59,15 +38,13 @@ export async function listManagedChannels(
 export async function listActiveManagedChannels(
   db: DbClient,
 ): Promise<DbResult<CappedList<ManagedChannel>>> {
-  return cappedList(
-    await rest(db)
-      .from("managed_channels")
-      .select("guild_id,channel_id,status")
-      .eq("status", "active")
-      .order("guild_id")
-      .order("channel_id")
-      .limit(MAX_CHANNELS + 1),
-    parseManagedChannel,
+  return capped(
+    await query<ManagedChannel>(
+      db,
+      sql`select guild_id, channel_id, status from managed_channels
+      where status = 'active'
+      order by guild_id, channel_id limit ${MAX_CHANNELS + 1}`,
+    ),
     MAX_CHANNELS,
   );
 }
@@ -77,18 +54,13 @@ export async function listManagedChannelsByIds(
   db: DbClient,
   { guildId, channelIds }: { guildId: string; channelIds: readonly string[] },
 ): Promise<DbResult<CappedList<ManagedChannel>>> {
-  if (!isSnowflake(guildId) || !isSnowflakeList(channelIds)) {
-    return refused();
-  }
-  return cappedList(
-    await rest(db)
-      .from("managed_channels")
-      .select("guild_id,channel_id,status")
-      .eq("guild_id", guildId)
-      .in("channel_id", snowflakeList(channelIds))
-      .order("channel_id")
-      .limit(MAX_CHANNELS + 1),
-    parseManagedChannel,
+  return capped(
+    await query<ManagedChannel>(
+      db,
+      sql`select guild_id, channel_id, status from managed_channels
+      where guild_id = ${guildId} and channel_id = any(${[...channelIds]}::text[])
+      order by channel_id limit ${MAX_CHANNELS + 1}`,
+    ),
     MAX_CHANNELS,
   );
 }
@@ -105,23 +77,14 @@ export async function listRecentEventsInChannel(
     limit,
   }: { guildId: string; channelId: string; limit: number },
 ): Promise<DbResult<CappedList<EventRow>>> {
-  if (!isSnowflake(guildId) || !isSnowflake(channelId)) {
-    return refused();
-  }
-  return cappedList(
-    await rest(db)
-      .from("events")
-      .select(
-        "id,guild_id,channel_id,name,event_date,thread_id,overview_message_id,status,thread_status,created_by,deleted_at,created_at",
-      )
-      .eq("guild_id", guildId)
-      .eq("channel_id", channelId)
-      .eq("thread_status", "active")
-      .is("deleted_at", null)
-      .order("updated_at", { ascending: false })
-      .order("id")
-      .limit(limit + 1),
-    parseEvent,
+  return capped(
+    await query<EventRow>(
+      db,
+      sql`select ${EVENT_COLUMNS} from events
+      where guild_id = ${guildId} and channel_id = ${channelId}
+        and thread_status = 'active' and deleted_at is null
+      order by updated_at desc, id limit ${limit + 1}`,
+    ),
     limit,
   );
 }
@@ -131,13 +94,9 @@ export async function markChannelUnavailable(
   db: DbClient,
   { guildId, channelId }: { guildId: string; channelId: string },
 ): Promise<DbResult<boolean>> {
-  if (!isSnowflake(guildId) || !isSnowflake(channelId)) {
-    return refused();
-  }
-  return booleanValue(
-    await rest(db).rpc("mark_channel_unavailable", {
-      p_guild_id: guildId,
-      p_channel_id: channelId,
-    }),
+  return callFunction<boolean>(
+    db,
+    sql`select public.mark_channel_unavailable(p_guild_id => ${guildId},
+      p_channel_id => ${channelId}) as value`,
   );
 }

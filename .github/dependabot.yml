@@ -1,8 +1,9 @@
 version: 2
 
-# Commit prefixes keep these updates within the Conventional Commits check in CI.
+# Commit prefixes keep these updates in the Conventional Commits format.
 updates:
-  - package-ecosystem: npm
+  # The bun ecosystem reads package.json and updates bun.lock.
+  - package-ecosystem: bun
     directory: /
     schedule:
       interval: weekly
@@ -12,10 +13,13 @@ updates:
       prefix: build
       include: scope
     groups:
-      npm:
+      dependencies:
         patterns: ["*"]
         update-types: [minor, patch]
     ignore:
+      # These types follow the Bun version in packageManager, so they move with it
+      # by hand.
+      - dependency-name: "@types/bun"
       # These types follow the Node.js major version in package.json engines.
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]

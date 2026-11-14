@@ -11,8 +11,8 @@
 
 import { waitUntil } from "@vercel/functions";
 import {
-  isAllowedGuildInteraction,
   isPingInteraction,
+  parseAllowedGuildInteraction,
 } from "../src/discord/interactions.ts";
 import { pong, serializeDirectResponse } from "../src/discord/outbound.ts";
 import type { OutboundBody } from "../src/discord/outbound.ts";
@@ -90,21 +90,20 @@ async function handle(request: Request): Promise<Response> {
     return invalidSignature();
   }
 
-  const interaction = signed.payload;
-  if (interaction === undefined) {
+  if (signed.payload === undefined) {
     return new Response("invalid request body", { status: 400 });
   }
 
-  if (isPingInteraction(interaction)) {
+  if (isPingInteraction(signed.payload)) {
     return respond(pong());
   }
 
-  const allowed = isAllowedGuildInteraction(interaction, {
+  const interaction = parseAllowedGuildInteraction(signed.payload, {
     applicationId: getDiscordAppId(),
     allowedGuildIds: getAllowedGuildIds(),
   });
-  const verified = allowed ? verifiedInteractionFrom(signed) : undefined;
-  if (!allowed || verified === undefined) {
+  const verified = interaction && verifiedInteractionFrom(signed);
+  if (interaction === undefined || verified === undefined) {
     return forbidden();
   }
 
@@ -115,7 +114,7 @@ async function handle(request: Request): Promise<Response> {
   );
   // Vercel would otherwise stop the function as soon as the response is sent. This
   // does nothing, silently, if Vercel's request context is missing, so no test here
-  // can prove it keeps the work alive. Only a staging deployment can.
+  // can prove it keeps the work alive. Only a real deployment can.
   if (after !== undefined) {
     waitUntil(after());
   }

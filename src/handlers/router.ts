@@ -9,8 +9,10 @@
  * version, and each one is checked again by the handler that uses it.
  *
  * Discord allows 3 seconds for the first reply, so the router makes one read of at
- * most 1.5 seconds before answering, which leaves time for the fixed reply if it
- * fails. Anything slower goes in `finish`: the reply is a private acknowledgement,
+ * most `INTERACTION_DEADLINE_MS` before answering, which leaves time for the fixed
+ * reply if it fails. That read comes before any deferral because it decides whether
+ * the route runs at all, and some routes answer with a modal, which cannot follow a
+ * deferral. Anything slower goes in `finish`: the reply is a private acknowledgement,
  * and the work runs after it on a client with a longer deadline, with a
  * state-changing route first claiming the interaction so that a replayed request
  * changes nothing. The content of that work goes back through Discord with the
@@ -26,11 +28,11 @@
 import {
   commandPath,
   focusedOption,
-  isAutocompleteRequest,
-  isChatInputCommand,
-  isComponentInteraction,
-  isModalInteraction,
   isOnEphemeralMessage,
+  parseAutocompleteRequest,
+  parseChatInputCommand,
+  parseComponentInteraction,
+  parseModalInteraction,
 } from "../discord/interactions.ts";
 import type { GuildInteraction } from "../discord/interactions.ts";
 import {
@@ -134,6 +136,11 @@ export interface CommandOption {
   readonly autocomplete?: boolean;
   readonly max_length?: number;
   readonly channel_types?: readonly number[];
+  /** A fixed list to choose from. A submitted value is still checked by the handler. */
+  readonly choices?: readonly {
+    readonly name: string;
+    readonly value: string;
+  }[];
   /** The options of a subcommand. */
   readonly options?: readonly CommandOption[];
 }
@@ -148,7 +155,7 @@ export interface CommandDefinition {
 
 /** What every route can read. All of it comes from this interaction's payload. */
 export interface RouteContext {
-  /** Read fields through the guards in src/discord/interactions.ts. */
+  /** Read fields through the parsers in src/discord/interactions.ts. */
   readonly payload: GuildInteraction;
   readonly verified: VerifiedInteraction;
   readonly actor: Actor;
@@ -662,16 +669,19 @@ export function createRouter(handlers: readonly Handler[]): Router {
   function findTarget(
     payload: GuildInteraction,
   ): { route: Route; values: readonly unknown[] } | undefined {
-    if (isChatInputCommand(payload)) {
-      const path = commandPath(payload);
+    const command = parseChatInputCommand(payload);
+    if (command !== undefined) {
+      const path = commandPath(command);
       const route = path === undefined ? undefined : tables.command.get(path);
       return route && { route, values: [] };
     }
-    if (isComponentInteraction(payload)) {
-      return customIdTarget(tables.component, payload.data.custom_id);
+    const component = parseComponentInteraction(payload);
+    if (component !== undefined) {
+      return customIdTarget(tables.component, component.data.custom_id);
     }
-    if (isModalInteraction(payload)) {
-      return customIdTarget(tables.modal, payload.data.custom_id);
+    const modal = parseModalInteraction(payload);
+    if (modal !== undefined) {
+      return customIdTarget(tables.modal, modal.data.custom_id);
     }
     return undefined;
   }
@@ -747,8 +757,9 @@ export function createRouter(handlers: readonly Handler[]): Router {
   return {
     routes,
     async handle(payload, verified, dependencies) {
-      if (isAutocompleteRequest(payload)) {
-        const path = commandPath(payload);
+      const autocomplete = parseAutocompleteRequest(payload);
+      if (autocomplete !== undefined) {
+        const path = commandPath(autocomplete);
         const route =
           path === undefined ? undefined : tables.autocomplete.get(path);
         return route === undefined

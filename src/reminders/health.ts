@@ -42,6 +42,8 @@ import {
   type DiscordClient,
   type DiscordFailure,
 } from "../discord/client.ts";
+import { FORUM_CHANNEL_TYPES } from "../discord/verify.ts";
+import { slotStart } from "./plan.ts";
 import { DATABASE_CALL_MS, DEFAULT_LIMITS, LOCK_STALE_SECONDS } from "./run.ts";
 
 const HOUR_MS = 3_600_000;
@@ -49,11 +51,9 @@ const HOUR_MS = 3_600_000;
 export const MAX_RUN_AGE_MS = 26 * HOUR_MS;
 /** The database's clock and ours can disagree by this much without it meaning anything. */
 const CLOCK_TOLERANCE_MS = 300_000;
-const FORUM_TYPES: ReadonlySet<number> = new Set([15, 16]);
 /** Counts in a reminder run's results that mean a person should look, though it succeeded. */
 const REMINDER_ATTENTION_COUNTS = [
   "deferred_cap",
-  "threads_held",
   "threads_missing",
   "events_stopped",
 ] as const;
@@ -166,6 +166,7 @@ export async function runHealthCheck(
   const lock = await beginJobRun(db, {
     jobName: "health_check",
     staleAfterSeconds: LOCK_STALE_SECONDS,
+    slotStart: new Date(slotStart(clock())),
   });
   if (!lock.ok) {
     return { status: "failed", results: {}, error: errorSummary(lock.error) };
@@ -212,7 +213,6 @@ export async function runHealthCheck(
   let error: JobRunError | null = null;
   const channels = await listActiveManagedChannels(db);
   if (channels.ok) {
-    results.excluded_rows = channels.value.excluded.length;
     if (channels.value.truncated) {
       count("truncated");
     }
@@ -235,7 +235,7 @@ export async function runHealthCheck(
         if (channel.guildId !== guildId) {
           count("channels_wrong_guild");
           log(`Channel ${channelId} is not in its guild`);
-        } else if (!FORUM_TYPES.has(channel.type)) {
+        } else if (!FORUM_CHANNEL_TYPES.has(channel.type)) {
           count("channels_not_forum");
           log(`Channel ${channelId} is not a forum`);
         } else {

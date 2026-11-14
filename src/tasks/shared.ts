@@ -25,7 +25,6 @@ import {
   searchOpenTasksByIdPrefix,
   searchOwnOpenTasksByIdPrefix,
 } from "../db/tasks.ts";
-import type { RowList } from "../db/result.ts";
 import { isIdPrefix, isUuid } from "../db/validate.ts";
 import type { EventRow, TaskRow, TaskStatus } from "../db/types.ts";
 import type { DateOnly } from "../lib/dates.ts";
@@ -125,11 +124,11 @@ function typedShortId(raw: string): string | undefined {
 }
 
 function onlyId<T extends { readonly id: string }>(
-  found: DbResult<RowList<T>>,
+  found: DbResult<T[]>,
 ): string | undefined {
-  const { rows, excluded } = valueOf(found);
+  const rows = valueOf(found);
   const [only] = rows;
-  return rows.length === 1 && excluded.length === 0 ? only?.id : undefined;
+  return rows.length === 1 ? only?.id : undefined;
 }
 
 /**

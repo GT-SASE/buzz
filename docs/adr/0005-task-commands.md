@@ -8,14 +8,14 @@ An officer assigns a task, and the bot pings the assignee with its authority beh
 
 ## Decision
 
-**Quotas.** Triggers enforce both limits when a task is inserted or a reassignment recorded, taking advisory locks so that two writes at once cannot pass a count together. The triggers refuse any isolation level above Read Committed, where a count could miss what the lock made it wait for. The refusal states the number.
+**Quotas.** Triggers enforce both limits when a task is inserted or a reassignment recorded, taking advisory locks so that two writes at once cannot pass a count together. The triggers refuse any isolation level above Read Committed, where a count could miss what the lock made it wait for. The reply gives no number.
 
 | Limit                 | Value | Counts                                                                                                                                   |
 | --------------------- | ----- | ---------------------------------------------------------------------------------------------------------------------------------------- |
 | Tasks on one event    | 100   | Live tasks, done ones included. This matches the most that a read of an event's tasks returns.                                           |
 | Pings from one person | 50    | New tasks and reassignments by one officer in one guild in any 24 hours, deleted tasks included, so that deleting does not free up room. |
 
-A busy event has a few dozen tasks and a busy officer sets up a few at a time, so neither limit should be felt in normal use. To change one, change the migration's triggers and the constants in `src/db/tasks.ts`, which a test holds equal.
+A busy event has a few dozen tasks and a busy officer sets up a few at a time, so neither limit should be felt in normal use. To change one, change it in the triggers, with a new migration. The numbers live only there.
 
 **Links.** A plain URL is allowed, because tasks often need one, and is rendered as inert text that nothing can click. A server invite or a masked link is refused: those are the forms that disguise where they go, or bring people somewhere new on the bot's authority. Escaping leaves them inert too, and `SUPPRESS_EMBEDS` stops previews, so the refusal is a second layer.
 
@@ -42,9 +42,9 @@ A busy event has a few dozen tasks and a busy officer sets up a few at a time, s
 - A reassignment is counted before the task changes, so an edit that then fails, as stale or on a closed event, still costs one of the 50. The rows are few and are kept.
 - A task update and `soft_delete_event` now lock in one order, the task and then the event, so that pair no longer deadlocks. Two cases remain. A task inserted and updated in the moment its event is being deleted can still deadlock with the delete, which takes three requests inside a few milliseconds. A transaction holding several task writes across events or officers can deadlock with another, though the bot sends one write per request. Postgres cancels one, which rolls back whole and fails safely, and the person gets the failure reply.
 - A member's refused click still costs a claim row and two more requests, because the claim comes before the row is read. Claims are small and can be deleted after a day.
-- Autocomplete reads the config and then searches, so at worst it takes two 1.5 second requests. A slow one means Discord shows no choices, and nothing else is lost.
+- Autocomplete reads the config and then searches, so at worst it takes two requests of up to 2.2 seconds each. A slow one means Discord shows no choices, and nothing else is lost.
 - An officer can still ping someone with a plain URL in a task. It can't be clicked and shows its real address, but it can be copied. Only a person can judge such text.
-- Unconfirmed, to check on staging: that escaped URLs are not clickable on desktop and mobile, and how they copy.
+- Unconfirmed, to check on a test server: that escaped URLs are not clickable on desktop and mobile, and how they copy.
 - `/mytasks` lists up to 100 tasks and shows as many as fit one message, then says how many more there are. Past 100 it says "at least", because the count stops at the rows read.
 - Picker text that could be the start of an ID costs one more indexed read, in parallel with the search.
 - Quota numbers are per guild and per officer, so someone holding several officer accounts gets each account's allowance. The per-event limit still applies to them all.

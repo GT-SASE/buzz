@@ -1,24 +1,18 @@
+import { DISCORD_LIMITS } from "../discord/safe-text.ts";
 import type { DateOnly } from "../lib/dates.ts";
 import { isSnowflake } from "../lib/snowflake.ts";
 import type { DbClient } from "./client.ts";
-import { rest } from "./internal.ts";
-import { failure, refused, type DbResult } from "./errors.ts";
 import {
-  booleanValue,
-  cappedList,
-  exactlyOne,
-  integerValue,
-  oneOrNone,
-  rowList,
-  type CappedList,
-  type RowList,
-} from "./result.ts";
-import {
-  parseEvent,
-  parseEventChoice,
-  type EventChoice,
-  type EventRow,
-} from "./types.ts";
+  callFunction,
+  capped,
+  changedRow,
+  firstRow,
+  nullAsNotFound,
+  query,
+  sql,
+} from "./internal.ts";
+import { refused, type DbResult } from "./errors.ts";
+import type { CappedList, EventChoice, EventRow } from "./types.ts";
 import {
   MAX_EVENT_NAME_LENGTH,
   isDbDate,
@@ -28,9 +22,14 @@ import {
   searchPattern,
 } from "./validate.ts";
 
+/** The columns of an `EventRow`. */
+export const EVENT_COLUMNS = sql`id, guild_id, channel_id, name, event_date, thread_id,
+  overview_message_id, status, thread_status, created_by, deleted_at, created_at`;
+
+/** The columns of an `EventChoice`. */
+export const EVENT_CHOICE_COLUMNS = sql`id, name, event_date, status`;
+
 const MAX_EVENTS = 100;
-/** Discord's limit for autocomplete choices. */
-const MAX_CHOICES = 25;
 
 export interface EventKey {
   guildId: string;
@@ -49,34 +48,24 @@ export interface NewEvent {
   eventDate: DateOnly;
 }
 
-/** Fails as `parent_unavailable` if the channel has been removed. */
+/**
+ * Fails as `parent_unavailable` if the channel has been removed, and as `conflict` if
+ * this officer already has the same event waiting for its post.
+ */
 export async function createEvent(
   db: DbClient,
   { guildId, channelId, actorId, name, eventDate }: NewEvent,
 ): Promise<DbResult<EventRow>> {
-  if (
-    !isSnowflake(guildId) ||
-    !isSnowflake(channelId) ||
-    !isSnowflake(actorId) ||
-    !isStoredText(name, MAX_EVENT_NAME_LENGTH) ||
-    !isDbDate(eventDate)
-  ) {
+  if (!isStoredText(name, MAX_EVENT_NAME_LENGTH) || !isDbDate(eventDate)) {
     return refused();
   }
-  return exactlyOne(
-    await rest(db)
-      .from("events")
-      .insert({
-        guild_id: guildId,
-        channel_id: channelId,
-        name,
-        event_date: eventDate,
-        created_by: actorId,
-      })
-      .select(
-        "id,guild_id,channel_id,name,event_date,thread_id,overview_message_id,status,thread_status,created_by,deleted_at,created_at",
-      ),
-    parseEvent,
+  return changedRow(
+    await query<EventRow>(
+      db,
+      sql`insert into events (guild_id, channel_id, name, event_date, created_by)
+      values (${guildId}, ${channelId}, ${name}, ${eventDate}, ${actorId})
+      returning ${EVENT_COLUMNS}`,
+    ),
   );
 }
 
@@ -93,32 +82,18 @@ export async function createLinkedEvent(
   db: DbClient,
   { guildId, channelId, actorId, name, eventDate, threadId }: NewLinkedEvent,
 ): Promise<DbResult<EventRow>> {
-  if (
-    !isSnowflake(guildId) ||
-    !isSnowflake(channelId) ||
-    !isSnowflake(actorId) ||
-    !isSnowflake(threadId) ||
-    !isStoredText(name, MAX_EVENT_NAME_LENGTH) ||
-    !isDbDate(eventDate)
-  ) {
+  if (!isStoredText(name, MAX_EVENT_NAME_LENGTH) || !isDbDate(eventDate)) {
     return refused();
   }
-  return exactlyOne(
-    await rest(db)
-      .from("events")
-      .insert({
-        guild_id: guildId,
-        channel_id: channelId,
-        name,
-        event_date: eventDate,
-        created_by: actorId,
-        thread_id: threadId,
-        thread_status: "active",
-      })
-      .select(
-        "id,guild_id,channel_id,name,event_date,thread_id,overview_message_id,status,thread_status,created_by,deleted_at,created_at",
-      ),
-    parseEvent,
+  return changedRow(
+    await query<EventRow>(
+      db,
+      sql`insert into events
+        (guild_id, channel_id, name, event_date, created_by, thread_id, thread_status)
+      values (${guildId}, ${channelId}, ${name}, ${eventDate}, ${actorId}, ${threadId},
+        'active')
+      returning ${EVENT_COLUMNS}`,
+    ),
   );
 }
 
@@ -130,17 +105,13 @@ export async function getEvent(
   if (!isEventKey(key)) {
     return refused();
   }
-  return oneOrNone(
-    await rest(db)
-      .from("events")
-      .select(
-        "id,guild_id,channel_id,name,event_date,thread_id,overview_message_id,status,thread_status,created_by,deleted_at,created_at",
-      )
-      .eq("id", key.eventId)
-      .eq("guild_id", key.guildId)
-      .is("deleted_at", null)
-      .limit(1),
-    parseEvent,
+  return firstRow(
+    await query<EventRow>(
+      db,
+      sql`select ${EVENT_COLUMNS} from events
+      where id = ${key.eventId} and guild_id = ${key.guildId} and deleted_at is null
+      limit 1`,
+    ),
   );
 }
 
@@ -148,29 +119,16 @@ export async function getEvent(
 export async function listEventsNamed(
   db: DbClient,
   { guildId, channelId, name, eventDate }: Omit<NewEvent, "actorId">,
-): Promise<DbResult<RowList<EventRow>>> {
-  if (
-    !isSnowflake(guildId) ||
-    !isSnowflake(channelId) ||
-    !isStoredText(name, MAX_EVENT_NAME_LENGTH) ||
-    !isDbDate(eventDate)
-  ) {
+): Promise<DbResult<EventRow[]>> {
+  if (!isStoredText(name, MAX_EVENT_NAME_LENGTH) || !isDbDate(eventDate)) {
     return refused();
   }
-  return rowList(
-    await rest(db)
-      .from("events")
-      .select(
-        "id,guild_id,channel_id,name,event_date,thread_id,overview_message_id,status,thread_status,created_by,deleted_at,created_at",
-      )
-      .eq("guild_id", guildId)
-      .eq("channel_id", channelId)
-      .eq("name", name)
-      .eq("event_date", eventDate)
-      .is("deleted_at", null)
-      .order("id")
-      .limit(MAX_CHOICES),
-    parseEvent,
+  return await query<EventRow>(
+    db,
+    sql`select ${EVENT_COLUMNS} from events
+      where guild_id = ${guildId} and channel_id = ${channelId} and name = ${name}
+        and event_date = ${eventDate} and deleted_at is null
+      order by id limit ${DISCORD_LIMITS.autocompleteChoices}`,
   );
 }
 
@@ -182,22 +140,13 @@ export async function listEvents(
   db: DbClient,
   { guildId }: { guildId: string },
 ): Promise<DbResult<CappedList<EventRow>>> {
-  if (!isSnowflake(guildId)) {
-    return refused();
-  }
-  return cappedList(
-    await rest(db)
-      .from("events")
-      .select(
-        "id,guild_id,channel_id,name,event_date,thread_id,overview_message_id,status,thread_status,created_by,deleted_at,created_at",
-      )
-      .eq("guild_id", guildId)
-      .is("deleted_at", null)
-      .order("status")
-      .order("event_date", { ascending: false })
-      .order("id")
-      .limit(MAX_EVENTS + 1),
-    parseEvent,
+  return capped(
+    await query<EventRow>(
+      db,
+      sql`select ${EVENT_COLUMNS} from events
+      where guild_id = ${guildId} and deleted_at is null
+      order by status, event_date desc, id limit ${MAX_EVENTS + 1}`,
+    ),
     MAX_EVENTS,
   );
 }
@@ -210,22 +159,16 @@ export async function listEvents(
 export async function searchEvents(
   db: DbClient,
   { guildId, term }: { guildId: string; term: string },
-): Promise<DbResult<RowList<EventChoice>>> {
-  if (!isSnowflake(guildId) || !isSearchTerm(term)) {
+): Promise<DbResult<EventChoice[]>> {
+  if (!isSearchTerm(term)) {
     return refused();
   }
-  return rowList(
-    await rest(db)
-      .from("events")
-      .select("id,name,event_date,status")
-      .eq("guild_id", guildId)
-      .is("deleted_at", null)
-      .ilike("name", searchPattern(term))
-      .order("status")
-      .order("event_date", { ascending: false })
-      .order("id")
-      .limit(MAX_CHOICES),
-    parseEventChoice,
+  return await query<EventChoice>(
+    db,
+    sql`select ${EVENT_CHOICE_COLUMNS} from events
+      where guild_id = ${guildId} and deleted_at is null
+        and name ilike ${searchPattern(term)}
+      order by status, event_date desc, id limit ${DISCORD_LIMITS.autocompleteChoices}`,
   );
 }
 
@@ -237,21 +180,14 @@ export async function setEventThread(
   db: DbClient,
   key: EventKey & { threadId: string },
 ): Promise<DbResult<EventRow>> {
-  if (!isEventKey(key) || !isSnowflake(key.threadId)) {
-    return refused();
-  }
-  return exactlyOne(
-    await rest(db)
-      .from("events")
-      .update({ thread_id: key.threadId, thread_status: "active" })
-      .eq("id", key.eventId)
-      .eq("guild_id", key.guildId)
-      .is("deleted_at", null)
-      .neq("thread_status", "active")
-      .select(
-        "id,guild_id,channel_id,name,event_date,thread_id,overview_message_id,status,thread_status,created_by,deleted_at,created_at",
-      ),
-    parseEvent,
+  return changedRow(
+    await query<EventRow>(
+      db,
+      sql`update events set thread_id = ${key.threadId}, thread_status = 'active'
+      where id = ${key.eventId} and guild_id = ${key.guildId} and deleted_at is null
+        and thread_status <> 'active'
+      returning ${EVENT_COLUMNS}`,
+    ),
   );
 }
 
@@ -264,29 +200,15 @@ export async function attachEventPost(
   db: DbClient,
   key: EventKey & { threadId: string; overviewMessageId: string },
 ): Promise<DbResult<EventRow>> {
-  if (
-    !isEventKey(key) ||
-    !isSnowflake(key.threadId) ||
-    !isSnowflake(key.overviewMessageId)
-  ) {
-    return refused();
-  }
-  return exactlyOne(
-    await rest(db)
-      .from("events")
-      .update({
-        thread_id: key.threadId,
-        overview_message_id: key.overviewMessageId,
-        thread_status: "active",
-      })
-      .eq("id", key.eventId)
-      .eq("guild_id", key.guildId)
-      .is("deleted_at", null)
-      .eq("thread_status", "pending")
-      .select(
-        "id,guild_id,channel_id,name,event_date,thread_id,overview_message_id,status,thread_status,created_by,deleted_at,created_at",
-      ),
-    parseEvent,
+  return changedRow(
+    await query<EventRow>(
+      db,
+      sql`update events set thread_id = ${key.threadId},
+        overview_message_id = ${key.overviewMessageId}, thread_status = 'active'
+      where id = ${key.eventId} and guild_id = ${key.guildId} and deleted_at is null
+        and thread_status = 'pending'
+      returning ${EVENT_COLUMNS}`,
+    ),
   );
 }
 
@@ -294,21 +216,14 @@ export async function markEventThreadMissing(
   db: DbClient,
   key: EventKey,
 ): Promise<DbResult<EventRow>> {
-  if (!isEventKey(key)) {
-    return refused();
-  }
-  return exactlyOne(
-    await rest(db)
-      .from("events")
-      .update({ thread_status: "missing" })
-      .eq("id", key.eventId)
-      .eq("guild_id", key.guildId)
-      .is("deleted_at", null)
-      .eq("thread_status", "active")
-      .select(
-        "id,guild_id,channel_id,name,event_date,thread_id,overview_message_id,status,thread_status,created_by,deleted_at,created_at",
-      ),
-    parseEvent,
+  return changedRow(
+    await query<EventRow>(
+      db,
+      sql`update events set thread_status = 'missing'
+      where id = ${key.eventId} and guild_id = ${key.guildId} and deleted_at is null
+        and thread_status = 'active'
+      returning ${EVENT_COLUMNS}`,
+    ),
   );
 }
 
@@ -316,20 +231,13 @@ export async function setEventOverviewMessage(
   db: DbClient,
   key: EventKey & { messageId: string },
 ): Promise<DbResult<EventRow>> {
-  if (!isEventKey(key) || !isSnowflake(key.messageId)) {
-    return refused();
-  }
-  return exactlyOne(
-    await rest(db)
-      .from("events")
-      .update({ overview_message_id: key.messageId })
-      .eq("id", key.eventId)
-      .eq("guild_id", key.guildId)
-      .is("deleted_at", null)
-      .select(
-        "id,guild_id,channel_id,name,event_date,thread_id,overview_message_id,status,thread_status,created_by,deleted_at,created_at",
-      ),
-    parseEvent,
+  return changedRow(
+    await query<EventRow>(
+      db,
+      sql`update events set overview_message_id = ${key.messageId}
+      where id = ${key.eventId} and guild_id = ${key.guildId} and deleted_at is null
+      returning ${EVENT_COLUMNS}`,
+    ),
   );
 }
 
@@ -338,40 +246,30 @@ export async function closeEvent(
   db: DbClient,
   key: EventKey,
 ): Promise<DbResult<EventRow>> {
-  if (!isEventKey(key)) {
-    return refused();
-  }
-  return exactlyOne(
-    await rest(db)
-      .from("events")
-      .update({ status: "closed" })
-      .eq("id", key.eventId)
-      .eq("guild_id", key.guildId)
-      .is("deleted_at", null)
-      .eq("status", "active")
-      .select(
-        "id,guild_id,channel_id,name,event_date,thread_id,overview_message_id,status,thread_status,created_by,deleted_at,created_at",
-      ),
-    parseEvent,
+  return changedRow(
+    await query<EventRow>(
+      db,
+      sql`update events set status = 'closed'
+      where id = ${key.eventId} and guild_id = ${key.guildId} and deleted_at is null
+        and status = 'active'
+      returning ${EVENT_COLUMNS}`,
+    ),
   );
 }
 
 /**
  * Reserves the right to create this pending event's post. False if it is no longer
- * pending, or if another attempt began in the last 60 seconds.
+ * pending, or if an earlier attempt holds it: an attempt is only given back after
+ * Discord clearly refused the post.
  */
 export async function claimEventPostAttempt(
   db: DbClient,
   key: EventKey,
 ): Promise<DbResult<boolean>> {
-  if (!isEventKey(key)) {
-    return refused();
-  }
-  return booleanValue(
-    await rest(db).rpc("claim_event_post_attempt", {
-      p_event_id: key.eventId,
-      p_guild_id: key.guildId,
-    }),
+  return callFunction<boolean>(
+    db,
+    sql`select public.claim_event_post_attempt(p_event_id => ${key.eventId},
+      p_guild_id => ${key.guildId}) as value`,
   );
 }
 
@@ -380,14 +278,10 @@ export async function releaseEventPostAttempt(
   db: DbClient,
   key: EventKey,
 ): Promise<DbResult<boolean>> {
-  if (!isEventKey(key)) {
-    return refused();
-  }
-  return booleanValue(
-    await rest(db).rpc("release_event_post_attempt", {
-      p_event_id: key.eventId,
-      p_guild_id: key.guildId,
-    }),
+  return callFunction<boolean>(
+    db,
+    sql`select public.release_event_post_attempt(p_event_id => ${key.eventId},
+      p_guild_id => ${key.guildId}) as value`,
   );
 }
 
@@ -396,16 +290,12 @@ export async function softDeleteEvent(
   db: DbClient,
   key: EventKey,
 ): Promise<DbResult<number>> {
-  if (!isEventKey(key)) {
-    return refused();
-  }
-  const response = await rest(db).rpc("soft_delete_event", {
-    p_event_id: key.eventId,
-    p_guild_id: key.guildId,
-  });
   // The function returns null when there is no live event with that ID in that guild.
-  if (response.error === null && response.data === null) {
-    return failure("not_found");
-  }
-  return integerValue(response);
+  return nullAsNotFound(
+    await callFunction<number | null>(
+      db,
+      sql`select public.soft_delete_event(p_event_id => ${key.eventId},
+        p_guild_id => ${key.guildId}) as value`,
+    ),
+  );
 }

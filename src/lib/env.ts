@@ -18,6 +18,10 @@ function readRequired(name: string): string {
   return value;
 }
 
+export function getDatabaseUrl(): string {
+  return readRequired("DATABASE_URL");
+}
+
 export function getDiscordAppId(): string {
   const value = readRequired("DISCORD_APP_ID");
   if (!isSnowflake(value)) {

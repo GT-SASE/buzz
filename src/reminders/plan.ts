@@ -1,4 +1,9 @@
-import { daysBetween, parseIsoDate, type DateOnly } from "../lib/dates.ts";
+import {
+  daysBetween,
+  parseIsoDate,
+  todayInZone,
+  type DateOnly,
+} from "../lib/dates.ts";
 
 /** Least urgent first. The later a kind appears, the more urgent it is. */
 export const REMINDER_KINDS = [
@@ -12,11 +17,54 @@ export type ReminderKind = (typeof REMINDER_KINDS)[number];
 
 export type ReminderState = "claimed" | "sent" | "skipped";
 
-/** A claim older than this was left behind by a crashed run. */
-export const STALE_CLAIM_MS = 3_600_000;
+/** Mirrors `maxDuration` in vercel.json for both functions; cron-endpoint.test.ts enforces it. */
+export const FUNCTION_MAX_MS = 60_000;
+
+/** A claim older than this was left behind by a run the platform has since stopped. */
+export const STALE_CLAIM_MS = 2 * FUNCTION_MAX_MS;
+/**
+ * A reminder goes out without notifying anyone once this many sends, counting the one about
+ * to start, may have reached Discord. A send known to have been refused does not count.
+ */
+export const MAX_ATTEMPTS_WITH_PING = 3;
+
+const MS_PER_DAY = 86_400_000;
+/**
+ * When a schedule slot starts: the first cron in vercel.json, which cron-endpoint.test.ts
+ * checks. `begin_job_run` is given the slot's start.
+ */
+export const SLOT_START_HOUR_UTC = 15;
+
+/** When the schedule slot on this instant's UTC date starts, whether or not it has yet. */
+export function dayRunStart(now: Date): number {
+  return Date.UTC(
+    now.getUTCFullYear(),
+    now.getUTCMonth(),
+    now.getUTCDate(),
+    SLOT_START_HOUR_UTC,
+  );
+}
+
+/** The start of the schedule slot this instant falls in. */
+export function slotStart(now: Date): number {
+  const today = dayRunStart(now);
+  return today <= now.getTime() ? today : today - MS_PER_DAY;
+}
+
+/**
+ * The guild's local date that a run plans for: the date in its zone when the run's slot
+ * began, not when the run itself started. The 15:00 UTC run and the 17:00 UTC recovery
+ * run of one slot then plan the same day everywhere. Taking each run's own date would
+ * put the recovery run on the next local day in zones where midnight falls between the
+ * two, such as Asia/Singapore, and lose that slot's reminders. Throws a RangeError for a
+ * zone the runtime does not know.
+ */
+export function slotToday(now: Date, timeZone: string): DateOnly {
+  return todayInZone(new Date(slotStart(now)), timeZone);
+}
 
 /** The number of days before the due date at which each kind becomes due. */
-const OPENS_AT_DAYS_BEFORE: Record<ReminderKind, number> = {
+export const OPENS_AT_DAYS_BEFORE: Record<ReminderKind, number> = {
   three_days: 3,
   one_day: 1,
   due_day: 0,

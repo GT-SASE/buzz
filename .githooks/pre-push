@@ -1,5 +1,28 @@
 #!/bin/sh
-# Activated with: npm run hooks:install
-# Exits non-zero, which blocks the push, if the scan script is missing.
+# Scans the commits being pushed for secrets, and blocks the push on a finding.
+# Activate with: bun run hooks:install
+remote="$1"
 repo_root="$(git rev-parse --show-toplevel)" || exit 1
-exec bash "${repo_root}/scripts/gitleaks-pre-push.sh" "$@"
+gitleaks="${repo_root}/.tools/gitleaks"
+if [ ! -x "${gitleaks}" ]; then
+  echo "pre-push: gitleaks is not installed. Run: bun run gitleaks:install" >&2
+  exit 1
+fi
+# gitleaks would read it and skip the findings it lists.
+if [ -e "${repo_root}/.gitleaksignore" ]; then
+  echo "pre-push: remove .gitleaksignore. Fix a finding, never ignore it." >&2
+  exit 1
+fi
+zero="$(git hash-object --stdin </dev/null | tr '0-9a-f' '0')"
+# Git passes one line per ref: <local ref> <local sha> <remote ref> <remote sha>.
+while read -r _local_ref local_sha _remote_ref remote_sha; do
+  [ "${local_sha}" = "${zero}" ] && continue # A delete sends no commits.
+  if [ "${remote_sha}" = "${zero}" ]; then
+    range="${local_sha} --not --remotes=${remote}"
+  else
+    range="${remote_sha}..${local_sha}"
+  fi
+  "${gitleaks}" git "${repo_root}" --config "${repo_root}/.gitleaks.toml" \
+    --redact --ignore-gitleaks-allow --no-banner \
+    --log-opts="${range} -m --text --no-color" </dev/null || exit 1
+done
