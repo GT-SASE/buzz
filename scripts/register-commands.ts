@@ -18,6 +18,7 @@ import {
   Routes,
   type RESTPutAPIApplicationGuildCommandsJSONBody,
 } from "discord-api-types/v10";
+import { USER_AGENT } from "../src/discord/client.ts";
 import { COMMANDS } from "../src/handlers/registry.ts";
 import { ConfigError } from "../src/lib/config-error.ts";
 import {
@@ -63,7 +64,7 @@ export async function registerGuildCommands(
         headers: {
           Authorization: `Bot ${token}`,
           "Content-Type": "application/json",
-          "User-Agent": "DiscordBot (gtsase-discord-bot, 0.0.0)",
+          "User-Agent": USER_AGENT,
         },
         body: JSON.stringify(commands),
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
