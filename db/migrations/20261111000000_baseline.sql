@@ -361,13 +361,17 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.begin_job_run(p_job_name text, p_stale_after_seconds integer) RETURNS uuid
+CREATE FUNCTION public.begin_job_run(p_job_name text, p_stale_after_seconds integer, p_slot_start timestamp with time zone) RETURNS uuid
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO ''
     AS $$
 DECLARE
   v_id uuid;
 BEGIN
+  IF p_slot_start IS NULL THEN
+    RAISE EXCEPTION 'slot start is required' USING ERRCODE = '22023';
+  END IF;
+
   PERFORM pg_catalog.set_config('lock_timeout', '3s', true);
   PERFORM pg_catalog.pg_advisory_xact_lock(
     pg_catalog.hashtextextended('job_runs:' || p_job_name, 0)
@@ -389,7 +393,7 @@ BEGIN
     FROM public.job_runs
     WHERE job_name = p_job_name
       AND status = 'succeeded'
-      AND started_at >= date_trunc('day', now() - interval '15 hours', 'UTC') + interval '15 hours'
+      AND started_at >= p_slot_start
       AND started_at <= clock_timestamp()
   ) THEN
     RETURN NULL;
@@ -1779,7 +1783,7 @@ GRANT EXECUTE ON FUNCTION
   public.apply_config_change(text, integer, text, boolean, text[], text[], text),
   public.apply_role_bindings(text, integer, text, text, text, text, text, text, text),
   public.assign_event_step(uuid, text, public.event_step_kind, text, text),
-  public.begin_job_run(text, integer),
+  public.begin_job_run(text, integer, timestamptz),
   public.claim_event_post_attempt(uuid, text),
   public.claim_event_reminder(uuid, public.event_reminder_kind, date),
   public.claim_interaction(text),

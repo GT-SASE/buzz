@@ -29,10 +29,13 @@ export const STALE_CLAIM_MS = 2 * FUNCTION_MAX_MS;
 export const MAX_ATTEMPTS_WITH_PING = 3;
 
 const MS_PER_DAY = 86_400_000;
-/** When a schedule slot starts: the first cron. Must match `begin_job_run`. */
+/**
+ * When a schedule slot starts: the first cron in vercel.json, which cron-endpoint.test.ts
+ * checks. `begin_job_run` is given the slot's start.
+ */
 export const SLOT_START_HOUR_UTC = 15;
 
-/** The start of the schedule slot this instant falls in, as in `begin_job_run`. */
+/** The start of the schedule slot this instant falls in. */
 export function slotStart(now: Date): number {
   const today = Date.UTC(
     now.getUTCFullYear(),

@@ -101,7 +101,9 @@ describe("lock order", () => {
   });
 
   describe("the job lock", () => {
-    const beginSql = "SELECT public.begin_job_run($1, 120) AS id";
+    // Each test names its own job, so any slot start before the test began will do.
+    const beginSql =
+      "SELECT public.begin_job_run($1, 120, now() - interval '1 hour') AS id";
     const finishSql = `SELECT public.finish_job_run($1, now(), '{}', NULL) AS rows`;
 
     const newJob = () => `lock_order_${fakeId()}`;

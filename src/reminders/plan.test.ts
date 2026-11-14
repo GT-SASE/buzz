@@ -11,6 +11,7 @@ import {
   type ReminderLogRow,
   type ReminderPlan,
   type ReminderState,
+  SLOT_START_HOUR_UTC,
   slotStart,
   slotToday,
 } from "./plan.ts";
@@ -1206,12 +1207,9 @@ describe("slotToday", () => {
     );
   });
 
-  it("starts each slot at 15:00 UTC", () => {
-    expect(slotStart(new Date("2026-11-10T15:00:00Z"))).toBe(
-      Date.parse("2026-11-10T15:00:00Z"),
-    );
-    expect(slotStart(new Date("2026-11-10T14:59:59Z"))).toBe(
-      Date.parse("2026-11-09T15:00:00Z"),
-    );
+  it("starts each slot at the first cron's hour", () => {
+    const start = Date.UTC(2026, 10, 10, SLOT_START_HOUR_UTC);
+    expect(slotStart(new Date(start))).toBe(start);
+    expect(slotStart(new Date(start - 1_000))).toBe(start - 86_400_000);
   });
 });

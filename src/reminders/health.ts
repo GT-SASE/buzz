@@ -42,6 +42,7 @@ import {
   type DiscordClient,
   type DiscordFailure,
 } from "../discord/client.ts";
+import { slotStart } from "./plan.ts";
 import { DATABASE_CALL_MS, DEFAULT_LIMITS, LOCK_STALE_SECONDS } from "./run.ts";
 
 const HOUR_MS = 3_600_000;
@@ -165,6 +166,7 @@ export async function runHealthCheck(
   const lock = await beginJobRun(db, {
     jobName: "health_check",
     staleAfterSeconds: LOCK_STALE_SECONDS,
+    slotStart: new Date(slotStart(clock())),
   });
   if (!lock.ok) {
     return { status: "failed", results: {}, error: errorSummary(lock.error) };

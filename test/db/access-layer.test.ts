@@ -104,6 +104,7 @@ import {
   type DateOnly,
 } from "../../src/lib/dates.ts";
 import { authorize } from "../../src/lib/permissions.ts";
+import { slotStart } from "../../src/reminders/plan.ts";
 import { openBackend, type Backend } from "./backend.ts";
 import {
   insertEvent,
@@ -2904,7 +2905,11 @@ describe("database layer against the real schema", () => {
   describe("job runs", () => {
     const startRun = async (jobName: "reminders" | "health_check") => {
       const id = unwrap(
-        await beginJobRun(db, { jobName, staleAfterSeconds: 120 }),
+        await beginJobRun(db, {
+          jobName,
+          staleAfterSeconds: 120,
+          slotStart: new Date(slotStart(new Date())),
+        }),
       );
       if (id === null) {
         throw new Error("expected a run to start");

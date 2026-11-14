@@ -10,6 +10,7 @@ import {
 } from "../../src/db/job-runs.ts";
 import { applyConfigChange } from "../../src/db/guild-config.ts";
 import { listActiveManagedChannels } from "../../src/db/managed-channels.ts";
+import { slotStart } from "../../src/reminders/plan.ts";
 import { insertGuild } from "./fixtures.ts";
 import {
   OTHER_ROLE,
@@ -25,10 +26,14 @@ describe("begin_job_run", () => {
   let database: PGlite;
   let db: DbClient;
 
+  /** The start of the current slot. */
+  const currentSlot = (): Date => new Date(slotStart(new Date()));
+
   const begin = () =>
     beginJobRun(db, {
       jobName: "reminders",
       staleAfterSeconds: STALE_SECONDS,
+      slotStart: currentSlot(),
     });
 
   const beginOk = async () => {
@@ -69,18 +74,6 @@ describe("begin_job_run", () => {
     expect(ids.filter((id) => id !== null)).toHaveLength(1);
   });
 
-  /** The start of the current slot: the latest 15:00 UTC that has passed. */
-  const slotStart = (): Date => {
-    const now = new Date();
-    const today = Date.UTC(
-      now.getUTCFullYear(),
-      now.getUTCMonth(),
-      now.getUTCDate(),
-      15,
-    );
-    return new Date(today <= now.getTime() ? today : today - 86_400_000);
-  };
-
   const insertRun = async (status: "succeeded" | "failed", startedAt: Date) => {
     await database.query(
       `INSERT INTO public.job_runs (job_name, status, started_at, heartbeat_at, finished_at)
@@ -96,17 +89,17 @@ describe("begin_job_run", () => {
   });
 
   it("makes the later cron a no-op after a good morning run", async () => {
-    await insertRun("succeeded", slotStart());
+    await insertRun("succeeded", currentSlot());
     expect(await beginOk()).toBeNull();
   });
 
   it("lets the later cron run after a failed morning run", async () => {
-    await insertRun("failed", slotStart());
+    await insertRun("failed", currentSlot());
     expect(await beginOk()).not.toBeNull();
   });
 
   it("does not count a success from before this slot began", async () => {
-    await insertRun("succeeded", new Date(slotStart().getTime() - 1000));
+    await insertRun("succeeded", new Date(currentSlot().getTime() - 1000));
     expect(await beginOk()).not.toBeNull();
   });
 
@@ -115,10 +108,10 @@ describe("begin_job_run", () => {
       await database.exec(`DELETE FROM public.job_runs`);
       await database.exec(`SET TIME ZONE '${zone}'`);
       try {
-        await insertRun("succeeded", new Date(slotStart().getTime() - 1000));
+        await insertRun("succeeded", new Date(currentSlot().getTime() - 1000));
         expect(await beginOk()).not.toBeNull();
         await database.exec(`DELETE FROM public.job_runs`);
-        await insertRun("succeeded", slotStart());
+        await insertRun("succeeded", currentSlot());
         expect(await beginOk()).toBeNull();
       } finally {
         await database.exec(`SET TIME ZONE 'UTC'`);
@@ -163,6 +156,7 @@ describe("begin_job_run", () => {
     const other = await beginJobRun(db, {
       jobName: "health_check",
       staleAfterSeconds: STALE_SECONDS,
+      slotStart: currentSlot(),
     });
     expect(other).toMatchObject({
       ok: true,
@@ -175,9 +169,19 @@ describe("begin_job_run", () => {
       queryAs(
         database,
         OTHER_ROLE,
-        `SELECT public.begin_job_run('reminders', 1)`,
+        `SELECT public.begin_job_run('reminders', 1, now())`,
       ),
     ).rejects.toMatchObject({ code: "42501" });
+  });
+
+  it("refuses a start with no slot", async () => {
+    await expect(
+      queryAs(
+        database,
+        "bot_app",
+        `SELECT public.begin_job_run('reminders', 120, NULL)`,
+      ),
+    ).rejects.toMatchObject({ code: "22023" });
   });
 
   it("stores a run's failure as a category and code only", async () => {
@@ -344,7 +348,7 @@ describe("begin_job_run", () => {
       await queryAs(
         database,
         "bot_app",
-        `SELECT public.begin_job_run('reminders', 120)`,
+        `SELECT public.begin_job_run('reminders', 120, now())`,
       );
       const { rows } = await database.query(`SHOW lock_timeout`);
       expect(rows).toEqual([{ lock_timeout: "3s" }]);

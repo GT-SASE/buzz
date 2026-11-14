@@ -54,6 +54,7 @@ import {
 import {
   FUNCTION_MAX_MS,
   MAX_ATTEMPTS_WITH_PING,
+  slotStart,
   slotToday,
   STALE_CLAIM_MS,
   planReminders,
@@ -1277,9 +1278,11 @@ export async function runReminders(
   dependencies: RunDependencies,
 ): Promise<RunResult> {
   const db = withDeadline(dependencies.db, DATABASE_CALL_MS);
+  const now = dependencies.now ?? (() => new Date());
   const lock = await beginJobRun(db, {
     jobName: "reminders",
     staleAfterSeconds: LOCK_STALE_SECONDS,
+    slotStart: new Date(slotStart(now())),
   });
   if (!lock.ok) {
     return {
@@ -1303,7 +1306,7 @@ export async function runReminders(
   const results = run.results();
   const finished = await finishJobRun(db, {
     id: lock.value,
-    now: (dependencies.now ?? (() => new Date()))(),
+    now: now(),
     results,
     error: run.error,
   });

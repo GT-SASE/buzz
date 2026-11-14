@@ -3,6 +3,7 @@ import { claimEventReminder } from "../../src/db/event-steps.ts";
 import { beginJobRun } from "../../src/db/job-runs.ts";
 import { claimReminder } from "../../src/db/reminders.ts";
 import { todayInZone, type DateOnly } from "../../src/lib/dates.ts";
+import { slotStart } from "../../src/reminders/plan.ts";
 import { insertEvent, insertGuild, insertTask } from "../db/fixtures.ts";
 import { raceDatabase } from "./race.ts";
 
@@ -14,11 +15,16 @@ import { raceDatabase } from "./race.ts";
  */
 describe("two overlapping reminder runs", () => {
   const db = raceDatabase();
-  const beginSql = "SELECT public.begin_job_run($1, 120) AS id";
+  const beginSql = "SELECT public.begin_job_run($1, 120, $2) AS id";
+  const slot = () => new Date(slotStart(new Date()));
 
   it("only one of two starts gets the run", async () => {
-    const second = await db.race([beginSql, ["reminders"]], (bot) =>
-      beginJobRun(bot, { jobName: "reminders", staleAfterSeconds: 120 }),
+    const second = await db.race([beginSql, ["reminders", slot()]], (bot) =>
+      beginJobRun(bot, {
+        jobName: "reminders",
+        staleAfterSeconds: 120,
+        slotStart: slot(),
+      }),
     );
     expect(second).toEqual({ ok: true, value: null });
   });
@@ -26,12 +32,17 @@ describe("two overlapping reminder runs", () => {
   it("a start waits for a finish in progress, then sees its success", async () => {
     const { rows } = await db.observer.query<{ id: string }>(beginSql, [
       "health_check",
+      slot(),
     ]);
 
     const second = await db.race(
       ["SELECT public.finish_job_run($1, now(), '{}', NULL)", [rows[0]?.id]],
       (bot) =>
-        beginJobRun(bot, { jobName: "health_check", staleAfterSeconds: 120 }),
+        beginJobRun(bot, {
+          jobName: "health_check",
+          staleAfterSeconds: 120,
+          slotStart: slot(),
+        }),
     );
 
     expect(second).toEqual({ ok: true, value: null });

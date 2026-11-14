@@ -60,23 +60,26 @@ function isJobRunError(error: JobRunError): boolean {
 
 /**
  * Takes the job's lock and starts a run, the only way to start one. Null means the job
- * is already running, or succeeded in the current schedule slot, so this invocation
- * must do nothing.
+ * is already running, or succeeded since `slotStart`, so this invocation must do nothing.
  */
 export async function beginJobRun(
   db: DbClient,
   {
     jobName,
     staleAfterSeconds,
+    slotStart,
   }: {
     jobName: JobName;
     staleAfterSeconds: number;
+    /** When the current schedule slot began: `slotStart` in src/reminders/plan.ts. */
+    slotStart: Date;
   },
 ): Promise<DbResult<string | null>> {
   return callFunction<string | null>(
     db,
     sql`select public.begin_job_run(p_job_name => ${jobName},
-      p_stale_after_seconds => ${staleAfterSeconds}) as value`,
+      p_stale_after_seconds => ${staleAfterSeconds},
+      p_slot_start => ${slotStart.toISOString()}) as value`,
   );
 }
 

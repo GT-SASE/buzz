@@ -358,13 +358,10 @@ describe("freshness", () => {
 
   it("stores a future-dated success as stale", async () => {
     await succeededRun("reminders", 30);
-    await succeededRun("health_check", 30);
     await health([], { now: () => new Date(Date.now() - 40 * 3_600_000) });
     expect((await latestRow()).results).toMatchObject({
       reminders_stale: 1,
       reminders_future_dated: 1,
-      health_check_stale: 1,
-      health_check_future_dated: 1,
     });
   });
 

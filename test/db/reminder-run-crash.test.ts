@@ -72,14 +72,14 @@ function runWith(now?: () => Date) {
 }
 
 /**
- * The run reads the clock once when it is built and first thing in its work, so a throw
- * on the second read lands in the work and nowhere else.
+ * The run reads the clock for its slot, once when it is built and first thing in its work,
+ * so a throw on the third read lands in the work and nowhere else.
  */
-function clockThatThrowsOnSecondRead(): () => Date {
+function clockThatThrowsOnThirdRead(): () => Date {
   let reads = 0;
   return () => {
     reads += 1;
-    if (reads === 2) {
+    if (reads === 3) {
       throw new TypeError("clock failure");
     }
     return new Date();
@@ -126,7 +126,7 @@ afterEach(() => {
 });
 
 it("records a crashed run as failed, and the next run in the slot still sends", async () => {
-  const crashed = runWith(clockThatThrowsOnSecondRead());
+  const crashed = runWith(clockThatThrowsOnThirdRead());
 
   expect(await crashed.result).toMatchObject({
     status: "failed",
