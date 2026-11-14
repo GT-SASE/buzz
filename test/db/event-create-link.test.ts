@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
   eventCommand,
   eventWorld,
@@ -28,7 +28,6 @@ import {
   UNKNOWN_CHANNEL,
 } from "../support/discord-server.ts";
 import { fakeId } from "../support/ids.ts";
-import { softDeleteEvent } from "../../src/db/events.ts";
 import { REFUSED } from "../../src/lib/permissions.ts";
 import { handler } from "../../src/handlers/event.ts";
 import { containsInviteOrMaskedLink } from "../../src/discord/safe-text.ts";
@@ -45,7 +44,6 @@ const COMMANDS = handler.commands;
 
 const THREADS_POST = /^\/channels\/[0-9]+\/threads$/;
 const MESSAGES_POST = /^\/channels\/[0-9]+\/messages$/;
-const ACTIVE_THREADS = /\/threads\/active$/;
 const ORIGINAL = /\/messages\/@original$/;
 const SERVER_ERROR: Failure = { kind: "respond", status: 500 };
 const FORBIDDEN: Failure = {
@@ -55,19 +53,11 @@ const FORBIDDEN: Failure = {
 };
 
 const OTHER_DATE = "2099-02-15";
-const ARCHIVED = /\/threads\/archived\/public$/;
 const officerFields = { member: OFFICER };
 
 function threadsMade() {
   return [...world.discord.channels.values()].filter(
     (channel) => channel.type === 11,
-  );
-}
-
-/** Lets the row's post attempt lapse, as if the minute had passed. */
-function attemptLapsed() {
-  return world.pg.query(
-    `UPDATE public.events SET post_attempt_at = now() - interval '61 seconds'`,
   );
 }
 
@@ -452,7 +442,6 @@ describe("/event create", () => {
 
   describe("when Discord fails", () => {
     it.each<[string, string, RegExp, Failure]>([
-      ["reading the forum", "GET", /^\/channels\/[0-9]+$/, SERVER_ERROR],
       ["reading the forum, refused", "GET", /^\/channels\/[0-9]+$/, FORBIDDEN],
       ["creating the post, refused", "POST", THREADS_POST, FORBIDDEN],
       [
@@ -499,151 +488,30 @@ describe("/event create", () => {
       expect(world.discord.lastReply()).toContain("Created");
     });
 
-    it("adopts the post when only the answer was lost", async () => {
-      await world.addManagedForum();
-      world.discord.fail("POST", THREADS_POST, { kind: "lost" }, 1);
-
-      await world.send(create());
-
-      const [event] = await world.events();
-      const threads = [...world.discord.channels.values()].filter(
-        (channel) => channel.type === 11,
-      );
-      expect(threads).toHaveLength(1);
-      expect(event).toMatchObject({
-        thread_id: threads[0]?.id,
-        overview_message_id: threads[0]?.id,
-        thread_status: "active",
-      });
-      expect(world.discord.lastReply()).toContain("Created");
-    });
-
-    it("stays pending when no post turns up after an unclear failure", async () => {
-      await world.addManagedForum();
-      world.discord.fail("POST", THREADS_POST, SERVER_ERROR, 1);
-
-      await world.send(create());
-
-      expect((await world.events())[0]?.thread_status).toBe("pending");
-      expect(world.discord.lastReply()).toContain("did not confirm");
-    });
-
-    it("does not post twice when the first post is found only on the retry", async () => {
-      await world.addManagedForum();
-      world.discord.fail("POST", THREADS_POST, { kind: "lost" }, 1);
-      world.discord.fail("GET", ACTIVE_THREADS, SERVER_ERROR, 1);
-
-      await world.send(create());
-
-      expect((await world.events())[0]?.thread_status).toBe("pending");
-
-      await world.send(create());
-
-      const [event, ...others] = await world.events();
-      const threads = [...world.discord.channels.values()].filter(
-        (channel) => channel.type === 11,
-      );
-      expect(others).toEqual([]);
-      expect(threads).toHaveLength(1);
-      expect(event?.thread_id).toBe(threads[0]?.id);
-    });
-
-    it("makes no second post while it can't check for the first", async () => {
-      await world.addManagedForum();
-      world.discord.fail("POST", THREADS_POST, { kind: "lost" }, 1);
-      world.discord.fail("GET", ACTIVE_THREADS, SERVER_ERROR);
-
-      await world.send(create());
-      await world.send(create());
-
-      expect(world.discord.posts()).toHaveLength(1);
-      expect((await world.events())[0]?.thread_status).toBe("pending");
-      expect(world.discord.lastReply()).toContain("didn't make another");
-    });
-
-    it.each([
-      ["someone else's post", fakeId(), "Fall Social"],
-      ["the bot's post with another title", APP_ID, "Other"],
-    ])("does not adopt %s", async (_label, owner, title) => {
-      const forum = await world.addManagedForum();
-      world.discord.addThread({
-        guild_id: GUILD_ID,
-        parent_id: forum,
-        name: title,
-        owner_id: owner,
-      });
-      world.discord.fail("POST", THREADS_POST, SERVER_ERROR, 1);
-
-      await world.send(create());
-
-      expect((await world.events())[0]?.thread_status).toBe("pending");
-    });
-
-    it("does not adopt the bot's post of the same title in another forum", async () => {
-      await world.addManagedForum();
-      const chosen = await world.addManagedForum();
-      const elsewhere = [...world.discord.channels.values()].find(
-        (channel) => channel.id !== chosen,
-      );
-      world.discord.addThread({
-        guild_id: GUILD_ID,
-        parent_id: elsewhere?.id ?? "",
-        name: "Fall Social",
-        owner_id: APP_ID,
-      });
-      world.discord.fail("POST", THREADS_POST, SERVER_ERROR, 1);
-
-      await world.send(create({ forum: forumOption(chosen) }));
-
-      expect((await world.events())[0]?.thread_status).toBe("pending");
-    });
-
-    it("treats a success with no usable ID as unclear, and looks for the post", async () => {
-      const forum = await world.addManagedForum();
-      const threadId = world.discord.addThread({
-        guild_id: GUILD_ID,
-        parent_id: forum,
-        name: "Fall Social",
-        owner_id: APP_ID,
-      });
-      world.discord.fail(
+    it.each<[string, string, RegExp, Failure]>([
+      ["no answer", "POST", THREADS_POST, { kind: "lost" }],
+      ["a server error", "POST", THREADS_POST, SERVER_ERROR],
+      [
+        "a success with no usable ID",
         "POST",
         THREADS_POST,
         { kind: "respond", status: 201, body: {} },
-        1,
-      );
+      ],
+      ["reading the forum fails", "GET", /^\/channels\/[0-9]+$/, SERVER_ERROR],
+    ])(
+      "keeps the row pending and points at /event link with no clear answer: %s",
+      async (_label, method, path, failure) => {
+        const forum = await world.addManagedForum();
+        world.discord.fail(method, path, failure, 1);
 
-      await world.send(create());
+        await world.send(create());
 
-      expect((await world.events())[0]).toMatchObject({
-        thread_id: threadId,
-        thread_status: "active",
-      });
-    });
-
-    it("does not look for a post after a clear refusal", async () => {
-      const forum = await world.addManagedForum();
-      world.discord.addThread({
-        guild_id: GUILD_ID,
-        parent_id: forum,
-        name: "Fall Social",
-        owner_id: APP_ID,
-      });
-      world.discord.fail("POST", THREADS_POST, {
-        kind: "respond",
-        status: 400,
-        code: 40067,
-      });
-
-      await world.send(create());
-
-      expect((await world.events())[0]?.thread_status).toBe("pending");
-      expect(
-        world.discord.requests.filter((request) =>
-          request.path.endsWith("/threads/active"),
-        ),
-      ).toEqual([]);
-    });
+        expect((await world.events())[0]?.thread_status).toBe("pending");
+        expect(world.discord.lastReply()).toBe(
+          `Discord didn't confirm the post, so it may have been made. If **Fall Social** is in <#${forum}>, run /event link inside it and choose this event. If it isn't, make the post yourself in <#${forum}> and run /event link inside it.`,
+        );
+      },
+    );
 
     it("brings the overview up to date when a pending event gets its post", async () => {
       await world.addManagedForum();
@@ -660,215 +528,6 @@ describe("/event create", () => {
           !request.path.endsWith("/messages/@original"),
       );
       expect(edit?.body?.content).toContain("Tasks: 1 open");
-    });
-
-    describe("looking for a lost post", () => {
-      it("does not adopt another live event's post, and a retry gets its own", async () => {
-        await world.addManagedForum();
-        await world.send(create());
-        const [first] = await world.events();
-        world.discord.fail("POST", THREADS_POST, SERVER_ERROR, 1);
-
-        await world.send(create({ date: OTHER_DATE }));
-
-        expect(world.discord.lastReply()).toContain("did not confirm");
-        expect(await world.events("thread_status = 'pending'")).toHaveLength(1);
-
-        await attemptLapsed();
-        await world.send(create({ date: OTHER_DATE }));
-
-        const second = (await world.events(`event_date = '${OTHER_DATE}'`))[0];
-        expect(second?.thread_status).toBe("active");
-        expect(second?.thread_id).not.toBe(first?.thread_id);
-        expect(threadsMade()).toHaveLength(2);
-      });
-
-      it("adopts the new post, not the live event's, when the answer is lost", async () => {
-        await world.addManagedForum();
-        await world.send(create());
-        const [first] = await world.events();
-        world.discord.fail("POST", THREADS_POST, { kind: "lost" }, 1);
-
-        await world.send(create({ date: OTHER_DATE }));
-
-        const second = (await world.events(`event_date = '${OTHER_DATE}'`))[0];
-        const made = threadsMade().map((thread) => thread.id);
-        expect(made).toHaveLength(2);
-        expect(second?.thread_id).toBe(
-          made.find((id) => id !== first?.thread_id),
-        );
-        expect(second?.thread_status).toBe("active");
-      });
-
-      it("does not adopt a deleted event's post from before the row", async () => {
-        await world.addManagedForum();
-        world.discord.threadAgeMs = 60_000;
-        await world.send(create());
-        world.discord.threadAgeMs = 0;
-        const [old] = await world.events();
-        await softDeleteEvent(world.db, {
-          guildId: GUILD_ID,
-          eventId: old?.id ?? "",
-        });
-        const before = world.discord.requests.length;
-        world.discord.fail("POST", THREADS_POST, SERVER_ERROR, 1);
-
-        await world.send(create({ date: OTHER_DATE }));
-
-        const [fresh] = await world.events("deleted_at IS NULL");
-        expect(fresh?.thread_status).toBe("pending");
-        expect(fresh?.thread_id).toBeNull();
-        expect(
-          world.discord.requests
-            .slice(before)
-            .filter(
-              (request) =>
-                request.method === "PATCH" &&
-                !request.path.endsWith("/messages/@original"),
-            ),
-        ).toEqual([]);
-      });
-
-      it("chooses neither when two posts could be it", async () => {
-        const forum = await world.addManagedForum();
-        for (let count = 0; count < 2; count++) {
-          world.discord.addThread({
-            guild_id: GUILD_ID,
-            parent_id: forum,
-            name: "Fall Social",
-            owner_id: APP_ID,
-          });
-        }
-        world.discord.fail("POST", THREADS_POST, SERVER_ERROR, 1);
-
-        await world.send(create());
-
-        expect((await world.events())[0]?.thread_status).toBe("pending");
-        expect(world.discord.lastReply()).toContain("did not confirm");
-        expect(world.discord.lastReply()).toContain("More than one post");
-
-        await world.send(create());
-
-        expect((await world.events())[0]?.thread_status).toBe("pending");
-        const reply = world.discord.lastReply();
-        expect(reply).toContain("didn't make another");
-        expect(reply).toContain("event option");
-        expect(reply).not.toContain("try again");
-        expect(world.discord.posts()).toHaveLength(1);
-      });
-
-      it("makes no choice when it can't read who holds a post", async () => {
-        const forum = await world.addManagedForum();
-        world.discord.addThread({
-          guild_id: GUILD_ID,
-          parent_id: forum,
-          name: "Fall Social",
-          owner_id: APP_ID,
-        });
-        world.discord.fail("POST", THREADS_POST, SERVER_ERROR, 1);
-        world.failDb(/^SQL select .* where thread_id = \$/);
-
-        await world.send(create());
-
-        world.clearDbFailures();
-        expect((await world.events())[0]?.thread_status).toBe("pending");
-        expect(world.discord.lastReply()).toContain("did not confirm");
-      });
-
-      it("makes no second post on a retry while it can't read who holds a post", async () => {
-        const forum = await world.addManagedForum();
-        world.discord.fail("POST", THREADS_POST, SERVER_ERROR, 1);
-        await world.send(create());
-        world.discord.addThread({
-          guild_id: GUILD_ID,
-          parent_id: forum,
-          name: "Fall Social",
-          owner_id: APP_ID,
-        });
-        await attemptLapsed();
-        world.failDb(/^SQL select .* where thread_id = \$/);
-        const before = world.discord.posts().length;
-
-        await world.send(create());
-
-        world.clearDbFailures();
-        expect(world.discord.posts()).toHaveLength(before);
-        expect(world.discord.lastReply()).toContain("didn't make another");
-      });
-
-      it("brings the adopted post's overview up to date", async () => {
-        await world.addManagedForum();
-        world.discord.fail("POST", THREADS_POST, { kind: "lost" }, 1);
-
-        await world.send(create());
-
-        const edit = world.discord.requests.find(
-          (request) =>
-            request.method === "PATCH" &&
-            !request.path.endsWith("/messages/@original"),
-        );
-        expect(edit?.body?.content).toContain("**Fall Social**");
-      });
-
-      it("finds a post that has since been archived", async () => {
-        const forum = await world.addManagedForum();
-        const threadId = world.discord.addThread({
-          guild_id: GUILD_ID,
-          parent_id: forum,
-          name: "Fall Social",
-          owner_id: APP_ID,
-          archived: true,
-        });
-        world.discord.fail("POST", THREADS_POST, SERVER_ERROR, 1);
-
-        await world.send(create());
-
-        expect((await world.events())[0]?.thread_id).toBe(threadId);
-      });
-
-      it("ignores an archived post older than the row", async () => {
-        const forum = await world.addManagedForum();
-        world.discord.threadAgeMs = 60_000;
-        world.discord.addThread({
-          guild_id: GUILD_ID,
-          parent_id: forum,
-          name: "Fall Social",
-          owner_id: APP_ID,
-          archived: true,
-        });
-        world.discord.threadAgeMs = 0;
-        world.discord.fail("POST", THREADS_POST, SERVER_ERROR, 1);
-
-        await world.send(create());
-
-        expect((await world.events())[0]?.thread_status).toBe("pending");
-      });
-
-      it("carries on when refused the archived posts, as the planned permissions do", async () => {
-        await world.addManagedForum();
-        world.discord.fail("POST", THREADS_POST, SERVER_ERROR, 1);
-        world.discord.fail("GET", ARCHIVED, FORBIDDEN);
-
-        await world.send(create());
-        await attemptLapsed();
-        await world.send(create());
-
-        expect((await world.events())[0]?.thread_status).toBe("active");
-        expect(threadsMade()).toHaveLength(1);
-      });
-
-      it("makes no second post when the archived posts can't be read", async () => {
-        await world.addManagedForum();
-        world.discord.fail("POST", THREADS_POST, SERVER_ERROR, 1);
-        world.discord.fail("GET", ARCHIVED, SERVER_ERROR);
-
-        await world.send(create());
-        await attemptLapsed();
-        await world.send(create());
-
-        expect(world.discord.posts()).toHaveLength(1);
-        expect(world.discord.lastReply()).toContain("didn't make another");
-      });
     });
 
     describe("the post attempt", () => {
@@ -890,18 +549,23 @@ describe("/event create", () => {
               request.path.endsWith("/messages/@original"),
           )
           .map((request) => request.body?.content);
-        expect(replies.join("\n")).toContain("already in progress");
+        expect(replies.join("\n")).toContain("may already exist");
       });
 
-      it("makes a retry wait after an unclear failure", async () => {
-        await world.addManagedForum();
-        world.discord.fail("POST", THREADS_POST, SERVER_ERROR, 1);
+      it("makes no second post when run again after an unconfirmed post", async () => {
+        const forum = await world.addManagedForum();
+        world.discord.fail("POST", THREADS_POST, { kind: "lost" }, 1);
+        await world.send(create());
+        const before = world.discord.posts().length;
 
         await world.send(create());
-        await world.send(create());
 
-        expect(world.discord.posts()).toHaveLength(1);
-        expect(world.discord.lastReply()).toContain("already in progress");
+        expect(world.discord.posts()).toHaveLength(before);
+        expect(threadsMade()).toHaveLength(1);
+        expect((await world.events())[0]?.thread_status).toBe("pending");
+        expect(world.discord.lastReply()).toBe(
+          `A post for **Fall Social** may already exist in <#${forum}>. Run /event link inside it and choose this event. If there is none, make the post yourself and run /event link there.`,
+        );
       });
 
       it("lets a retry through at once after a clear refusal", async () => {
@@ -909,17 +573,6 @@ describe("/event create", () => {
         world.discord.fail("POST", THREADS_POST, FORBIDDEN, 1);
 
         await world.send(create());
-        await world.send(create());
-
-        expect((await world.events())[0]?.thread_status).toBe("active");
-      });
-
-      it("recovers by itself if the holder crashed", async () => {
-        await world.addManagedForum();
-        world.discord.fail("POST", THREADS_POST, SERVER_ERROR, 1);
-        await world.send(create());
-        await attemptLapsed();
-
         await world.send(create());
 
         expect((await world.events())[0]?.thread_status).toBe("active");
@@ -1074,16 +727,6 @@ describe("/event create", () => {
       expect(world.discord.lastReply()).toContain("Something went wrong");
     });
 
-    it("retries saving the post through a brief failure", async () => {
-      await world.addManagedForum();
-      world.failDb(/^SQL update events/, 500, 2);
-
-      await world.send(create());
-
-      expect((await world.events())[0]?.thread_status).toBe("active");
-      expect(world.discord.lastReply()).toContain("Created");
-    });
-
     it("names and logs the post when it can't be saved", async () => {
       await world.addManagedForum();
       world.failDb(/^SQL update events/);
@@ -1104,22 +747,9 @@ describe("/event create", () => {
       expect(logged).not.toContain("Fall Social");
     });
 
-    it("attaches that post when the same command runs again", async () => {
-      await world.addManagedForum();
-      world.failDb(/^SQL update events/, 500, 3);
-
-      await world.send(create());
-      await world.send(create());
-
-      const [event, ...others] = await world.events();
-      expect(others).toEqual([]);
-      expect(world.discord.posts()).toHaveLength(1);
-      expect(event?.thread_status).toBe("active");
-    });
-
     it("attaches that post when /event link runs inside it", async () => {
       const forum = await world.addManagedForum();
-      world.failDb(/^SQL update events/, 500, 3);
+      world.failDb(/^SQL update events/, 500, 1);
 
       await world.send(create());
 
@@ -1604,43 +1234,6 @@ describe("/event link", () => {
       );
     });
 
-    it("waits out a longer failure to save the overview's ID", async () => {
-      const { parent, threadId } = await post();
-      world.failDb(/^SQL update events/, 500, 4);
-
-      await world.send(link(threadId, parent));
-
-      const [event] = await world.events();
-      expect(event?.overview_message_id).toEqual(expect.any(String));
-      expect(world.discord.lastReply()).not.toContain("second one");
-    });
-
-    it("gives up on saving the overview's ID well inside the function's limit", async () => {
-      const { parent, threadId } = await post();
-      world.failDb(/^SQL update events/);
-      // Each query's deadline is a timer the client starts as the query goes out.
-      const timeouts = vi.spyOn(globalThis, "setTimeout");
-      const started = Date.now();
-
-      await world.send(link(threadId, parent));
-
-      const pauses = Date.now() - started;
-      const deadlines = timeouts.mock.calls.filter(([, ms]) => ms === 4000);
-      timeouts.mockRestore();
-      world.clearDbFailures();
-      const writes = world
-        .dbRequests()
-        .filter((request) => request.startsWith("SQL update events"));
-      expect(writes).toHaveLength(5);
-      expect(deadlines).toHaveLength(5);
-      // A database that hangs uses every deadline, and the function is stopped at 60 s.
-      expect(4000 * writes.length + pauses).toBeLessThan(30_000);
-      expect(world.discord.lastReply()).toContain("second one");
-      expect(world.errors).toHaveBeenCalledWith(
-        expect.stringContaining("overview save"),
-      );
-    });
-
     it("posts no second overview in the bot's own post when the save fails", async () => {
       const forum = await world.addManagedForum();
       world.discord.fail("POST", THREADS_POST, FORBIDDEN, 1);
@@ -1785,183 +1378,19 @@ describe("an event whose post was deleted", () => {
       expect(world.discord.lastReply()).toContain("/event link");
     });
 
-    it("adopts the post when only the answer was lost", async () => {
-      const { id, sent } = await lostEvent();
+    it("points at /event link when the new post is unconfirmed", async () => {
+      const { forum, id } = await lostEvent();
       world.discord.fail("POST", THREADS_POST, { kind: "lost" }, 1);
 
       await world.send(create());
 
-      const [event, ...others] = await world.events();
-      expect(others).toEqual([]);
-      expect(event).toMatchObject({ id, thread_status: "active" });
-      expect(
-        sent().filter((request) => THREADS_POST.test(request.path)),
-      ).toHaveLength(1);
-    });
-
-    it("does not take up the post of a deleted event made since the row", async () => {
-      const { forum, id, sent } = await lostEvent();
-      await world.send(create({ date: OTHER_DATE, forum: forumOption(forum) }));
-      const other = (await world.events(`event_date = '${OTHER_DATE}'`))[0];
-      await softDeleteEvent(world.db, {
-        guildId: GUILD_ID,
-        eventId: other?.id ?? "",
+      expect((await world.events())[0]).toMatchObject({
+        id,
+        thread_status: "missing",
       });
-
-      await world.send(create({ forum: forumOption(forum) }));
-
-      const [event] = await world.events(`id = '${id}'`);
-      expect(event?.thread_status).toBe("active");
-      expect(event?.thread_id).not.toBe(other?.thread_id);
-      expect(
-        sent().filter((request) => THREADS_POST.test(request.path)),
-      ).toHaveLength(2);
-      expect(world.discord.lastReply()).toContain(
-        `<#${event?.thread_id ?? ""}>`,
+      expect(world.discord.lastReply()).toBe(
+        `Discord didn't confirm the post, so it may have been made. The event and its tasks are kept. If **Fall Social** is in <#${forum}>, run /event link inside it and choose this event. If it isn't, make the post yourself in <#${forum}> and run /event link inside it.`,
       );
-      expect(
-        sent().filter(
-          (request) =>
-            request.method === "PATCH" &&
-            request.path.startsWith(`/channels/${other?.thread_id ?? ""}/`),
-        ),
-      ).toEqual([]);
-    });
-
-    it("still finds a spare post that a replacement left behind", async () => {
-      const { forum, id, sent } = await lostEvent();
-      const spare = world.discord.addThread({
-        guild_id: GUILD_ID,
-        parent_id: forum,
-        name: "Fall Social",
-        owner_id: APP_ID,
-      });
-
-      await world.send(create({ forum: forumOption(forum) }));
-
-      expect((await world.events(`id = '${id}'`))[0]?.thread_id).toBe(spare);
-      expect(
-        sent().filter((request) => THREADS_POST.test(request.path)),
-      ).toEqual([]);
-    });
-
-    describe("when more than one post could be its new one", () => {
-      function sparePosts(forum: string, count: number) {
-        return Array.from({ length: count }, () =>
-          world.discord.addThread({
-            guild_id: GUILD_ID,
-            parent_id: forum,
-            name: "Fall Social",
-            owner_id: APP_ID,
-          }),
-        );
-      }
-
-      it("names them and points to /event link, without asking for a retry", async () => {
-        const { forum, sent } = await lostEvent();
-        const spares = sparePosts(forum, 2);
-
-        await world.send(create({ forum: forumOption(forum) }));
-
-        const reply = world.discord.lastReply();
-        for (const spare of spares) {
-          expect(reply).toContain(`<#${spare}>`);
-        }
-        expect(reply).toContain("/event link");
-        expect(reply).toContain("event option");
-        expect(reply).not.toContain("try again");
-        expect((await world.events())[0]?.thread_status).toBe("missing");
-        expect(
-          sent().filter((request) => THREADS_POST.test(request.path)),
-        ).toEqual([]);
-      });
-
-      it("names only the first few", async () => {
-        const { forum } = await lostEvent();
-        sparePosts(forum, 7);
-
-        await world.send(create({ forum: forumOption(forum) }));
-
-        const reply = world.discord.lastReply() ?? "";
-        expect(reply.match(/<#[0-9]+>/g)).toHaveLength(5);
-        expect(reply).toContain("and others");
-      });
-
-      it("says the same when the new post's answer was lost", async () => {
-        const { forum } = await lostEvent();
-        const [archived] = sparePosts(forum, 1);
-        Object.assign(world.discord.channels.get(archived ?? "") ?? {}, {
-          archived: true,
-        });
-        // The first look can't see the archived post. The second, after the post, can.
-        world.discord.fail("GET", ARCHIVED, FORBIDDEN, 1);
-        world.discord.fail("POST", THREADS_POST, { kind: "lost" }, 1);
-
-        await world.send(create({ forum: forumOption(forum) }));
-
-        const reply = world.discord.lastReply();
-        expect(reply).toContain("did not confirm");
-        expect(reply).toContain(`<#${archived ?? ""}>`);
-        expect(reply).toContain("More than one post");
-        expect((await world.events())[0]?.thread_status).toBe("missing");
-      });
-
-      it("still asks for a retry when Discord can't answer", async () => {
-        const { forum } = await lostEvent();
-        sparePosts(forum, 2);
-        world.discord.fail("GET", ACTIVE_THREADS, SERVER_ERROR, 1);
-
-        await world.send(create({ forum: forumOption(forum) }));
-
-        const reply = world.discord.lastReply();
-        expect(reply).toContain("try again");
-        expect(reply).not.toContain("More than one post");
-      });
-
-      it("finds one and takes it up once the others are claimed or gone", async () => {
-        const { forum, id } = await lostEvent();
-        const [first, second] = sparePosts(forum, 2);
-        await world.send(create({ forum: forumOption(forum) }));
-        Object.assign(world.discord.channels.get(second ?? "") ?? {}, {
-          parent_id: fakeId(),
-        });
-
-        await world.send(create({ forum: forumOption(forum) }));
-
-        expect((await world.events(`id = '${id}'`))[0]).toMatchObject({
-          thread_id: first,
-          thread_status: "active",
-        });
-      });
-    });
-
-    it("finds the post on a retry rather than making a second", async () => {
-      const { sent } = await lostEvent();
-      world.discord.fail("POST", THREADS_POST, { kind: "lost" }, 1);
-      // The first look finds nothing to ask about, so this only stops the second.
-      world.failDb(/^SQL select .* where thread_id = \$/);
-      await world.send(create());
-      expect(world.discord.lastReply()).toContain("did not confirm");
-      world.clearDbFailures();
-
-      await world.send(create());
-
-      expect(
-        sent().filter((request) => THREADS_POST.test(request.path)),
-      ).toHaveLength(1);
-      expect((await world.events())[0]?.thread_status).toBe("active");
-    });
-
-    it("makes no post while it can't check for an earlier one", async () => {
-      const { sent } = await lostEvent();
-      world.discord.fail("GET", ACTIVE_THREADS, SERVER_ERROR, 1);
-
-      await world.send(create());
-
-      expect(
-        sent().filter((request) => THREADS_POST.test(request.path)),
-      ).toEqual([]);
-      expect((await world.events())[0]?.thread_status).toBe("missing");
     });
 
     it("names the spare post when another request got there first", async () => {
@@ -1981,25 +1410,22 @@ describe("an event whose post was deleted", () => {
       expect(world.discord.lastReply()).toContain("spare");
     });
 
-    it("names and logs the post when it can't be saved, and a retry joins it", async () => {
-      const { sent } = await lostEvent();
+    it("names and logs the post when it can't be saved", async () => {
+      await lostEvent();
       world.failDb(/^SQL update events/);
 
       await world.send(create());
 
       world.clearDbFailures();
-      expect((await world.events())[0]?.thread_status).toBe("missing");
-      expect(world.discord.lastReply()).toContain("could not be saved");
+      const [event] = await world.events();
+      const made = threadsMade().at(-1)?.id ?? "";
+      expect(event?.thread_status).toBe("missing");
+      expect(world.discord.lastReply()).toBe(
+        `<#${made}> was posted, but it could not be saved to the event. Run /event link ${FUTURE.replaceAll("-", "\\-")} inside that post to attach it.`,
+      );
       expect(world.errors).toHaveBeenCalledWith(
         expect.stringContaining("post save"),
       );
-
-      await world.send(create());
-
-      expect((await world.events())[0]?.thread_status).toBe("active");
-      expect(
-        sent().filter((request) => THREADS_POST.test(request.path)),
-      ).toHaveLength(1);
     });
 
     it("says so when the overview's ID can't be saved", async () => {
