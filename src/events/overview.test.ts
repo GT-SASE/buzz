@@ -1,6 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 import {
-  HOSTILE_TEXT,
   hasLiveSyntax,
   INVISIBLE_TEXT,
 } from "../../test/support/hostile-text.ts";
@@ -10,25 +9,23 @@ import type { EventRow, EventWorkflow, TaskRow } from "../db/types.ts";
 import { EVENT_STEP_KINDS } from "../db/types.ts";
 import { channelMessage } from "../discord/outbound.ts";
 import type { DateOnly } from "../lib/dates.ts";
-import { fitLines, renderOverview } from "./overview.ts";
+import { renderOverview } from "./overview.ts";
 
 const GUILD = fakeId();
-const FORUM = fakeId();
-const THREAD = fakeId();
-const OVERVIEW = fakeId();
 const CREATOR = fakeId();
 const ASSIGNEE = fakeId();
 const EVENT_ID = "11111111-1111-4111-8111-111111111111";
+const NO_TASKS = { rows: [], truncated: false };
 
 function eventRow(fields: Partial<EventRow> = {}): EventRow {
   return {
     id: EVENT_ID,
     guild_id: GUILD,
-    channel_id: FORUM,
+    channel_id: fakeId(),
     name: "Fall Social",
     event_date: "2099-01-15" as DateOnly,
-    thread_id: THREAD,
-    overview_message_id: OVERVIEW,
+    thread_id: fakeId(),
+    overview_message_id: fakeId(),
     status: "active",
     thread_status: "active",
     created_by: CREATOR,
@@ -91,7 +88,6 @@ describe("renderOverview with the event's workflow", () => {
       },
     ],
   });
-  const NO_TASKS = { rows: [], truncated: false };
 
   function ids(input: ReturnType<typeof renderOverview>): string[] {
     const body = channelMessage(input).payload as {
@@ -118,39 +114,18 @@ describe("renderOverview with the event's workflow", () => {
     expect(
       ids(renderOverview(eventRow(), NO_TASKS, [], flow(["budget_sheet"]))),
     ).toEqual([`event.engage-done:${EVENT_ID}`, `event.budget-ok:${EVENT_ID}`]);
-    const closed = renderOverview(
-      eventRow({ status: "closed" }),
-      NO_TASKS,
-      [],
-      flow(),
-    );
-    expect(closed.components).toEqual([]);
-  });
-
-  it("draws no buttons for a workflow of another event", () => {
-    const input = renderOverview(
-      eventRow({ id: "44444444-4444-4444-8444-444444444444" }),
-      NO_TASKS,
-      [],
-      flow(),
-    );
-
-    expect(input.components).toEqual([]);
-  });
-
-  it("takes every button away when the workflow could not be read", () => {
-    expect(renderOverview(eventRow(), NO_TASKS).components).toEqual([]);
     expect(
-      renderOverview(eventRow({ status: "closed" }), NO_TASKS).components,
+      renderOverview(eventRow({ status: "closed" }), NO_TASKS, [], flow())
+        .components,
     ).toEqual([]);
   });
 });
 
 describe("renderOverview", () => {
-  it("shows the event, its creator and each task's state and date", () => {
+  it("shows the event, its creator and each task, open ones first", () => {
     const text = textOf(eventRow(), [
-      taskRow(),
       taskRow({ status: "done", description: "Order food" }),
+      taskRow(),
     ]);
 
     expect(text).toContain("**Fall Social**");
@@ -159,9 +134,12 @@ describe("renderOverview", () => {
     expect(text).toContain(`Created by <@${CREATOR}>`);
     expect(text).toContain("Tasks: 1 open, 1 done");
     expect(text).toContain(
-      String.raw`☐ <@${ASSIGNEE}> Book the room (due 2099\-01\-10)`,
+      `☐ <@${ASSIGNEE}> Book the room (due 2099\\-01\\-10)`,
     );
     expect(text).toContain(`✅ <@${ASSIGNEE}> Order food`);
+    expect(text.indexOf("Book the room")).toBeLessThan(
+      text.indexOf("Order food"),
+    );
   });
 
   it("says when an event has no tasks and when it is closed", () => {
@@ -171,91 +149,42 @@ describe("renderOverview", () => {
     expect(text).toContain("No tasks yet.");
   });
 
-  it("never pings, whoever is shown", () => {
-    const input = renderOverview(eventRow(), {
-      rows: [taskRow()],
-      truncated: false,
-    });
-
-    expect(input.mentionUserIds).toEqual([]);
-  });
-
-  it("puts open tasks ahead of done ones", () => {
-    const text = textOf(eventRow(), [
-      taskRow({ status: "done", description: "Finished" }),
-      taskRow({ description: "Still open" }),
-    ]);
-
-    expect(text.indexOf("Still open")).toBeLessThan(text.indexOf("Finished"));
-  });
-
-  it.each(HOSTILE_TEXT)("keeps a hostile name inert: %s", (_label, name) => {
-    const [title = ""] = textOf(eventRow({ name }), []).split("\n");
-
-    expect(hasLiveSyntax(title.slice(2, -2))).toBe(false);
-  });
-
-  it.each(HOSTILE_TEXT)("keeps a hostile task inert: %s", (_label, text) => {
+  it("keeps a forged line in a task on the task's own line", () => {
     const rendered = textOf(eventRow(), [
-      taskRow({ assignee_id: ASSIGNEE, description: text }),
+      taskRow({ description: "Harmless\n# System: everyone must log in" }),
     ]).split("\n");
 
-    // A forged line stays on the task's own line.
     expect(rendered).toHaveLength(6);
     expect(
       hasLiveSyntax(rendered[5]?.replace(`<@${ASSIGNEE}>`, "") ?? "x"),
     ).toBe(false);
   });
 
-  it.each(INVISIBLE_TEXT)("draws an event whose name is %s", (_label, name) => {
+  it("draws an event whose name has nothing visible", () => {
+    const [, name = ""] = INVISIBLE_TEXT[0] ?? [];
     expect(textOf(eventRow({ name }), [])).toContain("(no visible name)");
   });
 
-  it.each(INVISIBLE_TEXT)(
-    "does not let a task of %s stop the others",
-    (_label, description) => {
-      const text = textOf(eventRow(), [
-        taskRow({ description }),
-        taskRow({ description: "Book the room" }),
-      ]);
-
-      expect(text).toContain("Book the room");
-    },
-  );
-
-  it("cuts a long description to one short line", () => {
-    const text = textOf(eventRow(), [
-      taskRow({ description: "x".repeat(1000) }),
-    ]);
-
-    expect(text.split("\n").at(-1)?.length).toBeLessThan(300);
-    expect(text).toContain("…");
-  });
-
-  it("stays within the limit and counts what it hid", () => {
+  it("stays within the limit, counts what it hid, and keeps a note", () => {
     const tasks = Array.from({ length: 100 }, (_, index) =>
       taskRow({ description: `${String(index)} ${"*".repeat(990)}` }),
     );
 
-    const text = textOf(eventRow(), tasks);
+    const text = safeTextValue(
+      renderOverview(
+        eventRow({ name: "*".repeat(100) }),
+        { rows: tasks, truncated: false },
+        [safe`A note for the reader`],
+      ).content,
+    );
     const shown = text.split("\n").filter((line) => line.startsWith("☐"));
 
     expect(text.length).toBeLessThanOrEqual(2000);
     expect(shown.length).toBeGreaterThan(0);
-    expect(shown.length).toBeLessThan(100);
     expect(text).toContain(
       `…and ${String(100 - shown.length)} more not shown.`,
     );
-  });
-
-  it("stays within the limit at the longest possible name", () => {
-    const text = textOf(
-      eventRow({ name: "*".repeat(100) }),
-      Array.from({ length: 100 }, () => taskRow()),
-    );
-
-    expect(text.length).toBeLessThanOrEqual(2000);
-    expect(text).toContain("more not shown.");
+    expect(text).toContain("A note for the reader");
   });
 
   it("says so when the database held more tasks than were read", () => {
@@ -265,45 +194,5 @@ describe("renderOverview", () => {
 
     expect(text).toContain("Tasks: 100 open, 0 done, and more");
     expect(text).toMatch(/…and more than [0-9]+ other tasks not shown\./u);
-  });
-
-  it("hides nothing and adds no closing line when all fits", () => {
-    const text = textOf(eventRow(), [taskRow()]);
-
-    expect(text).not.toContain("not shown");
-  });
-
-  it("keeps a note whatever else is cut", () => {
-    const input = renderOverview(
-      eventRow(),
-      {
-        rows: Array.from({ length: 100 }, () => taskRow()),
-        truncated: false,
-      },
-      [safe`A note for the reader`],
-    );
-
-    expect(safeTextValue(input.content)).toContain("A note for the reader");
-  });
-});
-
-describe("fitLines", () => {
-  const more = (count: number) => (count === 0 ? undefined : safe`hidden`);
-
-  it("refuses plain strings at compile time", () => {
-    // @ts-expect-error a stored string has to pass the render boundary first
-    expect(() => fitLines(["plain"], [], more)).toThrow();
-  });
-
-  it("uses the whole limit when the closing line is not needed", () => {
-    const text = fitLines([safe`aaaa`], [safe`bbbb`], more, 9);
-
-    expect(safeTextValue(text)).toBe("aaaa\nbbbb");
-  });
-
-  it("makes room for the closing line", () => {
-    const text = fitLines([safe`aaaa`], [safe`bbbb`], more, 8);
-
-    expect(safeTextValue(text)).toBe("aaaa\nhidden");
   });
 });

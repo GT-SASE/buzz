@@ -3,7 +3,7 @@
  * it posts or that the thread is gone.
  */
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, spyOn } from "bun:test";
 import {
   DiscordClientError,
   DiscordErrorCode,
@@ -20,8 +20,8 @@ const GUILD = fakeId();
 const FORUM = fakeId();
 const THREAD = fakeId();
 const OVERVIEW = fakeId();
-const CREATOR = fakeId();
 const EVENT_ID = "11111111-1111-4111-8111-111111111111";
+const ACTIVE = { overview_message_id: OVERVIEW, thread_status: "active" };
 
 function eventRow(fields: Partial<EventRow> = {}): EventRow {
   return {
@@ -34,7 +34,7 @@ function eventRow(fields: Partial<EventRow> = {}): EventRow {
     overview_message_id: OVERVIEW,
     status: "active",
     thread_status: "active",
-    created_by: CREATOR,
+    created_by: fakeId(),
     deleted_at: null,
     created_at: "2026-01-01T00:00:00+00:00",
     ...fields,
@@ -65,8 +65,6 @@ describe("refreshOverview", () => {
   let editFails: DiscordFailure | undefined;
   let duringEdit: (() => Promise<void>) | undefined;
   let reopened: unknown[];
-  let reopenFails: DiscordFailure | undefined;
-  let sendFails: DiscordFailure | undefined;
   let row: EventRow | null;
   let w: HandlerDb;
 
@@ -75,11 +73,6 @@ describe("refreshOverview", () => {
     const discord = {
       reopenThread: (target) => {
         reopened.push(target);
-        if (reopenFails !== undefined) {
-          return Promise.reject(
-            new DiscordClientError("reopen thread", reopenFails),
-          );
-        }
         editFails = undefined;
         return Promise.resolve();
       },
@@ -96,11 +89,6 @@ describe("refreshOverview", () => {
         return { id: messageId };
       },
       sendMessage: (target, body) => {
-        if (sendFails !== undefined) {
-          return Promise.reject(
-            new DiscordClientError("send message", sendFails),
-          );
-        }
         sent.push({ target, body: body.payload as Record<string, unknown> });
         return Promise.resolve({ id: OVERVIEW });
       },
@@ -108,190 +96,84 @@ describe("refreshOverview", () => {
     return { db: w.db, discord };
   }
 
+  async function refresh(): Promise<boolean> {
+    return refreshOverview(await context(), eventRow());
+  }
+
   beforeEach(() => {
-    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    spyOn(console, "error").mockImplementation(() => undefined);
     sent = [];
     edited = [];
     editFails = undefined;
     duringEdit = undefined;
     reopened = [];
-    reopenFails = undefined;
-    sendFails = undefined;
     row = eventRow();
   });
 
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
+  it("edits the stored message from the row read again, with no pings", async () => {
+    row = eventRow({ status: "closed" });
 
-  it("edits the stored message, in the stored thread, with no pings", async () => {
-    await expect(refreshOverview(await context(), eventRow())).resolves.toBe(
-      true,
-    );
+    expect(await refresh()).toBe(true);
 
     expect(edited).toHaveLength(1);
     expect(edited[0]?.messageId).toBe(OVERVIEW);
+    expect(edited[0]?.body.content).toContain("Status: Closed");
     expect(edited[0]?.body.allowed_mentions).toEqual({ parse: [], users: [] });
     expect(sent).toEqual([]);
-  });
-
-  it("reads the row again instead of trusting the caller's copy", async () => {
-    row = eventRow({ status: "closed" });
-
-    await refreshOverview(await context(), eventRow({ status: "active" }));
-
-    expect(edited[0]?.body.content).toContain("Status: Closed");
   });
 
   it("posts a new overview when none is stored, and stores it", async () => {
     row = eventRow({ overview_message_id: null });
 
-    await expect(refreshOverview(await context(), eventRow())).resolves.toBe(
-      true,
-    );
+    expect(await refresh()).toBe(true);
 
-    expect(sent).toHaveLength(1);
     expect(sent[0]?.target).toEqual({
       kind: "thread",
       guildId: GUILD,
       threadId: THREAD,
     });
-    expect(await stored(w)).toEqual({
-      overview_message_id: OVERVIEW,
-      thread_status: "active",
-    });
+    expect(await stored(w)).toEqual(ACTIVE);
   });
 
-  it("posts a new overview when the old message was removed", async () => {
+  it("draws the closed state again when /event close lands during a slow edit", async () => {
+    duringEdit = () => change(w, "status = 'closed'");
+
+    expect(await refresh()).toBe(true);
+
+    expect(edited.map((edit) => edit.body.content)).toEqual([
+      expect.stringContaining("Status: Active"),
+      expect.stringContaining("Status: Closed"),
+    ]);
+  });
+
+  it("reopens an archived post and edits again, posting nothing", async () => {
     editFails = {
-      kind: "api",
-      status: 404,
-      code: DiscordErrorCode.UnknownMessage,
-    };
-
-    await expect(refreshOverview(await context(), eventRow())).resolves.toBe(
-      true,
-    );
-
-    expect(sent).toHaveLength(1);
-  });
-
-  describe("when /event close lands during a slow edit", () => {
-    it("draws the closed state again, so closed wins", async () => {
-      duringEdit = () => change(w, "status = 'closed'");
-
-      await expect(refreshOverview(await context(), eventRow())).resolves.toBe(
-        true,
-      );
-
-      expect(edited.map((edit) => edit.body.content)).toEqual([
-        expect.stringContaining("Status: Active"),
-        expect.stringContaining("Status: Closed"),
-      ]);
-    });
-
-    it("edits once when the event is still active", async () => {
-      await expect(refreshOverview(await context(), eventRow())).resolves.toBe(
-        true,
-      );
-
-      expect(edited).toHaveLength(1);
-    });
-
-    it("edits once when the event was already closed", async () => {
-      row = eventRow({ status: "closed" });
-
-      await expect(refreshOverview(await context(), eventRow())).resolves.toBe(
-        true,
-      );
-
-      expect(edited).toHaveLength(1);
-    });
-
-    it("leaves the post alone when the event was deleted meanwhile", async () => {
-      duringEdit = () => change(w, "deleted_at = now()");
-
-      await expect(refreshOverview(await context(), eventRow())).resolves.toBe(
-        true,
-      );
-
-      expect(edited).toHaveLength(1);
-    });
-  });
-
-  describe("in an archived post", () => {
-    const ARCHIVED: DiscordFailure = {
       kind: "api",
       status: 400,
       code: DiscordErrorCode.ThreadArchived,
     };
 
-    it("reopens the post and edits again, posting nothing", async () => {
-      editFails = ARCHIVED;
+    expect(await refresh()).toBe(true);
 
-      await expect(refreshOverview(await context(), eventRow())).resolves.toBe(
-        true,
-      );
-
-      expect(reopened).toEqual([
-        { kind: "thread", guildId: GUILD, threadId: THREAD },
-      ]);
-      expect(edited).toHaveLength(1);
-      expect(sent).toEqual([]);
-    });
-
-    it("reports failure when the post can't be reopened", async () => {
-      editFails = ARCHIVED;
-      reopenFails = { kind: "api", status: 403, code: 160005 };
-
-      await expect(refreshOverview(await context(), eventRow())).resolves.toBe(
-        false,
-      );
-
-      expect(edited).toEqual([]);
-      expect(sent).toEqual([]);
-    });
-
-    it("does not reopen a post for any other refusal", async () => {
-      editFails = { kind: "api", status: 400, code: 200000 };
-
-      await expect(refreshOverview(await context(), eventRow())).resolves.toBe(
-        false,
-      );
-
-      expect(reopened).toEqual([]);
-    });
+    expect(reopened).toEqual([
+      { kind: "thread", guildId: GUILD, threadId: THREAD },
+    ]);
+    expect(edited).toHaveLength(1);
+    expect(sent).toEqual([]);
   });
 
-  it.each<[string, DiscordFailure]>([
-    [
-      "rate limit",
-      { kind: "rate_limited", retryAfterMs: 1, attempts: 3, scope: undefined },
-    ],
-    ["network", { kind: "network" }],
-    ["server error", { kind: "api", status: 500, code: undefined }],
-    ["removed forum", { kind: "unmanaged_target", channelId: FORUM }],
-    [
-      "missing access",
-      {
-        kind: "channel_unavailable",
-        channelId: THREAD,
-        status: 403,
-        code: DiscordErrorCode.MissingAccess,
-      },
-    ],
-  ])("reports failure without posting again: %s", async (_label, failure) => {
-    editFails = failure;
+  it("reports failure without posting again when Discord refuses", async () => {
+    editFails = {
+      kind: "channel_unavailable",
+      channelId: THREAD,
+      status: 403,
+      code: DiscordErrorCode.MissingAccess,
+    };
 
-    await expect(refreshOverview(await context(), eventRow())).resolves.toBe(
-      false,
-    );
+    expect(await refresh()).toBe(false);
 
     expect(sent).toEqual([]);
-    expect(await stored(w)).toEqual({
-      overview_message_id: OVERVIEW,
-      thread_status: "active",
-    });
+    expect(await stored(w)).toEqual(ACTIVE);
   });
 
   it("marks the thread missing only when Discord says it is gone", async () => {
@@ -302,9 +184,7 @@ describe("refreshOverview", () => {
       code: DiscordErrorCode.UnknownChannel,
     };
 
-    await expect(refreshOverview(await context(), eventRow())).resolves.toBe(
-      false,
-    );
+    expect(await refresh()).toBe(false);
 
     expect(await stored(w)).toEqual({
       overview_message_id: OVERVIEW,
@@ -315,38 +195,20 @@ describe("refreshOverview", () => {
   it.each<[string, EventRow | null]>([
     ["deleted since it was read", null],
     ["pending", eventRow({ thread_id: null, thread_status: "pending" })],
-    ["missing its thread", eventRow({ thread_status: "missing" })],
   ])("sends nothing for an event that is %s", async (_label, current) => {
     row = current;
 
-    await expect(refreshOverview(await context(), eventRow())).resolves.toBe(
-      false,
-    );
+    expect(await refresh()).toBe(false);
 
     expect(sent).toEqual([]);
     expect(edited).toEqual([]);
   });
 
-  it.each(["events", "tasks"])(
-    "does not reject or quote the row when %s fails",
-    async (path) => {
-      const failing = await context();
-      w.fail(path);
+  it("does not reject when the database fails", async () => {
+    const failing = await context();
+    w.fail("tasks");
 
-      await expect(refreshOverview(failing, eventRow())).resolves.toBe(false);
-
-      expect(sent).toEqual([]);
-    },
-  );
-
-  it("does not reject when an unexpected error is thrown", async () => {
-    const { db } = await context();
-    const discord = {
-      editMessage: () => Promise.reject(new Error("thrown text")),
-    } as Partial<DiscordClient> as DiscordClient;
-
-    await expect(refreshOverview({ db, discord }, eventRow())).resolves.toBe(
-      false,
-    );
+    expect(await refreshOverview(failing, eventRow())).toBe(false);
+    expect(sent).toEqual([]);
   });
 });

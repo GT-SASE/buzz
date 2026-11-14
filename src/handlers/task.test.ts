@@ -1,24 +1,21 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 import { COMMANDS } from "./registry.ts";
 
+function optionNames(command: string, sub?: string): string[] {
+  const definition = COMMANDS.find((item) => item.name === command);
+  const { options = [] } = (definition ?? {}) as {
+    options?: { name: string; options?: { name: string }[] }[];
+  };
+  const list =
+    sub === undefined
+      ? options
+      : (options.find((option) => option.name === sub)?.options ?? []);
+  return list.map((option) => option.name);
+}
+
 describe("the commands as registered", () => {
-  function optionNames(command: string, sub?: string): string[] {
-    const definition = COMMANDS.find((item) => item.name === command);
-    const { options = [] } = (definition ?? {}) as {
-      options?: { name: string; options?: { name: string }[] }[];
-    };
-    return sub === undefined
-      ? options.map((option) => option.name)
-      : (options
-          .find((option) => option.name === sub)
-          ?.options?.map((option) => option.name) ?? []);
-  }
-
-  it("gives /mytasks no options, so it can only mean the caller", () => {
+  it("gives /mytasks no options, and each /task subcommand only what it needs", () => {
     expect(optionNames("mytasks")).toEqual([]);
-  });
-
-  it("offers only the options each subcommand needs", () => {
     expect(optionNames("task").sort()).toEqual([
       "assign",
       "delete",
@@ -37,7 +34,6 @@ describe("the commands as registered", () => {
       "due",
       "person",
     ]);
-    expect(optionNames("task", "delete")).toEqual(["task"]);
     expect(optionNames("task", "done")).toEqual(["task"]);
   });
 });

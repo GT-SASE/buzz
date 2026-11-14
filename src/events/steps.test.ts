@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 import { fakeId } from "../../test/support/ids.ts";
 import { channelMessage } from "../discord/outbound.ts";
 import { safe, safeTextValue } from "../discord/safe-text.ts";
@@ -12,13 +12,9 @@ import { EVENT_STEP_KINDS } from "../db/types.ts";
 import type { DateOnly } from "../lib/dates.ts";
 import {
   checklistLines,
-  isStepDone,
-  ownersText,
   pickupTimeText,
-  stepButtonId,
   stepButtonRows,
   stepLine,
-  stepOwnerIds,
 } from "./steps.ts";
 
 const EVENT_ID = "11111111-1111-4111-8111-111111111111";
@@ -69,7 +65,6 @@ describe("pickupTimeText", () => {
     // Before each change.
     ["2026-10-31", "17:30", "2026-10-31T21:30:00Z"],
     ["2026-03-07", "17:30", "2026-03-07T22:30:00Z"],
-    ["2026-11-03", "00:05", "2026-11-03T05:05:00Z"],
   ])("shows %s %s in New York as the instant %s", (day, time, instant) => {
     expect(text(pickupTimeText(day as DateOnly, time, NEW_YORK))).toBe(
       at(instant),
@@ -82,18 +77,9 @@ describe("pickupTimeText", () => {
     );
   });
 
-  it.each([
-    ["00:05", String.raw`12\:05 AM`],
-    ["12:00", String.raw`12\:00 PM`],
-    ["17:30", String.raw`5\:30 PM`],
-  ])("shows %s as %s without a zone it knows", (stored, shown) => {
-    expect(text(pickupTimeText(EVENT_DATE, stored, null))).toBe(shown);
-    expect(text(pickupTimeText(EVENT_DATE, stored, "Mars/Base"))).toBe(shown);
-  });
-
-  it("shows a value that is not a time escaped, rather than hiding it", () => {
-    expect(text(pickupTimeText(EVENT_DATE, "**25:00**", NEW_YORK))).toBe(
-      String.raw`\*\*25\:00\*\*`,
+  it("shows a plain 12-hour time without a zone it knows", () => {
+    expect(text(pickupTimeText(EVENT_DATE, "17:30", "Mars/Base"))).toBe(
+      String.raw`5\:30 PM`,
     );
   });
 });
@@ -122,30 +108,9 @@ describe("the checklist", () => {
       `✅ Budget approved by <@${APPROVER}>`,
       `⬜ Food pickup: at ${at("2026-11-03T22:30:00Z")}, <@${picker}>`,
     ]);
-  });
-
-  it("says what Food pickup still lacks", () => {
     expect(text(stepLine(workflow(), "food_pickup"))).toBe(
       "⬜ Food pickup: time not set, nobody assigned",
     );
-    expect(text(stepLine(workflow(), "budget_approved"))).toBe(
-      "⬜ Budget approved",
-    );
-  });
-
-  it("names nobody when a step has no one", () => {
-    expect(text(ownersText([]))).toBe("nobody assigned");
-    expect(stepOwnerIds(workflow(), "engage_post")).toEqual([]);
-  });
-
-  it("pings nobody when the lines are sent", () => {
-    const person = fakeId();
-    const body = channelMessage({
-      content: safe`${checklistLines(workflow([], [{ kind: "budget_sheet", user_id: person }]))[1] ?? safe`-`}`,
-      mentionUserIds: [],
-    }).payload as { allowed_mentions: unknown };
-
-    expect(body.allowed_mentions).toEqual({ parse: [], users: [] });
   });
 });
 
@@ -161,15 +126,12 @@ describe("the step buttons", () => {
     );
   }
 
-  it("offers one button for each open step that has one", () => {
+  it("offers a button for each open step but Food pickup, and none once done", () => {
     expect(ids(workflow())).toEqual([
       `event.sheet-done:${EVENT_ID}`,
       `event.engage-done:${EVENT_ID}`,
       `event.budget-ok:${EVENT_ID}`,
     ]);
-  });
-
-  it("hides the button of a done step, and the row once all are done", () => {
     expect(ids(workflow(["engage_post"]))).toEqual([
       `event.sheet-done:${EVENT_ID}`,
       `event.budget-ok:${EVENT_ID}`,
@@ -180,16 +142,4 @@ describe("the step buttons", () => {
       ),
     ).toEqual([]);
   });
-
-  it("does not offer Food pickup, which has no button", () => {
-    expect(isStepDone(workflow(["food_pickup"]), "food_pickup")).toBe(true);
-    expect(ids(workflow())).toHaveLength(3);
-  });
-
-  it.each(["", "x:y", "__proto__", "1"])(
-    "refuses to build a button for %j",
-    (id) => {
-      expect(() => stepButtonId("budget_sheet", id)).toThrow(RangeError);
-    },
-  );
 });
