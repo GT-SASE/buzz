@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isSnowflake, snowflakeTime } from "./snowflake.ts";
+import { isSnowflake } from "./snowflake.ts";
 
 describe("isSnowflake", () => {
   it.each([17, 18, 19, 20])("accepts %i digits", (length) => {
@@ -18,14 +18,5 @@ describe("isSnowflake", () => {
     ["undefined", undefined],
   ])("refuses %s", (_label, value) => {
     expect(isSnowflake(value)).toBe(false);
-  });
-});
-
-describe("snowflakeTime", () => {
-  it("reads the time an ID was made", () => {
-    const at = Date.UTC(2026, 10, 4);
-    const id = (BigInt(at - 1420070400000) << 22n) + 5n;
-
-    expect(snowflakeTime(id.toString())).toBe(at);
   });
 });

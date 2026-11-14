@@ -23,23 +23,6 @@ export async function findEventByThread(
   );
 }
 
-/**
- * Any event this thread has belonged to and still names, live or soft-deleted. A deleted
- * event's post stays in the forum, so this tells it apart from a post nothing ever claimed.
- */
-export async function findEventEverOnThread(
-  db: DbClient,
-  { guildId, threadId }: { guildId: string; threadId: string },
-): Promise<DbResult<EventRow | null>> {
-  return firstRow(
-    await query<EventRow>(
-      db,
-      sql`select ${EVENT_COLUMNS} from events
-      where thread_id = ${threadId} and guild_id = ${guildId} limit 1`,
-    ),
-  );
-}
-
 /** Autocomplete by the start of an event's ID, across events that can take tasks. */
 export async function searchOpenEventsByIdPrefix(
   db: DbClient,

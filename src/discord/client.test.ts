@@ -2253,23 +2253,6 @@ describe("channel reads", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("lists active threads with the fields it can read", async () => {
-    fetchMock.mockResolvedValue(
-      Response.json({
-        threads: [
-          { id: THREAD, parent_id: MANAGED_FORUM, owner_id: APP_ID, name: "A" },
-          { id: fakeId(21), name: "B" },
-        ],
-      }),
-    );
-
-    await expect(client().listActiveThreads(GUILD)).resolves.toEqual([
-      { id: THREAD, parentId: MANAGED_FORUM, ownerId: APP_ID, name: "A" },
-      { id: fakeId(21), parentId: undefined, ownerId: undefined, name: "B" },
-    ]);
-    expect(requests()[0]?.url).toBe(`${API}/guilds/${GUILD}/threads/active`);
-  });
-
   it("reopens a managed thread, asking only to unarchive it", async () => {
     fetchMock.mockResolvedValueOnce(
       Response.json({
@@ -2355,60 +2338,6 @@ describe("channel reads", () => {
     ).toBe("api");
     await expect(discord.describeChannel(THREAD)).resolves.toMatchObject({
       type: 11,
-    });
-  });
-
-  it("reads a page of a forum's archived threads", async () => {
-    fetchMock.mockResolvedValue(
-      Response.json({
-        threads: [{ id: THREAD, parent_id: MANAGED_FORUM, name: "A" }],
-      }),
-    );
-
-    await expect(client().listArchivedThreads(MANAGED_FORUM)).resolves.toEqual([
-      { id: THREAD, parentId: MANAGED_FORUM, ownerId: undefined, name: "A" },
-    ]);
-    expect(requests()[0]?.url).toBe(
-      `${API}/channels/${MANAGED_FORUM}/threads/archived/public?limit=100`,
-    );
-  });
-
-  it("can still use a forum after being refused its archived threads", async () => {
-    fetchMock.mockResolvedValueOnce(
-      Response.json({ code: DiscordErrorCode.MissingAccess }, { status: 403 }),
-    );
-    fetchMock.mockResolvedValue(Response.json({ id: MANAGED_FORUM, type: 15 }));
-    const discord = client();
-
-    expect(await failureOf(discord.listArchivedThreads(MANAGED_FORUM))).toEqual(
-      {
-        kind: "api",
-        status: 403,
-        code: DiscordErrorCode.MissingAccess,
-      },
-    );
-    await expect(discord.describeChannel(MANAGED_FORUM)).resolves.toMatchObject(
-      { type: 15 },
-    );
-  });
-
-  it("sends nothing for a malformed forum ID", async () => {
-    expect(await failureOf(client().listArchivedThreads("../1"))).toEqual({
-      kind: "invalid_target",
-    });
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-
-  it.each([
-    ["not a list", { threads: "x" }],
-    ["a thread with no ID", { threads: [{ name: "A" }] }],
-    ["a thread with no name", { threads: [{ id: fakeId(21) }] }],
-  ])("refuses %s rather than give half an answer", async (_label, body) => {
-    fetchMock.mockResolvedValue(Response.json(body));
-
-    expect(await failureOf(client().listActiveThreads(GUILD))).toEqual({
-      kind: "invalid_response",
-      status: 200,
     });
   });
 });

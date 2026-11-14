@@ -50,7 +50,6 @@ import {
 } from "../../src/db/interaction-claims.ts";
 import {
   findEventByThread,
-  findEventEverOnThread,
   searchOpenEvents,
   searchOpenEventsByIdPrefix,
 } from "../../src/db/task-events.ts";
@@ -3215,11 +3214,6 @@ describe("database layer against the real schema", () => {
         "findEventByThread",
         (w, guildId) =>
           findEventByThread(db, { guildId, threadId: w.threadId }),
-      ],
-      [
-        "findEventEverOnThread",
-        (w, guildId) =>
-          findEventEverOnThread(db, { guildId, threadId: w.threadId }),
       ],
       [
         "searchEvents",

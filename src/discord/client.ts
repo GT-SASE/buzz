@@ -251,14 +251,6 @@ export interface ChannelSummary {
   readonly name: string | undefined;
 }
 
-export interface ThreadSummary {
-  readonly id: string;
-  readonly parentId: string | undefined;
-  readonly ownerId: string | undefined;
-  /** Anyone who can name a post controls this, so normalise it before use. */
-  readonly name: string;
-}
-
 export interface GuildRole {
   readonly id: string;
   /** Any member with Manage Roles can set this, so render it only once escaped. */
@@ -340,14 +332,6 @@ export interface DiscordClient {
   getGuildChannel(guildId: string, channelId: string): Promise<GuildChannel>;
   /** Everything Discord reports about a channel or thread, whichever guild it is in. */
   describeChannel(channelId: string): Promise<ChannelSummary>;
-  /** The guild's threads that are not archived, as Discord reports them now. */
-  listActiveThreads(guildId: string): Promise<readonly ThreadSummary[]>;
-  /**
-   * A forum's public archived threads, most recently archived first, up to one page.
-   * Discord asks for Read Message History here, and a refusal says nothing against the
-   * forum: it does not stop this client from using the forum afterwards.
-   */
-  listArchivedThreads(channelId: string): Promise<readonly ThreadSummary[]>;
   /** The roles a member holds, leaving out the @everyone role. */
   getGuildMemberRoleIds(
     guildId: string,
@@ -540,19 +524,6 @@ function parseChannel(value: unknown): GuildChannel | undefined {
 
 function optionalSnowflake(value: unknown): string | undefined {
   return isSnowflake(value) ? value : undefined;
-}
-
-function parseThreadSummary(value: unknown): ThreadSummary | undefined {
-  const id = field(value, "id");
-  const name = field(value, "name");
-  return isSnowflake(id) && typeof name === "string"
-    ? {
-        id,
-        name,
-        parentId: optionalSnowflake(field(value, "parent_id")),
-        ownerId: optionalSnowflake(field(value, "owner_id")),
-      }
-    : undefined;
 }
 
 function parseRoleId(value: unknown): string | undefined {
@@ -1147,20 +1118,6 @@ export function createDiscordClient(
         ownerId: optionalSnowflake(channel.ownerId),
         name: typeof channel.name === "string" ? channel.name : undefined,
       };
-    },
-
-    listActiveThreads(guildId) {
-      return readGuild([guildId], `/guilds/${guildId}/threads/active`, (body) =>
-        parseAll(field(body, "threads"), parseThreadSummary),
-      );
-    },
-
-    listArchivedThreads(channelId) {
-      return readGuild(
-        [channelId],
-        `/channels/${channelId}/threads/archived/public?limit=100`,
-        (body) => parseAll(field(body, "threads"), parseThreadSummary),
-      );
     },
 
     getGuildMemberRoleIds(guildId, userId) {

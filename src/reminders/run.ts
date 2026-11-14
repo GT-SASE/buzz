@@ -82,7 +82,7 @@ const WORK_MARGIN_MS = 2_000;
  * and the run to record itself inside that limit.
  */
 export const RUN_HARD_STOP_MS = FUNCTION_MAX_MS - 2 * DATABASE_CALL_MS;
-export const RUN_WORK_MS =
+const RUN_WORK_MS =
   RUN_HARD_STOP_MS - DATABASE_CALL_MS - DISCORD_OPERATION_MS - WORK_MARGIN_MS;
 /** Longer than the function can live, so a 'running' row this old is a killed run. */
 export const LOCK_STALE_SECONDS = (2 * FUNCTION_MAX_MS) / 1000;

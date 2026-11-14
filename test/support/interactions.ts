@@ -313,8 +313,6 @@ export function fakeDiscord(data: FakeDiscordData = {}): {
       }),
     getGuildMemberRoleIds: () => orFail(data.botRoleIds ?? []),
     describeChannel: () => Promise.reject(new Error("discord failure")),
-    listActiveThreads: () => Promise.reject(new Error("discord failure")),
-    listArchivedThreads: () => Promise.reject(new Error("discord failure")),
   };
   return { discord, edits };
 }

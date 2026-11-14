@@ -64,8 +64,6 @@ export interface DiscordServer {
   messageIds: Set<string>;
   addForum: (guildId: string, name?: string) => string;
   addThread: (fields: Omit<FakeChannel, "id" | "type">) => string;
-  /** Moves the time in new thread IDs, to make a post look older than it is. */
-  threadAgeMs: number;
   /** Runs when a post is made, before Discord answers: another retry could get in. */
   onThreadCreated?: (threadId: string) => Promise<unknown>;
   /** Runs as a request arrives, before it is answered, as another change could. */
@@ -137,10 +135,10 @@ export function discordServer(appId: string): DiscordServer {
     return made;
   }
 
-  /** IDs hold the time they were made, and adopting a lost post reads it. */
+  /** IDs hold the time they were made, as Discord's do. */
   function threadId(): string {
     threadsMade += 1n;
-    const madeAt = Date.now() - server.threadAgeMs - DISCORD_EPOCH_MS;
+    const madeAt = Date.now() - DISCORD_EPOCH_MS;
     return ((BigInt(madeAt) << 22n) + threadsMade).toString();
   }
 
@@ -242,7 +240,6 @@ export function discordServer(appId: string): DiscordServer {
     channels,
     requests,
     messageIds,
-    threadAgeMs: 0,
     posts: () =>
       requests.filter(
         (request) =>
