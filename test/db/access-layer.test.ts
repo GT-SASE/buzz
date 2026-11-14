@@ -560,18 +560,18 @@ describe("database layer against the real schema", () => {
           [eventId, seconds],
         );
 
-      it("goes to one caller, and comes free again after a minute", async () => {
+      it("goes to one caller, and stays held however long ago it began", async () => {
         const event = unwrap(await newEvent("Attempted"));
         const key = { guildId: guild.guildId, eventId: event.id };
 
         expect(unwrap(await claimEventPostAttempt(db, key))).toBe(true);
         expect(unwrap(await claimEventPostAttempt(db, key))).toBe(false);
 
-        await attemptAgo(event.id, 59);
+        await attemptAgo(event.id, 61);
         expect(unwrap(await claimEventPostAttempt(db, key))).toBe(false);
 
-        await attemptAgo(event.id, 61);
-        expect(unwrap(await claimEventPostAttempt(db, key))).toBe(true);
+        await attemptAgo(event.id, 86_400);
+        expect(unwrap(await claimEventPostAttempt(db, key))).toBe(false);
       });
 
       it("can be given back", async () => {

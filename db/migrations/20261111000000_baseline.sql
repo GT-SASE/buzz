@@ -436,7 +436,7 @@ BEGIN
     AND guild_id = p_guild_id
     AND deleted_at IS NULL
     AND thread_status = 'pending'
-    AND (post_attempt_at IS NULL OR post_attempt_at < now() - interval '60 seconds');
+    AND post_attempt_at IS NULL;
 
   RETURN FOUND;
 END;
