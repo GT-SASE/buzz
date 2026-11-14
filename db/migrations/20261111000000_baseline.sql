@@ -37,7 +37,7 @@ CREATE DOMAIN public.discord_id AS text
 
 CREATE TYPE public.event_reminder_kind AS ENUM (
     'daily_steps',
-    'pickup_two_days',
+    'pickup_before',
     'pickup_day'
 );
 

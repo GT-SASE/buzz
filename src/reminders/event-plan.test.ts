@@ -148,7 +148,7 @@ describe("kindsDueToday", () => {
     ["2026-11-14", []],
     ["2026-11-15", ["pickup_day"]],
     ["2026-11-16", []],
-    ["2026-11-17", ["pickup_two_days"]],
+    ["2026-11-17", ["pickup_before"]],
     ["2026-11-18", []],
   ])("for a ready event on %s gives %j", (eventDate, kinds) => {
     expect(kindsDueToday(pickupReady(eventDate), TODAY)).toEqual(kinds);

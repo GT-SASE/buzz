@@ -439,8 +439,9 @@ export async function listStaleEventReminderClaims(
 
 /**
  * One event reminder. `reminderDate` is the local date the message is for: the day itself
- * for `daily_steps`, two days before the event for `pickup_two_days`, and the event's date
- * for `pickup_day`. The claim refuses any other date.
+ * for `daily_steps`, `PICKUP_REMINDER_DAYS_BEFORE` days before the event for
+ * `pickup_before`, and the event's date for `pickup_day`. The claim refuses a date after
+ * the event, or other than today or yesterday in the guild's zone.
  */
 export interface EventReminderKey {
   eventId: string;

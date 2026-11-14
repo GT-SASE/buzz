@@ -52,7 +52,7 @@ export type CompletableStepKind = (typeof COMPLETABLE_STEP_KINDS)[number];
 
 export const EVENT_REMINDER_KINDS = [
   "daily_steps",
-  "pickup_two_days",
+  "pickup_before",
   "pickup_day",
 ] as const;
 export type EventReminderKind = (typeof EVENT_REMINDER_KINDS)[number];

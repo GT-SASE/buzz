@@ -459,7 +459,7 @@ describe("Food pickup reminders", () => {
     );
     expect(present(pickup).users).toEqual(people);
     expect(await logRows(made.eventId)).toMatchObject([
-      { kind: "pickup_two_days", reminder_date: slotDay, state: "sent" },
+      { kind: "pickup_before", reminder_date: slotDay, state: "sent" },
     ]);
   });
 
@@ -480,7 +480,7 @@ describe("Food pickup reminders", () => {
     expect(message.content).toContain("in 2 days");
     expect(await logRows(made.eventId)).toEqual([
       {
-        kind: "pickup_two_days",
+        kind: "pickup_before",
         reminder_date: dateOffset(0),
         state: "sent",
         attempts: 1,
@@ -553,7 +553,7 @@ describe("Food pickup reminders", () => {
     expect(present(pickup).users).toEqual([person]);
     expect((await logRows(made.eventId)).map((row) => row.kind)).toEqual([
       "daily_steps",
-      "pickup_two_days",
+      "pickup_before",
     ]);
   });
 

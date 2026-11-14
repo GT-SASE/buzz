@@ -229,7 +229,7 @@ describe("the baseline's guards", () => {
     };
     // The fixture's event is on 2030-01-15, and a reminder is claimed for today.
     const today = todayInZone(new Date(), "America/New_York");
-    expect(await claim("pickup_two_days", today)).not.toBeNull();
+    expect(await claim("pickup_before", today)).not.toBeNull();
     expect(await claim("pickup_day", today)).not.toBeNull();
   });
 

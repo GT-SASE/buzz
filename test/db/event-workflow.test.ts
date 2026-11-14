@@ -299,7 +299,7 @@ describe("the event workflow functions", () => {
         `public.claim_event_reminder($1, $2::public.event_reminder_kind, $3)`,
         [eventId, kind, day],
       );
-    expect(await claim("pickup_two_days", "2030-01-13")).toBeNull();
+    expect(await claim("pickup_before", "2030-01-13")).toBeNull();
     expect(await claim("pickup_day", "2030-01-15")).toBeNull();
     expect(await claim("daily_steps", "2030-01-16")).toBeNull();
 

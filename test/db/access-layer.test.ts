@@ -3878,7 +3878,7 @@ describe("the event workflow against the real schema", () => {
       };
       const twoDays = {
         eventId,
-        kind: "pickup_two_days" as const,
+        kind: "pickup_before" as const,
         reminderDate: eventDate,
       };
       expect(await claimEventReminder(db, pickupDay)).toEqual({

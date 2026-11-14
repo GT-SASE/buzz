@@ -116,7 +116,7 @@ export function kindsDueToday(
   }
   if (pickupPeople(event) !== null) {
     if (daysLeft === PICKUP_REMINDER_DAYS_BEFORE) {
-      kinds.push("pickup_two_days");
+      kinds.push("pickup_before");
     } else if (daysLeft === 0) {
       kinds.push("pickup_day");
     }
