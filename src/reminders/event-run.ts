@@ -1,11 +1,11 @@
 /**
  * The event workflow reminders, as a step of the daily reminder run. It runs under that
- * run's lock, shares its message cap, deadlines, per-person ping limit and Discord client,
- * and records its counts in the same `job_runs` row, under names starting `event_`.
+ * run's lock, shares its message cap, deadlines and Discord client, and records its counts
+ * in the same `job_runs` row, under names starting `event_`.
  *
  * Each reminder is one message: claim, send, mark sent. A failed send is dealt with by the
- * run, exactly as for a task reminder, so a thread that refuses the bot is counted and
- * held, and a forum that is gone is disabled, the same way for both.
+ * run, exactly as for a task reminder, so a forum that is gone is disabled the same way
+ * for both.
  */
 
 import type { DbClient } from "../db/client.ts";
@@ -33,51 +33,52 @@ import {
   renderEventReminder,
   type RenderedEventReminder,
 } from "./event-render.ts";
-import { slotToday, STALE_CLAIM_MS } from "./plan.ts";
+import { MAX_ATTEMPTS_WITH_PING, slotToday, STALE_CLAIM_MS } from "./plan.ts";
 import type { FailureOutcome, ThreadMessage, ThreadTarget } from "./run.ts";
 
 const MS_PER_DAY = 86_400_000;
 
-/** What the reminder run lends this step. Nothing here sends or decides on its own. */
-export interface EventRunContext {
-  readonly db: DbClient;
-  readonly allowedGuildIds: ReadonlySet<string>;
-  /** Stop claiming for a guild after this many failures in a row that might clear. */
-  readonly maxRetryLaterInARow: number;
-  /** Refusals in a row after which a thread's reminders are held. */
-  readonly holdAfterRefusals: number;
-  /** A reminder goes out without pings once this many sends of it may have landed. */
-  readonly maxAttemptsWithPing: number;
-  count(key: string, by?: number): void;
-  /** Counts something that means the run did not do all it should have. */
-  countIncomplete(key: string, by?: number): void;
-  logLine(line: string): void;
-  /** Why no send may start now, or null. Only `deferred_cap` is a decision. */
-  sendBlock(): "deferred_halted" | "deferred_deadline" | "deferred_cap" | null;
-  /** Whether to go on with work that only touches the database. */
-  mayContinue(): boolean;
-  pastHardStop(): boolean;
-  /** The start of the current schedule slot, in milliseconds. */
-  slotStart(now: Date): number;
-  /** Counts pings already sent in this slot, so a retry does not notify afresh. */
-  seedPings(
-    guildId: string,
-    userIds: readonly string[],
-    roleIds: readonly string[],
-  ): void;
-  sendToThread(message: ThreadMessage): Promise<string>;
+/**
+ * How much of the run is left. Sends need "open". Work that only touches the database
+ * goes on through "cap" and stops at the rest, and a mark after a send goes on until
+ * "hard_stop".
+ */
+export type RunBudget = "open" | "cap" | "deadline" | "halted" | "hard_stop";
+
+/** What the reminder run does for this step. Nothing here sends or decides on its own. */
+export interface EventRunHost {
+  send(message: ThreadMessage): Promise<string>;
   /** Null if the error is not a Discord failure. */
   handleFailure(
     target: ThreadTarget,
     error: unknown,
-    reminders: number,
   ): Promise<FailureOutcome | null>;
-  clearRefusals(target: ThreadTarget): Promise<boolean>;
-  /** The run already saw this event's thread or forum fail. */
-  threadFailed(eventId: string): boolean;
-  hold(eventId: string): void;
-  isHeld(eventId: string): boolean;
-  noteMissing(eventId: string): void;
+  /** `incomplete` means the run did not do all it should have. */
+  count(key: string, by?: number, incomplete?: boolean): void;
+  log(line: string): void;
+  budget(): RunBudget;
+}
+
+/** Why no send may start, as the count what is left is added to. */
+function blockOf(
+  budget: RunBudget,
+): "deferred_halted" | "deferred_deadline" | "deferred_cap" | null {
+  switch (budget) {
+    case "open":
+      return null;
+    case "cap":
+      return "deferred_cap";
+    case "halted":
+      return "deferred_halted";
+    case "deadline":
+    case "hard_stop":
+      return "deferred_deadline";
+  }
+}
+
+/** Whether to go on with work that only touches the database. */
+function mayContinue(budget: RunBudget): boolean {
+  return budget === "open" || budget === "cap";
 }
 
 function keyOf(ref: EventReminderRef): string {
@@ -89,10 +90,8 @@ interface GuildEvents {
   readonly today: DateOnly;
   readonly plan: EventReminderPlan;
   readonly events: ReadonlyMap<string, EventReminderCandidate>;
-  readonly threadRefusals: Map<string, number>;
   readonly queue: PlannedEventReminder[];
-  retryLaterInARow: number;
-  blocked: "deferred_cap" | "deferred_retrying" | null;
+  blocked: "deferred_cap" | null;
 }
 
 interface Held {
@@ -108,31 +107,48 @@ function earliestToday(now: Date): DateOnly | null {
   );
 }
 
-export class EventReminderStep {
-  readonly #ctx: EventRunContext;
-  readonly #stale = new Map<string, EventReminderStaleClaim>();
+export interface EventStepResult {
+  /** Events whose post is gone, so their reminders stopped. */
+  readonly missingEventIds: readonly string[];
+}
 
-  constructor(context: EventRunContext) {
-    this.#ctx = context;
+export class EventReminderStep {
+  readonly #db: DbClient;
+  readonly #allowedGuildIds: ReadonlySet<string>;
+  readonly #host: EventRunHost;
+  readonly #stale = new Map<string, EventReminderStaleClaim>();
+  readonly #missingEventIds: string[] = [];
+
+  constructor(
+    db: DbClient,
+    allowedGuildIds: ReadonlySet<string>,
+    host: EventRunHost,
+  ) {
+    this.#db = db;
+    this.#allowedGuildIds = allowedGuildIds;
+    this.#host = host;
   }
 
-  async run(now: Date): Promise<void> {
-    const ctx = this.#ctx;
+  async run(now: Date): Promise<EventStepResult> {
+    const host = this.#host;
+    const result = { missingEventIds: this.#missingEventIds };
     const fromDate = earliestToday(now);
     if (fromDate === null) {
-      ctx.countIncomplete("event_bad_clock");
-      return;
+      host.count("event_bad_clock", 1, true);
+      return result;
     }
-    const candidates = await listEventReminderCandidates(ctx.db, { fromDate });
+    const candidates = await listEventReminderCandidates(this.#db, {
+      fromDate,
+    });
     if (!candidates.ok) {
-      ctx.countIncomplete("event_read_failed");
-      return;
+      host.count("event_read_failed", 1, true);
+      return result;
     }
     const { rows, truncated } = candidates.value;
-    ctx.count("event_candidates", rows.length);
+    host.count("event_candidates", rows.length);
     if (truncated) {
-      ctx.count("event_truncated");
-      ctx.logLine("Event reminder candidates truncated: events remain unread");
+      host.count("event_truncated");
+      host.log("Event reminder candidates truncated: events remain unread");
     }
     await this.#readStaleClaims(now);
     const guilds = this.#planGuilds(rows, now);
@@ -141,22 +157,23 @@ export class EventReminderStep {
       await this.#recordSkips(guild.plan.skips);
     }
     await this.#closeDeadClaims(rows, fromDate, guilds);
+    return result;
   }
 
   async #readStaleClaims(now: Date): Promise<void> {
-    const stale = await listStaleEventReminderClaims(this.#ctx.db, {
+    const stale = await listStaleEventReminderClaims(this.#db, {
       claimedBefore: new Date(now.getTime() - STALE_CLAIM_MS),
     });
     if (!stale.ok) {
       // A stale claim waits for the next run, and claiming it here returns null.
-      this.#ctx.countIncomplete("event_stale_read_failed");
+      this.#host.count("event_stale_read_failed", 1, true);
       return;
     }
-    this.#ctx.count("event_stale_found", stale.value.rows.length);
+    this.#host.count("event_stale_found", stale.value.rows.length);
     if (stale.value.truncated) {
       // The oldest are read first, and closing them makes room for the rest, so the
       // recovery run is asked to go on with those beyond the cap.
-      this.#ctx.countIncomplete("event_stale_truncated");
+      this.#host.count("event_stale_truncated", 1, true);
     }
     for (const claim of stale.value.rows) {
       this.#stale.set(
@@ -180,8 +197,8 @@ export class EventReminderStep {
     }
     const guilds: GuildEvents[] = [];
     for (const [guildId, events] of byGuild) {
-      if (!this.#ctx.allowedGuildIds.has(guildId)) {
-        this.#ctx.count("event_guilds_not_allowed");
+      if (!this.#allowedGuildIds.has(guildId)) {
+        this.#host.count("event_guilds_not_allowed");
         continue;
       }
       const guild = this.#planGuild(guildId, events, now);
@@ -197,7 +214,7 @@ export class EventReminderStep {
     events: readonly EventReminderCandidate[],
     now: Date,
   ): GuildEvents | null {
-    const ctx = this.#ctx;
+    const host = this.#host;
     let today: DateOnly;
     let plan: EventReminderPlan;
     try {
@@ -208,78 +225,33 @@ export class EventReminderStep {
       today = slotToday(now, timezone);
       plan = planEventReminders({ today, now, events });
     } catch {
-      ctx.countIncomplete("event_guilds_invalid_zone");
-      ctx.logLine(`Event reminder plan failed for guild ${guildId}`);
+      host.count("event_guilds_invalid_zone", 1, true);
+      host.log(`Event reminder plan failed for guild ${guildId}`);
       return null;
     }
     const byId = new Map(events.map((event) => [event.id, event]));
-    const threadRefusals = new Map(
-      events.map((event) => [event.id, event.thread_refusals]),
-    );
-    this.#seedPings(guildId, events, today, now);
-    ctx.count("event_planned", plan.sends.length);
-    ctx.count("event_skips_planned", plan.skips.length);
-    for (const ref of plan.freshClaims) {
-      if ((threadRefusals.get(ref.eventId) ?? 0) >= ctx.holdAfterRefusals) {
-        ctx.hold(ref.eventId);
-        ctx.count("held_reminders");
-      } else {
-        // Without this a rerun soon after a failed run would close the slot unsent.
-        ctx.countIncomplete("event_fresh_claims_waiting");
-      }
-    }
+    host.count("event_planned", plan.sends.length);
+    host.count("event_skips_planned", plan.skips.length);
+    // Without this a rerun soon after a failed run would close the slot unsent.
+    host.count("event_fresh_claims_waiting", plan.freshClaims.length, true);
     for (const eventId of plan.missingThreadEventIds) {
-      ctx.count("events_stopped");
-      ctx.noteMissing(eventId);
+      host.count("events_stopped");
+      this.#missingEventIds.push(eventId);
     }
-    // Events that failed before, by a stale claim or a refusal, wait behind fresh ones.
+    // Events with a stale claim failed before, so they wait behind fresh ones.
     const goesLast = (send: PlannedEventReminder) =>
-      (threadRefusals.get(send.ref.eventId) ?? 0) > 0 ||
       this.#stale.has(keyOf(send.ref));
     return {
       guildId,
       today,
       plan,
       events: byId,
-      threadRefusals,
       queue: [
         ...plan.sends.filter((send) => !goesLast(send)),
         ...plan.sends.filter(goesLast),
       ],
-      retryLaterInARow: 0,
       blocked: null,
     };
-  }
-
-  /** Each reminder already sent in this slot counts as a ping to those it names now. */
-  #seedPings(
-    guildId: string,
-    events: readonly EventReminderCandidate[],
-    today: DateOnly,
-    now: Date,
-  ): void {
-    const since = this.#ctx.slotStart(now);
-    for (const event of events) {
-      for (const entry of event.log) {
-        if (
-          entry.state !== "sent" ||
-          entry.reminder_date !== today ||
-          new Date(entry.claimed_at).getTime() < since
-        ) {
-          continue;
-        }
-        try {
-          const rendered = renderEventReminder(entry.kind, event, today);
-          this.#ctx.seedPings(
-            guildId,
-            rendered.mentionUserIds,
-            rendered.mentionRoleIds,
-          );
-        } catch {
-          // Nothing left to name, so nobody to count.
-        }
-      }
-    }
   }
 
   /** Guilds take turns, one message each, so a busy guild shares the cap. */
@@ -298,11 +270,11 @@ export class EventReminderStep {
 
   /** Sends one reminder. False once this guild has no more to do this run. */
   async #takeTurn(guild: GuildEvents): Promise<boolean> {
-    const ctx = this.#ctx;
+    const host = this.#host;
     if (guild.queue.length === 0) {
       return false;
     }
-    const shared = ctx.sendBlock();
+    const shared = blockOf(host.budget());
     if (shared === "deferred_cap") {
       guild.blocked ??= "deferred_cap";
     }
@@ -313,12 +285,12 @@ export class EventReminderStep {
     if (block !== null) {
       const left = guild.queue.length;
       if (block === "deferred_cap") {
-        ctx.count("deferred_cap", left);
-        ctx.logLine(
+        host.count("deferred_cap", left);
+        host.log(
           `Event reminders left for later at the message cap: ${String(left)} in guild ${guild.guildId}`,
         );
       } else {
-        ctx.countIncomplete(block, left);
+        host.count(block, left, true);
       }
       guild.queue.length = 0;
       return false;
@@ -330,7 +302,7 @@ export class EventReminderStep {
     try {
       await this.#sendOne(guild, send);
     } catch {
-      ctx.countIncomplete("event_errors");
+      host.count("event_errors", 1, true);
     }
     return true;
   }
@@ -339,47 +311,34 @@ export class EventReminderStep {
     guild: GuildEvents,
     send: PlannedEventReminder,
   ): Promise<void> {
-    const ctx = this.#ctx;
+    const host = this.#host;
     const { ref } = send;
     const event = guild.events.get(ref.eventId);
     if (event === undefined) {
-      ctx.count("event_render_failed");
-      return;
-    }
-    if (ctx.threadFailed(ref.eventId)) {
-      // The task reminders found this thread failing. Trying again would count a second
-      // refusal for one run, so it waits for the next run like they do.
-      if (ctx.isHeld(ref.eventId)) {
-        ctx.count("held_reminders");
-      } else {
-        ctx.countIncomplete("deferred_event");
-      }
+      host.count("event_render_failed");
       return;
     }
     let rendered: RenderedEventReminder;
     try {
       rendered = renderEventReminder(ref.kind, event, guild.today);
     } catch {
-      ctx.count("event_render_failed");
-      ctx.logLine(
-        `Event reminder could not be written for event ${ref.eventId}`,
-      );
+      host.count("event_render_failed");
+      host.log(`Event reminder could not be written for event ${ref.eventId}`);
       return;
     }
-    const held = await this.#claim(guild, ref);
+    const held = await this.#claim(ref);
     if (held === null) {
       return;
     }
-    ctx.count("event_claimed");
+    host.count("event_claimed");
     const message = this.#withoutRepeatPing(ref, rendered, held);
     const target: ThreadTarget = {
       guildId: guild.guildId,
       eventId: ref.eventId,
-      threadRefusals: guild.threadRefusals,
     };
     let messageId: string;
     try {
-      messageId = await ctx.sendToThread({
+      messageId = await host.send({
         guildId: guild.guildId,
         threadId: send.threadId,
         content: message.content,
@@ -387,14 +346,10 @@ export class EventReminderStep {
         mentionRoleIds: message.mentionRoleIds,
       });
     } catch (error) {
-      await this.#handleSendFailure(guild, target, ref, held, error);
+      await this.#handleSendFailure(target, ref, held, error);
       return;
     }
-    guild.retryLaterInARow = 0;
     await this.#markSent(ref, held, messageId);
-    if (await ctx.clearRefusals(target)) {
-      ctx.logLine(`Reminders resumed for event ${ref.eventId}`);
-    }
   }
 
   /** Sent this many times, it has probably pinged: keep it, without the noise. */
@@ -403,54 +358,43 @@ export class EventReminderStep {
     rendered: RenderedEventReminder,
     held: Held,
   ): RenderedEventReminder {
-    if (held.possibleDeliveries < this.#ctx.maxAttemptsWithPing) {
+    if (held.possibleDeliveries < MAX_ATTEMPTS_WITH_PING) {
       return rendered;
     }
-    this.#ctx.count("repeat_pings_withheld");
-    this.#ctx.logLine(
+    this.#host.count("repeat_pings_withheld");
+    this.#host.log(
       `Event reminder resent without a ping for event ${ref.eventId}`,
     );
     return { ...rendered, mentionUserIds: [], mentionRoleIds: [] };
   }
 
-  #countRetryLater(guild: GuildEvents): void {
-    guild.retryLaterInARow += 1;
-    if (guild.retryLaterInARow >= this.#ctx.maxRetryLaterInARow) {
-      guild.blocked ??= "deferred_retrying";
-    }
-  }
-
   /** A stale claim is taken over here, just before its send. Null if not held. */
-  async #claim(
-    guild: GuildEvents,
-    ref: EventReminderRef,
-  ): Promise<Held | null> {
-    const ctx = this.#ctx;
+  async #claim(ref: EventReminderRef): Promise<Held | null> {
+    const host = this.#host;
     const key = keyOf(ref);
     const stale = this.#stale.get(key);
     this.#stale.delete(key);
     const claim =
       stale === undefined
-        ? await claimEventReminder(ctx.db, ref)
-        : await reclaimEventReminder(ctx.db, {
+        ? await claimEventReminder(this.#db, ref)
+        : await reclaimEventReminder(this.#db, {
             ...ref,
             claimToken: stale.claim_token,
           });
     if (!claim.ok) {
-      ctx.countIncomplete("event_claim_failed");
-      this.#countRetryLater(guild);
+      host.count("event_claim_failed", 1, true);
       return null;
     }
     if (claim.value === null) {
-      ctx.count("event_claim_lost");
+      host.count("event_claim_lost");
       if (stale !== undefined) {
         // The plan meant to send it today, and it could not be taken over.
-        ctx.countIncomplete("event_stale_claim_lost");
+        host.count("event_stale_claim_lost", 1, true);
       }
       return null;
     }
     if (stale !== undefined) {
-      ctx.count("event_stale_reclaimed");
+      host.count("event_stale_reclaimed");
     }
     return {
       claimToken: claim.value,
@@ -463,55 +407,53 @@ export class EventReminderStep {
     held: Held,
     messageId: string,
   ): Promise<void> {
-    const ctx = this.#ctx;
-    if (ctx.pastHardStop()) {
+    const host = this.#host;
+    if (host.budget() === "hard_stop") {
       // Left claimed, so a later run sends it again: at most one repeat.
-      ctx.countIncomplete("mark_failed");
+      host.count("mark_failed", 1, true);
       return;
     }
-    const marked = await markEventReminderSent(ctx.db, {
+    const marked = await markEventReminderSent(this.#db, {
       ...ref,
       claimToken: held.claimToken,
       messageId,
     });
     if (marked.ok && marked.value) {
-      ctx.count("event_reminders_sent");
-      ctx.count(`event_${ref.kind}_sent`);
+      host.count("event_reminders_sent");
+      host.count(`event_${ref.kind}_sent`);
     } else {
-      ctx.countIncomplete("mark_failed");
+      host.count("mark_failed", 1, true);
     }
   }
 
   /** The claim stays unless the text itself was refused, so a later run tries again. */
   async #handleSendFailure(
-    guild: GuildEvents,
     target: ThreadTarget,
     ref: EventReminderRef,
     held: Held,
     error: unknown,
   ): Promise<void> {
-    const ctx = this.#ctx;
-    const outcome = await ctx.handleFailure(target, error, 1);
+    const host = this.#host;
+    const outcome = await host.handleFailure(target, error);
     switch (outcome) {
       case null:
-        ctx.countIncomplete("send_errors");
+        host.count("send_errors", 1, true);
         return;
       case "handled":
         return;
       case "retry_later":
-        ctx.countIncomplete("retry_later");
-        this.#countRetryLater(guild);
+        host.count("retry_later", 1, true);
         return;
       case "skip_item": {
         // Retrying text Discord refused would not help, and tomorrow brings a new one.
-        ctx.count("event_items_refused");
-        ctx.logLine(`Event reminder refused for event ${ref.eventId}`);
-        const skipped = await markEventReminderSkipped(ctx.db, {
+        host.count("event_items_refused");
+        host.log(`Event reminder refused for event ${ref.eventId}`);
+        const skipped = await markEventReminderSkipped(this.#db, {
           ...ref,
           claimToken: held.claimToken,
         });
         if (!skipped.ok || !skipped.value) {
-          ctx.countIncomplete("mark_failed");
+          host.count("mark_failed", 1, true);
         }
       }
     }
@@ -519,14 +461,14 @@ export class EventReminderStep {
 
   /** Closes stale claims on reminders that will not go out. Only records. */
   async #recordSkips(skips: readonly EventReminderRef[]): Promise<void> {
-    const ctx = this.#ctx;
+    const host = this.#host;
     for (const ref of skips) {
-      if (!ctx.mayContinue()) {
+      if (!mayContinue(host.budget())) {
         return;
       }
       const stale = this.#stale.get(keyOf(ref));
       if (stale === undefined) {
-        ctx.count("event_skips_not_claimed");
+        host.count("event_skips_not_claimed");
         continue;
       }
       await this.#closeStale(stale);
@@ -540,7 +482,7 @@ export class EventReminderStep {
    * token changes on any takeover, so a claim someone else took is left alone.
    */
   async #closeStale(stale: EventReminderStaleClaim): Promise<void> {
-    const ctx = this.#ctx;
+    const host = this.#host;
     const ref = {
       eventId: stale.event_id,
       kind: stale.kind,
@@ -548,16 +490,16 @@ export class EventReminderStep {
     };
     const key = keyOf(ref);
     this.#stale.delete(key);
-    const marked = await markEventReminderSkipped(ctx.db, {
+    const marked = await markEventReminderSkipped(this.#db, {
       ...ref,
       claimToken: stale.claim_token,
     });
     if (!marked.ok) {
-      ctx.countIncomplete("mark_failed");
+      host.count("mark_failed", 1, true);
     } else if (marked.value) {
-      ctx.count("event_skips_recorded");
+      host.count("event_skips_recorded");
     } else {
-      ctx.count("event_skips_not_claimed");
+      host.count("event_skips_not_claimed");
     }
   }
 
@@ -582,13 +524,13 @@ export class EventReminderStep {
       }
     }
     for (const stale of [...this.#stale.values()]) {
-      if (!this.#ctx.mayContinue()) {
+      if (!mayContinue(this.#host.budget())) {
         return;
       }
       if (candidateIds.has(stale.event_id)) {
         const today = todayOf.get(stale.event_id);
         if (today !== undefined && stale.reminder_date < today) {
-          this.#ctx.count("event_stale_unplanned");
+          this.#host.count("event_stale_unplanned");
           await this.#closeStale(stale);
         }
         continue;
@@ -602,7 +544,7 @@ export class EventReminderStep {
     stale: EventReminderStaleClaim,
     fromDate: DateOnly,
   ): Promise<void> {
-    const ctx = this.#ctx;
+    const host = this.#host;
     const ref = {
       eventId: stale.event_id,
       kind: stale.kind,
@@ -610,18 +552,18 @@ export class EventReminderStep {
     };
     const key = keyOf(ref);
     this.#stale.delete(key);
-    const closed = await closeStaleEventClaim(ctx.db, {
+    const closed = await closeStaleEventClaim(this.#db, {
       ...ref,
       claimToken: stale.claim_token,
       beforeDate: fromDate,
     });
     if (!closed.ok) {
-      ctx.countIncomplete("mark_failed");
+      host.count("mark_failed", 1, true);
     } else if (closed.value === "closed") {
-      ctx.count("event_stale_unplanned");
-      ctx.count("event_skips_recorded");
+      host.count("event_stale_unplanned");
+      host.count("event_skips_recorded");
     } else {
-      ctx.count("event_stale_left");
+      host.count("event_stale_left");
     }
   }
 }

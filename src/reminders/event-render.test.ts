@@ -40,7 +40,6 @@ function candidate(
     thread_id: fakeId(4),
     thread_status: "active",
     created_by: CREATOR,
-    thread_refusals: 0,
     pickup_time: null,
     timezone: "America/New_York",
     events_director_role_id: ROLE,

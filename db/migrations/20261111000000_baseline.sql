@@ -549,21 +549,6 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.clear_thread_refusals(p_event_id uuid, p_guild_id text) RETURNS boolean
-    LANGUAGE plpgsql SECURITY DEFINER
-    SET search_path TO ''
-    AS $$
-BEGIN
-  UPDATE public.events
-  SET thread_refusals = 0
-  WHERE id = p_event_id
-    AND guild_id = p_guild_id
-    AND deleted_at IS NULL
-    AND thread_refusals > 0;
-  RETURN FOUND;
-END;
-$$;
-
 CREATE FUNCTION public.complete_event_step(p_event_id uuid, p_guild_id text, p_kind public.event_step_kind, p_actor_id text) RETURNS boolean
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO ''
@@ -1039,23 +1024,6 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.record_thread_refusal(p_event_id uuid, p_guild_id text) RETURNS integer
-    LANGUAGE plpgsql SECURITY DEFINER
-    SET search_path TO ''
-    AS $$
-DECLARE
-  v_count integer;
-BEGIN
-  UPDATE public.events
-  SET thread_refusals = thread_refusals + 1
-  WHERE id = p_event_id
-    AND guild_id = p_guild_id
-    AND deleted_at IS NULL
-  RETURNING thread_refusals INTO v_count;
-  RETURN v_count;
-END;
-$$;
-
 -- A soft-deleted task stays deleted. Bringing one back could revive it on a closed or
 -- deleted event and past the event's task limit, which every other path checks. Only
 -- the tables' owner may, by hand, as docs/RECOVERY.md describes.
@@ -1442,12 +1410,10 @@ CREATE TABLE public.events (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     post_attempt_at timestamp with time zone,
-    thread_refusals integer DEFAULT 0 NOT NULL,
     pickup_time time without time zone,
     CONSTRAINT events_event_date_range CHECK (((event_date >= '2000-01-01'::date) AND (event_date <= '9999-12-31'::date))),
     CONSTRAINT events_name_length CHECK (((char_length(name) >= 1) AND (char_length(name) <= 100))),
-    CONSTRAINT events_thread_matches_status CHECK (((thread_id IS NULL) = (thread_status = 'pending'::public.thread_status))),
-    CONSTRAINT events_thread_refusals_not_negative CHECK ((thread_refusals >= 0))
+    CONSTRAINT events_thread_matches_status CHECK (((thread_id IS NULL) = (thread_status = 'pending'::public.thread_status)))
 );
 
 CREATE TABLE public.guild_config (
@@ -1819,7 +1785,6 @@ GRANT EXECUTE ON FUNCTION
   public.claim_interaction(text),
   public.claim_reminder(uuid, public.reminder_kind, date, text, timestamptz),
   public.claim_step_handoff(uuid, text, public.event_step_kind),
-  public.clear_thread_refusals(uuid, text),
   public.complete_event_step(uuid, text, public.event_step_kind, text),
   public.edit_task(uuid, text, timestamptz, text, date, text, text),
   public.expire_interaction_claims(),
@@ -1833,7 +1798,6 @@ GRANT EXECUTE ON FUNCTION
   public.reclaim_event_reminder(uuid, public.event_reminder_kind, date, uuid),
   public.reclaim_reminder(uuid, public.reminder_kind, date, uuid, text, timestamptz),
   public.record_reminder_refused(uuid, public.reminder_kind, date, uuid),
-  public.record_thread_refusal(uuid, text),
   public.release_event_post_attempt(uuid, text),
   public.save_setup_draft(text, text, text, text, text, text, text, text, text),
   public.set_event_pickup_time(uuid, text, time, text),

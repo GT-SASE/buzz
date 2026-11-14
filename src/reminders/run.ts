@@ -25,14 +25,12 @@ import {
 import { markChannelUnavailable } from "../db/managed-channels.ts";
 import {
   claimReminder,
-  clearThreadRefusals,
   closeStaleClaim,
   listReminderCandidates,
   listStaleClaims,
   markReminderSent,
   markReminderSkipped,
   recordReminderRefused,
-  recordThreadRefusal,
   resolveStaleClaim,
   type ReminderKey,
   type TaskAsRead,
@@ -48,9 +46,13 @@ import {
 import { channelMessage, type Part } from "../discord/outbound.ts";
 import type { Chunk, ChunkLine, SafeText } from "../discord/safe-text.ts";
 import { isUsableTimeZone, parseIsoDate, type DateOnly } from "../lib/dates.ts";
-import { EventReminderStep, type EventRunContext } from "./event-run.ts";
 import {
-  slotStart,
+  EventReminderStep,
+  type EventRunHost,
+  type RunBudget,
+} from "./event-run.ts";
+import {
+  MAX_ATTEMPTS_WITH_PING,
   slotToday,
   STALE_CLAIM_MS,
   planReminders,
@@ -79,19 +81,6 @@ export const DATABASE_CALL_MS = 4_000;
 /** Longer than the function can live, so a 'running' row this old is a killed run. */
 export const LOCK_STALE_SECONDS = 120;
 /**
- * A reminder goes out without notifying anyone once this many sends, counting the one about
- * to start, may have reached Discord. A send known to have been refused does not count.
- */
-const MAX_ATTEMPTS_WITH_PING = 3;
-/**
- * After this many runs in a row of a thread refusing the bot, its reminders are held. They
- * keep their claims and each run tries them again, but the run no longer fails for them, so
- * one post cannot keep the job's alarm firing and hide a real outage. With two crons a day
- * that leaves one day of failed runs for a person to see. Only a refusal specific to the
- * thread counts: if the event's forum refuses too, the job goes on failing.
- */
-export const THREAD_REFUSALS_BEFORE_HOLD = 3;
-/**
  * Discord's answers that blame the thread, or the bot's place in the server, and not the
  * message. 50001 also comes back for every channel once the bot is removed from the server,
  * and a locked post gives 160005.
@@ -106,20 +95,14 @@ const THREAD_REFUSED: ReadonlySet<number | undefined> = new Set([
 export interface RunLimits {
   /** Send attempts per run. What does not fit is left unclaimed for the next day. */
   readonly maxMessages: number;
-  /** Messages per run that may notify one person. Later ones still show the mention. */
-  readonly maxPingsPerPerson: number;
   readonly workMs: number;
   readonly hardStopMs: number;
-  /** Stop claiming for a guild after this many failures in a row that might clear. */
-  readonly maxRetryLaterInARow: number;
 }
 
 export const DEFAULT_LIMITS: RunLimits = {
   maxMessages: 100,
-  maxPingsPerPerson: 20,
   workMs: RUN_WORK_MS,
   hardStopMs: RUN_HARD_STOP_MS,
-  maxRetryLaterInARow: 3,
 };
 
 const DB_CONCURRENCY = 8;
@@ -205,21 +188,10 @@ interface ClaimHeld {
   readonly possibleDeliveries: number;
 }
 
-function personKey(guildId: string, userId: string): string {
-  return `${guildId}:${userId}`;
-}
-
-/** Roles share the per-person limit, under a key no user ID can take. */
-function roleKey(roleId: string): string {
-  return `role:${roleId}`;
-}
-
-/** An event's thread, and the run's copy of its guild's counts of refusals. */
+/** The event whose thread a send went to. */
 export interface ThreadTarget {
   readonly guildId: string;
   readonly eventId: string;
-  /** As read, and set to 0 here once a send to the thread lands. */
-  readonly threadRefusals: Map<string, number>;
 }
 
 export interface ThreadMessage {
@@ -240,16 +212,10 @@ interface GuildPlan {
   readonly today: DateOnly;
   readonly plan: ReminderPlan;
   readonly rows: ReadonlyMap<string, ReminderCandidate>;
-  /** As read, and set to 0 here once a send to the thread lands. */
-  readonly threadRefusals: Map<string, number>;
 }
 
 function targetOf(guild: GuildPlan, event: EventReminders): ThreadTarget {
-  return {
-    guildId: guild.guildId,
-    eventId: event.eventId,
-    threadRefusals: guild.threadRefusals,
-  };
+  return { guildId: guild.guildId, eventId: event.eventId };
 }
 
 function groupByGuild(
@@ -311,6 +277,24 @@ function isThreadRefusal(failure: DiscordFailure): boolean {
 }
 
 /**
+ * True when the failure is about where the send went: a malformed or unmanaged target, a
+ * channel that is not a forum, or a refusal that is neither a server error nor about the
+ * text. Nothing about the send or the run would change on a retry within this run.
+ */
+function isTargetFailure(failure: DiscordFailure): boolean {
+  switch (failure.kind) {
+    case "invalid_target":
+    case "unmanaged_target":
+    case "not_forum":
+      return true;
+    case "api":
+      return failure.status < 500;
+    default:
+      return false;
+  }
+}
+
+/**
  * False for a failure after which the message may exist: no response, a response that could
  * not be read, a server error, or an error that is not the client's.
  */
@@ -329,16 +313,13 @@ interface EventCursor {
   index: number;
 }
 
-type GuildBlock = "deferred_cap" | "deferred_retrying";
-
-/** What one guild has left to send. A failure here says nothing about other guilds. */
+/** What one guild has left to send. */
 interface GuildTurns {
   readonly guild: GuildPlan;
   readonly events: readonly EventReminders[];
   nextEvent: number;
   current: EventCursor | null;
-  retryLaterInARow: number;
-  blocked: GuildBlock | null;
+  blocked: "deferred_cap" | null;
 }
 
 class Run {
@@ -355,16 +336,11 @@ class Run {
   readonly #deadline: number;
   readonly #hardStop: number;
   readonly #staleClaims = new Map<string, StaleClaim>();
-  readonly #pings = new Map<string, number>();
   readonly #forums = new Map<string, ForumState>();
-  readonly #heldEventIds = new Set<string>();
   readonly #missingEventIds = new Set<string>();
-  /** Events whose thread or forum failed a send this run, so no other send is tried. */
-  readonly #threadFailedEventIds = new Set<string>();
   #sendAttempts = 0;
   #logLines = 0;
-  #claimFailures = 0;
-  /** Discord refused the bot or limited it globally: nothing further this run. */
+  /** A failure that more requests would not get past: nothing further this run. */
   #halted = false;
   /** Something meant to go out did not, for a reason other than the message cap. */
   #incomplete = false;
@@ -391,9 +367,6 @@ class Run {
       [...ids].slice(0, MAX_EVENT_IDS_IN_RESULTS);
     return {
       ...this.counts.toResults(),
-      ...(this.#heldEventIds.size > 0
-        ? { held_event_ids: named(this.#heldEventIds) }
-        : {}),
       ...(this.#missingEventIds.size > 0
         ? { missing_event_ids: named(this.#missingEventIds) }
         : {}),
@@ -429,19 +402,33 @@ class Run {
     }
   }
 
-  #countRetryLater(turns: GuildTurns): void {
-    turns.retryLaterInARow += 1;
-    if (turns.retryLaterInARow >= this.#limits.maxRetryLaterInARow) {
-      turns.blocked ??= "deferred_retrying";
+  /** Past the hard stop first, since marks may go on while halted but not past it. */
+  #budget(): RunBudget {
+    if (this.#now().getTime() >= this.#hardStop) {
+      return "hard_stop";
     }
+    if (this.#halted) {
+      return "halted";
+    }
+    if (this.#pastDeadline()) {
+      return "deadline";
+    }
+    return this.#sendAttempts + 1 > this.#limits.maxMessages ? "cap" : "open";
   }
 
   async work(): Promise<void> {
     const now = this.#now();
     await this.#taskReminders(now);
-    // After the task reminders, so it reads what they did to each thread's count, and
-    // under the same lock, cap and deadlines.
-    await new EventReminderStep(this.#eventContext()).run(now);
+    // Under the same lock, cap and deadlines as the task reminders.
+    const step = new EventReminderStep(
+      this.#db,
+      this.#allowedGuildIds,
+      this.#eventHost(),
+    );
+    const { missingEventIds } = await step.run(now);
+    for (const eventId of missingEventIds) {
+      this.#noteMissing(eventId);
+    }
     if (this.#incomplete) {
       // A failed run leaves the slot open, so the recovery cron tries again today, and
       // a monitor reading the last success sees the gap.
@@ -450,55 +437,24 @@ class Run {
   }
 
   /** What the event reminder step may use of this run. */
-  #eventContext(): EventRunContext {
+  #eventHost(): EventRunHost {
     return {
-      db: this.#db,
-      allowedGuildIds: this.#allowedGuildIds,
-      maxRetryLaterInARow: this.#limits.maxRetryLaterInARow,
-      holdAfterRefusals: THREAD_REFUSALS_BEFORE_HOLD,
-      maxAttemptsWithPing: MAX_ATTEMPTS_WITH_PING,
-      count: (key, by) => {
-        this.counts.add(key, by);
+      send: (message) => this.#sendToThread(message),
+      handleFailure: async (target, error) => {
+        const failure = failureOf(error);
+        return failure === null ? null : this.#handleFailure(target, failure);
       },
-      countIncomplete: (key, by) => {
-        this.#countIncomplete(key, by);
+      count: (key, by, incomplete) => {
+        if (incomplete === true) {
+          this.#countIncomplete(key, by);
+        } else {
+          this.counts.add(key, by);
+        }
       },
-      logLine: (line) => {
+      log: (line) => {
         this.logLine(line);
       },
-      sendBlock: () => {
-        if (this.#halted) {
-          return "deferred_halted";
-        }
-        if (this.#pastDeadline()) {
-          return "deferred_deadline";
-        }
-        return this.#sendAttempts + 1 > this.#limits.maxMessages
-          ? "deferred_cap"
-          : null;
-      },
-      mayContinue: () => this.#mayContinue(),
-      pastHardStop: () => this.#now().getTime() >= this.#hardStop,
-      slotStart,
-      seedPings: (guildId, userIds, roleIds) => {
-        this.#addPings(guildId, [...userIds, ...roleIds.map(roleKey)]);
-      },
-      sendToThread: (message) => this.#sendToThread(message),
-      handleFailure: async (target, error, reminders) => {
-        const failure = failureOf(error);
-        return failure === null
-          ? null
-          : this.#handleFailure(target, failure, reminders);
-      },
-      clearRefusals: (target) => this.#clearRefusals(target),
-      threadFailed: (eventId) => this.#threadFailedEventIds.has(eventId),
-      hold: (eventId) => {
-        this.#hold(eventId);
-      },
-      isHeld: (eventId) => this.#heldEventIds.has(eventId),
-      noteMissing: (eventId) => {
-        this.#noteMissing(eventId);
-      },
+      budget: () => this.#budget(),
     };
   }
 
@@ -566,37 +522,10 @@ class Run {
       }
       const plan = this.#planGuild(guildId, guildRows, now);
       if (plan !== null) {
-        this.#seedPings(guildId, guildRows, now);
         plans.push(plan);
       }
     }
     return plans;
-  }
-
-  /**
-   * A retry after a failed run must not notify people afresh. Each event with a reminder
-   * already sent to someone in this slot counts as one message to them.
-   */
-  #seedPings(
-    guildId: string,
-    rows: readonly ReminderCandidate[],
-    now: Date,
-  ): void {
-    const since = slotStart(now);
-    const seen = new Set<string>();
-    for (const row of rows) {
-      const sentInSlot = row.log.some(
-        (entry) =>
-          entry.state === "sent" &&
-          new Date(entry.claimedAt).getTime() >= since,
-      );
-      const key = `${row.assignee_id}:${row.event.id}`;
-      if (sentInSlot && !seen.has(key)) {
-        seen.add(key);
-        const person = personKey(guildId, row.assignee_id);
-        this.#pings.set(person, (this.#pings.get(person) ?? 0) + 1);
-      }
-    }
   }
 
   /** A zone that fails here stops only that guild, but the run must say so. */
@@ -638,19 +567,9 @@ class Run {
       plan.events.reduce((sum, event) => sum + event.reminders.length, 0),
     );
     this.counts.add("skips_planned", plan.skips.length);
-    const threadRefusals = new Map(
-      rows.map((row) => [row.event.id, row.thread_refusals]),
-    );
-    for (const { eventId } of plan.freshClaims) {
-      if ((threadRefusals.get(eventId) ?? 0) >= THREAD_REFUSALS_BEFORE_HOLD) {
-        this.#hold(eventId);
-        this.counts.add("held_reminders");
-      } else {
-        // Without this, a rerun soon after a failed run would find nothing to do, record
-        // a success and close the slot, and the recovery cron would not send them.
-        this.#countIncomplete("fresh_claims_waiting");
-      }
-    }
+    // Without this, a rerun soon after a failed run would find nothing to do, record a
+    // success and close the slot, and the recovery cron would not send them.
+    this.#countIncomplete("fresh_claims_waiting", plan.freshClaims.length);
     for (const eventId of plan.missingThreadEventIds) {
       this.counts.add("events_stopped");
       this.#noteMissing(eventId);
@@ -660,19 +579,7 @@ class Run {
       today,
       plan,
       rows: new Map(rows.map((row) => [row.task.id, row])),
-      threadRefusals,
     };
-  }
-
-  /** A reminder held here is not lost: it stays claimed and each run tries it again. */
-  #hold(eventId: string): void {
-    if (!this.#heldEventIds.has(eventId)) {
-      this.#heldEventIds.add(eventId);
-      this.counts.add("threads_held");
-      this.logLine(
-        `Reminders held for event ${eventId}: its thread refuses the bot`,
-      );
-    }
   }
 
   #noteMissing(eventId: string): void {
@@ -684,10 +591,9 @@ class Run {
     }
   }
 
-  /** Events that failed before, by a stale claim or a refusal, wait behind fresh ones. */
+  /** Events with a stale claim failed before, so they wait behind fresh ones. */
   #eventsInOrder(guild: GuildPlan): EventReminders[] {
     const goesLast = (event: EventReminders) =>
-      (guild.threadRefusals.get(event.eventId) ?? 0) > 0 ||
       event.reminders.some((ref) => this.#staleClaims.has(keyOf(ref)));
     return [
       ...guild.plan.events.filter((event) => !goesLast(event)),
@@ -705,7 +611,6 @@ class Run {
       events: this.#eventsInOrder(guild),
       nextEvent: 0,
       current: null,
-      retryLaterInARow: 0,
       blocked: null,
     }));
     while (active.length > 0) {
@@ -763,7 +668,7 @@ class Run {
   #blockFor(
     turns: GuildTurns,
     messages: number,
-  ): GuildBlock | "deferred_halted" | "deferred_deadline" | null {
+  ): "deferred_cap" | "deferred_halted" | "deferred_deadline" | null {
     if (this.#halted) {
       return "deferred_halted";
     }
@@ -812,11 +717,7 @@ class Run {
       const left = cursor.batches
         .slice(cursor.index)
         .reduce((sum, each) => sum + each.items.length, 0);
-      if (this.#heldEventIds.has(cursor.event.eventId)) {
-        this.counts.add("held_reminders", left);
-      } else {
-        this.#countIncomplete("deferred_event", left);
-      }
+      this.#countIncomplete("deferred_event", left);
       turns.current = null;
     }
     return true;
@@ -872,7 +773,6 @@ class Run {
       this.#countIncomplete("claim_outdated");
     } else {
       this.#countIncomplete("claim_failed");
-      this.#claimFailures += 1;
     }
   }
 
@@ -958,12 +858,8 @@ class Run {
     cursor: EventCursor,
     items: readonly Item[],
   ): Promise<boolean> {
-    this.#claimFailures = 0;
     const claimed = await this.#claimAll(items);
     this.counts.add("claimed", claimed.length);
-    if (this.#claimFailures === items.length) {
-      this.#countRetryLater(turns);
-    }
     if (claimed.length === 0) {
       return true;
     }
@@ -1005,29 +901,8 @@ class Run {
     if (messageId === null) {
       return true;
     }
-    turns.retryLaterInARow = 0;
     await this.#markSent(items, messageId);
-    if (await this.#clearRefusals(targetOf(turns.guild, cursor.event))) {
-      this.logLine(`Reminders resumed for event ${cursor.event.eventId}`);
-    }
     return true;
-  }
-
-  /** Starts the thread's count again from nothing. True if there was a count to clear. */
-  async #clearRefusals(target: ThreadTarget): Promise<boolean> {
-    if ((target.threadRefusals.get(target.eventId) ?? 0) === 0) {
-      return false;
-    }
-    target.threadRefusals.set(target.eventId, 0);
-    const cleared = await clearThreadRefusals(this.#db, {
-      guildId: target.guildId,
-      eventId: target.eventId,
-    });
-    if (!cleared.ok) {
-      // Only makes the event's next refusal count from where this one left off.
-      this.counts.add("refusals_not_cleared");
-    }
-    return cleared.ok;
   }
 
   /** Failing here leaves the attempt counted, and at worst costs a later ping. */
@@ -1066,26 +941,9 @@ class Run {
     });
   }
 
-  /**
-   * The one way a run posts. Each person and role may be notified `maxPingsPerPerson`
-   * times a run, and is shown without a ping after that.
-   */
+  /** The one way a run posts. */
   async #sendToThread(message: ThreadMessage): Promise<string> {
-    const { guildId } = message;
-    const underCap = (key: string) =>
-      (this.#pings.get(personKey(guildId, key)) ?? 0) <
-      this.#limits.maxPingsPerPerson;
-    const pinged = message.mentionUserIds.filter(underCap);
-    const rolesPinged = message.mentionRoleIds.filter((roleId) =>
-      underCap(roleKey(roleId)),
-    );
-    this.counts.add(
-      "pings_withheld",
-      message.mentionUserIds.length -
-        pinged.length +
-        message.mentionRoleIds.length -
-        rolesPinged.length,
-    );
+    const { guildId, mentionRoleIds } = message;
     // Counted before the request: a refused send still costs a request, and a cap on
     // successes would let refused text use as many as it liked.
     this.#sendAttempts += 1;
@@ -1093,25 +951,17 @@ class Run {
       { kind: "thread", guildId, threadId: message.threadId },
       channelMessage({
         content: message.content,
-        mentionUserIds: pinged,
-        ...(rolesPinged.length === 0
+        mentionUserIds: message.mentionUserIds,
+        ...(mentionRoleIds.length === 0
           ? {}
-          : { mentionRoleIds: rolesPinged, roleGuildId: guildId }),
+          : { mentionRoleIds, roleGuildId: guildId }),
         ...(message.components === undefined
           ? {}
           : { components: message.components }),
       }),
     );
-    this.#addPings(guildId, [...pinged, ...rolesPinged.map(roleKey)]);
     this.counts.add("messages_sent");
     return resource.id;
-  }
-
-  #addPings(guildId: string, keys: readonly string[]): void {
-    for (const key of keys) {
-      const person = personKey(guildId, key);
-      this.#pings.set(person, (this.#pings.get(person) ?? 0) + 1);
-    }
   }
 
   /**
@@ -1161,14 +1011,12 @@ class Run {
     const outcome = await this.#handleFailure(
       targetOf(turns.guild, cursor.event),
       failure,
-      items.length,
     );
     switch (outcome) {
       case "handled":
         return false;
       case "retry_later":
         this.#countIncomplete("retry_later", items.length);
-        this.#countRetryLater(turns);
         return false;
       case "skip_item":
         return this.#retryOneByOne(turns, cursor, items, failure, partlySent);
@@ -1177,16 +1025,19 @@ class Run {
 
   /**
    * What a failed send to an event's thread says about the thread, its forum and the run.
-   * Returns what is left for the caller, which knows what the send was for.
+   * Returns what is left for the caller, which knows what the send was for. A failure
+   * that leaves the item for later stops the run unless it is about this event's target,
+   * and the recovery cron takes over what it left.
    */
   async #handleFailure(
     target: ThreadTarget,
     failure: DiscordFailure,
-    reminders: number,
   ): Promise<FailureOutcome> {
     if (isThreadRefusal(failure)) {
-      this.#threadFailedEventIds.add(target.eventId);
-      await this.#handleThreadRefusal(target, failure, reminders);
+      this.#countIncomplete("channels_inaccessible");
+      this.logLine(
+        `Thread refused the bot for event ${target.eventId}: ${errorSummary(discordError(failure))}`,
+      );
       return "handled";
     }
     const action = actionForFailure(failure);
@@ -1195,10 +1046,13 @@ class Run {
         this.#halt(failure);
         return "handled";
       case "mark_channel_unavailable":
-        this.#threadFailedEventIds.add(target.eventId);
         await this.#handleChannelUnavailable(target, failure);
         return "handled";
       case "retry_later":
+        if (!isTargetFailure(failure)) {
+          this.#halt(failure);
+        }
+        return action;
       case "skip_item":
         return action;
     }
@@ -1253,81 +1107,11 @@ class Run {
     return true;
   }
 
-  /**
-   * Whether a refusal is the thread's own depends on the forum. A bot removed from the
-   * server, or a role that lost access everywhere, gets the same answer from both, and
-   * holding that would turn an outage into a green job with nothing sent.
-   */
-  async #handleThreadRefusal(
-    target: ThreadTarget,
-    failure: DiscordFailure,
-    reminders: number,
-  ): Promise<void> {
-    const row = await getEvent(this.#db, {
-      guildId: target.guildId,
-      eventId: target.eventId,
-    });
-    const forum =
-      row.ok && row.value !== null
-        ? await this.#forumState(target.guildId, row.value.channel_id)
-        : "unknown";
-    switch (forum) {
-      case "present":
-        await this.#countThreadRefusal(target, failure, reminders);
-        return;
-      case "unknown":
-        this.#countIncomplete("thread_check_failed");
-        return;
-      case "gone":
-      case "refused":
-        await this.#countForumRefusal(target, failure);
-    }
-  }
-
-  /**
-   * The forum refuses the bot too, so this is not about the thread, and the run stays failed.
-   * The thread's count goes as well: a rerun finding a claim on an event still counted as
-   * held would otherwise record a success with nothing sent.
-   */
-  async #countForumRefusal(
-    target: ThreadTarget,
-    failure: DiscordFailure,
-  ): Promise<void> {
+  /** The forum refuses the bot too, so this is not about the thread. */
+  #countForumRefusal(target: ThreadTarget, failure: DiscordFailure): void {
     this.#countIncomplete("channels_inaccessible");
-    await this.#clearRefusals(target);
     this.logLine(
       `Forum refused the bot for event ${target.eventId}: ${errorSummary(discordError(failure))}`,
-    );
-  }
-
-  /**
-   * A thread that refuses the bot, which a person can undo at any time, so nothing is
-   * disabled. The run fails for it only until the event is held, which bounds how long one
-   * thread can keep the job failing. It says nothing about other events, so it does not
-   * count towards stopping this guild's sends.
-   */
-  async #countThreadRefusal(
-    target: ThreadTarget,
-    failure: DiscordFailure,
-    reminders: number,
-  ): Promise<void> {
-    const refusals = await recordThreadRefusal(this.#db, {
-      guildId: target.guildId,
-      eventId: target.eventId,
-    });
-    if (!refusals.ok) {
-      this.#countIncomplete("thread_check_failed");
-      return;
-    }
-    if (refusals.value >= THREAD_REFUSALS_BEFORE_HOLD) {
-      this.counts.add("channels_inaccessible");
-      this.counts.add("held_reminders", reminders);
-      this.#hold(target.eventId);
-      return;
-    }
-    this.#countIncomplete("channels_inaccessible");
-    this.logLine(
-      `Thread refused the bot for event ${target.eventId}: ${errorSummary(discordError(failure))}, refusal ${String(refusals.value)} of ${String(THREAD_REFUSALS_BEFORE_HOLD)} before its reminders are held`,
     );
   }
 
@@ -1382,7 +1166,7 @@ class Run {
         this.#countIncomplete("thread_check_failed");
       }
     } else if (forum === "refused") {
-      await this.#countForumRefusal(target, failure);
+      this.#countForumRefusal(target, failure);
     } else {
       this.#countIncomplete("thread_check_failed");
     }

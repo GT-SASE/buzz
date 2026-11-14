@@ -169,8 +169,6 @@ export interface ReminderCandidate {
   event_name: string;
   /** The version this read saw, for a claim to compare with. */
   updated_at: string;
-  /** Runs in a row the event's thread has refused the bot. */
-  thread_refusals: number;
   task: PlanTask;
   event: PlanEvent;
   log: ReminderLogRow[];
@@ -261,7 +259,6 @@ export interface EventReminderCandidate {
   thread_id: string | null;
   thread_status: ThreadStatus;
   created_by: string;
-  thread_refusals: number;
   /** `HH:MM`, or null if not set. */
   pickup_time: string | null;
   timezone: string;

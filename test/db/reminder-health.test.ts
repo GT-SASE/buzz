@@ -374,7 +374,6 @@ describe("freshness", () => {
       status: "succeeded",
       results: JSON.stringify({
         deferred_cap: 4,
-        threads_held: 2,
         events_stopped: 1,
         threads_missing: 0,
         messages_sent: 100,
@@ -386,7 +385,6 @@ describe("freshness", () => {
     const { results } = await latestRow();
     expect(results).toMatchObject({
       reminders_deferred_cap: 4,
-      reminders_threads_held: 2,
       reminders_events_stopped: 1,
     });
     expect(results).not.toHaveProperty("reminders_threads_missing");

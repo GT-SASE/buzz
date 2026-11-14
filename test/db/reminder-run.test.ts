@@ -31,7 +31,6 @@ import {
   DATABASE_CALL_MS,
   DISCORD_OPERATION_MS,
   RUN_HARD_STOP_MS,
-  THREAD_REFUSALS_BEFORE_HOLD,
   runReminders,
   type RunLimits,
   type RunResult,
@@ -631,8 +630,6 @@ describe("volume", () => {
     // Two messages an event, as a message holds five tasks' buttons. That is the cap.
     expect(sent).toHaveLength(100);
     expect(new Set(sent.map((message) => message.threadId))).toEqual(threads);
-    const pings = sent.filter((message) => message.users.includes(person));
-    expect(pings).toHaveLength(20);
     for (const message of sent) {
       expect(message.content.length).toBeLessThanOrEqual(2000);
       expect(message.content).toContain(`<@${person}>`);
@@ -644,7 +641,6 @@ describe("volume", () => {
     expect((await jobRow()).results).toMatchObject({
       messages_sent: 100,
       reminders_sent: 500,
-      pings_withheld: 80,
     });
   }, 120_000);
 
@@ -779,7 +775,6 @@ describe("volume", () => {
       thread_id: null,
       event_status: "closed",
       thread_status: "pending",
-      thread_refusals: 0,
       timezone: "UTC",
       log: [],
     }));
@@ -1065,43 +1060,63 @@ describe("failures that stop the run", () => {
     expect(await logRows(taskId)).toMatchObject([{ state: "sent" }]);
   });
 
-  it("stops claiming after repeated failures that may clear", async () => {
+  it("stops at a failure that may clear, and the 17:00 run sends what it left", async () => {
     const guild = await guildInZone();
     const taskIds: string[] = [];
-    for (let index = 0; index < 6; index += 1) {
+    for (let index = 0; index < 3; index += 1) {
       const { eventId } = await eventWithThread(guild);
       taskIds.push(await task(guild, eventId, dateOffset(3)));
     }
-    discordGate = () => Response.json({ code: 0 }, { status: 503 });
+    discordGate = (method) =>
+      method === "POST"
+        ? new Response("unavailable", { status: 503 })
+        : undefined;
 
-    const result = await run({ guilds: [guild] });
+    const morning = await run({ guilds: [guild] });
 
-    expect(result).toMatchObject({
+    expect(posts()).toHaveLength(1);
+    expect(morning).toMatchObject({
       status: "failed",
-      error: "reminders_incomplete",
+      error: "discord_api:503",
     });
     expect((await jobRow()).results).toMatchObject({
-      retry_later: 3,
-      deferred_retrying: 3,
+      retry_later: 1,
+      deferred_halted: 2,
     });
-    const states = await Promise.all(taskIds.map(logRows));
-    expect(states.flat()).toHaveLength(3);
+    expect((await Promise.all(taskIds.map(logRows))).flat()).toHaveLength(1);
+
+    // The 17:00 cron, by which time the morning's claim has gone stale.
+    discordGate = () => undefined;
+    await database.exec(
+      `UPDATE public.reminder_log SET claimed_at = now() - interval '2 hours'`,
+    );
+    expect((await run({ guilds: [guild] })).status).toBe("succeeded");
+
+    expect(sent).toHaveLength(3);
+    expect((await Promise.all(taskIds.map(logRows))).flat()).toMatchObject([
+      { state: "sent" },
+      { state: "sent" },
+      { state: "sent" },
+    ]);
   });
 
-  it("continues after one failure that may clear", async () => {
+  it("goes on to other events after a failure about one event's post", async () => {
     const guild = await guildInZone();
     const first = await eventWithThread(guild);
     const second = await eventWithThread(guild);
     const failing = await task(guild, first.eventId, dateOffset(3));
     await task(guild, second.eventId, dateOffset(3));
-    discordGate = (_method, path) =>
-      path.startsWith(`/channels/${first.threadId}`)
-        ? Response.json({ code: 0 }, { status: 503 })
+    discordGate = (method, path) =>
+      method === "POST" && path.startsWith(`/channels/${first.threadId}`)
+        ? Response.json({ code: 0 }, { status: 404 })
         : undefined;
 
-    await run({ guilds: [guild] });
+    expect(await run({ guilds: [guild] })).toMatchObject({
+      status: "failed",
+      error: "reminders_incomplete",
+    });
 
-    expect(sent).toHaveLength(1);
+    expect(sent.map((message) => message.threadId)).toEqual([second.threadId]);
     expect(await logRows(failing)).toMatchObject([{ state: "claimed" }]);
 
     discordGate = () => undefined;
@@ -1204,8 +1219,7 @@ describe("channels and threads that are gone", () => {
     const result = await run({ guilds: [guild] });
 
     expect(result).toMatchObject({ error: "reminders_incomplete" });
-    // The thread, then its forum to see whether the refusal is only the thread's.
-    expect(requests.map((request) => request.method)).toEqual(["GET", "GET"]);
+    expect(requests.map((request) => request.method)).toEqual(["GET"]);
     expect(await channelStatus(guild)).toBe("active");
     expect(await threadStatus(eventId)).toBe("active");
     expect((await jobRow()).results).toMatchObject({
@@ -1322,7 +1336,7 @@ describe("a failed morning and the recovery cron", () => {
 
     expect(morning).toMatchObject({
       status: "failed",
-      error: "reminders_incomplete",
+      error: "discord_api:502",
     });
     // What the health check's freshness alert reads.
     expect(
@@ -1376,41 +1390,6 @@ describe("a failed morning and the recovery cron", () => {
     expect(await run({ guilds: [guild] })).toMatchObject({
       error: "reminders_incomplete",
     });
-  });
-
-  it("does not let a failed run's retry notify someone afresh", async () => {
-    const guild = await guildInZone();
-    const person = fakeId();
-    for (let index = 0; index < 6; index += 1) {
-      const { eventId } = await eventWithThread(guild);
-      await task(
-        guild,
-        eventId,
-        dateOffset(3),
-        `Task ${String(index)}`,
-        person,
-      );
-    }
-    let count = 0;
-    discordGate = (method) => {
-      count += method === "POST" ? 1 : 0;
-      return method === "POST" && count === 3
-        ? Response.json(
-            { global: true, retry_after: 1 },
-            { status: 429, headers: { "x-ratelimit-scope": "global" } },
-          )
-        : undefined;
-    };
-    const limits = { maxPingsPerPerson: 2 };
-
-    expect((await run({ guilds: [guild], limits })).status).toBe("failed");
-    // Still failed, because the send that was refused holds a claim too recent to retake.
-    expect((await run({ guilds: [guild], limits })).status).toBe("failed");
-
-    expect(sent.length).toBeGreaterThan(2);
-    expect(
-      sent.filter((message) => message.users.includes(person)),
-    ).toHaveLength(2);
   });
 });
 
@@ -1483,11 +1462,11 @@ describe("a rerun soon after a failed run", () => {
         ? new Response("unavailable", { status: 503 })
         : undefined;
     await run({ guilds: [guild] });
-    expect(sent.map((message) => message.threadId)).toEqual([second.threadId]);
+    expect(sent).toEqual([]);
 
     discordGate = () => undefined;
     expect((await run({ guilds: [guild] })).status).toBe("failed");
-    expect(sent).toHaveLength(1);
+    expect(sent.map((message) => message.threadId)).toEqual([second.threadId]);
   });
 
   it("does not fail on the fresh claim of a kind a newer reminder has replaced", async () => {
@@ -1692,284 +1671,8 @@ describe("what counts as a send that may have landed", () => {
   });
 });
 
-describe("a thread that refuses the bot", () => {
-  const thread = async (guild: GuildFixture, days = 3, person = fakeId()) => {
-    const made = await eventWithThread(guild);
-    const taskId = await task(
-      guild,
-      made.eventId,
-      dateOffset(days),
-      "Book",
-      person,
-    );
-    return { ...made, taskId, person };
-  };
-  const refusalsOf = async (eventId: string) => {
-    const { rows } = await database.query<{ thread_refusals: number }>(
-      `SELECT thread_refusals FROM public.events WHERE id = $1`,
-      [eventId],
-    );
-    return present(rows[0]).thread_refusals;
-  };
-  /** Runs daily with the given refusal until the reminder is held. */
-  const untilHeld = async (guild: GuildFixture, answer: () => Response) => {
-    const outcomes: string[] = [];
-    for (let index = 0; index < THREAD_REFUSALS_BEFORE_HOLD; index += 1) {
-      discordGate = (method) => (method === "POST" ? answer() : undefined);
-      outcomes.push(
-        (await run({ guilds: [guild] })).status === "duplicate"
-          ? "duplicate"
-          : (await jobRow()).status,
-      );
-      await nextDay();
-    }
-    return outcomes;
-  };
-  const CODES: [string, () => Response][] = [
-    ["50001", () => Response.json({ code: 50001 }, { status: 403 })],
-    ["50013", () => Response.json({ code: 50013 }, { status: 403 })],
-    ["160005 as a 400", () => Response.json({ code: 160005 }, { status: 400 })],
-    ["160005 as a 403", () => Response.json({ code: 160005 }, { status: 403 })],
-  ];
-
-  it.each(CODES)(
-    "fails the job only up to the limit, then holds it, for %s",
-    async (_label, answer) => {
-      const guild = await guildInZone();
-      const blocked = await thread(guild);
-
-      expect(await untilHeld(guild, answer)).toEqual([
-        "failed",
-        "failed",
-        "succeeded",
-      ]);
-
-      const { results } = await jobRow();
-      expect(results).toMatchObject({
-        threads_held: 1,
-        held_reminders: 1,
-        held_event_ids: [blocked.eventId],
-      });
-      expect(logLines.join("\n")).toContain(blocked.eventId);
-      // Held, and neither skipped nor lost.
-      expect(await logRows(blocked.taskId)).toMatchObject([
-        { kind: "three_days", state: "claimed" },
-      ]);
-      expect(
-        await getLatestSucceededJobRun(db, { jobName: "reminders" }),
-      ).toMatchObject({ ok: true, value: { status: "succeeded" } });
-    },
-  );
-
-  it("names the event in the log from the first refusal", async () => {
-    const guild = await guildInZone();
-    const blocked = await thread(guild);
-    discordGate = (method) =>
-      method === "POST"
-        ? Response.json({ code: 50001 }, { status: 403 })
-        : undefined;
-    await run({ guilds: [guild] });
-    expect(logLines.join("\n")).toContain(blocked.eventId);
-  });
-
-  it("sends the held reminder with its ping once the thread takes messages", async () => {
-    const guild = await guildInZone();
-    const blocked = await thread(guild);
-    await untilHeld(guild, () =>
-      Response.json({ code: 160005 }, { status: 400 }),
-    );
-    expect(await refusalsOf(blocked.eventId)).toBe(THREAD_REFUSALS_BEFORE_HOLD);
-
-    discordGate = () => undefined;
-    expect((await run({ guilds: [guild] })).status).toBe("succeeded");
-
-    expect(sent).toHaveLength(1);
-    expect(present(sent[0]).users).toEqual([blocked.person]);
-    expect(await logRows(blocked.taskId)).toMatchObject([
-      { kind: "three_days", state: "sent", attempts: 4 },
-    ]);
-    expect(await refusalsOf(blocked.eventId)).toBe(0);
-    expect((await jobRow()).results).not.toHaveProperty("held_event_ids");
-  });
-
-  it("starts counting again after a send lands", async () => {
-    const guild = await guildInZone();
-    const blocked = await thread(guild);
-    await task(guild, blocked.eventId, dateOffset(3), "Other");
-    await untilHeld(guild, () =>
-      Response.json({ code: 50013 }, { status: 403 }),
-    );
-    discordGate = () => undefined;
-    await run({ guilds: [guild] });
-    await nextDay();
-
-    await task(guild, blocked.eventId, dateOffset(3), "New task");
-    discordGate = (method) =>
-      method === "POST"
-        ? Response.json({ code: 50013 }, { status: 403 })
-        : undefined;
-
-    expect((await run({ guilds: [guild] })).status).toBe("failed");
-    expect(await refusalsOf(blocked.eventId)).toBe(1);
-  });
-
-  it("stays held when its task moves on to the next kind of reminder", async () => {
-    const guild = await guildInZone();
-    const blocked = await thread(guild, 3);
-    await untilHeld(guild, () =>
-      Response.json({ code: 50001 }, { status: 403 }),
-    );
-
-    discordGate = (method) =>
-      method === "POST"
-        ? Response.json({ code: 50001 }, { status: 403 })
-        : undefined;
-    const later = new Date(Date.now() + 2 * 86_400_000);
-    const result = await run({ guilds: [guild], now: () => later });
-
-    expect(result.status).toBe("succeeded");
-    expect(await logRows(blocked.taskId)).toContainEqual(
-      expect.objectContaining({ kind: "one_day", state: "claimed" }),
-    );
-  });
-
-  it("does not fail a rerun on a held reminder's fresh claim", async () => {
-    const guild = await guildInZone();
-    const blocked = await thread(guild);
-    await untilHeld(guild, () =>
-      Response.json({ code: 50001 }, { status: 403 }),
-    );
-    discordGate = (method) =>
-      method === "POST"
-        ? Response.json({ code: 50001 }, { status: 403 })
-        : undefined;
-    await run({ guilds: [guild] });
-    // A new slot, with the claim still minutes old.
-    await database.exec(
-      `UPDATE public.job_runs
-       SET started_at = started_at - interval '25 hours',
-           heartbeat_at = heartbeat_at - interval '25 hours'`,
-    );
-
-    expect((await run({ guilds: [guild] })).status).toBe("succeeded");
-    expect((await jobRow()).results).toMatchObject({
-      held_event_ids: [blocked.eventId],
-    });
-    expect((await jobRow()).results).not.toHaveProperty("fresh_claims_waiting");
-  });
-
-  it("does not let other events wait on three locked posts", async () => {
-    const guild = await guildInZone();
-    const locked = [
-      await thread(guild, 1),
-      await thread(guild, 1),
-      await thread(guild, 1),
-    ];
-    const healthy = await thread(guild, 3);
-    const lockedIds = new Set(locked.map((each) => each.threadId));
-    discordGate = (method, path) =>
-      method === "POST" &&
-      lockedIds.has(/^\/channels\/([0-9]+)/.exec(path)?.[1] ?? "")
-        ? Response.json({ code: 160005 }, { status: 400 })
-        : undefined;
-
-    await run({ guilds: [guild] });
-
-    expect(sent.map((message) => message.threadId)).toEqual([healthy.threadId]);
-  });
-
-  it("leaves an event already refusing behind ones that are not", async () => {
-    const guild = await guildInZone();
-    const blocked = await thread(guild, 1);
-    await database.query(
-      `UPDATE public.events SET thread_refusals = 1 WHERE id = $1`,
-      [blocked.eventId],
-    );
-    const healthy = await thread(guild, 3);
-
-    await run({ guilds: [guild] });
-
-    expect(sent.map((message) => message.threadId)).toEqual([
-      healthy.threadId,
-      blocked.threadId,
-    ]);
-  });
-
-  it("caps the IDs a run's row holds, and still counts them all", async () => {
-    const guild = await guildInZone();
-    for (let index = 0; index < 30; index += 1) {
-      const { eventId } = await thread(guild);
-      await database.query(
-        `UPDATE public.events SET thread_refusals = $2 WHERE id = $1`,
-        [eventId, THREAD_REFUSALS_BEFORE_HOLD],
-      );
-    }
-    discordGate = (method) =>
-      method === "POST"
-        ? Response.json({ code: 50001 }, { status: 403 })
-        : undefined;
-
-    expect((await run({ guilds: [guild] })).status).toBe("succeeded");
-
-    const { results } = await jobRow();
-    expect(results.threads_held).toBe(30);
-    expect(results.held_event_ids).toHaveLength(25);
-  });
-
-  it("stays failed for what else went wrong in the run", async () => {
-    const guild = await guildInZone();
-    const blocked = await thread(guild);
-    await database.query(
-      `UPDATE public.events SET thread_refusals = $2 WHERE id = $1`,
-      [blocked.eventId, THREAD_REFUSALS_BEFORE_HOLD],
-    );
-    const other = await thread(guild);
-    discordGate = (method, path) =>
-      method !== "POST"
-        ? undefined
-        : path.includes(blocked.threadId)
-          ? Response.json({ code: 50001 }, { status: 403 })
-          : path.includes(other.threadId)
-            ? new Response("bad", { status: 503 })
-            : undefined;
-
-    expect(await run({ guilds: [guild] })).toMatchObject({
-      status: "failed",
-      error: "reminders_incomplete",
-    });
-  });
-
-  it("stays failed if the refusal cannot be recorded", async () => {
-    const guild = await guildInZone();
-    await thread(guild);
-    discordGate = (method) =>
-      method === "POST"
-        ? Response.json({ code: 50001 }, { status: 403 })
-        : undefined;
-    sqlGate = (call) =>
-      names(call, "record_thread_refusal") ? unavailable() : undefined;
-
-    expect((await run({ guilds: [guild] })).status).toBe("failed");
-    expect((await jobRow()).results).toMatchObject({ thread_check_failed: 1 });
-  });
-
-  it("does not hold a thread failing for a reason that says nothing about it", async () => {
-    const guild = await guildInZone();
-    const blocked = await thread(guild);
-    await database.query(
-      `UPDATE public.events SET thread_refusals = $2 WHERE id = $1`,
-      [blocked.eventId, THREAD_REFUSALS_BEFORE_HOLD],
-    );
-    discordGate = (method) =>
-      method === "POST" ? new Response("bad", { status: 503 }) : undefined;
-
-    expect((await run({ guilds: [guild] })).status).toBe("failed");
-  });
-});
-
 describe("the bot removed from the server", () => {
-  const removed = () => Response.json({ code: 50001 }, { status: 403 });
-  const makeWorld = async () => {
+  it("keeps failing while every channel answers 50001, and sends once added back", async () => {
     const guild = await guildInZone();
     const first = await eventWithThread(guild);
     const second = await eventWithThread(guild);
@@ -1978,55 +1681,24 @@ describe("the bot removed from the server", () => {
       await task(guild, first.eventId, dateOffset(3), "One", person),
       await task(guild, second.eventId, dateOffset(3), "Two", person),
     ];
-    return { guild, first, second, person, taskIds };
-  };
-  const channelStatus = async (guild: GuildFixture) => {
+    discordGate = () => Response.json({ code: 50001 }, { status: 403 });
+
+    expect((await run({ guilds: [guild] })).status).toBe("failed");
+    await nextDay();
+    expect((await run({ guilds: [guild] })).status).toBe("failed");
+
+    expect((await jobRow()).results).toMatchObject({
+      channels_inaccessible: 2,
+    });
     const { rows } = await database.query<{ status: string }>(
       `SELECT status FROM public.managed_channels WHERE guild_id = $1`,
       [guild.guildId],
     );
-    return rows[0]?.status;
-  };
-
-  /** Runs daily, for longer than a thread takes to be held, and returns each run's status. */
-  const dailyStatuses = async (guild: GuildFixture) => {
-    const statuses: unknown[] = [];
-    for (let index = 0; index <= THREAD_REFUSALS_BEFORE_HOLD + 1; index += 1) {
-      await run({ guilds: [guild] });
-      statuses.push((await jobRow()).status);
-      await nextDay();
-    }
-    return statuses;
-  };
-  const refusalCounts = async (eventIds: readonly string[]) => {
-    const { rows } = await database.query<{ thread_refusals: number }>(
-      `SELECT thread_refusals FROM public.events WHERE id = ANY($1)`,
-      [eventIds],
-    );
-    return rows.map((row) => row.thread_refusals);
-  };
-
-  it("keeps failing, without holding, when every channel answers 50001", async () => {
-    const { guild, first, second, person, taskIds } = await makeWorld();
-    discordGate = () => removed();
-
-    expect(new Set(await dailyStatuses(guild))).toEqual(new Set(["failed"]));
-
-    const { results } = await jobRow();
-    expect(results).toMatchObject({ channels_inaccessible: 2 });
-    expect(results).not.toHaveProperty("threads_held");
-    expect(results).not.toHaveProperty("held_event_ids");
-    expect(
-      await getLatestSucceededJobRun(db, { jobName: "reminders" }),
-    ).toMatchObject({ ok: true, value: null });
-    expect(await refusalCounts([first.eventId, second.eventId])).toEqual([
-      0, 0,
-    ]);
-    expect(await channelStatus(guild)).toBe("active");
+    expect(rows).toEqual([{ status: "active" }]);
     expect(sent).toEqual([]);
 
-    // Added back, and what waited goes out with its ping.
     discordGate = () => undefined;
+    await nextDay();
     expect((await run({ guilds: [guild] })).status).toBe("succeeded");
     expect(sent).toHaveLength(2);
     expect(sent.every((message) => message.users.includes(person))).toBe(true);
@@ -2034,93 +1706,6 @@ describe("the bot removed from the server", () => {
       { state: "sent" },
       { state: "sent" },
     ]);
-  });
-
-  it("keeps failing too when the refusal is Unknown Guild", async () => {
-    const { guild } = await makeWorld();
-    discordGate = () => Response.json({ code: 10004 }, { status: 404 });
-
-    expect(new Set(await dailyStatuses(guild))).toEqual(new Set(["failed"]));
-    expect((await jobRow()).results).not.toHaveProperty("threads_held");
-  });
-
-  it("keeps failing too when a thread answers Unknown Channel and the forum 50001", async () => {
-    const { guild, first, second } = await makeWorld();
-    discordGate = (_method, path) =>
-      path === `/channels/${guild.channelId}`
-        ? removed()
-        : Response.json({ code: 10003 }, { status: 404 });
-
-    expect(new Set(await dailyStatuses(guild))).toEqual(new Set(["failed"]));
-
-    expect((await jobRow()).results).not.toHaveProperty("threads_held");
-    expect(await channelStatus(guild)).toBe("active");
-    const { rows } = await database.query<{ thread_status: string }>(
-      `SELECT thread_status FROM public.events WHERE id = ANY($1)`,
-      [[first.eventId, second.eventId]],
-    );
-    expect(rows).toEqual([
-      { thread_status: "active" },
-      { thread_status: "active" },
-    ]);
-  });
-
-  it("does not let a rerun pass on an event held before the bot was removed", async () => {
-    const { guild, first, second } = await makeWorld();
-    await database.query(
-      `UPDATE public.events SET thread_refusals = $2 WHERE id = ANY($1)`,
-      [[first.eventId, second.eventId], THREAD_REFUSALS_BEFORE_HOLD],
-    );
-    discordGate = () => removed();
-
-    expect((await run({ guilds: [guild] })).status).toBe("failed");
-    expect(await refusalCounts([first.eventId, second.eventId])).toEqual([
-      0, 0,
-    ]);
-    // A new slot, with the claims still minutes old, as at the recovery cron.
-    await database.exec(
-      `UPDATE public.job_runs
-       SET started_at = started_at - interval '25 hours',
-           heartbeat_at = heartbeat_at - interval '25 hours'`,
-    );
-
-    expect((await run({ guilds: [guild] })).status).toBe("failed");
-    expect((await jobRow()).results).toMatchObject({ fresh_claims_waiting: 2 });
-  });
-
-  it("does not hold when the forum check cannot say", async () => {
-    const { guild } = await makeWorld();
-    discordGate = (method, path) =>
-      method === "GET" && path === `/channels/${guild.channelId}`
-        ? new Response("bad", { status: 503 })
-        : method === "POST"
-          ? removed()
-          : undefined;
-
-    expect(new Set(await dailyStatuses(guild))).toEqual(new Set(["failed"]));
-    expect((await jobRow()).results).toMatchObject({ thread_check_failed: 2 });
-    expect((await jobRow()).results).not.toHaveProperty("threads_held");
-  });
-
-  it("still holds a thread whose forum the bot can read", async () => {
-    const { guild, first, second } = await makeWorld();
-    discordGate = (method, path) =>
-      method === "POST" && path.includes(first.threadId)
-        ? removed()
-        : undefined;
-
-    const statuses = [];
-    for (let index = 0; index < THREAD_REFUSALS_BEFORE_HOLD; index += 1) {
-      await run({ guilds: [guild] });
-      statuses.push((await jobRow()).status);
-      await nextDay();
-    }
-
-    expect(statuses).toEqual(["failed", "failed", "succeeded"]);
-    expect((await jobRow()).results).toMatchObject({
-      held_event_ids: [first.eventId],
-    });
-    expect(sent.map((message) => message.threadId)).toEqual([second.threadId]);
   });
 });
 
@@ -2259,76 +1844,7 @@ describe("the message cap", () => {
   });
 });
 
-describe("the per-person limit across days", () => {
-  it("does not count what went out before this slot", async () => {
-    const guild = await guildInZone();
-    const { eventId } = await eventWithThread(guild);
-    const person = fakeId();
-    await task(guild, eventId, dateOffset(3), "Earlier", person);
-    await run({ guilds: [guild] });
-    await nextDay();
-    await task(guild, eventId, dateOffset(3), "Later", person);
-
-    await run({ guilds: [guild], limits: { maxPingsPerPerson: 1 } });
-
-    expect(sent).toHaveLength(2);
-    expect(present(sent[1]).users).toEqual([person]);
-  });
-});
-
-describe("guilds that fail, and guilds that are busy", () => {
-  const failPostsTo = (threads: readonly string[]) => {
-    discordGate = (method, path) =>
-      method === "POST" && threads.some((thread) => path.includes(thread))
-        ? new Response("oops", { status: 500 })
-        : undefined;
-  };
-
-  it("does not let three failing events in one guild block another", async () => {
-    const failing = await guildInZone();
-    const healthy = await guildInZone();
-    const threads: string[] = [];
-    for (let index = 0; index < 6; index += 1) {
-      const { eventId, threadId } = await eventWithThread(failing);
-      threads.push(threadId);
-      await task(failing, eventId, dateOffset(-5));
-    }
-    const good = await eventWithThread(healthy);
-    const goodTask = await task(healthy, good.eventId, dateOffset(-1));
-    failPostsTo(threads);
-
-    const result = await run({ guilds: [failing, healthy] });
-
-    expect(sent.map((message) => message.threadId)).toEqual([good.threadId]);
-    expect(
-      (await logRows(goodTask)).find((row) => row.kind === "overdue"),
-    ).toMatchObject({ state: "sent" });
-    expect(posts().length).toBe(4);
-    expect(result).toMatchObject({ error: "reminders_incomplete" });
-  });
-
-  it("resets the count of failures on a success", async () => {
-    const guild = await guildInZone();
-    const events: Awaited<ReturnType<typeof eventWithThread>>[] = [];
-    for (let index = 0; index < 5; index += 1) {
-      const event = await eventWithThread(guild);
-      events.push(event);
-      // Earliest due goes first, so this fixes the order: fail, fail, ok, fail, fail.
-      await task(guild, event.eventId, dateOffset(index - 8));
-    }
-    failPostsTo([0, 1, 3, 4].map((index) => present(events[index]).threadId));
-
-    await run({ guilds: [guild] });
-
-    expect(posts()).toHaveLength(5);
-    expect(sent.map((message) => message.threadId)).toEqual([
-      present(events[2]).threadId,
-    ]);
-    const { results } = await jobRow();
-    expect(results).toMatchObject({ retry_later: 4 });
-    expect(results.deferred_retrying).toBeUndefined();
-  });
-
+describe("guilds that are busy", () => {
   it("sends events holding a stale claim after fresh ones", async () => {
     const guild = await guildInZone();
     const stale = await eventWithThread(guild);
@@ -2385,20 +1901,6 @@ describe("guilds that fail, and guilds that are busy", () => {
     await task(quiet, lone.eventId, dateOffset(3));
     await run({ guilds: [busy, quiet], limits: { maxMessages: 4 } });
     expect(sent).toHaveLength(4);
-  });
-
-  it("counts pings per guild, so one person's limit is not shared", async () => {
-    const one = await guildInZone();
-    const two = await guildInZone();
-    const person = fakeId();
-    for (const guild of [one, two]) {
-      const { eventId } = await eventWithThread(guild);
-      await task(guild, eventId, dateOffset(3), "Book", person);
-    }
-    await run({ guilds: [one, two], limits: { maxPingsPerPerson: 1 } });
-    expect(
-      sent.filter((message) => message.users.includes(person)),
-    ).toHaveLength(2);
   });
 });
 
@@ -2840,23 +2342,6 @@ describe("what a failure leaves behind", () => {
 
     expect(posts()).toEqual([]);
     expect((await jobRow()).results).toMatchObject({ claim_failed: 1 });
-  });
-
-  it("stops claiming when the database keeps refusing claims", async () => {
-    const guild = await guildInZone();
-    for (let index = 0; index < 5; index += 1) {
-      const { eventId } = await eventWithThread(guild);
-      await task(guild, eventId, dateOffset(3));
-    }
-    sqlGate = (call) =>
-      names(call, "claim_reminder") ? serverError("XX000") : undefined;
-
-    await run({ guilds: [guild] });
-
-    expect((await jobRow()).results).toMatchObject({
-      claim_failed: 3,
-      deferred_retrying: 2,
-    });
   });
 
   it("counts a send whose mark failed", async () => {

@@ -372,7 +372,7 @@ export async function listEventReminderCandidates(
     >(
       db,
       sql`select e.id, e.guild_id, e.name, e.event_date, e.thread_id, e.thread_status,
-        e.created_by, e.thread_refusals, e.pickup_time, g.timezone,
+        e.created_by, e.pickup_time, g.timezone,
         g.officer_role_id as events_director_role_id,
         ${STEP_STATUSES_OF_EVENT} as steps,
         coalesce((

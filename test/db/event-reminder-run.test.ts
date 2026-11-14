@@ -29,7 +29,6 @@ import type {
 import { createDiscordClient } from "../../src/discord/client.ts";
 import { managedChannelCheck } from "../../src/handlers/dependencies.ts";
 import {
-  THREAD_REFUSALS_BEFORE_HOLD,
   runReminders,
   type RunLimits,
   type RunResult,
@@ -613,7 +612,7 @@ describe("the recovery cron", () => {
     const failing = await event(guild, 4);
     discordGate = (method, path) =>
       method === "POST" && path.includes(failing.threadId)
-        ? new Response("{}", { status: 503 })
+        ? Response.json({ code: 0 }, { status: 404 })
         : undefined;
 
     const morning = await run([guild]);
@@ -624,7 +623,7 @@ describe("the recovery cron", () => {
       { state: "claimed" },
     ]);
 
-    // The claim must be over an hour old before the recovery cron takes it over.
+    // The claim must be stale before the recovery cron takes it over.
     await database.query(
       `UPDATE public.event_reminder_log SET claimed_at = claimed_at - interval '2 hours'`,
     );
@@ -640,28 +639,6 @@ describe("the recovery cron", () => {
     expect(await logRows(good.eventId)).toMatchObject([
       { state: "sent", attempts: 1 },
     ]);
-  });
-
-  it("does not notify people afresh on a retry in the same slot", async () => {
-    const guild = await guildInUtc();
-    const person = fakeId();
-    const first = await event(guild, 4);
-    await assign(guild, first, "budget_sheet", person);
-    await assign(guild, first, "engage_post", person);
-    await run([guild], { maxPingsPerPerson: 1 });
-    await database.query(
-      `UPDATE public.job_runs SET status = 'failed', error = 'test' WHERE job_name = 'reminders'`,
-    );
-    const second = await event(guild, 4);
-    await assign(guild, second, "budget_sheet", person);
-    await assign(guild, second, "engage_post", person);
-    sent = [];
-
-    await run([guild], { maxPingsPerPerson: 1 });
-
-    expect(sent).toHaveLength(1);
-    expect(present(sent[0]).users).toEqual([]);
-    expect(present(sent[0]).content).toContain(`<@${person}>`);
   });
 });
 
@@ -1016,13 +993,6 @@ describe("a thread that refuses the bot", () => {
     method === "POST" && path.includes(threadId)
       ? Response.json({ code: 50001 }, { status: 403 })
       : undefined;
-  const refusalsOf = async (eventId: string) => {
-    const { rows } = await database.query<{ thread_refusals: number }>(
-      `SELECT thread_refusals FROM public.events WHERE id = $1`,
-      [eventId],
-    );
-    return present(rows[0]).thread_refusals;
-  };
 
   it("counts the refusal, keeps the claim and fails the run", async () => {
     const guild = await guildInUtc();
@@ -1034,65 +1004,11 @@ describe("a thread that refuses the bot", () => {
 
     expect(result).toMatchObject({ error: "reminders_incomplete" });
     expect(sent.map((message) => message.threadId)).toEqual([other.threadId]);
-    expect(await refusalsOf(made.eventId)).toBe(1);
     expect(await logRows(made.eventId)).toMatchObject([{ state: "claimed" }]);
     expect((await jobRow()).results).toMatchObject({
       channels_inaccessible: 1,
     });
     expect(logLines.join("\n")).toContain(made.eventId);
-  });
-
-  it("holds the event once it has refused enough times", async () => {
-    const guild = await guildInUtc();
-    const made = await event(guild, 4);
-    await database.query(
-      `UPDATE public.events SET thread_refusals = $2 WHERE id = $1`,
-      [made.eventId, THREAD_REFUSALS_BEFORE_HOLD - 1],
-    );
-    discordGate = refuse(made.threadId);
-
-    const result = await run([guild]);
-
-    expect(result.status).toBe("succeeded");
-    expect((await jobRow()).results).toMatchObject({
-      threads_held: 1,
-      held_reminders: 1,
-      held_event_ids: [made.eventId],
-    });
-  });
-
-  it("counts one refusal a run when task reminders found it first", async () => {
-    const guild = await guildInUtc();
-    const made = await event(guild, 4);
-    await queryAs(
-      database,
-      "bot_app",
-      `INSERT INTO public.tasks (event_id, guild_id, assignee_id, description, due_date, created_by)
-       VALUES ($1, $2, $3, 'Book the room', $4, $5)`,
-      [made.eventId, guild.guildId, fakeId(), dateOffset(1), fakeId()],
-    );
-    discordGate = refuse(made.threadId);
-
-    await run([guild]);
-
-    expect(posts()).toHaveLength(1);
-    expect(await refusalsOf(made.eventId)).toBe(1);
-    expect((await jobRow()).results).toMatchObject({ deferred_event: 1 });
-    expect(await logRows(made.eventId)).toEqual([]);
-  });
-
-  it("clears the count once a send lands", async () => {
-    const guild = await guildInUtc();
-    const made = await event(guild, 4);
-    await database.query(
-      `UPDATE public.events SET thread_refusals = 1 WHERE id = $1`,
-      [made.eventId],
-    );
-
-    await run([guild]);
-
-    expect(sent).toHaveLength(1);
-    expect(await refusalsOf(made.eventId)).toBe(0);
   });
 });
 
@@ -1107,25 +1023,6 @@ describe("limits shared with task reminders", () => {
     expect(result.status).toBe("succeeded");
     expect(sent).toHaveLength(1);
     expect((await jobRow()).results).toMatchObject({ deferred_cap: 1 });
-  });
-
-  it("pings one person and the role no more than the limit", async () => {
-    const guild = await guildInUtc();
-    const person = fakeId();
-    for (const days of [4, 5]) {
-      const made = await event(guild, days);
-      await assign(guild, made, "budget_sheet", person);
-    }
-
-    await run([guild], { maxPingsPerPerson: 1 });
-
-    expect(sent).toHaveLength(2);
-    expect(sent.map((message) => message.users)).toEqual([[person], []]);
-    expect(sent.map((message) => message.roles)).toEqual([
-      [guild.officerRoleId],
-      [],
-    ]);
-    expect((await jobRow()).results).toMatchObject({ pings_withheld: 2 });
   });
 
   it("refuses text Discord will not take, records it skipped, and goes on", async () => {

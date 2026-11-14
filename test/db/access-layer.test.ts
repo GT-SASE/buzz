@@ -1851,7 +1851,6 @@ describe("database layer against the real schema", () => {
         description: "Book the room",
         event_name: "General meeting",
         updated_at: await versionOf(own.guildId, taskId),
-        thread_refusals: 0,
         task: {
           id: taskId,
           eventId,

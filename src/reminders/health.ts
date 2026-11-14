@@ -53,7 +53,6 @@ const FORUM_TYPES: ReadonlySet<number> = new Set([15, 16]);
 /** Counts in a reminder run's results that mean a person should look, though it succeeded. */
 const REMINDER_ATTENTION_COUNTS = [
   "deferred_cap",
-  "threads_held",
   "threads_missing",
   "events_stopped",
 ] as const;

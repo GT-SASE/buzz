@@ -19,6 +19,11 @@ export type ReminderState = "claimed" | "sent" | "skipped";
 
 /** A claim older than this was left behind by a crashed run. */
 export const STALE_CLAIM_MS = 3_600_000;
+/**
+ * A reminder goes out without notifying anyone once this many sends, counting the one about
+ * to start, may have reached Discord. A send known to have been refused does not count.
+ */
+export const MAX_ATTEMPTS_WITH_PING = 3;
 
 const MS_PER_DAY = 86_400_000;
 /** When a schedule slot starts: the first cron. Must match `begin_job_run`. */

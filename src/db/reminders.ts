@@ -1,14 +1,7 @@
 import type { DateOnly } from "../lib/dates.ts";
 import type { DbClient } from "./client.ts";
 import { refused, type DbResult } from "./errors.ts";
-import {
-  callFunction,
-  capped,
-  firstRow,
-  nullAsNotFound,
-  query,
-  sql,
-} from "./internal.ts";
+import { callFunction, capped, firstRow, query, sql } from "./internal.ts";
 import type {
   CappedList,
   EventStatus,
@@ -44,7 +37,6 @@ interface CandidateRow {
   thread_id: string | null;
   event_status: EventStatus;
   thread_status: ThreadStatus;
-  thread_refusals: number;
   timezone: string;
   log: {
     kind: ReminderKind;
@@ -62,7 +54,6 @@ function toCandidate(row: CandidateRow): ReminderCandidate {
     description: row.description,
     event_name: row.event_name,
     updated_at: row.updated_at,
-    thread_refusals: row.thread_refusals,
     // The query only returns live tasks, of live events on active channels.
     task: {
       id: row.id,
@@ -114,7 +105,7 @@ export async function listReminderCandidates(
       db,
       sql`select t.id, t.event_id, t.guild_id, t.assignee_id, t.description,
         t.due_date, t.status, t.updated_at, e.name as event_name, e.thread_id,
-        e.status as event_status, e.thread_status, e.thread_refusals, g.timezone,
+        e.status as event_status, e.thread_status, g.timezone,
         coalesce((
           select json_agg(json_build_object('kind', l.kind, 'due_date', l.due_date,
             'state', l.state, 'claimed_at', l.claimed_at))
@@ -384,37 +375,5 @@ export async function recordReminderRefused(
       p_kind => ${key.kind},
       p_due_date => ${key.dueDate},
       p_claim_token => ${key.claimToken}) as value`,
-  );
-}
-
-export interface ThreadRefusalKey {
-  guildId: string;
-  eventId: string;
-}
-
-/** Returns how many runs in a row this event's thread has now refused the bot. */
-export async function recordThreadRefusal(
-  db: DbClient,
-  key: ThreadRefusalKey,
-): Promise<DbResult<number>> {
-  // The function returns null when there is no live event with that ID in that guild.
-  return nullAsNotFound(
-    await callFunction<number | null>(
-      db,
-      sql`select public.record_thread_refusal(p_event_id => ${key.eventId},
-        p_guild_id => ${key.guildId}) as value`,
-    ),
-  );
-}
-
-/** For after a send to the thread has landed. False if there was nothing to clear. */
-export async function clearThreadRefusals(
-  db: DbClient,
-  key: ThreadRefusalKey,
-): Promise<DbResult<boolean>> {
-  return callFunction<boolean>(
-    db,
-    sql`select public.clear_thread_refusals(p_event_id => ${key.eventId},
-      p_guild_id => ${key.guildId}) as value`,
   );
 }

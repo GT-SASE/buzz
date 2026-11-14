@@ -240,7 +240,6 @@ describe("reading answers", () => {
           thread_id: USER,
           thread_status: "active",
           created_by: ACTOR,
-          thread_refusals: 0,
           pickup_time: "09:05:00",
           timezone: "America/New_York",
           events_director_role_id: role,
