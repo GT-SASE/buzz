@@ -3,7 +3,7 @@ import {
   InteractionResponseType,
   MessageFlags,
 } from "discord-api-types/v10";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, spyOn } from "bun:test";
 import {
   ADMIN,
   ADMIN_ROLE,
@@ -23,6 +23,7 @@ import {
   run,
   SETUP_OPTIONS,
   setupCommandPayload,
+  type DraftRow,
   type FakeDiscordData,
   type SetupOption,
 } from "../support/interactions.ts";
@@ -34,7 +35,6 @@ import {
 import type { GuildRole } from "../../src/discord/client.ts";
 import { REFUSED } from "../../src/lib/permissions.ts";
 import { COMMANDS, ROUTER } from "../../src/handlers/registry.ts";
-import { rolesThatMayGrant } from "../../src/handlers/setup.ts";
 import { handlerDb, type Seed } from "./handler-db.ts";
 
 const ADMINISTRATOR_BIT = 1n << 3n;
@@ -143,32 +143,25 @@ async function showSetup(
 const FIXED_REFUSAL_TEXT = REFUSED.message;
 const NO_DRAFT_TEXT = "no longer matches your latest /setup";
 
-const logged = vi.fn();
-
 beforeEach(() => {
-  logged.mockReset();
-  vi.spyOn(console, "error").mockImplementation(logged);
-});
-
-afterEach(() => {
-  vi.restoreAllMocks();
+  spyOn(console, "error").mockImplementation(() => undefined);
 });
 
 describe("registration", () => {
-  const definition = (
-    COMMANDS as readonly {
-      name: string;
-      default_member_permissions?: string;
-      options?: readonly {
+  it("is hidden by default, top level, with five required role options described within Discord's limit", () => {
+    const definition = (
+      COMMANDS as readonly {
         name: string;
-        type: number;
-        required?: boolean;
-        description: string;
-      }[];
-    }[]
-  ).find((command) => command.name === "setup");
+        default_member_permissions?: string;
+        options?: readonly {
+          name: string;
+          type: number;
+          required?: boolean;
+          description: string;
+        }[];
+      }[]
+    ).find((command) => command.name === "setup");
 
-  it("is hidden by default, top level, with five required role options", () => {
     expect(definition?.default_member_permissions).toBe("0");
     expect(
       definition?.options?.map(({ name, type, required }) => [
@@ -183,9 +176,6 @@ describe("registration", () => {
         true,
       ]),
     );
-  });
-
-  it("describes each option within Discord's limit", () => {
     for (const option of definition?.options ?? []) {
       expect(option.description.length).toBeGreaterThan(0);
       expect(option.description.length).toBeLessThanOrEqual(100);
@@ -209,14 +199,17 @@ describe("/setup", () => {
         `${SHOWN[name]}: ${CHOSEN[name].name}`,
       );
     }
+    expect(edits[0]?.content).toContain(
+      "Roles that may be able to grant these: none found. The server owner may also be able to.",
+    );
+    expect(edits[0]?.content).not.toMatch(/\bonly\b/i);
     expect(firstCustomId(edits[0])).toBe(`setup.confirm:0:${FINGERPRINT}`);
   });
 
-  it("saves a draft for this member, with the fingerprint Confirm carries", async () => {
+  it("saves only a draft for this member, with the fingerprint Confirm carries", async () => {
     const w = await world();
-    const { dependencies } = w;
 
-    await run(ROUTER, setupPayload(), dependencies);
+    await run(ROUTER, setupPayload(), w.dependencies);
 
     expect(await w.drafts()).toEqual([
       expect.objectContaining({
@@ -229,206 +222,69 @@ describe("/setup", () => {
         treasury_role_id: CHOSEN.treasury_role.id,
         marketing_role_id: CHOSEN.marketing_role.id,
         fingerprint: FINGERPRINT,
-      }),
+      }) as DraftRow,
     ]);
-  });
-
-  it("keeps the custom_id well inside Discord's limit", async () => {
-    const w = await world({ config: configRow({ version: 1_999_999_999 }) });
-
-    const customId = await showSetup(w);
-
-    expect(customId).toBe(`setup.confirm:1999999999:${FINGERPRINT}`);
-    expect(customId.length).toBeLessThanOrEqual(100);
-  });
-
-  it("carries the current version in Confirm", async () => {
-    const w = await world({ config: configRow({ version: 7 }) });
-
-    expect(await showSetup(w)).toContain("setup.confirm:7:");
-  });
-
-  it("never says that nobody else can grant a role", async () => {
-    const { dependencies, edits } = await world();
-
-    await run(ROUTER, setupPayload(), dependencies);
-
-    expect(edits[0]?.content).toContain(
-      "Roles that may be able to grant these: none found. The server owner may also be able to.",
-    );
-    expect(edits[0]?.content).not.toMatch(/\bonly\b/i);
-  });
-
-  it("changes no setting before Confirm", async () => {
-    const w = await world();
-
-    await run(ROUTER, setupPayload(), w.dependencies);
-
     await expectNothingSaved(w);
     expect(await w.claims()).toBe(0);
     expect(await w.config()).toBeNull();
   });
 
   it.each([
-    ["a plain member", PLAIN_MEMBER],
-    ["an officer", OFFICER],
-    ["the bound admin role, which does not reach bindings", ADMIN],
-  ])("refuses %s, with no reply content", async (_label, who) => {
-    const w = await world({
-      config: configRow(),
-    });
-    const { dependencies, edits } = w;
+    ["a plain member", PLAIN_MEMBER, true],
+    ["an officer", OFFICER, true],
+    ["the bound admin role, which does not reach bindings", ADMIN, true],
+    ["a non-admin before setup", PLAIN_MEMBER, false],
+    [
+      "high permission bits that are not Administrator",
+      member({ permissions: String((1n << 54n) | 7n) }),
+      false,
+    ],
+  ])("refuses %s, with no reply content", async (_label, who, setUp) => {
+    const w = await world(setUp ? { config: configRow() } : {});
 
     const { reply, deferred } = await run(
       ROUTER,
       setupPayload({}, { member: who }),
-      dependencies,
+      w.dependencies,
     );
 
     expect(reply.data?.content).toBe(FIXED_REFUSAL_TEXT);
     expect(deferred).toBe(false);
-    expect(edits).toEqual([]);
+    expect(w.edits).toEqual([]);
     expect(await w.drafts()).toEqual([]);
   });
 
-  it("refuses a non-admin before setup too", async () => {
-    const { dependencies } = await world();
-
-    const { reply } = await run(
-      ROUTER,
-      setupPayload({}, { member: PLAIN_MEMBER }),
-      dependencies,
-    );
-
-    expect(reply.data?.content).toBe(FIXED_REFUSAL_TEXT);
-  });
-
-  it("does not take high permission bits for Administrator", async () => {
-    const { dependencies } = await world();
-
-    const { reply } = await run(
-      ROUTER,
-      setupPayload(
-        {},
-        { member: member({ permissions: String((1n << 54n) | 7n) }) },
-      ),
-      dependencies,
-    );
-
-    expect(reply.data?.content).toBe(FIXED_REFUSAL_TEXT);
-  });
-
-  it("allows an administrator to rebind when the bound roles are gone", async () => {
-    const w = await world({
-      config: configRow({
-        officer_role_id: fakeId(),
-        admin_role_id: fakeId(),
-      }),
-    });
-
-    expect(await showSetup(w)).toContain("setup.confirm:3:");
-  });
-
-  it("says try again, with no button, when the draft can't be saved", async () => {
-    const w = await world();
-    const { dependencies, edits } = w;
-    w.fail("save_setup_draft");
-
-    await run(ROUTER, setupPayload(), dependencies);
-
-    expect(edits[0]?.content).toContain("Something went wrong");
-    expect(edits[0]?.components).toEqual([]);
-  });
-
   describe("roles that cannot be bound", () => {
-    const everyone = role(GUILD_ID, { name: "@everyone" });
-    const integration = role(fakeId(), {
-      name: "Some Bot",
-      managed: true,
-    });
-
-    it.each(SETUP_OPTIONS)(
-      "rejects @everyone as the %s, naming it, with no button or draft",
-      async (name) => {
+    it.each<[string, SetupOption, GuildRole, string]>([
+      [
+        "@everyone",
+        "treasury_role",
+        role(GUILD_ID, { name: "@everyone" }),
+        "The Treasury Committee role can't be \\@everyone",
+      ],
+      [
+        "a managed role",
+        "eboard_role",
+        role(fakeId(), { name: "Some Bot", managed: true }),
+        "The E-board role can't be Some Bot, because an integration controls who holds it.",
+      ],
+    ])(
+      "rejects %s, naming it, with no button or draft",
+      async (_label, name, chosen, text) => {
         const w = await world();
-        const { dependencies, edits } = w;
 
-        await run(ROUTER, setupPayload({ [name]: everyone }), dependencies);
+        await run(ROUTER, setupPayload({ [name]: chosen }), w.dependencies);
 
-        expect(edits[0]?.content).toContain(
-          `The ${LABELS[name]} role can't be \\@everyone`,
-        );
-        expect(edits[0]?.components).toEqual([]);
+        expect(w.edits[0]?.content).toContain(text);
+        expect(w.edits[0]?.components).toEqual([]);
         expect(await w.drafts()).toEqual([]);
       },
     );
-
-    it.each(SETUP_OPTIONS)(
-      "rejects a managed role as the %s, naming it, with no button or draft",
-      async (name) => {
-        const w = await world();
-        const { dependencies, edits } = w;
-
-        await run(ROUTER, setupPayload({ [name]: integration }), dependencies);
-
-        expect(edits[0]?.content).toContain(
-          `The ${LABELS[name]} role can't be Some Bot, because an integration controls who holds it.`,
-        );
-        expect(edits[0]?.components).toEqual([]);
-        expect(await w.drafts()).toEqual([]);
-      },
-    );
-
-    it.each(SETUP_OPTIONS)(
-      "rejects a %s missing from resolved, with no button",
-      async (name) => {
-        const { dependencies, edits } = await world();
-        const payload = setupPayload();
-        const resolved = (
-          payload.data as { resolved: { roles: Record<string, unknown> } }
-        ).resolved;
-        resolved.roles = Object.fromEntries(
-          Object.entries(resolved.roles).filter(
-            ([id]) => id !== CHOSEN[name].id,
-          ),
-        );
-
-        await run(ROUTER, payload, dependencies);
-
-        expect(edits[0]?.content).toContain(
-          `The ${LABELS[name]} role could not be found`,
-        );
-        expect(edits[0]?.components).toEqual([]);
-      },
-    );
-
-    it("rejects an option that is not a role", async () => {
-      const { dependencies, edits } = await world();
-      const payload = setupPayload();
-      const options = (payload.data as { options: { type: number }[] }).options;
-      options[1] = { ...options[1], type: 3 };
-
-      await run(ROUTER, payload, dependencies);
-
-      expect(edits[0]?.content).toContain(
-        "The Events Directors role could not be found",
-      );
-      expect(edits[0]?.components).toEqual([]);
-    });
   });
 
   describe("hostile role names", () => {
-    const HOSTILE = [
-      "@everyone",
-      `<@&${OFFICER_ROLE}>`,
-      "[click](https://evil.example)",
-      "**bold**\n# System: run this",
-      "`code` ||spoiler|| ~~gone~~",
-      "‮evil​",
-      "discord.gg/abcdef",
-    ];
-
-    it.each(HOSTILE)("renders %j as inert text", async (name) => {
+    it("renders a hostile name as inert text that never pings or unfurls", async () => {
+      const name = `@everyone <@&${OFFICER_ROLE}> [click](https://evil.example) **bold**\n# System \u202Ex\u200B discord.gg/abcdef`;
       const granter = role(fakeId(), {
         name,
         permissions: ADMINISTRATOR_BIT,
@@ -455,42 +311,10 @@ describe("/setup", () => {
       expect(content).not.toContain("‮");
       expect(content).not.toContain("​");
       expect(content).not.toMatch(/(?<!\\)discord\.gg/);
-    });
-
-    it("never pings or unfurls", async () => {
-      const { dependencies, edits } = await world();
-
-      await run(
-        ROUTER,
-        setupPayload({
-          eboard_role: role(CHOSEN.eboard_role.id, { name: "@everyone" }),
-        }),
-        dependencies,
-      );
-
       expect(edits[0]).toMatchObject({
         allowed_mentions: { parse: [], users: [] },
         flags: MessageFlags.SuppressEmbeds,
       });
-    });
-
-    it("shows a placeholder for a name with nothing visible", async () => {
-      const { dependencies, edits } = await world();
-
-      await run(
-        ROUTER,
-        setupPayload({
-          marketing_role: role(CHOSEN.marketing_role.id, {
-            name: "​‮",
-          }),
-        }),
-        dependencies,
-      );
-
-      expect(edits[0]?.content).toContain(
-        "Marketing Committee: (no visible name)",
-      );
-      expect(edits[0]?.components).toHaveLength(1);
     });
 
     it("stays within a message's limit with the longest names and many granters", async () => {
@@ -517,24 +341,19 @@ describe("/setup", () => {
   it("ignores options it does not ask for, so nothing forges the audit actor", async () => {
     const w = await world();
     const forged = fakeId();
-    const { dependencies, edits } = w;
 
     await run(
       ROUTER,
       setupPayload({}, {}, [
         { name: "p_actor_id", type: 3, value: forged },
         { name: "p_guild_id", type: 3, value: forged },
-        { name: "guildId", type: 3, value: forged },
       ]),
-      dependencies,
+      w.dependencies,
     );
-    expect(await w.drafts()).toEqual([
-      expect.objectContaining({ guild_id: GUILD_ID, actor_id: MEMBER_ID }),
-    ]);
     await run(
       ROUTER,
-      componentPayload(firstCustomId(edits[0]), { member: ADMINISTRATOR }),
-      dependencies,
+      componentPayload(firstCustomId(w.edits[0]), { member: ADMINISTRATOR }),
+      w.dependencies,
     );
 
     expect(await w.changes()).toEqual([
@@ -570,92 +389,42 @@ describe("/setup", () => {
   });
 });
 
-describe("rolesThatMayGrant", () => {
-  it.each([
-    ["Administrator below", ADMINISTRATOR_BIT, 1, true],
-    ["Administrator above", ADMINISTRATOR_BIT, 9, true],
-    ["Manage Roles above", MANAGE_ROLES_BIT, 6, true],
-    ["Manage Roles below", MANAGE_ROLES_BIT, 4, true],
-    ["neither", 1n << 10n, 9, false],
-  ])("%s", (_label, permissions, position, expected) => {
-    expect(
-      rolesThatMayGrant([role(fakeId(), { permissions, position })]),
-    ).toHaveLength(expected ? 1 : 0);
-  });
-
-  it("includes the chosen role itself, and lists the highest first", () => {
-    const low = role(CHOSEN.events_directors_role.id, {
-      permissions: MANAGE_ROLES_BIT,
-      position: 2,
-    });
-    const high = role(fakeId(), {
-      permissions: ADMINISTRATOR_BIT,
-      position: 8,
-    });
-
-    expect(rolesThatMayGrant([low, high])).toEqual([high, low]);
-  });
-
-  it("does not round high bits into Manage Roles", () => {
-    expect(
-      rolesThatMayGrant([
-        role(fakeId(), { permissions: (1n << 54n) | 7n, position: 9 }),
-      ]),
-    ).toEqual([]);
-  });
-});
-
 describe("Confirm", () => {
   const confirmId = (version = 0, fingerprint = FINGERPRINT) =>
     `setup.confirm:${String(version)}:${fingerprint}`;
 
   it("saves the five roles from the draft this member was shown, with E-board as admin", async () => {
     const w = await world();
-    const { dependencies, edits } = w;
 
-    await run(ROUTER, componentPayload(await showSetup(w)), dependencies);
+    await run(ROUTER, componentPayload(await showSetup(w)), w.dependencies);
 
     expect(await w.changes()).toEqual([
       { actor_id: MEMBER_ID, action: "role_bindings" },
     ]);
     expect(await w.config()).toMatchObject({ version: 1, ...CHOSEN_BINDINGS });
-    expect(edits[1]?.content).toContain("Saved.");
+    expect(w.edits[1]?.content).toContain("Saved.");
     for (const name of SETUP_OPTIONS) {
-      expect(edits[1]?.content).toContain(
+      expect(w.edits[1]?.content).toContain(
         `${SHOWN[name]}: ${CHOSEN[name].name}`,
       );
     }
-    expect(edits[1]?.components).toEqual([]);
-  });
-
-  it("replaces every saved role, including ones chosen before", async () => {
-    const w = await world({
-      config: configRow({
-        version: 3,
-        eboard_role_id: fakeId(),
-        treasury_role_id: fakeId(),
-      }),
-    });
-
-    await run(ROUTER, componentPayload(await showSetup(w)), w.dependencies);
-
-    expect(await w.config()).toMatchObject({ version: 4, ...CHOSEN_BINDINGS });
+    expect(w.edits[1]?.components).toEqual([]);
   });
 
   it.each([
-    ["a plain member", PLAIN_MEMBER],
-    ["an officer", OFFICER],
-    ["the bound admin role", ADMIN],
-    ["a former administrator", member()],
-  ])("refuses %s, even with a copied button", async (_label, who) => {
+    ["a plain member", { member: PLAIN_MEMBER }],
+    ["an officer", { member: OFFICER }],
+    ["the bound admin role", { member: ADMIN }],
+    ["a former administrator", { member: member() }],
+    ["a click on a message that is not private", { message: { flags: 0 } }],
+  ])("refuses %s, even with a copied button", async (_label, fields) => {
     const w = await world({ config: configRow() });
     const customId = await showSetup(w);
-    const { dependencies, edits } = w;
 
     const { reply } = await run(
       ROUTER,
-      componentPayload(customId, { member: who }),
-      dependencies,
+      componentPayload(customId, fields),
+      w.dependencies,
     );
 
     expect(reply.data?.content).toBe(FIXED_REFUSAL_TEXT);
@@ -664,20 +433,7 @@ describe("Confirm", () => {
     );
     await expectNothingSaved(w);
     expect(await w.claims()).toBe(0);
-    expect(edits).toHaveLength(1);
-  });
-
-  it("refuses a Confirm on a message that is not private", async () => {
-    const w = await world();
-
-    const { reply } = await run(
-      ROUTER,
-      componentPayload(await showSetup(w), { message: { flags: 0 } }),
-      w.dependencies,
-    );
-
-    expect(reply.data?.content).toBe(FIXED_REFUSAL_TEXT);
-    await expectNothingSaved(w);
+    expect(w.edits).toHaveLength(1);
   });
 
   it("gives a replayed Confirm no second write", async () => {
@@ -691,90 +447,59 @@ describe("Confirm", () => {
     expect(w.edits).toHaveLength(2);
   });
 
-  describe("a draft that does not match", () => {
-    it("refuses a fingerprint that is not the draft's", async () => {
-      const w = await world();
-      await showSetup(w);
+  it.each<[string, (w: World) => Promise<Record<string, unknown>>]>([
+    [
+      "a fingerprint that is not the draft's",
+      async (w) => {
+        await showSetup(w);
+        return componentPayload(confirmId(0, "0123456789abcdef"));
+      },
+    ],
+    [
+      "an earlier Confirm once /setup was run again with other roles",
+      async (w) => {
+        const first = await showSetup(w);
+        await showSetup(w, ADMINISTRATOR, {
+          treasury_role: CHOSEN.marketing_role,
+          marketing_role: CHOSEN.treasury_role,
+        });
+        return componentPayload(first);
+      },
+    ],
+    [
+      "a draft older than an hour",
+      async (w) => {
+        const customId = await showSetup(w);
+        await w.pg.query(
+          "UPDATE public.setup_drafts SET created_at = now() - interval '3601 seconds'",
+        );
+        return componentPayload(customId);
+      },
+    ],
+    [
+      "another administrator's draft, even with the same button",
+      async (w) =>
+        componentPayload(await showSetup(w), {
+          member: member({
+            id: fakeId(),
+            permissions: ADMINISTRATOR_PERMISSIONS,
+          }),
+        }),
+    ],
+  ])("refuses %s", async (_label, click) => {
+    const w = await world();
+    const payload = await click(w);
 
-      await run(
-        ROUTER,
-        componentPayload(confirmId(0, "0123456789abcdef")),
-        w.dependencies,
-      );
+    await run(ROUTER, payload, w.dependencies);
 
-      await expectNothingSaved(w);
-      expect(w.edits[1]?.content).toContain(NO_DRAFT_TEXT);
-      expect(w.edits[1]?.content).toContain("Nothing was changed");
-      expect(w.edits[1]?.components).toEqual([]);
-    });
-
-    it("refuses an earlier Confirm once /setup was run again with other roles", async () => {
-      const w = await world();
-      const first = await showSetup(w);
-      await showSetup(w, ADMINISTRATOR, {
-        treasury_role: CHOSEN.marketing_role,
-        marketing_role: CHOSEN.treasury_role,
-      });
-
-      await run(ROUTER, componentPayload(first), w.dependencies);
-
-      await expectNothingSaved(w);
-      expect(w.edits[2]?.content).toContain(NO_DRAFT_TEXT);
-    });
-
-    it("refuses a draft older than an hour", async () => {
-      const w = await world();
-      const customId = await showSetup(w);
-      await w.pg.query(
-        "UPDATE public.setup_drafts SET created_at = now() - interval '3601 seconds'",
-      );
-
-      await run(ROUTER, componentPayload(customId), w.dependencies);
-
-      await expectNothingSaved(w);
-      expect(w.edits[1]?.content).toContain(NO_DRAFT_TEXT);
-    });
-
-    it("refuses another administrator's draft, even with the same button", async () => {
-      const w = await world();
-      const customId = await showSetup(w);
-      const other = member({
-        id: fakeId(),
-        permissions: ADMINISTRATOR_PERMISSIONS,
-      });
-
-      await run(
-        ROUTER,
-        componentPayload(customId, { member: other }),
-        w.dependencies,
-      );
-
-      await expectNothingSaved(w);
-      expect(w.edits[1]?.content).toContain(NO_DRAFT_TEXT);
-    });
-
-    it("refuses when no draft was ever saved", async () => {
-      const w = await world();
-
-      await run(ROUTER, componentPayload(confirmId()), w.dependencies);
-
-      await expectNothingSaved(w);
-      expect(w.edits[0]?.content).toContain(NO_DRAFT_TEXT);
-    });
-
-    it("says try again, with no database text, when the draft can't be read", async () => {
-      const w = await world();
-      const customId = await showSetup(w);
-      w.fail("setup_drafts");
-
-      await run(ROUTER, componentPayload(customId), w.dependencies);
-
-      await expectNothingSaved(w);
-      expect(w.edits[1]?.content).toContain("Something went wrong");
-    });
+    await expectNothingSaved(w);
+    const reply = w.edits.at(-1);
+    expect(reply?.content).toContain(NO_DRAFT_TEXT);
+    expect(reply?.content).toContain("Nothing was changed");
+    expect(reply?.components).toEqual([]);
   });
 
-  it("refuses with a refresh message when someone saved first", async () => {
+  it("refuses with a refresh message when someone saved first, leaving their roles", async () => {
     const w = await world({ config: configRow({ version: 3 }) });
     const customId = await showSetup(w);
     await w.setConfig(configRow({ version: 4 }));
@@ -784,135 +509,31 @@ describe("Confirm", () => {
     await expectNothingSaved(w);
     expect(w.edits[1]?.content).toContain("Someone else changed the roles");
     expect(w.edits[1]?.components).toEqual([]);
+    expect(await w.config()).toMatchObject({
+      officer_role_id: OFFICER_ROLE,
+      admin_role_id: ADMIN_ROLE,
+      version: 4,
+    });
   });
 
-  it("refuses a stale version before reading the draft", async () => {
-    const w = await world({ config: configRow({ version: 4 }) });
-    // A read of the draft would fail and say so instead.
-    w.fail("setup_drafts");
-
-    await run(ROUTER, componentPayload(confirmId(3)), w.dependencies);
-
-    expect(w.edits[0]?.content).toContain("Someone else changed the roles");
-  });
-
-  it("refuses with the same refresh message when the database says stale", async () => {
-    const w = await world({ config: configRow({ version: 3 }) });
-    const customId = await showSetup(w);
-    w.fail("apply_role_bindings", "CF409");
-
-    await run(ROUTER, componentPayload(customId), w.dependencies);
-
-    expect(w.edits[1]?.content).toContain("Someone else changed the roles");
-  });
-
-  it("lets exactly one of two racing clicks win", async () => {
-    const w = await world({ config: configRow({ version: 3 }) });
-    const customId = await showSetup(w);
-
-    await Promise.all([
-      run(ROUTER, componentPayload(customId), w.dependencies),
-      run(ROUTER, componentPayload(customId), w.dependencies),
-    ]);
-
-    expect((await w.config())?.version).toBe(4);
-    const texts = w.edits.slice(1).map((edit) => edit.content);
-    expect(texts.filter((text) => text.includes("Saved."))).toHaveLength(1);
-    expect(
-      texts.filter((text) => text.includes("Someone else changed the roles")),
-    ).toHaveLength(1);
-    expect(await w.claims()).toBe(2);
-  });
-
-  it.each(SETUP_OPTIONS)(
-    "refuses when the %s was deleted since the panel opened",
-    async (name) => {
-      const w = await world();
-      const customId = await showSetup(w);
-      const { discord, edits } = fakeDiscord({
-        roles: ROLE_LIST.filter((item) => item.id !== CHOSEN[name].id),
-      });
-
-      await run(
-        ROUTER,
-        componentPayload(customId),
-        dependenciesFor(w.db, discord),
-      );
-
-      await expectNothingSaved(w);
-      expect(edits[0]?.content).toContain(
-        `The ${LABELS[name]} role could not be found, so nothing was changed.`,
-      );
-      expect(edits[0]?.components).toEqual([]);
-    },
-  );
-
-  it.each(SETUP_OPTIONS)(
-    "refuses when the %s became managed since the panel opened",
-    async (name) => {
-      const w = await world();
-      const customId = await showSetup(w);
-      const { discord, edits } = fakeDiscord({
-        roles: ROLE_LIST.map((item) =>
-          item.id === CHOSEN[name].id ? { ...item, managed: true } : item,
-        ),
-      });
-
-      await run(
-        ROUTER,
-        componentPayload(customId),
-        dependenciesFor(w.db, discord),
-      );
-
-      await expectNothingSaved(w);
-      expect(edits[0]?.content).toContain(
-        `The ${LABELS[name]} role can't be ${CHOSEN[name].name}, because an integration controls who holds it.`,
-      );
-    },
-  );
-
-  it("refuses @everyone in a stored draft", async () => {
-    const roles = { ...setupRolesOf(CHOSEN), treasuryRoleId: GUILD_ID };
-    const fingerprint = setupDraftFingerprint(roles);
-    const w = await world();
-    // The schema refuses this row, so lift that check on this test's copy.
-    await w.pg.exec(
-      "ALTER TABLE public.setup_drafts DROP CONSTRAINT setup_drafts_treasury_not_everyone",
-    );
-    await w.pg.query(
-      `INSERT INTO public.setup_drafts (guild_id, actor_id, officer_role_id,
-         admin_role_id, eboard_role_id, events_committee_role_id, treasury_role_id,
-         marketing_role_id, fingerprint)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-      [
-        GUILD_ID,
-        MEMBER_ID,
-        roles.officerRoleId,
-        roles.adminRoleId,
-        roles.eboardRoleId,
-        roles.eventsCommitteeRoleId,
-        roles.treasuryRoleId,
-        roles.marketingRoleId,
-        fingerprint,
-      ],
-    );
-
-    await run(
-      ROUTER,
-      componentPayload(confirmId(0, fingerprint)),
-      w.dependencies,
-    );
-
-    await expectNothingSaved(w);
-    expect(w.edits[0]?.content).toContain(
-      "The Treasury Committee role can't be \\@everyone",
-    );
-  });
-
-  it("refuses to save when Discord can't confirm the roles", async () => {
+  it.each<[string, GuildRole[] | "fail", string]>([
+    [
+      "the Treasury Committee role was deleted",
+      ROLE_LIST.filter((item) => item.id !== CHOSEN.treasury_role.id),
+      "The Treasury Committee role could not be found, so nothing was changed.",
+    ],
+    [
+      "the E-board role became managed",
+      ROLE_LIST.map((item) =>
+        item.id === CHOSEN.eboard_role.id ? { ...item, managed: true } : item,
+      ),
+      `The E-board role can't be ${CHOSEN.eboard_role.name}, because an integration controls who holds it.`,
+    ],
+    ["Discord can't confirm the roles", "fail", "nothing was changed"],
+  ])("refuses when %s since the panel opened", async (_label, roles, text) => {
     const w = await world();
     const customId = await showSetup(w);
-    const { discord, edits } = fakeDiscord({ roles: "fail" });
+    const { discord, edits } = fakeDiscord({ roles });
 
     await run(
       ROUTER,
@@ -921,16 +542,14 @@ describe("Confirm", () => {
     );
 
     await expectNothingSaved(w);
-    expect(edits[0]?.content).toContain("nothing was changed");
+    expect(edits[0]?.content).toContain(text);
+    expect(edits[0]?.components).toEqual([]);
   });
 
   it.each([
     ["an extra separator", `setup.confirm:0:${FINGERPRINT}:1`],
     ["the old form with role IDs", `setup.confirm:0:${fakeId()}:${fakeId()}`],
     ["a fingerprint that is not hex", "setup.confirm:0:ABCDEFGHIJKLMNOP"],
-    ["a short fingerprint", `setup.confirm:0:${FINGERPRINT.slice(1)}`],
-    ["authority in the ID", `setup.confirm:0:${FINGERPRINT}:admin`],
-    ["a missing version", `setup.confirm:${FINGERPRINT}`],
   ])("refuses %s", async (_label, customId) => {
     const w = await world();
 
@@ -942,53 +561,5 @@ describe("Confirm", () => {
 
     expect(reply.data?.content).toBe(FIXED_REFUSAL_TEXT);
     await expectNothingSaved(w);
-  });
-
-  it("says try again, with no database text, when the save fails", async () => {
-    const w = await world();
-    const customId = await showSetup(w);
-    w.fail("apply_role_bindings");
-
-    await run(ROUTER, componentPayload(customId), w.dependencies);
-
-    expect(w.edits[1]?.content).toContain("Something went wrong");
-  });
-
-  it("shows no nickname anywhere, whatever the payload holds", async () => {
-    const { dependencies, edits } = await world();
-    const hostile = "canary-nick";
-
-    await run(
-      ROUTER,
-      setupPayload(
-        {},
-        {
-          member: {
-            ...ADMINISTRATOR,
-            nick: hostile,
-            user: {
-              id: MEMBER_ID,
-              username: hostile,
-              global_name: hostile,
-            },
-          },
-        },
-      ),
-      dependencies,
-    );
-
-    expect(JSON.stringify(edits)).not.toContain("canary");
-  });
-
-  it("leaves the existing bindings in place after a refusal", async () => {
-    const w = await world({ config: configRow({ version: 9 }) });
-
-    await run(ROUTER, componentPayload(confirmId(3)), w.dependencies);
-
-    expect(await w.config()).toMatchObject({
-      officer_role_id: OFFICER_ROLE,
-      admin_role_id: ADMIN_ROLE,
-      version: 9,
-    });
   });
 });

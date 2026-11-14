@@ -3,7 +3,7 @@
  * task-done.test.ts and task-manage.test.ts do not arrange.
  */
 
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { ROUTER } from "../../src/handlers/registry.ts";
 import {
   autocompletePayload,
@@ -103,23 +103,27 @@ describe("before setup", () => {
 });
 
 describe("a failing database", () => {
-  it("answers a click with the fixed text", async () => {
-    vi.spyOn(console, "error").mockImplementation(() => undefined);
-    const { db } = await failingDb();
-    const { discord, edits } = fakeDiscord();
+  beforeEach(() => {
+    spyOn(console, "error").mockImplementation(() => undefined);
+  });
 
-    await run(
-      ROUTER,
+  it.each([
+    [
+      "a click",
       componentPayload(`task.done:${TASK_ID}`, {
         member: member(),
         message: { id: fakeId(), flags: 0 },
       }),
-      dependenciesFor(db, discord),
-    );
+    ],
+    ["/mytasks", commandPayload("mytasks", { member: member() })],
+  ])("answers %s with the fixed text", async (_name, payload) => {
+    const { db } = await failingDb();
+    const { discord, edits } = fakeDiscord();
+
+    await run(ROUTER, payload, dependenciesFor(db, discord));
 
     expect(edits).toHaveLength(1);
-    expect(edits[0]?.content).not.toContain("doesn't exist");
-    vi.restoreAllMocks();
+    expect(edits[0]?.content).toContain("Something went wrong");
   });
 
   it("reads only the guild's config before answering", async () => {
@@ -135,21 +139,6 @@ describe("a failing database", () => {
 
     expect(outcome.after).toBeDefined();
     expect(w.sent()).toBe(1);
-  });
-
-  it("answers /mytasks with the fixed text", async () => {
-    vi.spyOn(console, "error").mockImplementation(() => undefined);
-    const { db } = await failingDb();
-    const { discord, edits } = fakeDiscord();
-
-    await run(
-      ROUTER,
-      commandPayload("mytasks", { member: member() }),
-      dependenciesFor(db, discord),
-    );
-
-    expect(edits[0]?.content).toContain("Something went wrong");
-    vi.restoreAllMocks();
   });
 
   it("offers nothing in a picker", async () => {

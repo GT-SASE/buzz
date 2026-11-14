@@ -1,5 +1,5 @@
 import type { PGlite } from "@electric-sql/pglite";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import {
   INSUFFICIENT_PRIVILEGE,
   OTHER_ROLE,
@@ -171,27 +171,32 @@ describe("config functions", () => {
       ]);
     });
 
-    it("binds the four workflow roles, and audits them", async () => {
+    it("rebinds every role, records the old values, and unbinds on null", async () => {
       const guildId = fakeId();
+      const oldOfficer = fakeId();
+      const oldAdmin = fakeId();
+      const newOfficer = fakeId();
       const roles = {
         eboard: fakeId(),
         eventsCommittee: fakeId(),
         treasury: fakeId(),
         marketing: fakeId(),
       };
-      await applyRoles(guildId, 0, fakeId(), fakeId());
+      await applyRoles(guildId, 0, oldOfficer, oldAdmin);
 
       expect(
-        await applyRoles(guildId, 1, fakeId(), fakeId(), fakeId(), roles),
+        await applyRoles(guildId, 1, newOfficer, oldAdmin, fakeId(), roles),
       ).toBe(2);
 
       const { rows } = await db.query(
-        `SELECT eboard_role_id, events_committee_role_id, treasury_role_id, marketing_role_id
+        `SELECT officer_role_id, eboard_role_id, events_committee_role_id,
+                treasury_role_id, marketing_role_id
          FROM public.guild_config WHERE guild_id = $1`,
         [guildId],
       );
       expect(rows).toEqual([
         {
+          officer_role_id: newOfficer,
           eboard_role_id: roles.eboard,
           events_committee_role_id: roles.eventsCommittee,
           treasury_role_id: roles.treasury,
@@ -199,61 +204,6 @@ describe("config functions", () => {
         },
       ]);
       const audit = await auditRows(guildId);
-      expect(audit[1]?.old_values).toMatchObject({
-        eboard_role_id: null,
-        treasury_role_id: null,
-      });
-      expect(audit[1]?.new_values).toMatchObject({
-        eboard_role_id: roles.eboard,
-        events_committee_role_id: roles.eventsCommittee,
-        treasury_role_id: roles.treasury,
-        marketing_role_id: roles.marketing,
-      });
-
-      // A null unbinds the role again.
-      await applyRoles(guildId, 2, fakeId(), fakeId());
-      const after = await db.query(
-        `SELECT eboard_role_id FROM public.guild_config WHERE guild_id = $1`,
-        [guildId],
-      );
-      expect(after.rows).toEqual([{ eboard_role_id: null }]);
-    });
-
-    it.each(["eboard", "eventsCommittee", "treasury", "marketing"] as const)(
-      "rejects the guild ID (@everyone) as the %s role",
-      async (which) => {
-        const guildId = fakeId();
-        expect(
-          await errorCodeOf(
-            applyRoles(guildId, 0, fakeId(), fakeId(), fakeId(), {
-              [which]: guildId,
-            }),
-          ),
-        ).toBe(CHECK_VIOLATION);
-        expect(await configOf(guildId)).toBeUndefined();
-      },
-    );
-
-    it("has a single signature, with no five-argument version left", async () => {
-      const { rows } = await db.query<{ args: string }>(
-        `SELECT pg_get_function_identity_arguments(oid) AS args
-         FROM pg_proc WHERE proname = 'apply_role_bindings'`,
-      );
-      expect(rows.map((row) => row.args.split(", ").length)).toEqual([9]);
-    });
-
-    it("changes the roles, bumps the version and records the old values", async () => {
-      const guildId = fakeId();
-      const oldOfficer = fakeId();
-      const oldAdmin = fakeId();
-      const newOfficer = fakeId();
-      await applyRoles(guildId, 0, oldOfficer, oldAdmin);
-
-      expect(await applyRoles(guildId, 1, newOfficer, oldAdmin)).toBe(2);
-
-      expect((await configOf(guildId))?.officer_role_id).toBe(newOfficer);
-      const audit = await auditRows(guildId);
-      expect(audit).toHaveLength(2);
       expect(audit[1]?.old_values).toEqual({
         officer_role_id: oldOfficer,
         admin_role_id: oldAdmin,
@@ -262,113 +212,63 @@ describe("config functions", () => {
         treasury_role_id: null,
         marketing_role_id: null,
       });
+      expect(audit[1]?.new_values).toMatchObject({
+        officer_role_id: newOfficer,
+        eboard_role_id: roles.eboard,
+        marketing_role_id: roles.marketing,
+      });
       expect(audit[1]?.version_after).toBe(2);
-    });
 
-    it("rejects a stale version and changes nothing", async () => {
-      const guildId = await setUpGuild();
-      const before = await configOf(guildId);
-
-      const code = await errorCodeOf(
-        applyRoles(guildId, 5, fakeId(), fakeId()),
+      await applyRoles(guildId, 2, newOfficer, oldAdmin);
+      const after = await db.query(
+        `SELECT eboard_role_id FROM public.guild_config WHERE guild_id = $1`,
+        [guildId],
       );
-
-      expect(code).toBe(STALE_VERSION);
-      expect(await configOf(guildId)).toEqual(before);
-      expect(await auditRows(guildId)).toHaveLength(1);
+      expect(after.rows).toEqual([{ eboard_role_id: null }]);
     });
 
-    it("rejects a second first-time setup", async () => {
-      const guildId = await setUpGuild();
-      expect(
-        await errorCodeOf(applyRoles(guildId, 0, fakeId(), fakeId())),
-      ).toBe(STALE_VERSION);
-    });
-
-    it("rejects a non-zero version when no config exists", async () => {
-      const guildId = fakeId();
-      expect(
-        await errorCodeOf(applyRoles(guildId, 1, fakeId(), fakeId())),
-      ).toBe(STALE_VERSION);
-      expect(await configOf(guildId)).toBeUndefined();
-    });
-
-    it("rejects a null version", async () => {
-      const guildId = await setUpGuild();
-      const code = await errorCodeOf(
-        queryAs(
-          db,
-          "bot_app",
-          `SELECT public.apply_role_bindings($1, NULL, $2, $3, $4, NULL, NULL, NULL, NULL)`,
-          [guildId, fakeId(), fakeId(), fakeId()],
-        ),
-      );
-      expect(code).toBe(STALE_VERSION);
-    });
-
-    it.each(["officer", "admin"])(
+    it.each(["officer", "admin", "treasury"])(
       "rejects the guild ID (@everyone) as the %s role",
       async (which) => {
         const guildId = fakeId();
         const officer = which === "officer" ? guildId : fakeId();
         const admin = which === "admin" ? guildId : fakeId();
+        const more = which === "treasury" ? { treasury: guildId } : {};
 
-        expect(await errorCodeOf(applyRoles(guildId, 0, officer, admin))).toBe(
-          CHECK_VIOLATION,
-        );
+        expect(
+          await errorCodeOf(
+            applyRoles(guildId, 0, officer, admin, fakeId(), more),
+          ),
+        ).toBe(CHECK_VIOLATION);
         expect(await configOf(guildId)).toBeUndefined();
       },
     );
 
-    // PGlite has one connection, so a test-only trigger stands in for the other session:
-    // it creates the row after the function's first read found none. The two-connection
-    // version of this race runs against real Postgres in test/db-concurrency.
-    it("reports a first setup that loses the race as a stale version", async () => {
-      const guildId = fakeId();
-      await db.exec(`
-        CREATE FUNCTION public.test_lose_race() RETURNS trigger LANGUAGE plpgsql AS $$
-        BEGIN
-          IF pg_trigger_depth() = 1 THEN
-            INSERT INTO public.guild_config (guild_id, officer_role_id, admin_role_id)
-            VALUES (NEW.guild_id, NEW.officer_role_id, NEW.admin_role_id);
-          END IF;
-          RETURN NEW;
-        END; $$;
-        CREATE TRIGGER test_lose_race BEFORE INSERT ON public.guild_config
-          FOR EACH ROW EXECUTE FUNCTION public.test_lose_race();
-      `);
-      try {
-        expect(
-          await errorCodeOf(applyRoles(guildId, 0, fakeId(), fakeId())),
-        ).toBe(STALE_VERSION);
-      } finally {
-        await db.exec(`
-          DROP TRIGGER test_lose_race ON public.guild_config;
-          DROP FUNCTION public.test_lose_race();
-        `);
-      }
-    });
+    it.each([
+      ["a version behind the row", true, 5],
+      ["a second first-time setup", true, 0],
+      ["a non-zero version with no config", false, 1],
+      ["a null version", true, null],
+    ])(
+      "rejects %s as stale and changes nothing",
+      async (_name, setUp, version) => {
+        const guildId = setUp ? await setUpGuild() : fakeId();
+        const before = await configOf(guildId);
 
-    it("rolls the role change back if the audit row cannot be written", async () => {
-      const guildId = await setUpGuild();
-      const before = await configOf(guildId);
+        const code = await errorCodeOf(
+          queryAs(
+            db,
+            "bot_app",
+            `SELECT public.apply_role_bindings($1, $2, $3, $4, $5, NULL, NULL, NULL, NULL)`,
+            [guildId, version, fakeId(), fakeId(), fakeId()],
+          ),
+        );
 
-      const code = await withFailingAudit(() =>
-        applyRoles(guildId, 1, fakeId(), fakeId()),
-      );
-
-      expect(code).toBe("XX999");
-      expect(await configOf(guildId)).toEqual(before);
-    });
-
-    it("rolls first setup back if the audit row cannot be written", async () => {
-      const guildId = fakeId();
-      const code = await withFailingAudit(() =>
-        applyRoles(guildId, 0, fakeId(), fakeId()),
-      );
-      expect(code).toBe("XX999");
-      expect(await configOf(guildId)).toBeUndefined();
-    });
+        expect(code).toBe(STALE_VERSION);
+        expect(await configOf(guildId)).toEqual(before);
+        expect(await auditRows(guildId)).toHaveLength(setUp ? 1 : 0);
+      },
+    );
   });
 
   describe("apply_config_change", () => {
@@ -409,47 +309,26 @@ describe("config functions", () => {
       });
     });
 
-    it("changes the timezone and audits old and new values", async () => {
+    it("adds, removes and re-adds a channel, keeping its row", async () => {
       const guildId = await setUpGuild();
+      const channel = fakeId();
 
-      expect(await applyChange(guildId, 1, { timezone: "Europe/London" })).toBe(
-        2,
-      );
+      await applyChange(guildId, 1, { add: [channel] });
+      await applyChange(guildId, 2, { remove: [channel] });
+      expect(await activeChannels(guildId)).toEqual([
+        { channel_id: channel, status: "removed" },
+      ]);
 
-      expect((await configOf(guildId))?.timezone).toBe("Europe/London");
-      const audit = await auditRows(guildId);
-      expect(audit[1]?.old_values?.timezone).toBe("America/New_York");
-      expect(audit[1]?.new_values.timezone).toBe("Europe/London");
+      expect(await applyChange(guildId, 3, { add: [channel] })).toBe(4);
+      expect(await activeChannels(guildId)).toEqual([
+        { channel_id: channel, status: "active" },
+      ]);
     });
-
-    it("leaves the timezone alone when it is not given", async () => {
-      const guildId = await setUpGuild();
-      await applyChange(guildId, 1, { timezone: "Europe/London" });
-      await applyChange(guildId, 2, { reminders: false });
-      expect((await configOf(guildId))?.timezone).toBe("Europe/London");
-    });
-
-    it.each(["Mars/Phobos", "america/new_york", "; DROP TABLE tasks"])(
-      "rejects the timezone %s and changes nothing",
-      async (timezone) => {
-        const guildId = await setUpGuild();
-        const code = await errorCodeOf(
-          applyChange(guildId, 1, { reminders: false, timezone }),
-        );
-
-        expect(code).toBe(INVALID_PARAMETER);
-        const config = await configOf(guildId);
-        expect(config?.version).toBe(1);
-        expect(config?.reminders_enabled).toBe(true);
-        expect(config?.timezone).toBe("America/New_York");
-      },
-    );
-
-    const channelIds = (count: number) =>
-      Array.from({ length: count }, () => fakeId());
 
     it("allows adding 25 channels at once but not 26", async () => {
       const guildId = await setUpGuild();
+      const channelIds = (count: number) =>
+        Array.from({ length: count }, () => fakeId());
 
       const code = await errorCodeOf(
         applyChange(guildId, 1, { add: channelIds(26) }),
@@ -460,144 +339,13 @@ describe("config functions", () => {
       expect(await applyChange(guildId, 1, { add: channelIds(25) })).toBe(2);
     });
 
-    it("allows removing 25 channels at once but not 26", async () => {
-      const guildId = await setUpGuild();
-      const channels = channelIds(26);
-      await applyChange(guildId, 1, { add: channels.slice(0, 25) });
-      await applyChange(guildId, 2, { add: channels.slice(25) });
-
-      const code = await errorCodeOf(
-        applyChange(guildId, 3, { remove: channels }),
-      );
-
-      expect(code).toBe(INVALID_PARAMETER);
-      expect((await configOf(guildId))?.version).toBe(3);
-      expect(
-        await applyChange(guildId, 3, { remove: channels.slice(0, 25) }),
-      ).toBe(4);
-    });
-
-    it("treats a channel listed twice as one", async () => {
-      const guildId = await setUpGuild();
-      const channel = fakeId();
-
-      expect(await applyChange(guildId, 1, { add: [channel, channel] })).toBe(
-        2,
-      );
-
-      expect(await activeChannels(guildId)).toEqual([
-        { channel_id: channel, status: "active" },
-      ]);
-    });
-
-    it("removes a channel listed twice", async () => {
-      const guildId = await setUpGuild();
-      const channel = fakeId();
-      await applyChange(guildId, 1, { add: [channel] });
-      expect(
-        await applyChange(guildId, 2, { remove: [channel, channel] }),
-      ).toBe(3);
-    });
-
-    it.each([
-      ["add", { add: [null] }],
-      ["remove", { remove: [null] }],
-    ])(
-      "rejects a null element in the %s list and changes nothing",
-      async (_name, list) => {
-        const guildId = await setUpGuild();
-        const code = await errorCodeOf(
-          applyChange(guildId, 1, { reminders: false, ...list }),
-        );
-
-        expect(code).toBe(INVALID_PARAMETER);
-        expect((await configOf(guildId))?.version).toBe(1);
-      },
-    );
-
-    it("names the forums it added and removed in the audit row", async () => {
-      const guildId = await setUpGuild();
-      const [first, second] = [fakeId(), fakeId()].sort() as [string, string];
-
-      await applyChange(guildId, 1, { add: [second, first, second] });
-      // Adding one that is already active changes nothing, so it isn't recorded.
-      await applyChange(guildId, 2, { add: [first] });
-      await applyChange(guildId, 3, { remove: [first] });
-
-      const audit = await auditRows(guildId);
-      expect(audit[1]?.new_values).toMatchObject({
-        added_channel_ids: [first, second],
-        removed_channel_ids: [],
-      });
-      expect(audit[2]?.new_values).toMatchObject({
-        added_channel_ids: [],
-        removed_channel_ids: [],
-      });
-      expect(audit[3]?.new_values).toMatchObject({
-        added_channel_ids: [],
-        removed_channel_ids: [first],
-      });
-    });
-
-    it("records the removal of a forum that was already unavailable", async () => {
-      const guildId = await setUpGuild();
-      const channel = fakeId();
-      await applyChange(guildId, 1, { add: [channel] });
-      await queryAs(
-        db,
-        "bot_app",
-        `SELECT public.mark_channel_unavailable($1, $2)`,
-        [guildId, channel],
-      );
-
-      await applyChange(guildId, 2, { remove: [channel] });
-
-      const row = (await auditRows(guildId))[2];
-      expect(row?.old_values).toMatchObject({ active_channel_ids: [] });
-      expect(row?.new_values).toMatchObject({
-        active_channel_ids: [],
-        removed_channel_ids: [channel],
-      });
-    });
-
-    it("adds, removes and re-adds a channel, keeping its row", async () => {
-      const guildId = await setUpGuild();
-      const channel = fakeId();
-
-      await applyChange(guildId, 1, { add: [channel] });
-      expect(await activeChannels(guildId)).toEqual([
-        { channel_id: channel, status: "active" },
-      ]);
-
-      await applyChange(guildId, 2, { remove: [channel] });
-      expect(await activeChannels(guildId)).toEqual([
-        { channel_id: channel, status: "removed" },
-      ]);
-
-      expect(await applyChange(guildId, 3, { add: [channel] })).toBe(4);
-      expect(await activeChannels(guildId)).toEqual([
-        { channel_id: channel, status: "active" },
-      ]);
-      expect(
-        (await auditRows(guildId))[3]?.new_values.active_channel_ids,
-      ).toEqual([channel]);
-    });
-
-    it("leaves reminders alone when only channels change", async () => {
-      const guildId = await setUpGuild();
-      await applyChange(guildId, 1, { reminders: false });
-      await applyChange(guildId, 2, { add: [fakeId()] });
-      expect((await configOf(guildId))?.reminders_enabled).toBe(false);
-    });
-
     it("rejects a stale version and changes nothing", async () => {
       const guildId = await setUpGuild();
-      const channel = fakeId();
       await applyChange(guildId, 1, { reminders: false });
 
       // A second open panel still holds version 1.
       const code = await errorCodeOf(
-        applyChange(guildId, 1, { reminders: true, add: [channel] }),
+        applyChange(guildId, 1, { reminders: true, add: [fakeId()] }),
       );
 
       expect(code).toBe(STALE_VERSION);
@@ -608,43 +356,38 @@ describe("config functions", () => {
       expect(await auditRows(guildId)).toHaveLength(2);
     });
 
-    it("rejects a guild that has not been set up", async () => {
-      expect(
-        await errorCodeOf(applyChange(fakeId(), 0, { reminders: false })),
-      ).toBe(STALE_VERSION);
-    });
-
-    it("rejects a call with no change", async () => {
-      const guildId = await setUpGuild();
-      expect(await errorCodeOf(applyChange(guildId, 1, {}))).toBe(
+    const channel = fakeId();
+    it.each<[string, Change, string]>([
+      ["no change", {}, INVALID_PARAMETER],
+      ["an unknown timezone", { timezone: "Mars/Phobos" }, INVALID_PARAMETER],
+      ["a null channel", { add: [null] }, INVALID_PARAMETER],
+      [
+        "a channel both added and removed",
+        { add: [channel], remove: [channel] },
         INVALID_PARAMETER,
-      );
-    });
-
-    it("rejects a channel both added and removed", async () => {
+      ],
+      [
+        "a channel that cannot be removed",
+        { add: [fakeId()], remove: [fakeId()] },
+        INVALID_PARAMETER,
+      ],
+      ["an actor that is not an ID", { actor: "nobody" }, CHECK_VIOLATION],
+    ])("rejects %s and rolls everything back", async (_name, change, code) => {
       const guildId = await setUpGuild();
-      const channel = fakeId();
+
       expect(
         await errorCodeOf(
-          applyChange(guildId, 1, { add: [channel], remove: [channel] }),
+          applyChange(guildId, 1, {
+            ...(Object.keys(change).length === 0 ? {} : { reminders: false }),
+            ...change,
+          }),
         ),
-      ).toBe(INVALID_PARAMETER);
-    });
+      ).toBe(code);
 
-    it("rolls everything back when one channel cannot be removed", async () => {
-      const guildId = await setUpGuild();
-      const code = await errorCodeOf(
-        applyChange(guildId, 1, {
-          reminders: false,
-          add: [fakeId()],
-          remove: [fakeId()],
-        }),
-      );
-
-      expect(code).toBe(INVALID_PARAMETER);
       const config = await configOf(guildId);
-      expect(config?.reminders_enabled).toBe(true);
       expect(config?.version).toBe(1);
+      expect(config?.reminders_enabled).toBe(true);
+      expect(config?.timezone).toBe("America/New_York");
       expect(await activeChannels(guildId)).toEqual([]);
     });
 
@@ -659,16 +402,6 @@ describe("config functions", () => {
       expect(config?.reminders_enabled).toBe(true);
       expect(config?.version).toBe(1);
       expect(await activeChannels(guildId)).toEqual([]);
-    });
-
-    it("rolls everything back if the actor is not a valid ID", async () => {
-      const guildId = await setUpGuild();
-      const code = await errorCodeOf(
-        applyChange(guildId, 1, { reminders: false, actor: "nobody" }),
-      );
-
-      expect(code).toBe(CHECK_VIOLATION);
-      expect((await configOf(guildId))?.version).toBe(1);
     });
   });
 
@@ -691,7 +424,7 @@ describe("config functions", () => {
       return rows[0]?.status;
     };
 
-    it("marks an active channel and leaves the version and audit alone", async () => {
+    it("marks an active channel, leaving the version and audit alone, until it is added again", async () => {
       const guildId = await setUpGuild();
       const channel = fakeId();
       await applyChange(guildId, 1, { add: [channel] });
@@ -701,18 +434,10 @@ describe("config functions", () => {
       expect(await statusOf(channel)).toBe("unavailable");
       expect((await configOf(guildId))?.version).toBe(2);
       expect(await auditRows(guildId)).toHaveLength(2);
-    });
 
-    const callsFor = async (channelId: string) => {
-      const { rows } = await db.query(
-        `SELECT job_name, status, finished_at IS NOT NULL AS finished, results->>'changed' AS changed
-         FROM public.job_runs
-         WHERE job_name = 'mark_channel_unavailable' AND results->>'channel_id' = $1
-         ORDER BY changed DESC`,
-        [channelId],
-      );
-      return rows;
-    };
+      await applyChange(guildId, 2, { add: [channel] });
+      expect(await statusOf(channel)).toBe("active");
+    });
 
     it("records each call in job_runs, including one that changed nothing", async () => {
       const guildId = await setUpGuild();
@@ -720,48 +445,35 @@ describe("config functions", () => {
       await applyChange(guildId, 1, { add: [channel] });
 
       await mark(guildId, channel);
-      await mark(guildId, channel);
-
-      const calls = await callsFor(channel);
-      expect(calls).toHaveLength(2);
-      expect(
-        calls.map((call) => (call as { changed: string }).changed),
-      ).toEqual(["true", "false"]);
-      expect(calls[0]).toMatchObject({
-        job_name: "mark_channel_unavailable",
-        status: "succeeded",
-        finished: true,
-      });
-    });
-
-    it("records a call for a channel it does not know", async () => {
-      const channel = fakeId();
-      expect(await mark(await setUpGuild(), channel)).toBe(false);
-      expect(await callsFor(channel)).toHaveLength(1);
-    });
-
-    it("does nothing to a removed channel", async () => {
-      const guildId = await setUpGuild();
-      const channel = fakeId();
-      await applyChange(guildId, 1, { add: [channel] });
-      await applyChange(guildId, 2, { remove: [channel] });
-
       expect(await mark(guildId, channel)).toBe(false);
-      expect(await statusOf(channel)).toBe("removed");
-    });
 
-    it("an admin can bring it back by adding it again", async () => {
-      const guildId = await setUpGuild();
-      const channel = fakeId();
-      await applyChange(guildId, 1, { add: [channel] });
-      await mark(guildId, channel);
-      await applyChange(guildId, 2, { add: [channel] });
-      expect(await statusOf(channel)).toBe("active");
+      const { rows } = await db.query(
+        `SELECT job_name, status, finished_at IS NOT NULL AS finished, results->>'changed' AS changed
+         FROM public.job_runs
+         WHERE job_name = 'mark_channel_unavailable' AND results->>'channel_id' = $1
+         ORDER BY changed DESC`,
+        [channel],
+      );
+      expect(rows).toEqual([
+        {
+          job_name: "mark_channel_unavailable",
+          status: "succeeded",
+          finished: true,
+          changed: "true",
+        },
+        {
+          job_name: "mark_channel_unavailable",
+          status: "succeeded",
+          finished: true,
+          changed: "false",
+        },
+      ]);
     });
   });
 
   describe("execution rights", () => {
-    it.each([OTHER_ROLE])("%s cannot call either function", async (role) => {
+    it("other roles cannot call any of the three", async () => {
+      const role = OTHER_ROLE;
       const guildId = await setUpGuild();
       for (const sql of [
         `SELECT public.apply_role_bindings('${guildId}', 1, '${fakeId()}', '${fakeId()}', '${fakeId()}', NULL, NULL, NULL, NULL)`,

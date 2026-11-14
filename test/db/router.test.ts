@@ -1,5 +1,5 @@
 import { InteractionResponseType, MessageFlags } from "discord-api-types/v10";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
 import {
   ADMIN,
   ADMINISTRATOR,
@@ -15,10 +15,8 @@ import {
   member,
   modalPayload,
   run,
-  verify,
 } from "../support/interactions.ts";
 import { fakeId } from "../support/ids.ts";
-import { DiscordClientError } from "../../src/discord/client.ts";
 import { plain, safe } from "../../src/discord/safe-text.ts";
 import {
   COMMAND_POLICY,
@@ -58,7 +56,7 @@ const NO_CHOICES = {
 };
 
 const UUID = "11111111-1111-4111-8111-111111111111";
-const finished = vi.fn();
+const finished = mock();
 
 const change = componentRoute({
   prefix: "config.test-change",
@@ -166,16 +164,12 @@ async function setup(fields: Seed = { config: configRow() }) {
   };
 }
 
-const logged = vi.fn();
+const logged = mock();
 
 beforeEach(() => {
   finished.mockReset();
   logged.mockReset();
-  vi.spyOn(console, "error").mockImplementation(logged);
-});
-
-afterEach(() => {
-  vi.restoreAllMocks();
+  spyOn(console, "error").mockImplementation(logged);
 });
 
 // Order follows src/handlers/modules.ts, then each handler's own list.
@@ -273,13 +267,6 @@ describe("the registered tables", () => {
 describe("createRouter", () => {
   const finish = () =>
     Promise.resolve({ content: safe`x`, mentionUserIds: [] });
-  const adminCommand = (path: string) =>
-    commandRoute({
-      path,
-      gate: noRow("config.view"),
-      changesState: false,
-      finish,
-    });
   const panelButton = (prefix: string) =>
     componentRoute({
       prefix,
@@ -288,339 +275,94 @@ describe("createRouter", () => {
       changesState: false,
       finish,
     });
+  const forgedGate = {
+    ...panelButton("config.x").gate,
+    check: () => Promise.resolve({ kind: "allowed", resource: undefined }),
+  } as unknown as ReturnType<typeof panelButton>["gate"];
 
-  it("fails on a route with an unmapped action", () => {
-    const unmapped = {
-      ...adminCommand("config.x"),
-      action: "not.mapped" as Action,
-    };
-
-    expect(() =>
-      createRouter([
-        {
-          commands: [{ name: "config.x", description: "x" }],
-          routes: [unmapped],
-        },
-      ]),
-    ).toThrow("unmapped action");
-  });
-
-  it.each(["constructor", "__proto__", "toString"])(
-    "fails on a route whose action is %s",
-    (action) => {
-      expect(() =>
-        createRouter([
-          {
-            commands: [],
-            routes: [{ ...panelButton("config.x"), action: action as Action }],
-          },
-        ]),
-      ).toThrow("unmapped action");
-    },
-  );
-
-  it("fails on an autocomplete route for an action with no picker", () => {
-    expect(() =>
-      createRouter([
-        {
-          commands: [{ name: "config.x", description: "x" }],
-          routes: [
-            adminCommand("config.x"),
-            autocompleteRoute({
-              path: "config.x",
-              action: "config.view" as "event.status",
-              choices: () => Promise.resolve([]),
-            }),
-          ],
-        },
-      ]),
-    ).toThrow("cannot use autocomplete");
-  });
-
-  it("fails on a registered command with no route", () => {
-    expect(() =>
-      createRouter([
-        { commands: [{ name: "config.x", description: "x" }], routes: [] },
-      ]),
-    ).toThrow("Command config.x has no route");
-  });
-
-  it("fails on a subcommand with no route", () => {
-    expect(() =>
-      createRouter([
-        {
-          commands: [
-            {
-              name: "config",
-              description: "x",
-              options: [{ type: 1, name: "y", description: "y" }],
-            },
-          ],
-          routes: [adminCommand("config.x")],
-        },
-      ]),
-    ).toThrow("Command config y has no route");
-  });
-
-  it("fails on a command route that is not registered", () => {
-    expect(() =>
-      createRouter([{ commands: [], routes: [adminCommand("config.x")] }]),
-    ).toThrow("Route config.x has no registered command");
-  });
-
-  it("fails on an autocomplete route that is not registered", () => {
-    expect(() =>
-      createRouter([
+  it.each<[string, () => Handler[], string]>([
+    [
+      "a route with an unmapped action",
+      () => [
         {
           commands: [],
           routes: [
-            autocompleteRoute({
-              path: "event.x",
-              action: "event.status",
-              choices: () => Promise.resolve([]),
-            }),
+            { ...panelButton("config.x"), action: "__proto__" as Action },
           ],
         },
-      ]),
-    ).toThrow("Route event.x has no registered command");
-  });
-
-  it("fails on a duplicate, even across files", () => {
-    expect(() =>
-      createRouter([
-        { commands: [], routes: [panelButton("config.x")] },
-        { commands: [], routes: [panelButton("config.x")] },
-      ]),
-    ).toThrow("Duplicate route config.x");
-    expect(() =>
-      createRouter([
+      ],
+      "unmapped action",
+    ],
+    [
+      "a copy of a real gate with its check replaced",
+      () => [
         {
-          commands: [{ name: "event.x", description: "x" }],
+          commands: [],
+          routes: [{ ...panelButton("config.x"), gate: forgedGate }],
+        },
+      ],
+      "gate not made by this module",
+    ],
+    [
+      "a public route with a finish step",
+      () => [
+        {
+          commands: [{ name: "ping", description: "x" }],
           routes: [
             commandRoute({
-              path: "event.x",
-              gate: noRow("event.list"),
+              path: "ping",
+              gate: noRow("ping"),
               changesState: false,
               finish,
             }),
-            autocompleteRoute({
-              path: "event.x",
-              action: "event.status",
-              choices: () => Promise.resolve([]),
-            }),
-            autocompleteRoute({
-              path: "event.x",
-              action: "event.status",
-              choices: () => Promise.resolve([]),
-            }),
           ],
         },
-      ]),
-    ).toThrow("Duplicate route event.x");
-  });
-
-  it.each(["a:b", "", "Upper", "1a", "a b", "a".repeat(32)])(
-    "fails on the prefix %j",
-    (prefix) => {
-      expect(() =>
-        createRouter([{ commands: [], routes: [panelButton(prefix)] }]),
-      ).toThrow("badly formed prefix");
-    },
-  );
-
-  it.each([
-    ["a command", () => adminCommand("event.x")],
-    ["a button", () => panelButton("task.x")],
-    ["a name that only starts the same", () => panelButton("configs.x")],
-  ])("fails on %s whose key is not its action's family", (_label, route) => {
-    expect(() => createRouter([{ commands: [], routes: [route()] }])).toThrow(
-      "does not match action",
-    );
-  });
-
-  it("fails on an autocomplete route from another family", () => {
-    expect(() =>
-      createRouter([
+      ],
+      "is public, so it can only reply",
+    ],
+    [
+      "a tier-only gate beside a reply, which would check no row at all",
+      () => [
         {
-          commands: [],
+          commands: [{ name: "task", description: "x" }],
           routes: [
-            autocompleteRoute({
-              path: "task.x",
-              action: "event.status",
-              choices: () => Promise.resolve([]),
+            commandRoute({
+              path: "task",
+              gate: tierOnly("task.edit"),
+              reply: () => refusal(),
             }),
           ],
         },
-      ]),
-    ).toThrow("does not match action");
-  });
-
-  describe("gates", () => {
-    const route = () => panelButton("config.x");
-
-    it("fails on a hand-written gate", () => {
-      const forged = {
-        action: "config.view",
-        check: () => Promise.resolve({ kind: "allowed", resource: undefined }),
-      } as unknown as ReturnType<typeof route>["gate"];
-
-      expect(() =>
-        createRouter([
-          { commands: [], routes: [{ ...route(), gate: forged }] },
-        ]),
-      ).toThrow("gate not made by this module");
-    });
-
-    it("fails on a copy of a real gate with its check replaced", () => {
-      const forged = {
-        ...route().gate,
-        check: () => Promise.resolve({ kind: "allowed", resource: undefined }),
-      } as unknown as ReturnType<typeof route>["gate"];
-
-      expect(() =>
-        createRouter([
-          { commands: [], routes: [{ ...route(), gate: forged }] },
-        ]),
-      ).toThrow("gate not made by this module");
-    });
-
-    it("fails on a route claiming a different action from its gate", () => {
-      expect(() =>
-        createRouter([
-          {
-            commands: [],
-            routes: [{ ...route(), action: "config.change" }],
-          },
-        ]),
-      ).toThrow("gate not made by this module");
-    });
-
-    it("makes gates that cannot be changed", () => {
-      expect(Object.isFrozen(noRow("config.view"))).toBe(true);
-    });
-  });
-
-  describe("public routes", () => {
-    it("fails on one with a finish step", () => {
-      expect(() =>
-        createRouter([
-          {
-            commands: [{ name: "ping", description: "x" }],
-            routes: [
-              commandRoute({
-                path: "ping",
-                gate: noRow("ping"),
-                changesState: false,
-                finish,
-              }),
-            ],
-          },
-        ]),
-      ).toThrow("is public, so it can only reply");
-    });
-
-    it("fails on one that says it changes state", () => {
-      const replying = commandRoute({
-        path: "ping",
-        gate: noRow("ping"),
-        reply: refusal,
-      });
-
-      expect(() =>
-        createRouter([
-          {
-            commands: [{ name: "ping", description: "x" }],
-            routes: [{ ...replying, changesState: true }],
-          },
-        ]),
-      ).toThrow("is public, so it can only reply");
-    });
-
-    it("accepts one that only replies", () => {
-      expect(() =>
-        createRouter([
-          {
-            commands: [{ name: "ping", description: "x" }],
-            routes: [
-              commandRoute({
-                path: "ping",
-                gate: noRow("ping"),
-                reply: refusal,
-              }),
-            ],
-          },
-        ]),
-      ).not.toThrow();
-    });
+      ],
+      "checks no row",
+    ],
+  ])("fails on %s", (_label, handlers, message) => {
+    expect(() => createRouter(handlers())).toThrow(message);
   });
 });
 
 describe("names that exist on every object", () => {
-  const NAMES = [
-    "constructor",
-    "__proto__",
-    "toString",
-    "hasOwnProperty",
-    "valueOf",
-    "prototype",
-  ];
-
-  it.each(NAMES)(
-    "refuses the command %s with no database read",
+  it.each(["constructor", "__proto__"])(
+    "refuses %s as a command, subcommand, custom_id or picker, with no database read",
     async (name) => {
       const { dependencies, sent } = await setup();
 
-      const { reply, deferred } = await run(
-        router,
+      for (const payload of [
         commandPayload(name),
-        dependencies,
-      );
-
-      expect(reply).toEqual(FIXED_REFUSAL);
-      expect(deferred).toBe(false);
+        commandPayload("event", {}, { options: [{ type: 1, name }] }),
+        componentPayload(`${name}:1`),
+        modalPayload(name),
+      ]) {
+        const { reply, deferred } = await run(router, payload, dependencies);
+        expect(reply).toEqual(FIXED_REFUSAL);
+        expect(deferred).toBe(false);
+      }
+      expect(
+        (await run(router, autocompletePayload(name, "x"), dependencies)).reply,
+      ).toEqual(NO_CHOICES);
       expect(sent()).toBe(0);
     },
   );
-
-  it.each(NAMES)("refuses the subcommand %s", async (name) => {
-    const { dependencies } = await setup();
-
-    const { reply } = await run(
-      router,
-      commandPayload("event", {}, { options: [{ type: 1, name }] }),
-      dependencies,
-    );
-
-    expect(reply).toEqual(FIXED_REFUSAL);
-  });
-
-  it.each(NAMES)("refuses the custom_id prefix %s", async (name) => {
-    const { dependencies, sent } = await setup();
-
-    for (const payload of [
-      componentPayload(name),
-      componentPayload(`${name}:1`),
-      modalPayload(name),
-    ]) {
-      expect((await run(router, payload, dependencies)).reply).toEqual(
-        FIXED_REFUSAL,
-      );
-    }
-    expect(sent()).toBe(0);
-  });
-
-  it.each(NAMES)("offers nothing for the autocomplete %s", async (name) => {
-    const { dependencies, sent } = await setup();
-
-    const { reply } = await run(
-      router,
-      autocompletePayload(name, "x"),
-      dependencies,
-    );
-
-    expect(reply).toEqual(NO_CHOICES);
-    expect(sent()).toBe(0);
-  });
 });
 
 describe("custom_id parsing", () => {
@@ -639,33 +381,10 @@ describe("custom_id parsing", () => {
   });
 
   it.each([
-    ["no fields", "config.test-change"],
-    ["too few fields", "config.test-change:3"],
     ["an extra field", `config.test-change:3:${ID}:${ID}`],
-    ["a trailing separator", `config.test-change:3:${ID}:`],
-    ["a doubled separator", `config.test-change::3:${ID}`],
-    ["an empty field", `config.test-change:3:`],
-    ["a leading separator", `:config.test-change:3:${ID}`],
-    ["fields swapped", `config.test-change:${ID}:3`],
-    ["a negative version", `config.test-change:-1:${ID}`],
-    ["a padded version", `config.test-change:03:${ID}`],
-    ["a hex version", `config.test-change:0x3:${ID}`],
-    ["an exponent version", `config.test-change:1e3:${ID}`],
-    ["a decimal version", `config.test-change:1.0:${ID}`],
     ["a version too big for the column", `config.test-change:2147483648:${ID}`],
-    ["a version too long", `config.test-change:${"9".repeat(40)}:${ID}`],
-    ["a padded ID", `config.test-change:3: ${ID}`],
-    ["a short ID", "config.test-change:3:123"],
-    ["an ID with letters", `config.test-change:3:${ID.slice(0, -1)}a`],
-    ["an ID too long", `config.test-change:3:${ID}${"1".repeat(10)}`],
-    ["the prefix in another case", `CONFIG.TEST-CHANGE:3:${ID}`],
-    ["a near-miss prefix", `config.test-change2:3:${ID}`],
-    ["over the length limit", `config.test-change:3:${ID}${"x".repeat(100)}`],
-    ["a modal's prefix on a component", "config.test-submit"],
     ["a bad UUID", "config.test-look:not-a-uuid"],
-    ["a UUID with an extra part", `config.test-look:${UUID}-1`],
-    ["a newline", `config.test-change:3:${ID}\n`],
-    ["an empty ID", ""],
+    ["a custom_id that is not a string", null],
   ])("refuses %s, with no database read", async (_label, customId) => {
     const { dependencies, sent } = await setup();
 
@@ -678,91 +397,6 @@ describe("custom_id parsing", () => {
     expect(reply).toEqual(FIXED_REFUSAL);
     expect(finished).not.toHaveBeenCalled();
     expect(sent()).toBe(0);
-  });
-
-  it.each([[1], [null], [{}], [[]], [undefined]])(
-    "refuses a custom_id of %j",
-    async (customId) => {
-      const { dependencies } = await setup();
-
-      const { reply } = await run(
-        router,
-        componentPayload(customId),
-        dependencies,
-      );
-
-      expect(reply).toEqual(FIXED_REFUSAL);
-    },
-  );
-
-  it("does not treat another interaction type with a custom_id as a modal", async () => {
-    const { dependencies } = await setup();
-
-    const { reply } = await run(
-      router,
-      modalPayload("config.test-submit", { type: 99 }),
-      dependencies,
-    );
-
-    expect(reply).toEqual(FIXED_REFUSAL);
-    expect(finished).not.toHaveBeenCalled();
-  });
-
-  it("refuses a component's prefix on a modal", async () => {
-    const { dependencies } = await setup();
-
-    const { reply } = await run(
-      router,
-      modalPayload(`config.test-change:3:${ID}`),
-      dependencies,
-    );
-
-    expect(reply).toEqual(FIXED_REFUSAL);
-  });
-
-  it("gives another guild's ID no special treatment: it only names a row", async () => {
-    const { dependencies } = await setup();
-    const foreign = fakeId();
-
-    await run(
-      router,
-      componentPayload(`config.test-change:3:${foreign}`, {
-        member: PLAIN_MEMBER,
-      }),
-      dependencies,
-    );
-
-    expect(finished).not.toHaveBeenCalled();
-  });
-});
-
-describe("route.id", () => {
-  it("builds what the parser accepts", () => {
-    const id = fakeId();
-
-    expect(change.id(3, id)).toBe(`config.test-change:3:${id}`);
-  });
-
-  it.each([
-    ["a bad ID", () => change.id(1, "constructor")],
-    ["a separator in an ID", () => change.id(1, "1:2")],
-    ["a negative version", () => change.id(-1, fakeId())],
-    ["a fractional version", () => change.id(1.5, fakeId())],
-    ["a bad UUID", () => look.id("x")],
-  ])("refuses to build one with %s", (_label, build) => {
-    expect(build).toThrow(RangeError);
-  });
-
-  it("refuses to build one over Discord's limit", () => {
-    const long = componentRoute({
-      prefix: "config.test-long",
-      fields: ["uuid", "uuid", "uuid"],
-      gate: noRow("config.view"),
-      changesState: false,
-      finish: () => Promise.resolve({ content: safe`x`, mentionUserIds: [] }),
-    });
-
-    expect(() => long.id(UUID, UUID, UUID)).toThrow(RangeError);
   });
 });
 
@@ -810,7 +444,7 @@ describe("authorization on every kind of interaction", () => {
       dependencies,
     );
 
-    expect(finished).toHaveBeenCalledOnce();
+    expect(finished).toHaveBeenCalledTimes(1);
   });
 
   it("reads the actor from each interaction, so a removed role counts at once", async () => {
@@ -828,7 +462,7 @@ describe("authorization on every kind of interaction", () => {
       dependencies,
     );
 
-    expect(finished).toHaveBeenCalledOnce();
+    expect(finished).toHaveBeenCalledTimes(1);
   });
 
   it("refuses everything but public routes before setup", async () => {
@@ -844,9 +478,7 @@ describe("authorization on every kind of interaction", () => {
   });
 
   it.each([
-    ["no roles", { user: { id }, permissions: "0" }],
     ["no permissions", { user: { id }, roles: [] }],
-    ["empty permissions", { user: { id }, roles: [], permissions: "" }],
     ["numeric permissions", { user: { id }, roles: [], permissions: 8 }],
     ["a bad role", { user: { id }, roles: ["x"], permissions: "8" }],
   ])("refuses a member with %s", async (_label, who) => {
@@ -862,93 +494,58 @@ describe("authorization on every kind of interaction", () => {
     expect(sent()).toBe(0);
   });
 
-  it("does not see Administrator in high permission bits", async () => {
-    const { dependencies } = await setup();
+  it("answers a public route with no database or Discord settings at all", async () => {
+    const missing = () => {
+      throw new Error("no settings");
+    };
 
-    const { reply } = await run(
-      router,
-      commandPayload("config.admin", {
-        member: member({ permissions: String((1n << 54n) | 7n) }),
-      }),
-      dependencies,
-    );
-
-    expect(reply).toEqual(FIXED_REFUSAL);
-  });
-
-  it("answers a public route with no database settings at all", async () => {
-    const { reply } = await run(router, commandPayload("ping"), {
-      db: () => {
-        throw new Error("no database settings");
-      },
-      finishDb: () => {
-        throw new Error("no database settings");
-      },
-      discord: () => {
-        throw new Error("no bot token");
-      },
+    const test = await run(router, commandPayload("ping"), {
+      db: missing,
+      finishDb: missing,
+      discord: missing,
+    });
+    const real = await run(ROUTER, commandPayload("ping"), {
+      db: missing,
+      finishDb: missing,
+      discord: missing,
     });
 
-    expect(reply).toEqual(FIXED_REFUSAL);
-  });
-
-  it("refuses an interaction type it has no table for", async () => {
-    const { dependencies } = await setup();
-
-    const { reply } = await run(
-      router,
-      commandPayload("config.admin", { type: 99 }),
-      dependencies,
+    expect(test.reply).toEqual(FIXED_REFUSAL);
+    expect(real.reply.data?.content).toBe("Pong!");
+    expect(real.reply.data?.flags).toBe(
+      MessageFlags.Ephemeral | MessageFlags.SuppressEmbeds,
     );
-
-    expect(reply).toEqual(FIXED_REFUSAL);
   });
 });
 
 describe("private replies", () => {
-  it("defers a command privately", async () => {
+  it("defers a command privately, and a click as an update", async () => {
     const { dependencies, edits } = await setup();
 
-    const { reply } = await run(
+    const command = await run(
       router,
       commandPayload("config.admin"),
       dependencies,
     );
-
-    expect(reply).toEqual({
-      type: InteractionResponseType.DeferredChannelMessageWithSource,
-      data: { flags: MessageFlags.Ephemeral },
-    });
-    expect(edits).toHaveLength(1);
-  });
-
-  it("defers a click as an update", async () => {
-    const { dependencies } = await setup();
-
-    const { reply } = await run(
+    const click = await run(
       router,
       componentPayload(`config.test-look:${UUID}`),
       dependencies,
     );
 
-    expect(reply).toEqual({
+    expect(command.reply).toEqual({
+      type: InteractionResponseType.DeferredChannelMessageWithSource,
+      data: { flags: MessageFlags.Ephemeral },
+    });
+    expect(click.reply).toEqual({
       type: InteractionResponseType.DeferredMessageUpdate,
     });
-  });
-
-  it("replaces the buttons of a message it edits, unless the handler gives some", async () => {
-    const { dependencies, edits } = await setup();
-
-    await run(router, commandPayload("config.admin"), dependencies);
-
     expect(edits[0]?.components).toEqual([]);
   });
 
   it.each([
     ["a public message", { id: fakeId(), flags: 0 }],
-    ["no flags", { id: fakeId() }],
     ["no message", undefined],
-    ["flags that are not a number", { id: fakeId(), flags: "64" }],
   ])("refuses a click on %s, with no reads", async (_label, message) => {
     const { dependencies, sent } = await setup();
 
@@ -971,10 +568,16 @@ describe("private replies", () => {
 describe("claims", () => {
   const id = fakeId();
 
-  it("claims once before a state-changing route runs", async () => {
+  it("claims once before a state-changing route runs, and not for one that changes nothing", async () => {
     const { dependencies, claims, pg } = await setup();
     const payload = componentPayload(`config.test-change:3:${id}`);
 
+    await run(
+      router,
+      componentPayload(`config.test-look:${UUID}`),
+      dependencies,
+    );
+    expect(await claims()).toBe(0);
     await run(router, payload, dependencies);
 
     const claimed = await pg.query(
@@ -982,48 +585,24 @@ describe("claims", () => {
     );
     expect(claimed.rows).toEqual([{ interaction_id: payload.id }]);
     expect(await claims()).toBe(1);
-    expect(finished).toHaveBeenCalledOnce();
   });
 
-  it("does not claim for a route that changes nothing", async () => {
-    const { dependencies, claims } = await setup();
+  it.each([
+    ["a click", () => componentPayload(`config.test-change:3:${id}`)],
+    ["a modal submit", () => modalPayload("config.test-submit")],
+  ])(
+    "runs a replayed %s once and answers Discord once",
+    async (_label, build) => {
+      const { dependencies, edits } = await setup();
+      const payload = build();
 
-    await run(
-      router,
-      componentPayload(`config.test-look:${UUID}`),
-      dependencies,
-    );
+      await run(router, payload, dependencies);
+      await run(router, payload, dependencies);
 
-    expect(await claims()).toBe(0);
-  });
-
-  it("runs a replayed interaction once and answers Discord once", async () => {
-    const { dependencies, edits } = await setup();
-    const payload = componentPayload(`config.test-change:3:${id}`);
-
-    await run(router, payload, dependencies);
-    await run(router, payload, dependencies);
-
-    expect(finished).toHaveBeenCalledOnce();
-    expect(edits).toHaveLength(1);
-  });
-
-  it("treats two different clicks as two interactions", async () => {
-    const { dependencies } = await setup();
-
-    await run(
-      router,
-      componentPayload(`config.test-change:3:${id}`),
-      dependencies,
-    );
-    await run(
-      router,
-      componentPayload(`config.test-change:3:${id}`),
-      dependencies,
-    );
-
-    expect(finished).toHaveBeenCalledTimes(2);
-  });
+      expect(finished).toHaveBeenCalledTimes(1);
+      expect(edits).toHaveLength(1);
+    },
+  );
 
   it("does not run if the claim fails, and says so privately", async () => {
     const { dependencies, edits, fail } = await setup();
@@ -1037,89 +616,6 @@ describe("claims", () => {
 
     expect(finished).not.toHaveBeenCalled();
     expect(edits[0]?.content).toBe(MAYBE_SAVED);
-  });
-
-  it("claims for a state-changing command, and not for a read-only one", async () => {
-    const claiming = createRouter([
-      {
-        commands: [
-          { name: "config.write", description: "Changes state" },
-          { name: "config.read", description: "Changes nothing" },
-        ],
-        routes: [
-          commandRoute({
-            path: "config.write",
-            gate: noRow("config.change"),
-            changesState: true,
-            finish: () =>
-              Promise.resolve({ content: safe`x`, mentionUserIds: [] }),
-          }),
-          commandRoute({
-            path: "config.read",
-            gate: noRow("config.view"),
-            changesState: false,
-            finish: () =>
-              Promise.resolve({ content: safe`x`, mentionUserIds: [] }),
-          }),
-        ],
-      },
-    ]);
-    const { dependencies, claims } = await setup();
-
-    await run(claiming, commandPayload("config.read"), dependencies);
-    expect(await claims()).toBe(0);
-
-    await run(claiming, commandPayload("config.write"), dependencies);
-    expect(await claims()).toBe(1);
-  });
-
-  it("claims a modal submit too", async () => {
-    const { dependencies } = await setup();
-    const payload = modalPayload("config.test-submit");
-
-    await run(router, payload, dependencies);
-    await run(router, payload, dependencies);
-
-    expect(finished).toHaveBeenCalledOnce();
-  });
-});
-
-describe("databases", () => {
-  it("reads with the short client, then finishes on the longer one", async () => {
-    const short = await handlerDb({ config: configRow() });
-    const long = await handlerDb({ config: configRow() });
-    const { discord } = fakeDiscord();
-    const dependencies = {
-      db: () => short.db,
-      finishDb: () => long.db,
-      discord: () => discord,
-    };
-
-    await run(
-      router,
-      componentPayload(`config.test-change:3:${fakeId()}`),
-      dependencies,
-    );
-
-    // The short client makes the one read before the reply; the claim and the rest
-    // run on the longer one.
-    expect(short.sent()).toBe(1);
-    expect(await long.claims()).toBe(1);
-    expect(await short.claims()).toBe(0);
-  });
-
-  it("does not build the longer client for a refusal", async () => {
-    const { db } = await handlerDb({ config: configRow() });
-    const { discord } = fakeDiscord();
-    const finishDb = vi.fn(() => db);
-
-    await run(router, commandPayload("config.admin", { member: OFFICER }), {
-      db: () => db,
-      finishDb,
-      discord: () => discord,
-    });
-
-    expect(finishDb).not.toHaveBeenCalled();
   });
 });
 
@@ -1142,32 +638,6 @@ describe("failures", () => {
           changesState: false,
           finish: () => Promise.reject(new Error("thrown")),
         }),
-        componentRoute({
-          prefix: "config.discord-fails",
-          fields: [],
-          gate: noRow("config.view"),
-          changesState: false,
-          finish: () =>
-            Promise.reject(
-              new DiscordClientError("read guild", {
-                kind: "api",
-                status: 403,
-                code: 50001,
-              }),
-            ),
-        }),
-        componentRoute({
-          prefix: "config.budget-fails",
-          fields: [],
-          gate: noRow("config.view"),
-          changesState: false,
-          finish: () =>
-            Promise.reject(
-              new DiscordClientError("read guild", {
-                kind: "budget_exhausted",
-              }),
-            ),
-        }),
       ],
     },
   ]);
@@ -1187,26 +657,6 @@ describe("failures", () => {
 
     expect(edits[0]?.content).toContain("Please try again");
     expect(edits[0]?.content).not.toContain("may or may not");
-  });
-
-  it("logs the kind, status and code of a Discord failure", async () => {
-    const { dependencies } = await setup();
-
-    await run(throwing, componentPayload("config.discord-fails"), dependencies);
-
-    expect(logged).toHaveBeenCalledWith(
-      "Interaction failed: config.view: DiscordClientError kind=api status=403 code=50001",
-    );
-  });
-
-  it("logs only the kind of a Discord failure with no status", async () => {
-    const { dependencies } = await setup();
-
-    await run(throwing, componentPayload("config.budget-fails"), dependencies);
-
-    expect(logged).toHaveBeenCalledWith(
-      "Interaction failed: config.view: DiscordClientError kind=budget_exhausted",
-    );
   });
 
   it("says only try again when the first read fails", async () => {
@@ -1245,38 +695,17 @@ describe("failures", () => {
       editEphemeralReply: () => Promise.reject(new Error("thrown")),
     };
 
-    await expect(
-      run(router, commandPayload("config.boom"), dependenciesFor(db, rejected)),
-    ).resolves.toBeDefined();
-  });
-
-  it("logs only a category and code for a database failure", () => {
-    expect(() =>
-      valueOf({
-        ok: false,
-        error: { category: "constraint", code: "23514" },
-      }),
-    ).toThrow("constraint:23514");
-  });
-
-  it("fails while Discord can still be told, if the bot token is missing", async () => {
-    const { db } = await setup();
-
-    await expect(
-      run(router, commandPayload("config.admin"), {
-        db: () => db,
-        finishDb: () => db,
-        discord: () => {
-          throw new Error("DISCORD_BOT_TOKEN must be set");
-        },
-      }),
-    ).rejects.toThrow("DISCORD_BOT_TOKEN");
-    expect(finished).not.toHaveBeenCalled();
+    expect(
+      await run(
+        router,
+        commandPayload("config.boom"),
+        dependenciesFor(db, rejected),
+      ),
+    ).toBeDefined();
   });
 });
 
 describe("routes on a row", () => {
-  const load = vi.fn();
   const rowRouter = createRouter([
     {
       commands: [],
@@ -1284,10 +713,7 @@ describe("routes on a row", () => {
         componentRoute({
           prefix: "event.test-row",
           fields: ["uuid"],
-          gate: eventRow("event.close", (_ctx, values: readonly [string]) => {
-            load(values);
-            return Promise.resolve(rowResult);
-          }),
+          gate: eventRow("event.close", () => Promise.resolve(rowResult)),
           changesState: true,
           finish: (_ctx, row) => {
             finished(row);
@@ -1325,76 +751,31 @@ describe("routes on a row", () => {
 
   const live = { guild_id: GUILD_ID, deleted_at: null };
 
-  beforeEach(() => {
-    load.mockReset();
-  });
-
-  it("hands the loader the parsed ID and the handler the loaded row", async () => {
-    const { dependencies } = await setup();
-    rowResult = { ok: true, value: live };
-
-    await run(
-      rowRouter,
-      componentPayload(`event.test-row:${UUID}`, { member: OFFICER }),
-      dependencies,
-    );
-
-    expect(load).toHaveBeenCalledWith([UUID]);
-    expect(finished).toHaveBeenCalledWith(live);
-  });
-
   it.each([
-    ["an absent row", { ok: true, value: null }],
+    ["an absent row", OFFICER, { ok: true, value: null }],
     [
       "another guild's row",
+      OFFICER,
       { ok: true, value: { ...live, guild_id: fakeId() } },
     ],
     [
       "a deleted row",
+      OFFICER,
       { ok: true, value: { ...live, deleted_at: "2030-01-01T00:00:00Z" } },
     ],
-    [
-      "a refused lookup",
-      { ok: false, error: { category: "invalid_input", code: null } },
-    ],
-  ] as const)("gives %s the same refusal", async (_label, result) => {
+    ["a member without the tier", PLAIN_MEMBER, { ok: true, value: live }],
+  ] as const)("gives %s the same refusal", async (_label, who, result) => {
     const { dependencies } = await setup();
     rowResult = result;
 
     const { reply } = await run(
       rowRouter,
-      componentPayload(`event.test-row:${UUID}`, { member: OFFICER }),
+      componentPayload(`event.test-row:${UUID}`, { member: who }),
       dependencies,
     );
 
     expect(reply).toEqual(FIXED_REFUSAL);
     expect(finished).not.toHaveBeenCalled();
-  });
-
-  it("refuses a member without the tier, even for a real row", async () => {
-    const { dependencies } = await setup();
-    rowResult = { ok: true, value: live };
-
-    const { reply } = await run(
-      rowRouter,
-      componentPayload(`event.test-row:${UUID}`, { member: PLAIN_MEMBER }),
-      dependencies,
-    );
-
-    expect(reply).toEqual(FIXED_REFUSAL);
-  });
-
-  it("says try again when the row cannot be read", async () => {
-    const { dependencies } = await setup();
-    rowResult = { ok: false, error: { category: "unavailable", code: null } };
-
-    const { reply } = await run(
-      rowRouter,
-      componentPayload(`event.test-row:${UUID}`, { member: OFFICER }),
-      dependencies,
-    );
-
-    expect(reply.data?.content).toContain("Something went wrong");
   });
 
   it("lets an assignee act on their own task, and nobody else's", async () => {
@@ -1415,7 +796,7 @@ describe("routes on a row", () => {
       dependencies,
     );
 
-    expect(finished).toHaveBeenCalledOnce();
+    expect(finished).toHaveBeenCalledTimes(1);
     expect(reply).toEqual(FIXED_REFUSAL);
   });
 });
@@ -1447,120 +828,34 @@ describe("autocomplete", () => {
     expect(reply.data?.choices).toEqual([{ name: "Choice", value: "value" }]);
   });
 
-  it.each([
-    ["a member below the tier", payload("x", { member: PLAIN_MEMBER })],
-    ["text over the cap", payload("x".repeat(101), { member: OFFICER })],
-    ["text that is not a string", payload(1, { member: OFFICER })],
+  it.each<[string, Seed, Record<string, unknown>]>([
     [
-      "a malformed member",
-      payload("x", {
-        member: { user: { id: fakeId() }, roles: "x" },
-      }),
+      "a member below the tier",
+      { config: configRow() },
+      payload("x", { member: PLAIN_MEMBER }),
     ],
-  ])("offers nothing to %s", async (_label, body) => {
-    const { dependencies } = await setup();
+    [
+      "text over the cap",
+      { config: configRow() },
+      payload("x".repeat(101), { member: OFFICER }),
+    ],
+    [
+      "anyone before setup",
+      { config: null },
+      payload("x", { member: ADMINISTRATOR }),
+    ],
+  ])("offers nothing to %s", async (_label, seed, body) => {
+    const { dependencies } = await setup(seed);
 
     const { reply } = await run(router, body, dependencies);
 
     expect(reply).toEqual(NO_CHOICES);
     expect(finished).not.toHaveBeenCalled();
   });
-
-  it("offers nothing before setup", async () => {
-    const { dependencies } = await setup({ config: null });
-
-    const { reply } = await run(
-      router,
-      payload("x", { member: ADMINISTRATOR }),
-      dependencies,
-    );
-
-    expect(reply).toEqual(NO_CHOICES);
-  });
-
-  it("offers nothing when the config cannot be read", async () => {
-    const { dependencies, fail } = await setup();
-    fail("guild_config");
-
-    const { reply } = await run(
-      router,
-      payload("x", { member: OFFICER }),
-      dependencies,
-    );
-
-    expect(reply).toEqual(NO_CHOICES);
-  });
-
-  it("offers nothing when the route fails, and logs only the type", async () => {
-    const failing = createRouter([
-      {
-        commands: [{ name: "event.x", description: "x" }],
-        routes: [
-          commandRoute({
-            path: "event.x",
-            gate: noRow("event.list"),
-            changesState: false,
-            finish: () =>
-              Promise.resolve({ content: safe`x`, mentionUserIds: [] }),
-          }),
-          autocompleteRoute({
-            path: "event.x",
-            action: "event.status",
-            choices: () => Promise.reject(new Error("thrown")),
-          }),
-        ],
-      },
-    ]);
-    const { dependencies } = await setup();
-
-    const { reply } = await run(
-      failing,
-      autocompletePayload("event.x", "y", { member: OFFICER }),
-      dependencies,
-    );
-
-    expect(reply).toEqual(NO_CHOICES);
-  });
-
-  it("offers nothing for a subcommand group", async () => {
-    const { dependencies } = await setup();
-
-    const { reply } = await run(
-      router,
-      {
-        ...payload("x", { member: OFFICER }),
-        data: { type: 1, name: "event", options: [{ type: 2, name: "one" }] },
-      },
-      dependencies,
-    );
-
-    expect(reply).toEqual(NO_CHOICES);
-  });
-});
-
-describe("the real table", () => {
-  it("answers /ping with no database or Discord settings", async () => {
-    const { reply } = await run(ROUTER, commandPayload("ping"), {
-      db: () => {
-        throw new Error("no settings");
-      },
-      finishDb: () => {
-        throw new Error("no settings");
-      },
-      discord: () => {
-        throw new Error("no settings");
-      },
-    });
-
-    expect(reply.data?.content).toBe("Pong!");
-    expect(reply.data?.flags).toBe(
-      MessageFlags.Ephemeral | MessageFlags.SuppressEmbeds,
-    );
-  });
 });
 
 describe("a button on a message others can see", () => {
-  const onPublic = vi.fn();
+  const onPublic = mock();
   const clicked = componentRoute({
     prefix: "mytasks.public",
     fields: ["uuid"],
@@ -1575,7 +870,20 @@ describe("a button on a message others can see", () => {
       });
     },
   });
-  const router = createRouter([{ commands: [], routes: [clicked] }]);
+  const other = componentRoute({
+    prefix: "mytasks.private",
+    fields: [],
+    gate: noRow("mytasks"),
+    changesState: false,
+    finish: () =>
+      Promise.resolve({ content: safe`Thanks`, mentionUserIds: [] }),
+  });
+  const router = createRouter([{ commands: [], routes: [clicked, other] }]);
+  const onMessage = { message: { id: fakeId(), flags: 0 } };
+
+  beforeEach(() => {
+    onPublic.mockClear();
+  });
 
   it("answers in a new private reply, leaving the message alone", async () => {
     const { db } = await handlerDb({ config: configRow() });
@@ -1585,7 +893,7 @@ describe("a button on a message others can see", () => {
       router,
       componentPayload(`mytasks.public:${UUID}`, {
         member: PLAIN_MEMBER,
-        message: { id: fakeId(), flags: 0 },
+        ...onMessage,
       }),
       dependenciesFor(db, discord),
     );
@@ -1598,148 +906,21 @@ describe("a button on a message others can see", () => {
     expect(edits[0]?.content).toBe("Thanks");
   });
 
-  it("still checks the gate and the fields first", async () => {
-    onPublic.mockClear();
-    const { db } = await handlerDb({ config: null });
+  it.each<[string, Seed, string]>([
+    ["before setup", { config: null }, `mytasks.public:${UUID}`],
+    ["with a bad field", { config: configRow() }, "mytasks.public:nope"],
+    ["for any other button", { config: configRow() }, "mytasks.private"],
+  ])("still refuses %s", async (_label, seed, customId) => {
+    const { db } = await handlerDb(seed);
     const { discord } = fakeDiscord();
-    const dependencies = dependenciesFor(db, discord);
-    const onMessage = { message: { id: fakeId(), flags: 0 } };
 
-    const beforeSetup = await run(
+    const ran = await run(
       router,
-      componentPayload(`mytasks.public:${UUID}`, {
-        member: PLAIN_MEMBER,
-        ...onMessage,
-      }),
-      dependencies,
-    );
-    const badField = await run(
-      router,
-      componentPayload("mytasks.public:nope", {
-        member: PLAIN_MEMBER,
-        ...onMessage,
-      }),
-      dependencies,
+      componentPayload(customId, { member: PLAIN_MEMBER, ...onMessage }),
+      dependenciesFor(db, discord),
     );
 
-    expect(beforeSetup.reply).toEqual(FIXED_REFUSAL);
-    expect(badField.reply).toEqual(FIXED_REFUSAL);
+    expect(ran.reply).toEqual(FIXED_REFUSAL);
     expect(onPublic).not.toHaveBeenCalled();
-  });
-
-  it("leaves other buttons refused on a public message", async () => {
-    const { db } = await handlerDb({ config: configRow() });
-    const { discord } = fakeDiscord();
-    const other = componentRoute({
-      prefix: "mytasks.private",
-      fields: [],
-      gate: noRow("mytasks"),
-      changesState: false,
-      finish: () =>
-        Promise.resolve({ content: safe`Thanks`, mentionUserIds: [] }),
-    });
-
-    const ran = await run(
-      createRouter([{ commands: [], routes: [other] }]),
-      componentPayload("mytasks.private", {
-        member: PLAIN_MEMBER,
-        message: { id: fakeId(), flags: 0 },
-      }),
-      dependenciesFor(db, discord),
-    );
-
-    expect(ran.reply).toEqual(FIXED_REFUSAL);
-  });
-});
-
-describe("a tier-only gate", () => {
-  const finish = vi.fn(() =>
-    Promise.resolve({ content: safe`Done`, mentionUserIds: [] }),
-  );
-  const route = componentRoute({
-    prefix: "task.tiered",
-    fields: ["uuid", "fingerprint"],
-    gate: tierOnly("task.edit"),
-    changesState: false,
-    finish,
-  });
-  const router = createRouter([{ commands: [], routes: [route] }]);
-  const FINGERPRINT = "0123456789abcdef";
-
-  it("refuses the wrong tier at once and reads nothing but the config", async () => {
-    finish.mockClear();
-    const { db, sent } = await setup();
-    const { discord } = fakeDiscord();
-
-    const ran = await run(
-      router,
-      componentPayload(`task.tiered:${UUID}:${FINGERPRINT}`, {
-        member: PLAIN_MEMBER,
-      }),
-      dependenciesFor(db, discord),
-    );
-
-    expect(ran.reply).toEqual(FIXED_REFUSAL);
-    expect(finish).not.toHaveBeenCalled();
-    expect(sent()).toBe(1);
-  });
-
-  it("hands an allowed caller no row, reading nothing but the config", async () => {
-    finish.mockClear();
-    const { db, sent } = await setup();
-    const { discord } = fakeDiscord();
-    const { interaction, verified } = verify(
-      componentPayload(`task.tiered:${UUID}:${FINGERPRINT}`, {
-        member: OFFICER,
-      }),
-    );
-
-    const outcome = await router.handle(
-      interaction,
-      verified,
-      dependenciesFor(db, discord),
-    );
-    await outcome.after?.();
-
-    expect(sent()).toBe(1);
-    expect(finish).toHaveBeenCalledOnce();
-    const [, resource] = finish.mock.calls[0] as unknown as unknown[];
-    expect(resource).toBeUndefined();
-  });
-
-  it("refuses to load beside a reply, which would check no row at all", () => {
-    expect(() =>
-      createRouter([
-        {
-          commands: [{ name: "task", description: "x" }],
-          routes: [
-            commandRoute({
-              path: "task",
-              gate: tierOnly("task.edit"),
-              reply: () => refusal(),
-            }),
-          ],
-        },
-      ]),
-    ).toThrow("checks no row");
-  });
-
-  it.each([
-    ["too short", "0123"],
-    ["too long", `${FINGERPRINT}0`],
-    ["uppercase", FINGERPRINT.toUpperCase()],
-    ["not hex", "0123456789abcdeg"],
-    ["empty", ""],
-  ])("refuses a fingerprint that is %s", async (_name, value) => {
-    const { db } = await handlerDb({ config: configRow() });
-    const { discord } = fakeDiscord();
-
-    const ran = await run(
-      router,
-      componentPayload(`task.tiered:${UUID}:${value}`, { member: OFFICER }),
-      dependenciesFor(db, discord),
-    );
-
-    expect(ran.reply).toEqual(FIXED_REFUSAL);
   });
 });

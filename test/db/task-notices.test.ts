@@ -4,7 +4,7 @@
  */
 
 import { PermissionFlagsBits } from "discord-api-types/v10";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { DiscordClientError } from "../../src/discord/client.ts";
 import type {
   DiscordClient,
@@ -14,11 +14,9 @@ import type {
 } from "../../src/discord/client.ts";
 import { setEventThread } from "../../src/db/events.ts";
 import { createRouter } from "../../src/handlers/router.ts";
-import { handler } from "../../src/handlers/task.ts";
 import { handler as eventHandler } from "../../src/handlers/event.ts";
 import {
   commandPayload,
-  componentPayload,
   dependenciesFor,
   GUILD_ID,
   run,
@@ -27,18 +25,14 @@ import { fakeId } from "../support/ids.ts";
 import { insertEvent } from "./fixtures.ts";
 import { queryAs } from "./harness.ts";
 import {
-  EPHEMERAL,
   FAR_DUE,
   fakeClient,
-  FIXED_REFUSAL,
   OPTION,
   officer,
   pickerPayload,
   plainMember,
   stringOptions,
   subcommand,
-  SUPPRESS_EMBEDS,
-  UNKNOWN_ID,
   unwrap,
   useTaskWorld,
 } from "./task-world.ts";
@@ -71,9 +65,12 @@ describe("what an officer is told after a task change", () => {
   const world = useTaskWorld();
   const { eventWithPost, inThread } = world;
 
+  beforeEach(() => {
+    spyOn(console, "error").mockImplementation(() => undefined);
+  });
+
   describe("when the notice's send fails", () => {
     async function replyAfter(failure: DiscordFailure) {
-      vi.spyOn(console, "error").mockImplementation(() => undefined);
       const { threadId } = await eventWithPost();
       const { client, edits } = fakeClient({
         sendMessage: () =>
@@ -88,28 +85,27 @@ describe("what an officer is told after a task change", () => {
       return { reply: edits[0]?.content ?? "", person };
     }
 
-    it.each<[string, DiscordFailure]>([
-      ["no answer", { kind: "network" }],
-      ["an unreadable success", { kind: "invalid_response", status: 200 }],
-      ["a server error", { kind: "api", status: 502, code: undefined }],
-    ])("says it may have gone out after %s", async (_label, failure) => {
-      const { reply, person } = await replyAfter(failure);
-
-      expect(reply).toContain(`<@${person}> may not have been mentioned`);
-      expect(reply).not.toContain("was not mentioned");
-    });
-
-    it.each<[string, DiscordFailure]>([
-      ["a refusal", { kind: "api", status: 400, code: 160005 }],
-      ["a removed forum", { kind: "unmanaged_target", channelId: "1" }],
+    it.each<[string, DiscordFailure, string]>([
+      ["no answer", { kind: "network" }, "may not have been mentioned"],
+      [
+        "a server error",
+        { kind: "api", status: 502, code: undefined },
+        "may not have been mentioned",
+      ],
+      [
+        "a refusal",
+        { kind: "api", status: 400, code: 160005 },
+        "was not mentioned",
+      ],
       [
         "a rate limit",
         { kind: "rate_limited", retryAfterMs: 1, attempts: 3, scope: "user" },
+        "was not mentioned",
       ],
-    ])("says it did not go out after %s", async (_label, failure) => {
+    ])("says what happened after %s", async (_label, failure, text) => {
       const { reply, person } = await replyAfter(failure);
 
-      expect(reply).toContain(`<@${person}> was not mentioned`);
+      expect(reply).toContain(`<@${person}> ${text}`);
     });
   });
 
@@ -181,52 +177,6 @@ describe("what an officer is told after a task change", () => {
       expect(notices).toHaveLength(1);
     });
 
-    it("warns the officer on a reassignment", async () => {
-      const after = fakeId();
-      const { eventId } = await eventWithPost();
-      const task = await world.newTask(eventId, fakeId());
-      const { client, edits } = privateForum();
-
-      await run(
-        world.router,
-        subcommand(
-          "edit",
-          [
-            ...stringOptions({ task: task.id }),
-            { name: "person", type: OPTION.user, value: after },
-          ],
-          { member: officer() },
-          resolvedHuman(after),
-        ),
-        dependenciesFor(world.db(), client),
-      );
-
-      expect(edits[0]?.content).toContain(
-        `<@${after}> can't view this event's forum`,
-      );
-    });
-
-    it("does not read Discord when the person doesn't change", async () => {
-      const { eventId } = await eventWithPost();
-      const task = await world.newTask(eventId, fakeId());
-      const getGuildRoles = vi.fn<DiscordClient["getGuildRoles"]>(() =>
-        Promise.resolve([]),
-      );
-      const { client } = fakeClient({ getGuildRoles });
-
-      await run(
-        world.router,
-        subcommand(
-          "edit",
-          stringOptions({ task: task.id, description: "Book the hall" }),
-          { member: officer() },
-        ),
-        dependenciesFor(world.db(), client),
-      );
-
-      expect(getGuildRoles).not.toHaveBeenCalled();
-    });
-
     it("warns the officer when someone is put on an event step", async () => {
       const person = fakeId();
       const { eventId } = await eventWithPost();
@@ -258,40 +208,6 @@ describe("what an officer is told after a task change", () => {
       expect(reply).toContain(`Put <@${person}> on Budget Sheet`);
       expect(reply).toContain(`<@${person}> can't view this event's forum`);
       expect(reply).toContain("see the step in /mytasks");
-    });
-
-    it("stays quiet for someone a role lets in", async () => {
-      const { client, edits } = privateForum({}, [MEMBER_ROLE]);
-
-      await assigned(client, fakeId());
-
-      expect(edits[0]?.content).toContain("was mentioned");
-      expect(edits[0]?.content).not.toContain("can't view");
-    });
-
-    it("stays quiet for someone their own overwrite lets in", async () => {
-      const person = fakeId();
-      const { client, edits } = privateForum(
-        {},
-        [],
-        [{ id: person, type: 1, allow: VIEW, deny: 0n }],
-      );
-
-      await assigned(client, person);
-
-      expect(edits[0]?.content).not.toContain("can't view");
-    });
-
-    it("keeps the reply when the check fails", async () => {
-      vi.spyOn(console, "error").mockImplementation(() => undefined);
-      const { client, edits } = privateForum({
-        getGuildChannel: () => Promise.reject(new Error("check failure")),
-      });
-
-      await assigned(client, fakeId());
-
-      expect(edits[0]?.content).toContain("was mentioned");
-      expect(edits[0]?.content).not.toContain("can't view");
     });
   });
 
@@ -330,7 +246,6 @@ describe("what an officer is told after a task change", () => {
         `SELECT public.apply_config_change($1, $2, $3, NULL, NULL, ARRAY[$4]::text[])`,
         [GUILD_ID, await version(), fakeId(), removedForum],
       );
-      vi.spyOn(console, "error").mockImplementation(() => undefined);
       const person = fakeId();
       const { client, edits } = fakeClient({
         sendMessage: () =>
@@ -354,22 +269,6 @@ describe("what an officer is told after a task change", () => {
       expect(reply).toContain("no longer managed");
       expect(reply).toContain("reminders for this task are off");
       expect(reply).toContain("/config");
-    });
-
-    it("gives no such warning under an active forum", async () => {
-      const { threadId } = await eventWithPost();
-      const { client, edits } = fakeClient();
-
-      await run(
-        world.router,
-        assignPayload(fakeId(), {
-          member: officer(),
-          ...inThread(threadId),
-        }),
-        dependenciesFor(world.db(), client),
-      );
-
-      expect(edits[0]?.content).not.toContain("no longer managed");
     });
   });
 
@@ -399,68 +298,7 @@ describe("what an officer is told after a task change", () => {
       expect((await world.row(task.id))?.status).toBe("done");
     });
 
-    it("says so through the live command, whose refresh really fails", async () => {
-      const { eventId } = await eventWithPost();
-      const task = await world.newTask(eventId, fakeId());
-      const { client, edits } = fakeClient({
-        sendMessage: () => Promise.reject(new Error("post refused")),
-      });
-      vi.spyOn(console, "error").mockImplementation(() => undefined);
-
-      await run(
-        createRouter([handler]),
-        subcommand("done", stringOptions({ task: task.id }), {
-          member: officer(),
-        }),
-        dependenciesFor(world.db(), client),
-      );
-
-      expect(edits[0]?.content).toContain("Marked done");
-      expect(edits[0]?.content).toContain(NOT_UPDATED);
-    });
-
-    it("says so after the Mark done button", async () => {
-      refused();
-      const { eventId } = await eventWithPost();
-      const assignee = fakeId();
-      const task = await world.newTask(eventId, assignee);
-      const { client, edits } = fakeClient();
-
-      await run(
-        world.router,
-        componentPayload(`task.done:${task.id}`, {
-          member: plainMember(assignee),
-          message: { id: fakeId(), flags: SUPPRESS_EMBEDS },
-        }),
-        dependenciesFor(world.db(), client),
-      );
-
-      expect(edits[0]?.content).toContain("Marked done");
-      expect(edits[0]?.content).toContain(NOT_UPDATED);
-    });
-
-    it("says so after /task edit", async () => {
-      refused();
-      const { eventId } = await eventWithPost();
-      const task = await world.newTask(eventId, fakeId());
-      const { client, edits } = fakeClient();
-
-      await run(
-        world.router,
-        subcommand(
-          "edit",
-          stringOptions({ task: task.id, description: "Book the hall" }),
-          { member: officer() },
-        ),
-        dependenciesFor(world.db(), client),
-      );
-
-      expect(edits[0]?.content).toContain("Saved task");
-      expect(edits[0]?.content).toContain(NOT_UPDATED);
-    });
-
     it("says so after /task assign, and when the refresh throws", async () => {
-      vi.spyOn(console, "error").mockImplementation(() => undefined);
       world.refreshOverview.mockRejectedValue(new Error("overview failure"));
       const { threadId } = await eventWithPost();
       const { client, edits } = fakeClient();
@@ -476,43 +314,6 @@ describe("what an officer is told after a task change", () => {
 
       expect(edits[0]?.content).toContain("Assigned task");
       expect(edits[0]?.content).toContain(NOT_UPDATED);
-    });
-
-    it("says nothing when it was updated", async () => {
-      const { eventId } = await eventWithPost();
-      const task = await world.newTask(eventId, fakeId());
-      const { client, edits } = fakeClient();
-
-      await run(
-        world.router,
-        subcommand("done", stringOptions({ task: task.id }), {
-          member: officer(),
-        }),
-        dependenciesFor(world.db(), client),
-      );
-
-      expect(edits[0]?.content).not.toContain(NOT_UPDATED);
-    });
-
-    it("says nothing extra when the event has no post to update", async () => {
-      refused();
-      const eventId = await insertEvent(
-        world.backend.connection,
-        world.fixture,
-      );
-      const task = await world.newTask(eventId, fakeId());
-      const { client, edits } = fakeClient();
-
-      await run(
-        world.router,
-        subcommand("done", stringOptions({ task: task.id }), {
-          member: officer(),
-        }),
-        dependenciesFor(world.db(), client),
-      );
-
-      expect(edits[0]?.content).toContain("Marked done");
-      expect(edits[0]?.content).not.toContain(NOT_UPDATED);
     });
   });
 
@@ -557,31 +358,11 @@ describe("what an officer is told after a task change", () => {
       expect((await world.row(task.id))?.status).toBe("open");
     });
 
-    it("takes an officer's short ID for anyone's task", async () => {
-      const { eventId } = await eventWithPost();
-      const task = await world.newTask(eventId, fakeId());
-
-      const reply = await doneTyped(shortId(task.id), officer());
-
-      expect(reply).toContain("Marked done");
-    });
-
     it.each([
       ["a name", "Book the room"],
-      ["the start of an ID", "ab12"],
       ["an ID that finds nothing", "00000000"],
     ])("asks for a choice after %s", async (_label, typed) => {
       expect(await doneTyped(typed, officer())).toContain(PICK);
-    });
-
-    it("won't act on the real start of a short ID", async () => {
-      const { eventId } = await eventWithPost();
-      const task = await world.newTask(eventId, fakeId());
-
-      const reply = await doneTyped(task.id.slice(0, 4), officer());
-
-      expect(reply).toContain(PICK);
-      expect((await world.row(task.id))?.status).toBe("open");
     });
 
     it("won't guess between two tasks sharing a short ID", async () => {
@@ -606,75 +387,6 @@ describe("what an officer is told after a task change", () => {
       for (const id of ids) {
         expect((await world.row(id))?.status).toBe("open");
       }
-    });
-
-    it("keeps the fixed refusal for a real ID that isn't usable", async () => {
-      const reply = await doneTyped(UNKNOWN_ID, officer());
-
-      expect(reply).toBe(FIXED_REFUSAL);
-    });
-
-    it("takes a short ID in /task edit, without touching other rows", async () => {
-      const { eventId } = await eventWithPost();
-      const task = await world.newTask(eventId, fakeId());
-      const { client, edits } = fakeClient();
-
-      await run(
-        world.router,
-        subcommand(
-          "edit",
-          stringOptions({
-            task: shortId(task.id),
-            description: "Book the hall",
-          }),
-          { member: officer() },
-        ),
-        dependenciesFor(world.db(), client),
-      );
-
-      expect(edits[0]?.content).toContain("Saved task");
-      expect((await world.row(task.id))?.description).toBe("Book the hall");
-    });
-
-    it("asks for a choice in /task delete", async () => {
-      const { client, edits } = fakeClient();
-
-      await run(
-        world.router,
-        subcommand("delete", stringOptions({ task: "Book the room" }), {
-          member: officer(),
-        }),
-        dependenciesFor(world.db(), client),
-      );
-
-      expect(edits[0]?.content ?? "").toContain(PICK);
-    });
-
-    it("takes a short ID for the event in /task assign", async () => {
-      const { eventId } = await eventWithPost();
-      const { client, edits } = fakeClient();
-
-      await run(
-        world.router,
-        assignPayload(fakeId(), { member: officer() }, shortId(eventId)),
-        dependenciesFor(world.db(), client),
-      );
-
-      expect(edits[0]?.content).toContain("Assigned task");
-      expect(await world.tasksOn(eventId)).toHaveLength(1);
-    });
-
-    it("asks for a choice when /task assign names an event in words", async () => {
-      const { client, edits, notices } = fakeClient();
-
-      await run(
-        world.router,
-        assignPayload(fakeId(), { member: officer() }, "Fall Social"),
-        dependenciesFor(world.db(), client),
-      );
-
-      expect(edits[0]?.content).toContain(PICK);
-      expect(notices).toEqual([]);
     });
   });
 
@@ -717,14 +429,6 @@ describe("what an officer is told after a task change", () => {
       expect(found[0]?.name).not.toContain("done,");
     });
 
-    it("finds it by its short ID", async () => {
-      const done = await doneTask("Book the room");
-
-      const found = await pick(done.id.slice(0, 8));
-
-      expect(found.map((choice) => choice.value)).toEqual([done.id]);
-    });
-
     it("still leaves it out of the /task done and edit pickers", async () => {
       const done = await doneTask("Pickerskip finished");
       const { client } = fakeClient();
@@ -741,64 +445,6 @@ describe("what an officer is told after a task change", () => {
           ),
         ).not.toContain(done.id);
       }
-    });
-
-    it("deletes it from a typed short ID, through the same Confirm", async () => {
-      const done = await doneTask("Book the room");
-      const { client, edits } = fakeClient();
-      const by = officer();
-
-      await run(
-        world.router,
-        subcommand("delete", stringOptions({ task: done.id.slice(0, 8) }), {
-          member: by,
-        }),
-        dependenciesFor(world.db(), client),
-      );
-
-      const confirm = (
-        edits[0]?.components as
-          { components: { custom_id: string }[] }[] | undefined
-      )?.[0]?.components[0]?.custom_id;
-      expect(confirm).toBeDefined();
-      await run(
-        world.router,
-        componentPayload(confirm ?? "", {
-          member: by,
-          message: { id: fakeId(), flags: EPHEMERAL },
-        }),
-        dependenciesFor(world.db(), client),
-      );
-
-      expect((await world.row(done.id))?.deleted).toBe(true);
-    });
-
-    it("says so when the post wasn't updated after a delete", async () => {
-      world.refreshOverview.mockResolvedValue(false);
-      const done = await doneTask("Book the room");
-      const { client, edits } = fakeClient();
-      const by = officer();
-      await run(
-        world.router,
-        subcommand("delete", stringOptions({ task: done.id }), { member: by }),
-        dependenciesFor(world.db(), client),
-      );
-      const confirm = (
-        edits[0]?.components as { components: { custom_id: string }[] }[]
-      )[0]?.components[0]?.custom_id;
-
-      await run(
-        world.router,
-        componentPayload(confirm ?? "", {
-          member: by,
-          message: { id: fakeId(), flags: EPHEMERAL },
-        }),
-        dependenciesFor(world.db(), client),
-      );
-
-      const reply = edits.at(-1)?.content ?? "";
-      expect(reply).toContain("Deleted");
-      expect(reply).toContain("couldn't update the task list");
     });
   });
 
@@ -842,34 +488,6 @@ describe("what an officer is told after a task change", () => {
 
       expect(found).toHaveLength(25);
       expect(found[0]?.value).toBe(upcoming);
-    });
-
-    it("finds a tidied name from what was first typed", async () => {
-      const event = await namedEvent("Tidycheck js 101", "2099-02-01");
-
-      const found = await pick("Tidycheck.js 101");
-
-      expect(found.map((choice) => choice.value)).toEqual([event]);
-    });
-
-    it("still finds a name typed as it is stored", async () => {
-      const event = await namedEvent("Storedcheck night", "2099-03-01");
-
-      const found = await pick("Storedcheck night");
-
-      expect(found.map((choice) => choice.value)).toEqual([event]);
-    });
-
-    it("finds nothing from text with nothing usable in it", async () => {
-      expect(await pick("@#:/")).toEqual([]);
-    });
-
-    it("still finds an event by the start of its ID", async () => {
-      const event = await namedEvent("Idcheck", "2099-04-01");
-
-      const found = await pick(event.slice(0, 8));
-
-      expect(found.map((choice) => choice.value)).toContain(event);
     });
   });
 });

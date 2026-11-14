@@ -8,14 +8,14 @@ import { generateKeyPairSync, sign } from "node:crypto";
 import type { PGlite } from "@electric-sql/pglite";
 import {
   afterAll,
-  afterEach,
   beforeAll,
   beforeEach,
   describe,
   expect,
   it,
-  vi,
-} from "vitest";
+  mock,
+  spyOn,
+} from "bun:test";
 import { POST } from "../../api/interactions.ts";
 import {
   discordServer,
@@ -31,33 +31,29 @@ import {
 } from "../support/interactions.ts";
 import { fakeId } from "../support/ids.ts";
 import { createMigratedDb, MIGRATION_OWNER, queryAs } from "./harness.ts";
-import { testDatabaseUrl } from "../support/sql-client.ts";
+import { pgliteSql, testDatabaseUrl } from "../support/sql-client.ts";
+import { stubEnv, stubGlobal } from "../support/stubs.ts";
 
-const pending = vi.hoisted(() => ({ work: [] as Promise<unknown>[] }));
+const pending = { work: [] as Promise<unknown>[] };
 
-vi.mock("@vercel/functions", () => ({
+void mock.module("@vercel/functions", () => ({
   waitUntil: (work: Promise<unknown>) => {
     pending.work.push(work);
   },
 }));
 
 /** The migrated database, for the client the function builds from its settings. */
-const current = vi.hoisted(() => ({
-  database: undefined as PGlite | undefined,
-}));
+const current = { database: undefined as PGlite | undefined };
 
-vi.mock("../../src/db/neon.ts", async () => {
-  const { pgliteSql } = await import("../support/sql-client.ts");
-  return {
-    neonRunner: () =>
-      pgliteSql(() => {
-        if (current.database === undefined) {
-          throw new Error("the database is not set up");
-        }
-        return current.database;
-      }),
-  };
-});
+void mock.module("../../src/db/neon.ts", () => ({
+  neonRunner: () =>
+    pgliteSql(() => {
+      if (current.database === undefined) {
+        throw new Error("the database is not set up");
+      }
+      return current.database;
+    }),
+}));
 
 const { publicKey, privateKey } = generateKeyPairSync("ed25519");
 
@@ -164,27 +160,21 @@ describe("the client built by liveDependencies", () => {
   beforeEach(() => {
     pending.work = [];
     discord = discordServer(APP_ID);
-    vi.stubEnv(
+    stubEnv(
       "DISCORD_PUBLIC_KEY",
       publicKey
         .export({ format: "der", type: "spki" })
         .subarray(-32)
         .toString("hex"),
     );
-    vi.stubEnv("DISCORD_APP_ID", APP_ID);
-    vi.stubEnv("ALLOWED_GUILD_IDS", GUILD_ID);
-    vi.stubEnv("DISCORD_BOT_TOKEN", "test-bot-token");
-    vi.stubEnv("DATABASE_URL", testDatabaseUrl());
+    stubEnv("DISCORD_APP_ID", APP_ID);
+    stubEnv("ALLOWED_GUILD_IDS", GUILD_ID);
+    stubEnv("DISCORD_BOT_TOKEN", "test-bot-token");
+    stubEnv("DATABASE_URL", testDatabaseUrl());
     // Only Discord is reached over HTTP. The database is the mocked pool above.
-    vi.stubGlobal("fetch", discord.fetch satisfies typeof fetch);
+    stubGlobal("fetch", discord.fetch);
     // The router logs a failed send's type, which is what the second test causes.
-    vi.spyOn(console, "error").mockImplementation(() => undefined);
-  });
-
-  afterEach(() => {
-    vi.unstubAllEnvs();
-    vi.unstubAllGlobals();
-    vi.restoreAllMocks();
+    spyOn(console, "error").mockImplementation(() => undefined);
   });
 
   const postsIn = (threadId: string) =>

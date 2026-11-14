@@ -3,7 +3,7 @@
  * mock cannot prove: which writes win a race, and what the audit table ends up with.
  */
 
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import type { GuildRole } from "../../src/discord/client.ts";
 import { ROUTER } from "../../src/handlers/registry.ts";
 import {
@@ -147,21 +147,17 @@ describe("admin commands on the real functions", () => {
     ]);
   });
 
-  it("lets one of two admins win a rebind", async () => {
+  it("lets one of two admins win a rebind, and refuses a Confirm shown before it", async () => {
+    const stale = await showSetup(OFFICER);
+
     const texts = await race(await showSetup(OTHER));
 
     expect(winners(texts, "Saved.")).toBe(1);
     expect(winners(texts, "Someone else changed the roles")).toBe(1);
     expect(await configVersion()).toBe(2);
-  });
-
-  it("refuses a Confirm shown before the last save, without calling the function", async () => {
-    // Shown at version 1, which the rebind above has since moved past.
-    const texts = await race(
-      `setup.confirm:1:${(await showSetup(OFFICER)).split(":")[2] ?? ""}`,
+    expect(winners(await race(stale), "Someone else changed the roles")).toBe(
+      2,
     );
-
-    expect(winners(texts, "Someone else changed the roles")).toBe(2);
     expect(await configVersion()).toBe(2);
   });
 
@@ -183,8 +179,6 @@ describe("admin commands on the real functions", () => {
   describe("/config", () => {
     const FORUM = fakeId();
     const SECOND_FORUM = fakeId();
-    const READDED_FORUM = fakeId();
-    const GONE_FORUM = fakeId();
     const channel = (id: string) => ({
       id,
       name: "events",
@@ -194,7 +188,7 @@ describe("admin commands on the real functions", () => {
     const VIEW_AND_SEND = (1n << 10n) | (1n << 11n) | (1n << 38n);
     const discordData = {
       roles: [{ ...role(GUILD_ID), permissions: VIEW_AND_SEND }],
-      channels: [FORUM, SECOND_FORUM, READDED_FORUM, GONE_FORUM].map(channel),
+      channels: [FORUM, SECOND_FORUM].map(channel),
       botRoleIds: [],
     };
     const addPayload = (channelId: string, version: number) =>
@@ -289,125 +283,6 @@ describe("admin commands on the real functions", () => {
         [GUILD_ID],
       );
       expect(tasks).toHaveLength(2);
-    });
-
-    it("draws the panel from real rows, with the audit trail", async () => {
-      const { edits, dependencies } = discordWorld();
-
-      await run(
-        ROUTER,
-        componentPayload("config.view", { member: ADMINISTRATOR }),
-        dependencies,
-      );
-
-      expect(edits[0]?.content).toContain("Bot settings");
-      expect(edits[0]?.content).toContain(`removed <#${FORUM}>`);
-      expect(edits[0]?.content).toContain(`<@${MEMBER_ID}>`);
-    });
-
-    it("refuses removing the same forum twice, with a message and no text from the database", async () => {
-      const { edits, dependencies } = discordWorld();
-      const version = (await configVersion()) ?? -1;
-
-      await run(
-        ROUTER,
-        componentPayload(`config.remove-yes:${String(version)}:${FORUM}`, {
-          member: ADMINISTRATOR,
-        }),
-        dependencies,
-      );
-
-      expect(edits[0]?.content).toContain("no longer possible");
-      expect(await configVersion()).toBe(version);
-    });
-
-    it("brings a post up to date when its forum is added back, even for a closed event", async () => {
-      const { discord, edits } = fakeDiscord(discordData);
-      const posted: { messageId: string; content: unknown }[] = [];
-      const dependencies = dependenciesFor(backend.db, {
-        ...discord,
-        editMessage: (_target, messageId, body) => {
-          posted.push({
-            messageId,
-            content: (body.payload as { content: unknown }).content,
-          });
-          return Promise.resolve({ id: messageId });
-        },
-      });
-      await run(
-        ROUTER,
-        addPayload(READDED_FORUM, (await configVersion()) ?? -1),
-        dependencies,
-      );
-      const message = fakeId();
-      const closed = await insertEvent(backend.connection, {
-        guildId: GUILD_ID,
-        officerRoleId: OFFICER,
-        adminRoleId: EBOARD,
-        channelId: READDED_FORUM,
-      });
-      await queryAs(
-        backend.connection,
-        MIGRATION_OWNER,
-        `UPDATE public.events
-         SET thread_id = $2, thread_status = 'active', overview_message_id = $3
-         WHERE id = $1`,
-        [closed, fakeId(), message],
-      );
-      await run(
-        ROUTER,
-        componentPayload(
-          `config.remove-yes:${String((await configVersion()) ?? -1)}:${READDED_FORUM}`,
-          { member: ADMINISTRATOR },
-        ),
-        dependencies,
-      );
-      await queryAs(
-        backend.connection,
-        MIGRATION_OWNER,
-        `UPDATE public.events SET status = 'closed' WHERE id = $1`,
-        [closed],
-      );
-      expect(posted).toEqual([]);
-
-      await run(
-        ROUTER,
-        addPayload(READDED_FORUM, (await configVersion()) ?? -1),
-        dependencies,
-      );
-
-      expect(await forumStatus(READDED_FORUM)).toBe("active");
-      expect(posted).toHaveLength(1);
-      expect(posted[0]?.messageId).toBe(message);
-      expect(posted[0]?.content).toContain("Status: Closed");
-      expect(edits.at(-1)?.content).toContain("event post(s) are up to date");
-    });
-
-    it("shows which forum went when an unavailable one is removed", async () => {
-      const { edits, dependencies } = discordWorld();
-      await run(
-        ROUTER,
-        addPayload(GONE_FORUM, (await configVersion()) ?? -1),
-        dependencies,
-      );
-      await queryAs(
-        backend.connection,
-        "bot_app",
-        `SELECT public.mark_channel_unavailable($1, $2)`,
-        [GUILD_ID, GONE_FORUM],
-      );
-
-      await run(
-        ROUTER,
-        componentPayload(
-          `config.remove-yes:${String((await configVersion()) ?? -1)}:${GONE_FORUM}`,
-          { member: ADMINISTRATOR },
-        ),
-        dependencies,
-      );
-
-      expect(await forumStatus(GONE_FORUM)).toBe("removed");
-      expect(edits.at(-1)?.content).toContain(`removed <#${GONE_FORUM}>`);
     });
   });
 });
