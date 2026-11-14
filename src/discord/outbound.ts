@@ -12,7 +12,6 @@
  */
 
 import { isSnowflake } from "../lib/snowflake.ts";
-import { checkedWireJson } from "./body-check.ts";
 import {
   DISCORD_LIMITS,
   isWithinLimit,
@@ -127,24 +126,17 @@ export function isSilentResponse(
 
 /**
  * For the endpoint's HTTP response, which runs no managed channel check. Throws unless
- * `isSilentResponse` holds for the body and it passes the same check the REST client
- * makes before every send. Both read the JSON that is returned, not the payload object.
- * `guildId` is the signed interaction's guild, or undefined for Discord's ping.
+ * `isSilentResponse` holds for the body.
  */
 export function serializeDirectResponse(
   response: OutboundBody<"direct-response">,
-  guildId: string | undefined,
 ): string {
-  const checked = checkedWireJson(response.payload, guildId);
-  if (!checked.ok) {
-    throw new OutboundBodyError(`Refused a response: ${checked.reason}`);
-  }
-  if (!isDirectPayload(checked.wire)) {
+  if (!isDirectPayload(response.payload)) {
     throw new OutboundBodyError(
       "Refused a response that could post publicly without the managed check",
     );
   }
-  return checked.json;
+  return JSON.stringify(response.payload);
 }
 
 /**

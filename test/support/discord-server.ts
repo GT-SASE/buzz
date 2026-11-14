@@ -1,9 +1,11 @@
 /**
  * A stand-in for Discord's REST API, behind the real client. Handler tests go through
  * the client's own checks and see the JSON that would really be sent. A failure is
- * armed per route, so a test can break any one step of a flow.
+ * armed per route, so a test can break any one step of a flow. Every body sent must
+ * be inert, so each test also checks the real output of the templates it reaches.
  */
 
+import { expect } from "vitest";
 import { jsonObject } from "./json.ts";
 import { fakeId } from "./ids.ts";
 
@@ -75,6 +77,40 @@ export interface DiscordServer {
     times?: number,
   ) => void;
   clearFailures: () => void;
+}
+
+// An @everyone or @here with no backslash before it, or with an even number of them,
+// which escape each other and leave the @ live.
+const LIVE_EVERYONE = /(?<!\\)(?:\\\\)*@(?:everyone|here)/u;
+// The `](` that joins a masked link's text to its URL, unless the bracket is escaped.
+const MASKED_LINK = /(?<!\\)(?:\\\\)*\]\s*\(/u;
+
+/** Every `content` string in a body, at any depth: messages, posts and text displays. */
+function contents(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.flatMap(contents);
+  }
+  if (typeof value !== "object" || value === null) {
+    return [];
+  }
+  return Object.entries(value).flatMap(([key, field]) =>
+    key === "content" && typeof field === "string" ? [field] : contents(field),
+  );
+}
+
+/** What in this JSON body Discord would render live: a ping to all, or a masked link. */
+export function liveText(json: string): string[] {
+  return contents(JSON.parse(json)).flatMap((text) => [
+    ...(LIVE_EVERYONE.test(text)
+      ? [`a live @everyone or @here in ${text}`]
+      : []),
+    ...(MASKED_LINK.test(text) ? [`a masked link in ${text}`] : []),
+  ]);
+}
+
+/** Fails the test if Discord would render anything in this body live. */
+export function expectInert(json: string): void {
+  expect(liveText(json)).toEqual([]);
 }
 
 const NOT_FOUND_CHANNEL = {
@@ -247,10 +283,12 @@ export function discordServer(appId: string): DiscordServer {
       );
       const method = init?.method ?? "GET";
       const path = url.pathname.replace(/^\/api\/v[0-9]+/, "");
-      const body =
-        typeof init?.body === "string"
-          ? jsonObject(init.body, `the body of ${method} ${path}`)
-          : undefined;
+      let body: Record<string, unknown> | undefined;
+      if (typeof init?.body === "string") {
+        // Soft, so the client cannot catch it and turn it into a failed send.
+        expect.soft(liveText(init.body)).toEqual([]);
+        body = jsonObject(init.body, `the body of ${method} ${path}`);
+      }
       requests.push({ method, path, body });
       const before = server.onRequest?.(method, path);
       return before === undefined

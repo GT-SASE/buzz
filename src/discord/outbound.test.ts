@@ -38,6 +38,7 @@ import {
   safe,
   userMention,
 } from "./safe-text.ts";
+import { expectInert, liveText } from "../../test/support/discord-server.ts";
 import { fakeId } from "../../test/support/ids.ts";
 
 const NAMED_USER = fakeId(1);
@@ -109,6 +110,11 @@ describe.each(BUILDERS)("%s", (_name, build, message, flags) => {
 
     expect(hasLiveSyntax(fields.content as string)).toBe(false);
     expect(fields.allowed_mentions).toEqual({ parse: [], users: [] });
+    expectInert(
+      JSON.stringify(
+        build({ content: escapeUserText(raw), mentionUserIds: [] }).payload,
+      ),
+    );
   });
 
   it("pings only the named users, whatever the text mentions", () => {
@@ -382,6 +388,27 @@ describe("interaction responses", () => {
   });
 });
 
+describe("the inert check the tests run on every body", () => {
+  it.each([
+    ["a live @everyone", { content: "hi @everyone" }],
+    ["a live @here after two backslashes", { content: "\\\\@here" }],
+    ["a masked link", { content: "[login](https://evil.example)" }],
+    [
+      "a masked link in a text display",
+      { components: [{ type: 10, content: "[a] (b)" }] },
+    ],
+    ["a live @everyone in a post", { message: { content: "@everyone" } }],
+  ])("finds %s", (_label, body) => {
+    expect(liveText(JSON.stringify(body))).toHaveLength(1);
+  });
+
+  it("passes escaped text", () => {
+    expectInert(
+      JSON.stringify({ content: escapeUserText("@everyone [a](https://b)") }),
+    );
+  });
+});
+
 describe("serializeDirectResponse", () => {
   const text = { content: safe`hi`, mentionUserIds: [] };
 
@@ -401,9 +428,7 @@ describe("serializeDirectResponse", () => {
     ],
   ])("accepts %s", (_label, body) => {
     expect(isSilentResponse(body)).toBe(true);
-    expect(JSON.parse(serializeDirectResponse(body, GUILD))).toEqual(
-      wire(body),
-    );
+    expect(JSON.parse(serializeDirectResponse(body))).toEqual(wire(body));
   });
 
   it.each([
@@ -417,7 +442,7 @@ describe("serializeDirectResponse", () => {
     ["a thread", () => threadCreate({ ...text, name: plain`Event` })],
   ])("refuses %s at runtime", (_label, build) => {
     expect(isSilentResponse(build() as never)).toBe(false);
-    expect(() => serializeDirectResponse(build() as never, GUILD)).toThrow(
+    expect(() => serializeDirectResponse(build() as never)).toThrow(
       OutboundBodyError,
     );
   });
@@ -425,11 +450,11 @@ describe("serializeDirectResponse", () => {
   it("refuses public bodies in the types", () => {
     const attempts = [
       // @ts-expect-error A public reply needs the managed check.
-      () => serializeDirectResponse(interactionReply(text), GUILD),
+      () => serializeDirectResponse(interactionReply(text)),
       // @ts-expect-error A public defer needs the managed check.
-      () => serializeDirectResponse(deferredReply(), GUILD),
+      () => serializeDirectResponse(deferredReply()),
       // @ts-expect-error A message update needs the managed check.
-      () => serializeDirectResponse(updateMessage(text), GUILD),
+      () => serializeDirectResponse(updateMessage(text)),
     ];
 
     for (const attempt of attempts) {
@@ -440,109 +465,11 @@ describe("serializeDirectResponse", () => {
   it("reads the payload, not the kind", () => {
     const body = { ...deferredReply(), kind: "direct-response" as const };
 
-    expect(() => serializeDirectResponse(body, GUILD)).toThrow(
-      OutboundBodyError,
-    );
+    expect(() => serializeDirectResponse(body)).toThrow(OutboundBodyError);
   });
 
-  it("answers Discord's ping with no guild", () => {
-    expect(JSON.parse(serializeDirectResponse(pong(), undefined))).toEqual({
-      type: 1,
-    });
-  });
-
-  /** A body written by hand, as no builder would write it. */
-  const direct = (payload: object) =>
-    ({ kind: "direct-response", payload }) as OutboundBody<"direct-response">;
-  const EPHEMERAL = {
-    content: "hi",
-    allowed_mentions: { parse: [], users: [] },
-    flags: 64,
-  };
-
-  it.each<[string, object]>([
-    [
-      "a link button in an ephemeral reply",
-      {
-        type: 4,
-        data: {
-          ...EPHEMERAL,
-          components: [
-            {
-              type: 1,
-              components: [{ type: 2, style: 5, label: "Go", url: "x" }],
-            },
-          ],
-        },
-      },
-    ],
-    [
-      "a link button in a modal",
-      {
-        type: 9,
-        data: {
-          custom_id: "m",
-          title: "Title",
-          components: [{ type: 1, components: [{ type: 2, style: 5 }] }],
-        },
-      },
-    ],
-    [
-      "a live @everyone in a text display",
-      {
-        type: 4,
-        data: { ...EPHEMERAL, components: [{ type: 10, content: "@here" }] },
-      },
-    ],
-    ["an embed", { type: 4, data: { ...EPHEMERAL, embeds: [{}] } }],
-    [
-      "an ephemeral reply with no allowed_mentions",
-      { type: 4, data: { content: "hi", flags: 64 } },
-    ],
-    [
-      "a role named with no guild",
-      {
-        type: 4,
-        data: {
-          ...EPHEMERAL,
-          allowed_mentions: { parse: [], roles: [ROLE] },
-        },
-      },
-    ],
-  ])("refuses %s, as the REST client would", (label, payload) => {
-    const guild = label.endsWith("with no guild") ? undefined : GUILD;
-
-    expect(() => serializeDirectResponse(direct(payload), guild)).toThrow(
-      OutboundBodyError,
-    );
-  });
-
-  it("returns exactly the JSON it checked, whatever a getter says next", () => {
-    let reads = 0;
-    const data = {
-      ...EPHEMERAL,
-      get flags() {
-        reads += 1;
-        return reads === 1 ? 64 : 0;
-      },
-    };
-
-    const json = serializeDirectResponse(direct({ type: 4, data }), GUILD);
-
-    expect(reads).toBe(1);
-    expect(JSON.parse(json)).toEqual({ type: 4, data: EPHEMERAL });
-  });
-
-  it("refuses a public reply hidden behind toJSON", () => {
-    const body = direct({
-      type: 4,
-      data: EPHEMERAL,
-      toJSON: () => ({ type: 4, data: { ...EPHEMERAL, flags: 0 } }),
-    });
-
-    expect(() => serializeDirectResponse(body, GUILD)).toThrow(
-      OutboundBodyError,
-    );
+  it("answers Discord's ping", () => {
+    expect(JSON.parse(serializeDirectResponse(pong()))).toEqual({ type: 1 });
   });
 });
 
