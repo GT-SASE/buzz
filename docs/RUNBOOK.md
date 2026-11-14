@@ -34,10 +34,10 @@ LIMIT 7;
 The same `reminders` run sends these after the task reminders, under the same lock, message cap and deadlines. Each is one message in the event's post, recorded in `event_reminder_log` under the guild's local date it is for.
 
 - `daily_steps` goes out each day up to the event's date while Budget Sheet, Engage post or Budget approved is open. It never mentions Food pickup. It pings the Events Directors role for a Budget Sheet or Engage post with nobody on it.
-- `pickup_before` and `pickup_day` go out two days before and on the event's date, only once Food pickup has a time and at least one person on it. The database refuses a claim for any other date. Neither waits for the budget to be approved.
+- `pickup_before` and `pickup_day` go out two days before and on the event's date, only once Food pickup has a time and at least one person on it. The database refuses a claim after the event's date, or for a day other than today or yesterday in the guild's zone; the planner picks the day for each kind. Neither waits for the budget to be approved.
 - None is sent late. A claim left from a day that has passed is closed as `skipped` by a later run.
 
-Their counts in `results` start with `event_`, such as `event_reminders_sent` and one `event_<kind>_sent` per kind. `event_render_failed` means an event's reminder could not be written, and Logs name the event. `event_items_refused` means Discord refused the text itself: the reminder is recorded as `skipped`, and the next day brings a new one.
+Their counts in `results` start with `event_`, such as `event_reminders_sent` and one `event_<kind>_sent` per kind. `event_render_failed` means an event's reminder could not be written, and the logs name the event. `event_items_refused` means Discord refused the text itself: the reminder is recorded as `skipped`, and the next day brings a new one.
 
 To see what went out for an event:
 

@@ -31,7 +31,7 @@ import type { VerifiedInteraction } from "./verify.ts";
 
 const API_BASE = "https://discord.com/api/v10";
 const WEB_BASE = "https://discord.com/channels";
-// The format Discord requires: a URL for the project.
+// Discord asks bots to name themselves and give a URL in the user agent.
 export const USER_AGENT = "DiscordBot (https://github.com/GT-SASE/discordBot)";
 const REQUEST_TIMEOUT_MS = 10_000;
 const MAX_ATTEMPTS = 3;

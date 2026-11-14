@@ -4,7 +4,7 @@ Run these on the private test server from [SETUP.md](SETUP.md), before the club'
 
 ## Before you start
 
-You need the member, a second Discord account with no bot role, and Vercel's Logs open, because Hobby keeps them for one hour. In a terminal, set these, pasting `bot_app`'s connection string and then the cron secret. `read -rs` keeps them off the screen and out of your shell history. The cron is run by hand with the `curl` line.
+You need a second Discord account with no bot role (the member), and Vercel's Logs open, because Hobby keeps them for one hour. In a terminal, set these, pasting `bot_app`'s connection string and then the cron secret. `read -rs` keeps them off the screen and out of your shell history. The cron is run by hand with the `curl` line.
 
 ```sh
 URL=https://<name>.vercel.app

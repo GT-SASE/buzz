@@ -84,7 +84,7 @@ function epochMs(date: DateOnly): number {
   return utcDate(year, month, day).getTime();
 }
 
-/** How far the zone's clock is ahead of UTC at an instant given in whole seconds. */
+/** How far the zone's clock is ahead of UTC at this instant, in milliseconds, to the whole second. */
 function zoneOffsetMs(instant: number, timeZone: string): number {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone,

@@ -59,7 +59,7 @@ export interface EventRunHost {
   budget(): RunBudget;
 }
 
-/** Why no send may start, as the count what is left is added to. */
+/** Why no send may start: the count that what is left is added to. */
 function blockOf(
   budget: RunBudget,
 ): "deferred_halted" | "deferred_deadline" | "deferred_cap" | null {
