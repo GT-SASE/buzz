@@ -1,14 +1,12 @@
 /** What the task commands read about events: the post they run in, and the picker. */
 
+import { DISCORD_LIMITS } from "../discord/safe-text.ts";
 import type { DbClient } from "./client.ts";
 import { EVENT_CHOICE_COLUMNS, EVENT_COLUMNS } from "./events.ts";
 import { firstRow, query, sql } from "./internal.ts";
 import { refused, type DbResult } from "./errors.ts";
 import type { EventChoice, EventRow } from "./types.ts";
 import { idPrefixRange, isSearchTerm, searchPattern } from "./validate.ts";
-
-/** Discord's limit for autocomplete choices. */
-const MAX_CHOICES = 25;
 
 /** The live event a thread belongs to in this guild, whether open or closed. */
 export async function findEventByThread(
@@ -53,7 +51,7 @@ export async function searchOpenEventsByIdPrefix(
     sql`select ${EVENT_CHOICE_COLUMNS} from events
       where guild_id = ${guildId} and status = 'active' and deleted_at is null
         and id >= ${low} and id <= ${high}
-      order by id limit ${MAX_CHOICES}`,
+      order by id limit ${DISCORD_LIMITS.autocompleteChoices}`,
   );
 }
 
@@ -73,6 +71,6 @@ export async function searchOpenEvents(
     sql`select ${EVENT_CHOICE_COLUMNS} from events
       where guild_id = ${guildId} and status = 'active' and deleted_at is null
         and name ilike ${searchPattern(term)}
-      order by event_date desc, id limit ${MAX_CHOICES}`,
+      order by event_date desc, id limit ${DISCORD_LIMITS.autocompleteChoices}`,
   );
 }

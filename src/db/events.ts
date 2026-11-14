@@ -1,3 +1,4 @@
+import { DISCORD_LIMITS } from "../discord/safe-text.ts";
 import type { DateOnly } from "../lib/dates.ts";
 import { isSnowflake } from "../lib/snowflake.ts";
 import type { DbClient } from "./client.ts";
@@ -29,8 +30,6 @@ export const EVENT_COLUMNS = sql`id, guild_id, channel_id, name, event_date, thr
 export const EVENT_CHOICE_COLUMNS = sql`id, name, event_date, status`;
 
 const MAX_EVENTS = 100;
-/** Discord's limit for autocomplete choices. */
-const MAX_CHOICES = 25;
 
 export interface EventKey {
   guildId: string;
@@ -129,7 +128,7 @@ export async function listEventsNamed(
     sql`select ${EVENT_COLUMNS} from events
       where guild_id = ${guildId} and channel_id = ${channelId} and name = ${name}
         and event_date = ${eventDate} and deleted_at is null
-      order by id limit ${MAX_CHOICES}`,
+      order by id limit ${DISCORD_LIMITS.autocompleteChoices}`,
   );
 }
 
@@ -169,7 +168,7 @@ export async function searchEvents(
     sql`select ${EVENT_CHOICE_COLUMNS} from events
       where guild_id = ${guildId} and deleted_at is null
         and name ilike ${searchPattern(term)}
-      order by status, event_date desc, id limit ${MAX_CHOICES}`,
+      order by status, event_date desc, id limit ${DISCORD_LIMITS.autocompleteChoices}`,
   );
 }
 

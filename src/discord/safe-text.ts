@@ -33,6 +33,7 @@ export const DISCORD_LIMITS = {
   autocompleteChoiceName: 100,
   autocompleteChoiceValue: 100,
   autocompleteChoices: 25,
+  commandOptions: 25,
   modalTitle: 45,
   textInputLabel: 45,
   actionRows: 5,

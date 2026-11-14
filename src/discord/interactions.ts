@@ -18,6 +18,7 @@ import {
 import { z } from "zod";
 import { parsePermissions } from "../lib/actor.ts";
 import { isSnowflake } from "../lib/snowflake.ts";
+import { DISCORD_LIMITS } from "./safe-text.ts";
 
 export interface GuildAccessPolicy {
   applicationId: string;
@@ -54,7 +55,6 @@ export interface ResolvedPerson {
 }
 
 const EPHEMERAL_FLAG = 64;
-const MAX_OPTIONS = 25;
 
 const Snowflake = z.string().refine(isSnowflake);
 /** Any JSON object. Arrays and null are refused. */
@@ -104,7 +104,7 @@ export type ModalInteraction = z.infer<typeof Modal>;
 
 const WithData = z.object({ data: z.unknown().optional() });
 const WithOptions = z.object({
-  options: z.array(z.unknown()).max(MAX_OPTIONS),
+  options: z.array(z.unknown()).max(DISCORD_LIMITS.commandOptions),
 });
 const Subcommand = z.looseObject({
   type: z.literal(ApplicationCommandOptionType.Subcommand),
@@ -147,7 +147,7 @@ const UserEntry = z.object({
 });
 
 const SelectValues = z.object({
-  values: z.array(z.string()).max(MAX_OPTIONS),
+  values: z.array(z.string()).max(DISCORD_LIMITS.selectOptions),
 });
 const ComponentTypeData = z.object({ component_type: z.number() });
 const EphemeralFlags = z.object({ message: z.object({ flags: z.number() }) });

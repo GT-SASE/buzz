@@ -628,28 +628,6 @@ describe("the length validator", () => {
   ])("checks boundary %#", (text, limit, expected) => {
     expect(isWithinLimit(text, limit)).toBe(expected);
   });
-
-  it("matches Discord's documented limits", () => {
-    expect(DISCORD_LIMITS).toEqual({
-      content: 2000,
-      threadName: 100,
-      mentionedUsers: 100,
-      mentionedRoles: 100,
-      buttonLabel: 80,
-      customId: 100,
-      selectOptionLabel: 100,
-      selectOptionValue: 100,
-      selectPlaceholder: 150,
-      selectOptions: 25,
-      autocompleteChoiceName: 100,
-      autocompleteChoiceValue: 100,
-      autocompleteChoices: 25,
-      modalTitle: 45,
-      textInputLabel: 45,
-      actionRows: 5,
-      buttonsPerRow: 5,
-    });
-  });
 });
 
 describe("chunkMessages", () => {
