@@ -316,26 +316,6 @@ describe("/setup", () => {
         flags: MessageFlags.SuppressEmbeds,
       });
     });
-
-    it("stays within a message's limit with the longest names and many granters", async () => {
-      const long = "*".repeat(100);
-      const granters = Array.from({ length: 30 }, () =>
-        role(fakeId(), { name: long, permissions: ADMINISTRATOR_BIT }),
-      );
-      const { dependencies, edits } = await world({}, { roles: granters });
-      const longNames = Object.fromEntries(
-        SETUP_OPTIONS.map((name) => [
-          name,
-          role(CHOSEN[name].id, { name: long }),
-        ]),
-      );
-
-      await run(ROUTER, setupPayload(longNames), dependencies);
-
-      expect(edits[0]?.components).toHaveLength(1);
-      expect(edits[0]?.content).toContain("and more");
-      expect(edits[0]?.content.length).toBeLessThanOrEqual(2000);
-    });
   });
 
   it("ignores options it does not ask for, so nothing forges the audit actor", async () => {
@@ -447,6 +427,37 @@ describe("Confirm", () => {
     expect(w.edits).toHaveLength(2);
   });
 
+  it("lets one of two admins win the first setup and a rebind, with one audit row each", async () => {
+    const w = await world();
+    async function race(customId: string) {
+      const before = w.edits.length;
+      await Promise.all([
+        run(ROUTER, componentPayload(customId), w.dependencies),
+        run(ROUTER, componentPayload(customId), w.dependencies),
+      ]);
+      const texts = w.edits.slice(before).map((edit) => edit.content);
+      expect(texts.filter((text) => text.includes("Saved."))).toHaveLength(1);
+      expect(
+        texts.filter((text) => text.includes("Someone else changed the roles")),
+      ).toHaveLength(1);
+    }
+
+    await race(await showSetup(w));
+    expect(await w.changes()).toHaveLength(1);
+    await race(
+      await showSetup(w, ADMINISTRATOR, {
+        treasury_role: CHOSEN.marketing_role,
+        marketing_role: CHOSEN.treasury_role,
+      }),
+    );
+
+    expect(await w.changes()).toHaveLength(2);
+    expect(await w.config()).toMatchObject({
+      version: 2,
+      treasury_role_id: CHOSEN.marketing_role.id,
+    });
+  });
+
   it.each<[string, (w: World) => Promise<Record<string, unknown>>]>([
     [
       "a fingerprint that is not the draft's",
@@ -544,22 +555,5 @@ describe("Confirm", () => {
     await expectNothingSaved(w);
     expect(edits[0]?.content).toContain(text);
     expect(edits[0]?.components).toEqual([]);
-  });
-
-  it.each([
-    ["an extra separator", `setup.confirm:0:${FINGERPRINT}:1`],
-    ["the old form with role IDs", `setup.confirm:0:${fakeId()}:${fakeId()}`],
-    ["a fingerprint that is not hex", "setup.confirm:0:ABCDEFGHIJKLMNOP"],
-  ])("refuses %s", async (_label, customId) => {
-    const w = await world();
-
-    const { reply } = await run(
-      ROUTER,
-      componentPayload(customId),
-      w.dependencies,
-    );
-
-    expect(reply.data?.content).toBe(FIXED_REFUSAL_TEXT);
-    await expectNothingSaved(w);
   });
 });

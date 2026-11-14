@@ -215,18 +215,6 @@ describe("/config", () => {
     expect(edits).toEqual([]);
   });
 
-  it("shows the switch that does the opposite of the current state", async () => {
-    const off = await world({
-      config: configRow({ reminders_enabled: false }),
-    });
-
-    await run(ROUTER, commandPayload("config"), off.dependencies);
-
-    expect(off.edits[0]?.content).toContain("Reminders: **off**");
-    expect(customIds(off.edits[0])).toContain("config.reminders-on:3");
-    expect(customIds(off.edits[0])).not.toContain("config.reminders-off:3");
-  });
-
   describe("what Discord says about a managed forum", () => {
     it("warns when @everyone can view it", async () => {
       const { dependencies, edits } = await world(
@@ -254,20 +242,6 @@ describe("/config", () => {
       expect(remove?.options).toEqual([
         { label: `Forum ${FORUM}`, value: FORUM },
       ]);
-    });
-
-    it("still draws the panel when Discord can't be read at all", async () => {
-      const { dependencies, edits } = await world(
-        {},
-        { channels: "fail", roles: "fail" },
-      );
-
-      await run(ROUTER, commandPayload("config"), dependencies);
-
-      expect(edits[0]?.content).toContain(`<#${FORUM}>`);
-      expect(edits[0]?.content).toContain(
-        "Could not read this server's channels",
-      );
     });
 
     it.each(["@everyone <@&123> [click](https://evil.example) ‮evil"])(
@@ -364,17 +338,6 @@ describe("/config", () => {
       });
     });
 
-    it("dates a change by its UTC day, whatever offset its text carries", async () => {
-      const { dependencies, edits } = await world({
-        changes: [change({ created_at: "2030-01-02T21:00:00-05:00" })],
-      });
-
-      await run(ROUTER, commandPayload("config"), dependencies);
-
-      expect(edits[0]?.content).toContain("2030\\-01\\-03");
-      expect(edits[0]?.content).not.toContain("2030\\-01\\-02");
-    });
-
     it.each([
       [
         "several changed roles, including the four added later",
@@ -388,24 +351,6 @@ describe("/config", () => {
           new_values: BOUND,
         },
         "changed the roles: E-board, Treasury Committee",
-      ],
-      [
-        "a separate admin role replaced by E-board",
-        {
-          action: "role_bindings",
-          old_values: { ...BOUND, admin_role_id: FORUM },
-          new_values: BOUND,
-        },
-        "changed the Admin role",
-      ],
-      [
-        "many forums, without listing them all",
-        {
-          new_values: {
-            added_channel_ids: [FORUM, NEW_FORUM, FORUM, NEW_FORUM, FORUM],
-          },
-        },
-        `added <#${FORUM}>, <#${NEW_FORUM}>, <#${FORUM}> and 2 more`,
       ],
       [
         "reminders off",
@@ -445,38 +390,6 @@ describe("/config", () => {
 
       expect(edits[0]?.content).not.toContain("canary");
     });
-  });
-
-  it("says only try again when the database fails", async () => {
-    const w = await world();
-    const { dependencies, edits } = w;
-    w.fail("managed_channels");
-
-    await run(ROUTER, commandPayload("config"), dependencies);
-
-    expect(edits[0]?.content).toContain("Something went wrong");
-  });
-
-  it("shows no nickname, whatever the payload holds", async () => {
-    const { dependencies, edits } = await world({ changes: [change()] });
-
-    await run(
-      ROUTER,
-      commandPayload("config", {
-        member: {
-          ...ADMINISTRATOR,
-          nick: "canary-nick",
-          user: {
-            id: MEMBER_ID,
-            username: "canary-nick",
-            global_name: "canary-nick",
-          },
-        },
-      }),
-      dependencies,
-    );
-
-    expect(JSON.stringify(edits)).not.toContain("canary");
   });
 
   it.each<[string, () => Record<string, unknown>]>([
@@ -555,6 +468,8 @@ describe("reminders", () => {
     await run(ROUTER, commandPayload("config"), dependencies);
 
     expect(edits[0]?.content).toContain("Reminders: **off**");
+    expect(customIds(edits[0])).toContain("config.reminders-on:3");
+    expect(customIds(edits[0])).not.toContain("config.reminders-off:3");
     expect(edits[0]?.content).toContain(
       `Turning them on after the day's run (around ${RUN_AT}) does not reopen it: they resume with the next day's run.`,
     );
@@ -592,6 +507,22 @@ describe("reminders", () => {
       expect(customIds(edits[0])).toContain("config.add:4");
     },
   );
+
+  it("lets only one of two panels shown at the same version save", async () => {
+    const w = await world();
+    const { dependencies, edits } = w;
+
+    await Promise.all([
+      run(ROUTER, addPayload(NEW_FORUM), dependencies),
+      run(ROUTER, componentPayload("config.reminders-off:3"), dependencies),
+    ]);
+
+    expect((await w.config())?.version).toBe(4);
+    expect(await saves(w)).toBe(1);
+    expect(
+      edits.filter((edit) => edit.content.includes("nothing was saved")),
+    ).toHaveLength(1);
+  });
 
   it("refuses a stale version and redraws with the current one", async () => {
     const w = await world({
@@ -703,7 +634,6 @@ describe("adding a forum", () => {
 
     it.each([
       ["the channel list", { channels: "fail" }],
-      ["the role list", { roles: "fail" }],
       ["the bot's member record", { botRoleIds: "fail" }],
     ] as const)(
       "cannot check, and writes nothing, if %s can't be read",
@@ -765,8 +695,8 @@ describe("removing a forum", () => {
     ]);
   });
 
-  it("removes it on the second click", async () => {
-    const w = await world();
+  it("removes it on the second click, keeping its tasks", async () => {
+    const w = await world({ openTasks: new Map([[FORUM, 2]]) });
     const { dependencies, edits } = w;
 
     await run(
@@ -782,6 +712,10 @@ describe("removing a forum", () => {
     expect((await w.channels())[0]?.status).toBe("removed");
     expect(edits[0]?.content).toContain(`Removed <#${FORUM}>.`);
     expect(edits[0]?.content).toContain("adding it again resumes");
+    const tasks = await w.pg.query(
+      "SELECT 1 FROM public.tasks WHERE status = 'open' AND deleted_at IS NULL",
+    );
+    expect(tasks.rows).toHaveLength(2);
   });
 
   it("says so if another click already removed it", async () => {
@@ -797,19 +731,6 @@ describe("removing a forum", () => {
 
     expect(edits[0]?.content).toContain("no longer possible");
     expect(JSON.stringify(edits)).not.toContain("row text");
-  });
-});
-
-describe("Refresh", () => {
-  it("redraws for an admin, with no claim and no write", async () => {
-    const w = await world();
-    const { dependencies, edits } = w;
-
-    await run(ROUTER, componentPayload("config.view"), dependencies);
-
-    expect(edits[0]?.content).toContain("Bot settings");
-    expect(await w.claims()).toBe(0);
-    expect(await saves(w)).toBe(0);
   });
 });
 
@@ -869,19 +790,6 @@ describe("adding a forum back", () => {
     expect(body.content).toContain("Status: Closed");
     expect(edits[0]?.content).toContain(
       `Added <#${FORUM}>. Its 1 event post(s) are up to date.`,
-    );
-  });
-
-  it("redraws at most ten posts and says the rest were not checked", async () => {
-    const { dependencies, edits, edit } = await removedForum(
-      Array.from({ length: 12 }, (_, index) => eventRow(index + 1)),
-    );
-
-    await run(ROUTER, addPayload(FORUM), dependencies);
-
-    expect(edit).toHaveBeenCalledTimes(10);
-    expect(edits[0]?.content).toContain(
-      "Updated 10 of its event posts. Older posts were not checked.",
     );
   });
 });

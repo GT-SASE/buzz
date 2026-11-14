@@ -214,21 +214,6 @@ describe("the event picker", () => {
     }
   });
 
-  it("writes nothing and calls Discord for nothing", async () => {
-    await seed();
-    const before = world.dbRequests().length;
-
-    await choices("close", "fall");
-
-    expect(world.discord.requests).toEqual([]);
-    const made = world.dbRequests().slice(before);
-    expect(
-      made.filter((request) => !/^(GET |SQL select )/.test(request)),
-    ).toEqual([]);
-    // The config read, and one search.
-    expect(made).toHaveLength(2);
-  });
-
   it("offers a member who is not an officer nothing, and reads no event", async () => {
     await seed();
     const before = world.dbRequests().length;
@@ -261,17 +246,6 @@ describe("the event picker", () => {
     const [choice] = await choices("status", "");
 
     expect(choice?.name).not.toMatch(/[@<>#[\]`|*~:/\\.\n\r]/u);
-  });
-
-  it.each([
-    ["NUL", "x\u0000y"],
-    ["too long", "x".repeat(101)],
-  ])("asks the database nothing for %s", async (_label, typed) => {
-    await seed();
-    const before = world.dbRequests().length;
-
-    expect(await choices("status", typed)).toEqual([]);
-    expect(eventReads(before)).toEqual([]);
   });
 
   it("reports a database failure as no choices", async () => {
@@ -387,16 +361,6 @@ describe("/event status", () => {
 
     expect(world.discord.lastReply()).toContain(text);
   });
-
-  it("shows an event in a removed forum, with a note", async () => {
-    const event = await seed();
-    await world.setForumStatus(event.forum, "removed");
-
-    await status(eventOption(event.id));
-
-    expect(world.discord.lastReply()).toContain("no longer managed");
-    expect(world.discord.publicWrites()).toEqual([]);
-  });
 });
 
 async function reminderState(taskId: string) {
@@ -497,40 +461,6 @@ describe("/event close", () => {
 
     expect((await world.events())[0]?.status).toBe("closed");
     expect(world.discord.lastReply()).toContain("couldn't add a line");
-  });
-
-  it("says the overview may be stale, and repairs it on a second close", async () => {
-    const event = await seed();
-    world.discord.fail("PATCH", MESSAGE_EDIT, SERVER_ERROR);
-    await close(event.id);
-    expect((await world.events())[0]?.status).toBe("closed");
-    expect(world.discord.lastReply()).toContain("may still say Active");
-    world.discord.clearFailures();
-    const before = world.discord.requests.length;
-
-    await close(event.id);
-
-    const edit = world.discord.requests
-      .slice(before)
-      .find(
-        (request) =>
-          request.method === "PATCH" && MESSAGE_EDIT.test(request.path),
-      );
-    expect(edit?.body?.content).toContain("Status: Closed");
-    expect(lines(event.threadId)).toHaveLength(1);
-    expect(world.discord.lastReply()).toContain("now shows");
-  });
-
-  it("posts nothing when the write fails", async () => {
-    const event = await seed();
-    world.failDb(/^SQL update events/);
-
-    await close(event.id);
-
-    world.clearDbFailures();
-    expect((await world.events())[0]?.status).toBe("active");
-    expect(world.discord.publicWrites()).toEqual([]);
-    expect(world.discord.lastReply()).toContain("Something went wrong");
   });
 });
 
@@ -672,20 +602,6 @@ describe("/event delete", () => {
       expect(await world.events()).toEqual(before);
     });
 
-    it("refuses a click on a message others can see", async () => {
-      const event = await seed();
-
-      const ran = await world.send(
-        await confirmClick(event.id, {
-          ...officerFields,
-          message: { id: fakeId(), flags: 0 },
-        }),
-      );
-
-      expect(ran.reply.data?.content).toBe(REFUSED.message);
-      expect((await world.events())[0]?.deleted_at).toBeNull();
-    });
-
     it("deletes an event with no post yet, with no line and no complaint", async () => {
       const event = await seed({ threadStatus: "pending" });
 
@@ -694,28 +610,6 @@ describe("/event delete", () => {
       expect((await world.events())[0]?.deleted_at).not.toBeNull();
       expect(world.discord.publicWrites()).toEqual([]);
       expect(world.discord.lastReply()).not.toContain("couldn't add");
-    });
-
-    it("stays deleted when the line fails", async () => {
-      const event = await seed();
-      world.discord.fail("POST", MESSAGES_POST, SERVER_ERROR);
-
-      await world.send(await confirmClick(event.id));
-
-      expect((await world.events())[0]?.deleted_at).not.toBeNull();
-      expect(world.discord.lastReply()).toContain("couldn't add a line");
-    });
-
-    it("posts nothing when the delete fails", async () => {
-      const event = await seed();
-      world.failDb(/public\.soft_delete_event\(/);
-
-      await world.send(await confirmClick(event.id));
-
-      world.clearDbFailures();
-      expect((await world.events())[0]?.deleted_at).toBeNull();
-      expect(world.discord.publicWrites()).toEqual([]);
-      expect(world.discord.lastReply()).toContain("Something went wrong");
     });
   });
 

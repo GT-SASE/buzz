@@ -1,13 +1,30 @@
 /**
  * The event workflow from the router down to the real schema: /event assign, unassign
  * and pickup, the people picked on /event create, the overview's checklist and buttons,
- * the ping each finished step sends, and the steps /mytasks lists. Discord is the test
- * server behind the real client, so every send passes the managed-channel check.
+ * and the ping each finished step sends. Discord is the test server behind the real
+ * client, so every send passes the managed-channel check. Then the workflow's SQL
+ * functions on their own, and refreshOverview.
  */
 
-import { beforeEach, describe, expect, it } from "bun:test";
+import type { PGlite } from "@electric-sql/pglite";
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+} from "bun:test";
 import { completeEventStep } from "../../src/db/event-steps.ts";
-import type { AssignableStepKind } from "../../src/db/types.ts";
+import type { AssignableStepKind, EventRow } from "../../src/db/types.ts";
+import {
+  DiscordClientError,
+  DiscordErrorCode,
+  type DiscordClient,
+  type DiscordFailure,
+} from "../../src/discord/client.ts";
+import { refreshOverview } from "../../src/events/overview.ts";
+import type { DateOnly } from "../../src/lib/dates.ts";
 import { eventWorld, inThread } from "../support/event-world.ts";
 import {
   ADMIN_ROLE,
@@ -18,7 +35,16 @@ import {
   OFFICER_ROLE,
 } from "../support/interactions.ts";
 import { fakeId } from "../support/ids.ts";
-import { queryAs } from "./harness.ts";
+import { insertEvent, insertGuild } from "./fixtures.ts";
+import { handlerDb, type HandlerDb } from "./handler-db.ts";
+import {
+  createMigratedDb,
+  errorCodeOf,
+  INSUFFICIENT_PRIVILEGE,
+  MIGRATION_OWNER,
+  OTHER_ROLE,
+  queryAs,
+} from "./harness.ts";
 
 const world = eventWorld();
 
@@ -522,5 +548,286 @@ describe("the overview's buttons", () => {
           request.method === "PATCH" && MESSAGE_EDIT.test(request.path),
       ),
     ).toEqual([]);
+  });
+});
+
+/**
+ * The workflow functions at the SQL level: what the access layer cannot reach, such as
+ * the functions the bot's role may not call and refusals a well-behaved caller never
+ * triggers.
+ */
+describe("the event workflow functions", () => {
+  let db: PGlite;
+  let guild: Awaited<ReturnType<typeof insertGuild>>;
+
+  beforeAll(async () => {
+    db = await createMigratedDb();
+    guild = await insertGuild(db);
+  });
+
+  afterAll(async () => {
+    await db.close();
+  });
+
+  const value = async (sql: string, params: unknown[]): Promise<unknown> => {
+    const rows = await queryAs<{ value: unknown }>(
+      db,
+      "bot_app",
+      `SELECT ${sql} AS value`,
+      params,
+    );
+    return rows[0]?.value;
+  };
+
+  it("makes the steps for a new event in the same insert", async () => {
+    const eventId = await insertEvent(db, guild);
+    const { rows } = await db.query(
+      `SELECT kind::text AS kind, status::text AS status
+       FROM public.event_steps AS step WHERE event_id = $1 ORDER BY step.kind`,
+      [eventId],
+    );
+    expect(rows).toEqual(
+      ["budget_sheet", "engage_post", "budget_approved", "food_pickup"].map(
+        (kind) => ({ kind, status: "open" }),
+      ),
+    );
+  });
+
+  it.each([
+    [
+      "assign Budget approved",
+      `public.assign_event_step($1, $2, 'budget_approved', $3, $3)`,
+    ],
+    [
+      "complete Food pickup",
+      `public.complete_event_step($1, $2, 'food_pickup', $3)`,
+    ],
+    ["a null pickup time", `public.set_event_pickup_time($1, $2, NULL, $3)`],
+  ])("refuses to %s", async (_name, sql) => {
+    const eventId = await insertEvent(db, guild);
+    expect(
+      await errorCodeOf(value(sql, [eventId, guild.guildId, fakeId()])),
+    ).toBe("22023");
+  });
+
+  it("cannot be steered to another guild's event by its ID alone", async () => {
+    const eventId = await insertEvent(db, guild);
+    const other = await insertGuild(db);
+    for (const sql of [
+      `public.assign_event_step($1, $2, 'budget_sheet', $3, $3)`,
+      `public.complete_event_step($1, $2, 'budget_sheet', $3)`,
+      `public.set_event_pickup_time($1, $2, '12:00', $3)`,
+    ]) {
+      expect(await value(sql, [eventId, other.guildId, fakeId()])).toBeNull();
+    }
+    expect(
+      await value(`public.claim_step_handoff($1, $2, 'budget_sheet')`, [
+        eventId,
+        other.guildId,
+      ]),
+    ).toBe(false);
+  });
+
+  it("does not let bot_app call the internal functions, or another role the writers", async () => {
+    expect(
+      await errorCodeOf(
+        queryAs(db, "bot_app", `SELECT public.create_event_steps()`),
+      ),
+    ).toBe(INSUFFICIENT_PRIVILEGE);
+    const eventId = await insertEvent(db, guild);
+    for (const sql of [
+      `SELECT public.complete_event_step('${eventId}', '${guild.guildId}', 'budget_sheet', '${fakeId()}')`,
+      `SELECT public.claim_event_reminder('${eventId}', 'daily_steps', '2030-01-15')`,
+    ]) {
+      expect(await errorCodeOf(queryAs(db, OTHER_ROLE, sql))).toBe(
+        INSUFFICIENT_PRIVILEGE,
+      );
+    }
+  });
+
+  it("keeps the step and log rows consistent whatever the owner writes", async () => {
+    const eventId = await insertEvent(db, guild);
+    for (const sql of [
+      `UPDATE public.event_steps SET status = 'done' WHERE event_id = $1 AND kind = 'budget_sheet'`,
+      `INSERT INTO public.event_reminder_log (event_id, kind, reminder_date, state)
+       VALUES ($1, 'daily_steps', '2030-01-01', 'sent')`,
+    ]) {
+      expect(
+        await errorCodeOf(queryAs(db, MIGRATION_OWNER, sql, [eventId])),
+      ).toBe("23514");
+    }
+  });
+});
+
+/** refreshOverview reads the event again, and stores the message it posts or that the thread is gone. */
+describe("refreshOverview", () => {
+  const GUILD = fakeId();
+  const THREAD = fakeId();
+  const OVERVIEW = fakeId();
+  const EVENT_ID = "11111111-1111-4111-8111-111111111111";
+  const ACTIVE = { overview_message_id: OVERVIEW, thread_status: "active" };
+  let sent: { body: Record<string, unknown>; target: unknown }[];
+  let edited: { body: Record<string, unknown>; messageId: string }[];
+  let editFails: DiscordFailure | undefined;
+  let duringEdit: (() => Promise<void>) | undefined;
+  let reopened: unknown[];
+  let row: EventRow | null;
+  let w: HandlerDb;
+
+  function eventRow(fields: Partial<EventRow> = {}): EventRow {
+    return {
+      id: EVENT_ID,
+      guild_id: GUILD,
+      channel_id: fakeId(),
+      name: "Fall Social",
+      event_date: "2099-01-15" as DateOnly,
+      thread_id: THREAD,
+      overview_message_id: OVERVIEW,
+      status: "active",
+      thread_status: "active",
+      created_by: fakeId(),
+      deleted_at: null,
+      created_at: "2026-01-01T00:00:00+00:00",
+      ...fields,
+    };
+  }
+
+  /** The stored event's post fields, or undefined once it is deleted. */
+  async function stored() {
+    const result = await w.pg.query(
+      `SELECT overview_message_id, thread_status::text AS thread_status
+       FROM public.events WHERE id = $1 AND deleted_at IS NULL`,
+      [EVENT_ID],
+    );
+    return result.rows[0];
+  }
+
+  async function refresh(): Promise<boolean> {
+    w = await handlerDb({ events: row === null ? [] : [row] });
+    const discord = {
+      reopenThread: (target) => {
+        reopened.push(target);
+        editFails = undefined;
+        return Promise.resolve();
+      },
+      editMessage: async (_target, messageId, body) => {
+        if (editFails !== undefined) {
+          throw new DiscordClientError("edit message", editFails);
+        }
+        await duringEdit?.();
+        duringEdit = undefined;
+        edited.push({
+          messageId,
+          body: body.payload as Record<string, unknown>,
+        });
+        return { id: messageId };
+      },
+      sendMessage: (target, body) => {
+        sent.push({ target, body: body.payload as Record<string, unknown> });
+        return Promise.resolve({ id: OVERVIEW });
+      },
+    } as Partial<DiscordClient> as DiscordClient;
+    return refreshOverview({ db: w.db, discord }, eventRow());
+  }
+
+  beforeEach(() => {
+    sent = [];
+    edited = [];
+    editFails = undefined;
+    duringEdit = undefined;
+    reopened = [];
+    row = eventRow();
+  });
+
+  it("edits the stored message from the row read again, with no pings", async () => {
+    row = eventRow({ status: "closed" });
+
+    expect(await refresh()).toBe(true);
+
+    expect(edited).toHaveLength(1);
+    expect(edited[0]?.messageId).toBe(OVERVIEW);
+    expect(edited[0]?.body.content).toContain("Status: Closed");
+    expect(edited[0]?.body.allowed_mentions).toEqual({ parse: [], users: [] });
+    expect(sent).toEqual([]);
+  });
+
+  it("posts a new overview when none is stored, and stores it", async () => {
+    row = eventRow({ overview_message_id: null });
+
+    expect(await refresh()).toBe(true);
+
+    expect(sent[0]?.target).toEqual({
+      kind: "thread",
+      guildId: GUILD,
+      threadId: THREAD,
+    });
+    expect(await stored()).toEqual(ACTIVE);
+  });
+
+  it("draws the closed state again when /event close lands during a slow edit", async () => {
+    duringEdit = async () => {
+      await w.pg.query(
+        `UPDATE public.events SET status = 'closed' WHERE id = $1`,
+        [EVENT_ID],
+      );
+    };
+
+    expect(await refresh()).toBe(true);
+
+    expect(edited.map((edit) => edit.body.content)).toEqual([
+      expect.stringContaining("Status: Active"),
+      expect.stringContaining("Status: Closed"),
+    ]);
+  });
+
+  it("reopens an archived post and edits again, posting nothing", async () => {
+    editFails = {
+      kind: "api",
+      status: 400,
+      code: DiscordErrorCode.ThreadArchived,
+    };
+
+    expect(await refresh()).toBe(true);
+
+    expect(reopened).toEqual([
+      { kind: "thread", guildId: GUILD, threadId: THREAD },
+    ]);
+    expect(edited).toHaveLength(1);
+    expect(sent).toEqual([]);
+  });
+
+  it.each([
+    [DiscordErrorCode.MissingAccess, 403, "active"],
+    [DiscordErrorCode.UnknownChannel, 404, "missing"],
+  ])(
+    "posts nothing after error %d, and marks the thread missing only when it is gone",
+    async (code, status, threadStatus) => {
+      editFails = {
+        kind: "channel_unavailable",
+        channelId: THREAD,
+        status,
+        code,
+      };
+
+      expect(await refresh()).toBe(false);
+
+      expect(sent).toEqual([]);
+      expect(await stored()).toEqual({
+        overview_message_id: OVERVIEW,
+        thread_status: threadStatus,
+      });
+    },
+  );
+
+  it.each<[string, EventRow | null]>([
+    ["deleted since it was read", null],
+    ["pending", eventRow({ thread_id: null, thread_status: "pending" })],
+  ])("sends nothing for an event that is %s", async (_label, current) => {
+    row = current;
+
+    expect(await refresh()).toBe(false);
+
+    expect(sent).toEqual([]);
+    expect(edited).toEqual([]);
   });
 });

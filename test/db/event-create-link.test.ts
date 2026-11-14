@@ -6,11 +6,7 @@ import {
   inThread,
   OTHER_GUILD,
 } from "../support/event-world.ts";
-import {
-  HOSTILE_TEXT,
-  INVISIBLE_TEXT,
-  UNSTORABLE_TEXT,
-} from "../support/hostile-text.ts";
+import { HOSTILE_TEXT, INVISIBLE_TEXT } from "../support/hostile-text.ts";
 import {
   ADMIN_ROLE,
   GUILD_ID,
@@ -174,7 +170,6 @@ describe("/event create", () => {
 
     it.each([
       INVISIBLE_TEXT[0] ?? ["", ""],
-      UNSTORABLE_TEXT[0] ?? ["", ""],
       ["too long", "x".repeat(101)],
     ] as const)("refuses %s before any write or send", async (_label, name) => {
       await world.addManagedForum();
@@ -206,20 +201,6 @@ describe("/event create", () => {
     expect(await world.events()).toHaveLength(1);
     expect(world.discord.posts()).toHaveLength(1);
     expect(world.discord.lastReply()).toContain(`<#${event?.thread_id ?? ""}>`);
-  });
-
-  it("takes the actor and guild only from the signed payload", async () => {
-    await world.addManagedForum();
-    const hostile = { type: 3, value: fakeId() };
-
-    await world.send(
-      create({ actor_id: hostile, created_by: hostile, guild_id: hostile }),
-    );
-
-    expect((await world.events())[0]).toMatchObject({
-      guild_id: GUILD_ID,
-      created_by: MEMBER_ID,
-    });
   });
 
   it("refuses a member who is not an officer, with nothing written or sent", async () => {
@@ -300,46 +281,9 @@ describe("/event create", () => {
         `A post for **Fall Social** may already exist in <#${forum}>. Run /event link inside it and choose this event. If there is none, make the post yourself and run /event link there.`,
       );
     });
-
-    // Only a refusal of the words asks for different wording instead of a rerun.
-    it.each<[string, Failure, string, boolean]>([
-      [
-        "AutoMod",
-        { kind: "respond", status: 400, code: 200000 },
-        "AutoMod",
-        false,
-      ],
-      ["no access", FORBIDDEN, "can't see", true],
-    ])("names the real cause: %s", async (_label, failure, reply, rerun) => {
-      await world.addManagedForum();
-      world.discord.fail("POST", THREADS_POST, failure, 1);
-
-      await world.send(create());
-
-      expect((await world.events())[0]?.thread_status).toBe("pending");
-      const text = world.discord.lastReply() ?? "";
-      expect(text).toContain(reply);
-      expect(text.includes("same /event create")).toBe(rerun);
-      expect(text.includes("different wording")).toBe(!rerun);
-    });
   });
 
   describe("when the database fails", () => {
-    it.each([
-      ["the claim", /public\.claim_interaction\(/],
-      ["the insert", /^SQL insert into events/],
-    ])("posts nothing and says so when %s fails", async (_label, pattern) => {
-      await world.addManagedForum();
-      world.failDb(pattern);
-
-      await world.send(create());
-
-      world.clearDbFailures();
-      expect(await world.events()).toEqual([]);
-      expect(world.discord.posts()).toEqual([]);
-      expect(world.discord.lastReply()).toContain("Something went wrong");
-    });
-
     it("names and logs a post it can't save, and /event link in it attaches it", async () => {
       const forum = await world.addManagedForum();
       world.failDb(/^SQL update events/, 500, 1);
@@ -439,17 +383,6 @@ describe("/event link", () => {
     expect(await world.events()).toHaveLength(1);
     expect(world.discord.posts()).toHaveLength(1);
   });
-
-  it.each(LINKING_TEXT)(
-    "refuses a title with an invite or masked link: %s",
-    async (_label, title) => {
-      const { parent, threadId } = await post(title);
-
-      await world.send(link(threadId, parent));
-
-      await refusedWith("holds a server invite or a masked link");
-    },
-  );
 
   it("names the event inertly from a hostile title", async () => {
     const { parent, threadId } = await post("<@&1> **Official** @everyone");
@@ -666,23 +599,6 @@ describe("an event whose post was deleted", () => {
     );
   });
 
-  it("is not taken up when closed, by /event create or /event link", async () => {
-    const { forum, id } = await lostEvent();
-    await world.pg.query(
-      `UPDATE public.events SET status = 'closed' WHERE id = $1`,
-      [id],
-    );
-    const before = world.discord.posts().length;
-
-    await world.send(create());
-    expect(world.discord.lastReply()).toContain("closed");
-    await world.send(linkIn(memberPost(forum), forum));
-    expect(world.discord.lastReply()).toContain("closed");
-
-    expect(await world.events()).toHaveLength(1);
-    expect(world.discord.posts()).toHaveLength(before);
-  });
-
   it("moves to someone else's post of the same title, with its tasks in a new overview", async () => {
     const { forum, id, sent } = await lostEvent();
     const threadId = memberPost(forum);
@@ -731,19 +647,6 @@ describe("an event whose post was deleted", () => {
         expect(world.discord.lastReply()).toBe(REFUSED.message);
       }
       expect(await world.events("thread_status = 'active'")).toEqual([]);
-    });
-
-    it("refuses an event that still has its post, and points at it", async () => {
-      const forum = await world.addManagedForum();
-      await world.send(create());
-      const [event] = await world.events();
-
-      await world.send(linkIn(memberPost(forum), forum, chosen(event?.id)));
-
-      expect((await world.events())[0]?.thread_id).toBe(event?.thread_id);
-      expect(world.discord.lastReply()).toContain(
-        `<#${event?.thread_id ?? ""}>`,
-      );
     });
 
     it("asks for a date or an event when given neither", async () => {

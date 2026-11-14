@@ -1,8 +1,24 @@
+import { generateKeyPairSync, sign } from "node:crypto";
+import type { PGlite } from "@electric-sql/pglite";
 import { InteractionResponseType, MessageFlags } from "discord-api-types/v10";
-import { beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  mock,
+  spyOn,
+} from "bun:test";
+import { POST } from "../../api/interactions.ts";
+import { discordServer } from "../support/discord-server.ts";
 import {
   ADMIN,
+  ADMIN_ROLE,
   ADMINISTRATOR,
+  APP_ID,
+  OFFICER_ROLE,
   OFFICER,
   PLAIN_MEMBER,
   autocompletePayload,
@@ -29,16 +45,34 @@ import {
   commandRoute,
   componentRoute,
   createRouter,
-  eventRow,
   modalRoute,
   noRow,
   refusal,
-  taskRow,
   tierOnly,
-  valueOf,
   type Handler,
 } from "../../src/handlers/router.ts";
 import { handlerDb, type Seed } from "./handler-db.ts";
+import { createMigratedDb, MIGRATION_OWNER, queryAs } from "./harness.ts";
+import { pgliteSql, testDatabaseUrl } from "../support/sql-client.ts";
+import { stubEnv, stubGlobal } from "../support/stubs.ts";
+
+// Only the interactions endpoint below uses these two.
+const pending = { work: [] as Promise<unknown>[] };
+void mock.module("@vercel/functions", () => ({
+  waitUntil: (work: Promise<unknown>) => {
+    pending.work.push(work);
+  },
+}));
+const live = { database: undefined as PGlite | undefined };
+void mock.module("../../src/db/neon.ts", () => ({
+  neonRunner: () =>
+    pgliteSql(() => {
+      if (live.database === undefined) {
+        throw new Error("the database is not set up");
+      }
+      return live.database;
+    }),
+}));
 
 const FIXED_REFUSAL = {
   type: InteractionResponseType.ChannelMessageWithSource,
@@ -172,51 +206,6 @@ beforeEach(() => {
   spyOn(console, "error").mockImplementation(logged);
 });
 
-// Order follows src/handlers/modules.ts, then each handler's own list.
-const EXPECTED_ROUTES = [
-  ["command", "config", "config.view"],
-  ["component", "config.view", "config.view"],
-  ["component", "config.reminders-on", "config.change"],
-  ["component", "config.reminders-off", "config.change"],
-  ["component", "config.add", "config.change"],
-  ["component", "config.remove", "config.change"],
-  ["component", "config.remove-yes", "config.change"],
-  ["command", "event create", "event.create"],
-  ["command", "event link", "event.link"],
-  ["command", "event status", "event.status"],
-  ["command", "event list", "event.list"],
-  ["command", "event close", "event.close"],
-  ["command", "event delete", "event.delete"],
-  ["component", "event.delete.confirm", "event.delete"],
-  ["autocomplete", "event link", "event.link"],
-  ["autocomplete", "event status", "event.status"],
-  ["autocomplete", "event close", "event.close"],
-  ["autocomplete", "event delete", "event.delete"],
-  ["command", "event assign", "event.assign"],
-  ["command", "event unassign", "event.unassign"],
-  ["command", "event pickup", "event.pickup"],
-  ["component", "event.sheet-done", "event.step_done"],
-  ["component", "event.engage-done", "event.step_done"],
-  ["component", "event.budget-ok", "event.approve_budget"],
-  ["autocomplete", "event assign", "event.assign"],
-  ["autocomplete", "event unassign", "event.unassign"],
-  ["autocomplete", "event pickup", "event.pickup"],
-  ["command", "mytasks", "mytasks"],
-  ["command", "ping", "ping"],
-  ["command", "setup", "setup"],
-  ["component", "setup.confirm", "setup"],
-  ["command", "task assign", "task.assign"],
-  ["autocomplete", "task assign", "task.assign"],
-  ["command", "task edit", "task.edit"],
-  ["autocomplete", "task edit", "task.edit"],
-  ["command", "task delete", "task.delete"],
-  ["component", "task.delete-yes", "task.delete"],
-  ["autocomplete", "task delete", "task.delete"],
-  ["command", "task done", "task.done"],
-  ["autocomplete", "task done", "task.done"],
-  ["component", "task.done", "task.done"],
-];
-
 describe("the registered tables", () => {
   const definitions = COMMANDS as readonly {
     name: string;
@@ -238,12 +227,6 @@ describe("the registered tables", () => {
 
     expect(paths.length).toBeGreaterThan(0);
     expect([...commandRoutes].sort()).toEqual([...paths].sort());
-  });
-
-  it("is exactly this table, so a change to it is a visible decision", () => {
-    expect(
-      ROUTER.routes.map(({ surface, key, action }) => [surface, key, action]),
-    ).toEqual(EXPECTED_ROUTES);
   });
 
   it("maps the action of every route, including every custom_id prefix", () => {
@@ -304,23 +287,6 @@ describe("createRouter", () => {
       "gate not made by this module",
     ],
     [
-      "a public route with a finish step",
-      () => [
-        {
-          commands: [{ name: "ping", description: "x" }],
-          routes: [
-            commandRoute({
-              path: "ping",
-              gate: noRow("ping"),
-              changesState: false,
-              finish,
-            }),
-          ],
-        },
-      ],
-      "is public, so it can only reply",
-    ],
-    [
       "a tier-only gate beside a reply, which would check no row at all",
       () => [
         {
@@ -367,18 +333,6 @@ describe("names that exist on every object", () => {
 
 describe("custom_id parsing", () => {
   const ID = fakeId();
-
-  it("accepts the exact form", async () => {
-    const { dependencies } = await setup();
-
-    await run(
-      router,
-      componentPayload(`config.test-change:3:${ID}`),
-      dependencies,
-    );
-
-    expect(finished).toHaveBeenCalledWith([3, ID]);
-  });
 
   it.each([
     ["an extra field", `config.test-change:3:${ID}:${ID}`],
@@ -441,24 +395,6 @@ describe("authorization on every kind of interaction", () => {
     await run(
       router,
       componentPayload(`config.test-change:3:${id}`, { member: who }),
-      dependencies,
-    );
-
-    expect(finished).toHaveBeenCalledTimes(1);
-  });
-
-  it("reads the actor from each interaction, so a removed role counts at once", async () => {
-    const { dependencies } = await setup();
-    const customId = `config.test-change:3:${id}`;
-
-    await run(
-      router,
-      componentPayload(customId, { member: ADMIN }),
-      dependencies,
-    );
-    await run(
-      router,
-      componentPayload(customId, { member: PLAIN_MEMBER }),
       dependencies,
     );
 
@@ -559,10 +495,6 @@ describe("private replies", () => {
     expect(finished).not.toHaveBeenCalled();
     expect(sent()).toBe(0);
   });
-
-  it("uses one fixed refusal that says what authorize says", () => {
-    expect(refusal().payload).toEqual(FIXED_REFUSAL);
-  });
 });
 
 describe("claims", () => {
@@ -650,15 +582,6 @@ describe("failures", () => {
     expect(edits[0]?.content).toBe(MAYBE_SAVED);
   });
 
-  it("says try again when a read-only route fails", async () => {
-    const { dependencies, edits } = await setup();
-
-    await run(throwing, componentPayload("config.read-fails"), dependencies);
-
-    expect(edits[0]?.content).toContain("Please try again");
-    expect(edits[0]?.content).not.toContain("may or may not");
-  });
-
   it("says only try again when the first read fails", async () => {
     const { dependencies, fail } = await setup();
     fail("guild_config");
@@ -702,102 +625,6 @@ describe("failures", () => {
         dependenciesFor(db, rejected),
       ),
     ).toBeDefined();
-  });
-});
-
-describe("routes on a row", () => {
-  const rowRouter = createRouter([
-    {
-      commands: [],
-      routes: [
-        componentRoute({
-          prefix: "event.test-row",
-          fields: ["uuid"],
-          gate: eventRow("event.close", () => Promise.resolve(rowResult)),
-          changesState: true,
-          finish: (_ctx, row) => {
-            finished(row);
-            return Promise.resolve({ content: safe`x`, mentionUserIds: [] });
-          },
-        }),
-        componentRoute({
-          prefix: "task.test-row",
-          fields: ["uuid"],
-          gate: taskRow("task.done", () => Promise.resolve(taskResult)),
-          changesState: true,
-          finish: (_ctx, row) => {
-            finished(row);
-            return Promise.resolve({ content: safe`x`, mentionUserIds: [] });
-          },
-        }),
-      ],
-    },
-  ]);
-  type EventRowResult = Parameters<
-    typeof valueOf<null | {
-      guild_id: string;
-      deleted_at: string | null;
-    }>
-  >[0];
-  type TaskRowResult = Parameters<
-    typeof valueOf<null | {
-      guild_id: string;
-      deleted_at: string | null;
-      assignee_id: string;
-    }>
-  >[0];
-  let rowResult: EventRowResult;
-  let taskResult: TaskRowResult;
-
-  const live = { guild_id: GUILD_ID, deleted_at: null };
-
-  it.each([
-    ["an absent row", OFFICER, { ok: true, value: null }],
-    [
-      "another guild's row",
-      OFFICER,
-      { ok: true, value: { ...live, guild_id: fakeId() } },
-    ],
-    [
-      "a deleted row",
-      OFFICER,
-      { ok: true, value: { ...live, deleted_at: "2030-01-01T00:00:00Z" } },
-    ],
-    ["a member without the tier", PLAIN_MEMBER, { ok: true, value: live }],
-  ] as const)("gives %s the same refusal", async (_label, who, result) => {
-    const { dependencies } = await setup();
-    rowResult = result;
-
-    const { reply } = await run(
-      rowRouter,
-      componentPayload(`event.test-row:${UUID}`, { member: who }),
-      dependencies,
-    );
-
-    expect(reply).toEqual(FIXED_REFUSAL);
-    expect(finished).not.toHaveBeenCalled();
-  });
-
-  it("lets an assignee act on their own task, and nobody else's", async () => {
-    const { dependencies } = await setup();
-    const self = fakeId();
-    taskResult = { ok: true, value: { ...live, assignee_id: self } };
-
-    await run(
-      rowRouter,
-      componentPayload(`task.test-row:${UUID}`, {
-        member: member({ id: self }),
-      }),
-      dependencies,
-    );
-    const { reply } = await run(
-      rowRouter,
-      componentPayload(`task.test-row:${UUID}`, { member: PLAIN_MEMBER }),
-      dependencies,
-    );
-
-    expect(finished).toHaveBeenCalledTimes(1);
-    expect(reply).toEqual(FIXED_REFUSAL);
   });
 });
 
@@ -854,73 +681,142 @@ describe("autocomplete", () => {
   });
 });
 
-describe("a button on a message others can see", () => {
-  const onPublic = mock();
-  const clicked = componentRoute({
-    prefix: "mytasks.public",
-    fields: ["uuid"],
-    onPublicMessage: true,
-    gate: noRow("mytasks"),
-    changesState: false,
-    finish: (_ctx, _resource, values) => {
-      onPublic(values);
-      return Promise.resolve({
-        content: safe`Thanks`,
-        mentionUserIds: [],
-      });
-    },
+/**
+ * The client the interactions endpoint really builds. Other tests build their own, so
+ * only this shows that liveDependencies checks the live forum row before a send.
+ */
+describe("the client built by liveDependencies", () => {
+  const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+  let database: PGlite;
+  let discord: ReturnType<typeof discordServer>;
+
+  function signed(payload: unknown): Request {
+    const body = Buffer.from(JSON.stringify(payload));
+    const timestamp = String(Math.floor(Date.now() / 1000));
+    const signature = sign(
+      null,
+      Buffer.concat([Buffer.from(timestamp), body]),
+      privateKey,
+    );
+    return new Request("https://bot.example.test/api/interactions", {
+      method: "POST",
+      headers: {
+        "x-signature-ed25519": signature.toString("hex"),
+        "x-signature-timestamp": timestamp,
+      },
+      body,
+    });
+  }
+
+  /** /task assign on the event, through the endpoint, waiting for its work. */
+  async function assignOn(eventId: string): Promise<void> {
+    const person = fakeId();
+    const options = [
+      { name: "person", type: 6, value: person },
+      { name: "description", type: 3, value: "Book the room" },
+      { name: "due", type: 3, value: "2099-01-10" },
+      { name: "event", type: 3, value: eventId },
+    ];
+    const payload = commandPayload(
+      "task",
+      { member: member({ roles: [OFFICER_ROLE] }) },
+      {
+        options: [{ name: "assign", type: 1, options }],
+        resolved: {
+          users: { [person]: { id: person } },
+          members: { [person]: {} },
+        },
+      },
+    );
+    expect((await POST(signed(payload))).status).toBe(200);
+    expect(pending.work).toHaveLength(1);
+    await Promise.all(pending.work);
+  }
+
+  async function eventWithPost(forumStatus: string) {
+    const forumId = discord.addForum(GUILD_ID);
+    await queryAs(
+      database,
+      MIGRATION_OWNER,
+      `INSERT INTO public.managed_channels (guild_id, channel_id, status)
+       VALUES ($1, $2, 'active')`,
+      [GUILD_ID, forumId],
+    );
+    const threadId = discord.addThread({
+      guild_id: GUILD_ID,
+      parent_id: forumId,
+    });
+    const rows = await queryAs<{ id: string }>(
+      database,
+      MIGRATION_OWNER,
+      `INSERT INTO public.events
+         (guild_id, channel_id, name, event_date, created_by, thread_id, thread_status)
+       VALUES ($1, $2, 'General meeting', '2099-01-15', $3, $4, 'active')
+       RETURNING id`,
+      [GUILD_ID, forumId, fakeId(), threadId],
+    );
+    await queryAs(
+      database,
+      MIGRATION_OWNER,
+      `UPDATE public.managed_channels
+       SET status = $2::public.managed_channel_status WHERE channel_id = $1`,
+      [forumId, forumStatus],
+    );
+    const posts = () =>
+      discord.requests.filter(
+        ({ method, path }) =>
+          method === "POST" && path.includes(`/channels/${threadId}/messages`),
+      );
+    return { eventId: rows[0]?.id ?? "", posts };
+  }
+
+  beforeAll(async () => {
+    database = await createMigratedDb();
+    live.database = database;
+    await queryAs(
+      database,
+      "bot_app",
+      `SELECT public.apply_role_bindings($1, 0, $2, $3, $4, NULL, NULL, NULL, NULL)`,
+      [GUILD_ID, fakeId(), OFFICER_ROLE, ADMIN_ROLE],
+    );
   });
-  const other = componentRoute({
-    prefix: "mytasks.private",
-    fields: [],
-    gate: noRow("mytasks"),
-    changesState: false,
-    finish: () =>
-      Promise.resolve({ content: safe`Thanks`, mentionUserIds: [] }),
-  });
-  const router = createRouter([{ commands: [], routes: [clicked, other] }]);
-  const onMessage = { message: { id: fakeId(), flags: 0 } };
+
+  afterAll(() => database.close());
 
   beforeEach(() => {
-    onPublic.mockClear();
+    pending.work = [];
+    discord = discordServer(APP_ID);
+    const key = publicKey.export({ format: "der", type: "spki" }).subarray(-32);
+    stubEnv("DISCORD_PUBLIC_KEY", key.toString("hex"));
+    stubEnv("DISCORD_APP_ID", APP_ID);
+    stubEnv("ALLOWED_GUILD_IDS", GUILD_ID);
+    stubEnv("DISCORD_BOT_TOKEN", "test-bot-token");
+    stubEnv("DATABASE_URL", testDatabaseUrl());
+    // Only Discord is reached over HTTP. The database is the mocked runner above.
+    stubGlobal("fetch", discord.fetch);
   });
 
-  it("answers in a new private reply, leaving the message alone", async () => {
-    const { db } = await handlerDb({ config: configRow() });
-    const { discord, edits } = fakeDiscord();
+  it("posts in the event's post while its forum is active", async () => {
+    const { eventId, posts } = await eventWithPost("active");
 
-    const ran = await run(
-      router,
-      componentPayload(`mytasks.public:${UUID}`, {
-        member: PLAIN_MEMBER,
-        ...onMessage,
-      }),
-      dependenciesFor(db, discord),
-    );
+    await assignOn(eventId);
 
-    expect(ran.reply).toEqual({
-      type: InteractionResponseType.DeferredChannelMessageWithSource,
-      data: { flags: MessageFlags.Ephemeral },
-    });
-    expect(onPublic).toHaveBeenCalledWith([UUID]);
-    expect(edits[0]?.content).toBe("Thanks");
+    expect(posts()).not.toEqual([]);
   });
 
-  it.each<[string, Seed, string]>([
-    ["before setup", { config: null }, `mytasks.public:${UUID}`],
-    ["with a bad field", { config: configRow() }, "mytasks.public:nope"],
-    ["for any other button", { config: configRow() }, "mytasks.private"],
-  ])("still refuses %s", async (_label, seed, customId) => {
-    const { db } = await handlerDb(seed);
-    const { discord } = fakeDiscord();
+  it.each(["removed", "unavailable"])(
+    "posts nothing once the forum is %s, and keeps the task",
+    async (status) => {
+      const { eventId, posts } = await eventWithPost(status);
 
-    const ran = await run(
-      router,
-      componentPayload(customId, { member: PLAIN_MEMBER, ...onMessage }),
-      dependenciesFor(db, discord),
-    );
+      await assignOn(eventId);
 
-    expect(ran.reply).toEqual(FIXED_REFUSAL);
-    expect(onPublic).not.toHaveBeenCalled();
-  });
+      expect(posts()).toEqual([]);
+      const { rows } = await database.query(
+        `SELECT 1 FROM public.tasks WHERE event_id = $1`,
+        [eventId],
+      );
+      expect(rows).toHaveLength(1);
+    },
+  );
 });

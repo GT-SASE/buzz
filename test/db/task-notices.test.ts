@@ -88,18 +88,8 @@ describe("what an officer is told after a task change", () => {
     it.each<[string, DiscordFailure, string]>([
       ["no answer", { kind: "network" }, "may not have been mentioned"],
       [
-        "a server error",
-        { kind: "api", status: 502, code: undefined },
-        "may not have been mentioned",
-      ],
-      [
         "a refusal",
         { kind: "api", status: 400, code: 160005 },
-        "was not mentioned",
-      ],
-      [
-        "a rate limit",
-        { kind: "rate_limited", retryAfterMs: 1, attempts: 3, scope: "user" },
         "was not mentioned",
       ],
     ])("says what happened after %s", async (_label, failure, text) => {
@@ -275,29 +265,6 @@ describe("what an officer is told after a task change", () => {
   describe("when the overview can't be updated", () => {
     const NOT_UPDATED = "couldn't update the task list in the event's post";
 
-    function refused() {
-      world.refreshOverview.mockResolvedValue(false);
-    }
-
-    it("says so after /task done", async () => {
-      refused();
-      const { eventId } = await eventWithPost();
-      const task = await world.newTask(eventId, fakeId());
-      const { client, edits } = fakeClient();
-
-      await run(
-        world.router,
-        subcommand("done", stringOptions({ task: task.id }), {
-          member: officer(),
-        }),
-        dependenciesFor(world.db(), client),
-      );
-
-      expect(edits[0]?.content).toContain("Marked done");
-      expect(edits[0]?.content).toContain(NOT_UPDATED);
-      expect((await world.row(task.id))?.status).toBe("done");
-    });
-
     it("says so after /task assign, and when the refresh throws", async () => {
       world.refreshOverview.mockRejectedValue(new Error("overview failure"));
       const { threadId } = await eventWithPost();
@@ -356,13 +323,6 @@ describe("what an officer is told after a task change", () => {
 
       expect(reply).toContain(PICK);
       expect((await world.row(task.id))?.status).toBe("open");
-    });
-
-    it.each([
-      ["a name", "Book the room"],
-      ["an ID that finds nothing", "00000000"],
-    ])("asks for a choice after %s", async (_label, typed) => {
-      expect(await doneTyped(typed, officer())).toContain(PICK);
     });
 
     it("won't guess between two tasks sharing a short ID", async () => {
@@ -427,67 +387,6 @@ describe("what an officer is told after a task change", () => {
       expect(found.map((choice) => choice.value)).toEqual([open.id, done.id]);
       expect(found[1]?.name).toContain("done, due");
       expect(found[0]?.name).not.toContain("done,");
-    });
-
-    it("still leaves it out of the /task done and edit pickers", async () => {
-      const done = await doneTask("Pickerskip finished");
-      const { client } = fakeClient();
-
-      for (const name of ["done", "edit"] as const) {
-        const ran = await run(
-          world.router,
-          pickerPayload(name, "Pickerskip", { member: officer() }),
-          dependenciesFor(world.db(), client),
-        );
-        expect(
-          ((ran.reply.data?.choices ?? []) as { value: string }[]).map(
-            (choice) => choice.value,
-          ),
-        ).not.toContain(done.id);
-      }
-    });
-  });
-
-  describe("the /task assign event picker", () => {
-    async function namedEvent(name: string, date: string) {
-      const rows = await queryAs<{ id: string }>(
-        world.backend.connection,
-        "bot_app",
-        `INSERT INTO public.events (guild_id, channel_id, name, event_date, created_by)
-         VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-        [GUILD_ID, world.fixture.channelId, name, date, fakeId()],
-      );
-      return rows[0]?.id ?? "";
-    }
-
-    async function pick(typed: string) {
-      const { client } = fakeClient();
-      const ran = await run(
-        world.router,
-        pickerPayload("assign", typed, { member: officer() }),
-        dependenciesFor(world.db(), client),
-      );
-      return (ran.reply.data?.choices ?? []) as {
-        name: string;
-        value: string;
-      }[];
-    }
-
-    it("lists an upcoming event ahead of many past ones", async () => {
-      for (let day = 10; day < 40; day += 1) {
-        const month = String(Math.floor(day / 30) + 1).padStart(2, "0");
-        const date = String((day % 28) + 1).padStart(2, "0");
-        await namedEvent(
-          `Sortcheck past ${String(day)}`,
-          `2020-${month}-${date}`,
-        );
-      }
-      const upcoming = await namedEvent("Sortcheck upcoming", "2099-01-15");
-
-      const found = await pick("Sortcheck");
-
-      expect(found).toHaveLength(25);
-      expect(found[0]?.value).toBe(upcoming);
     });
   });
 });

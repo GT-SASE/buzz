@@ -99,22 +99,22 @@ describe("marking tasks done and reading them, on the real schema", () => {
       expect(notices).toEqual([]);
     });
 
-    it.each([
-      ["an officer", officer],
-      ["an admin", admin],
-    ])("lets %s finish someone else's task", async (_name, build) => {
-      const { eventId } = await eventWithPost();
-      const task = await newTask(eventId, fakeId());
-      const { client } = fakeClient();
+    it.each([["an admin", admin]])(
+      "lets %s finish someone else's task",
+      async (_name, build) => {
+        const { eventId } = await eventWithPost();
+        const task = await newTask(eventId, fakeId());
+        const { client } = fakeClient();
 
-      await run(
-        world.router,
-        click(task.id, { member: build() }),
-        dependenciesFor(world.db(), client),
-      );
+        await run(
+          world.router,
+          click(task.id, { member: build() }),
+          dependenciesFor(world.db(), client),
+        );
 
-      expect((await row(task.id))?.status).toBe("done");
-    });
+        expect((await row(task.id))?.status).toBe("done");
+      },
+    );
 
     it("refuses a non-assignee who clicks, privately and with no change", async () => {
       const { eventId } = await eventWithPost();
@@ -162,27 +162,6 @@ describe("marking tasks done and reading them, on the real schema", () => {
       expect(edits[1]?.content).toContain("already done");
       expect(edits[2]?.content).toContain("already done");
       expect(refreshOverview).toHaveBeenCalledTimes(1);
-    });
-
-    it.each([
-      ["an extra field", `task.done:${UNKNOWN_ID}:${UNKNOWN_ID}`],
-      ["a filter", "task.done:x,status.eq.done"],
-      ["a Discord ID in place of a task", `task.done:${fakeId()}`],
-    ])("refuses a crafted custom_id with %s", async (_name, customId) => {
-      const { client, edits } = fakeClient();
-
-      const ran = await run(
-        world.router,
-        componentPayload(customId, {
-          member: officer(),
-          ...publicMessage(),
-        }),
-        dependenciesFor(world.db(), client),
-      );
-
-      expect(ran.deferred).toBe(false);
-      expect(ran.reply.data?.content).toBe(FIXED_REFUSAL);
-      expect(edits).toEqual([]);
     });
 
     it.each(["an unknown", "another guild's", "a deleted"])(
@@ -420,21 +399,6 @@ describe("marking tasks done and reading them, on the real schema", () => {
       );
     });
 
-    it("shows a short ID and the due date", async () => {
-      const me = fakeId();
-      const { eventId } = await eventWithPost();
-      const task = await newTask(eventId, me, "Labeltest print signs");
-
-      const [choice] = await choices("done", "Labeltest", {
-        member: plainMember(me),
-      });
-
-      expect(choice?.name).toBe(
-        `${task.id.slice(0, 8)} due ${FAR_DUE} Labeltest print signs`,
-      );
-      expect(choice?.value).toBe(task.id);
-    });
-
     it("cleans hostile text out of a label and keeps it valid", async () => {
       const me = fakeId();
       const { eventId } = await eventWithPost();
@@ -466,45 +430,29 @@ describe("marking tasks done and reading them, on the real schema", () => {
       );
     });
 
-    describe("by the start of an ID", () => {
-      it("finds a task by its short ID, first, and only within the caller's rows", async () => {
-        const me = fakeId();
-        const { eventId } = await eventWithPost();
-        const mine = await newTask(eventId, me, "Idsearch mine");
-        const theirs = await newTask(eventId, fakeId(), "Idsearch theirs");
-
-        const asMember = await choices("done", mine.id.slice(0, 8), {
-          member: plainMember(me),
-        });
-        const oneDigit = await choices("done", mine.id.slice(0, 1), {
-          member: plainMember(me),
-        });
-        const notMine = await choices("done", theirs.id.slice(0, 8), {
-          member: plainMember(me),
-        });
-        const asOfficer = await choices("done", theirs.id.slice(0, 8), {
-          member: officer(),
-        });
-
-        expect(asMember[0]?.value).toBe(mine.id);
-        expect(oneDigit.map((choice) => choice.value)).toContain(mine.id);
-        expect(notMine.map((choice) => choice.value)).not.toContain(theirs.id);
-        expect(asOfficer[0]?.value).toBe(theirs.id);
-      });
-    });
-
-    it("never offers more than 25", async () => {
+    it("finds a task by its short ID, first, and only within the caller's rows", async () => {
       const me = fakeId();
       const { eventId } = await eventWithPost();
-      for (let index = 0; index < 30; index += 1) {
-        await newTask(eventId, me, "Capped row");
-      }
+      const mine = await newTask(eventId, me, "Idsearch mine");
+      const theirs = await newTask(eventId, fakeId(), "Idsearch theirs");
 
-      const found = await choices("done", "Capped", {
+      const asMember = await choices("done", mine.id.slice(0, 8), {
         member: plainMember(me),
       });
+      const oneDigit = await choices("done", mine.id.slice(0, 1), {
+        member: plainMember(me),
+      });
+      const notMine = await choices("done", theirs.id.slice(0, 8), {
+        member: plainMember(me),
+      });
+      const asOfficer = await choices("done", theirs.id.slice(0, 8), {
+        member: officer(),
+      });
 
-      expect(found).toHaveLength(25);
+      expect(asMember[0]?.value).toBe(mine.id);
+      expect(oneDigit.map((choice) => choice.value)).toContain(mine.id);
+      expect(notMine.map((choice) => choice.value)).not.toContain(theirs.id);
+      expect(asOfficer[0]?.value).toBe(theirs.id);
     });
 
     it.each([

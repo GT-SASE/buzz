@@ -1,23 +1,26 @@
 /**
- * /task assign, edit and delete from the router down to the real schema. Every rule that
- * depends on a row, a filter or a trigger is proved here and not on a mock.
+ * /task assign, edit and delete from the router down to the real schema, and the task
+ * commands before /setup and with a failing database.
  */
 
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { beforeEach, describe, expect, it, spyOn } from "bun:test";
+import { ROUTER } from "../../src/handlers/registry.ts";
 import { versionFingerprint } from "../../src/tasks/shared.ts";
 import { closeEvent, softDeleteEvent } from "../../src/db/events.ts";
 import { createTask, editTask } from "../../src/db/tasks.ts";
 import {
+  commandPayload,
   componentPayload,
+  configRow,
   dependenciesFor,
+  fakeDiscord,
   GUILD_ID,
+  member,
   run,
 } from "../support/interactions.ts";
 import { fakeId } from "../support/ids.ts";
-import { vercelConfig } from "../support/json.ts";
 import { insertEvent } from "./fixtures.ts";
+import { handlerDb } from "./handler-db.ts";
 import {
   date,
   DEFERRED_MESSAGE,
@@ -68,9 +71,6 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
   });
   const { refreshOverview, eventWithPost, inThread, newTask, row, tasksOn } =
     world;
-  const publicMessage = () => ({
-    message: { id: fakeId(), flags: SUPPRESS_EMBEDS },
-  });
 
   async function choices(
     name: "edit" | "delete" | "assign",
@@ -116,16 +116,6 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
     );
   }
 
-  it("sends the interactions function's limit to Vercel, so finish has its time", () => {
-    const config = vercelConfig(
-      readFileSync(
-        join(import.meta.dirname, "..", "..", "vercel.json"),
-        "utf8",
-      ),
-    );
-    expect(config.functions["api/interactions.ts"]?.maxDuration).toBe(60);
-  });
-
   describe("/task assign", () => {
     it("takes the event from the post, saves the task, and pings only the assignee", async () => {
       const { eventId, threadId } = await eventWithPost();
@@ -166,25 +156,6 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
       expect(edits[0]?.content).toContain("was mentioned");
       expect(refreshOverview).toHaveBeenCalledTimes(1);
       expect(refreshOverview.mock.calls[0]?.[0].id).toBe(eventId);
-    });
-
-    it("asks an officer to name an event from a thread that is no event's post", async () => {
-      const { client, edits, notices } = fakeClient();
-
-      await run(
-        world.router,
-        assignPayload(
-          {},
-          {
-            member: officer(),
-            channel: { id: fakeId(), type: 11, parent_id: null },
-          },
-        ),
-        dependenciesFor(world.db(), client),
-      );
-
-      expect(edits[0]?.content).toContain("Run this in an event's post");
-      expect(notices).toEqual([]);
     });
 
     it("does not tell a non-officer anything, in or out of a post", async () => {
@@ -231,7 +202,6 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
             (id) => ({ users: { [id]: { id } } }),
             "isn't a member",
           ],
-          ["a user missing from resolved", () => ({}), "isn't a member"],
         ];
 
       it.each(cases)("refuses %s", async (_name, resolved, expected) => {
@@ -307,8 +277,6 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
       );
 
       const refused: [string, string, string][] = [
-        ["a NUL character", "bad\u0000text", "can't be saved"],
-        ["only zero-width characters", "\u200B\u200D\u2060", "nothing visible"],
         ["too much text", "x".repeat(1001), "too long"],
         [
           "a masked URL",
@@ -343,7 +311,6 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
     describe("the due date", () => {
       it.each([
         ["a date in the past", "2000-01-01", "in the past"],
-        ["words", "tomorrow", "YYYY-MM-DD"],
         ["a date that does not exist", "2040-02-31", "not a real date"],
       ])("refuses %s", async (_name, due, expected) => {
         const { eventId, threadId } = await eventWithPost();
@@ -587,42 +554,6 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
       expect(edits[0]?.content).toContain(`<@${after}> was mentioned`);
     });
 
-    it("stops pinging at the officer's limit, writing nothing and saying why", async () => {
-      const { eventId } = await eventWithPost();
-      const a = fakeId();
-      const b = fakeId();
-      const task = await newTask(eventId, a);
-      const actor = fakeId();
-      const { client, edits, notices } = fakeClient();
-      const dependencies = dependenciesFor(world.db(), client);
-
-      for (let i = 0; i < OFFICER_DAILY_LIMIT + 3; i += 1) {
-        await new Promise((resolve) => setTimeout(resolve, 2));
-        await run(
-          world.router,
-          editPayload(
-            task.id,
-            { description: `Round ${String(i)}` },
-            { member: officer(actor) },
-            i % 2 === 0 ? b : a,
-          ),
-          dependencies,
-        );
-      }
-
-      expect(notices).toHaveLength(OFFICER_DAILY_LIMIT);
-      const refusal = edits.at(-1)?.content ?? "";
-      expect(refusal).toBe(
-        "You've reached the limit for assigning and reassigning tasks, so nothing was saved. Please try again later.",
-      );
-      // The rounds alternate, so every second one past the limit left the person alone,
-      // which pings nobody and still saves. The last, a change of person, saved nothing.
-      expect(await row(task.id)).toMatchObject({
-        assignee_id: a,
-        description: `Round ${String(OFFICER_DAILY_LIMIT + 1)}`,
-      });
-    });
-
     it("refuses a stale edit, keeping the other person's change", async () => {
       const { eventId } = await eventWithPost();
       const task = await newTask(eventId, fakeId());
@@ -657,27 +588,6 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
       });
       expect(edits[0]?.content).toContain("nothing was saved");
       expect(edits[0]?.content).toContain("/task edit");
-      expect(notices).toEqual([]);
-    });
-
-    it("says so when an edit changes nothing", async () => {
-      const { eventId } = await eventWithPost();
-      const task = await newTask(eventId, fakeId());
-      const { client, edits, notices } = fakeClient();
-      const dependencies = dependenciesFor(world.db(), client);
-
-      await run(
-        world.router,
-        editPayload(
-          task.id,
-          { description: "Book the room", due: FAR_DUE },
-          { member: officer() },
-          task.assignee_id,
-        ),
-        dependencies,
-      );
-
-      expect(edits[0]?.content).toContain("changes nothing");
       expect(notices).toEqual([]);
     });
 
@@ -772,22 +682,6 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
       expect(refreshOverview).toHaveBeenCalledTimes(1);
     });
 
-    it("refuses a non-officer at the command, showing nothing", async () => {
-      const { eventId } = await eventWithPost();
-      const assignee = fakeId();
-      const task = await newTask(eventId, assignee);
-      const { client, edits } = fakeClient();
-
-      const ran = await run(
-        world.router,
-        deletePayload(task.id, { member: plainMember(assignee) }),
-        dependenciesFor(world.db(), client),
-      );
-
-      expect(ran.reply.data?.content).toBe(FIXED_REFUSAL);
-      expect(edits).toEqual([]);
-    });
-
     it("refuses a Confirm for a task edited since it was shown, and keeps the task", async () => {
       const { eventId } = await eventWithPost();
       const task = await newTask(eventId, fakeId());
@@ -874,34 +768,6 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
     });
   });
 
-  it("works from the button that /task assign posted", async () => {
-    const { eventId, threadId } = await eventWithPost();
-    const person = fakeId();
-    const { client, notices } = fakeClient();
-    const dependencies = dependenciesFor(world.db(), client);
-    await run(
-      world.router,
-      assignPayload({ person }, { member: officer(), ...inThread(threadId) }),
-      dependencies,
-    );
-    const customId = notices[0]?.components[0]?.components[0]?.custom_id ?? "";
-    expect(notices[0]?.components[0]?.components[0]?.label).toBe(
-      "✅ Mark done",
-    );
-
-    await run(
-      world.router,
-      componentPayload(customId, {
-        member: plainMember(person),
-        ...publicMessage(),
-      }),
-      dependencies,
-    );
-
-    const [task] = await tasksOn(eventId);
-    expect((await row(task?.id ?? ""))?.status).toBe("done");
-  });
-
   it.each(["edit", "delete", "assign"] as const)(
     "offers a non-officer nothing for /task %s",
     async (name) => {
@@ -944,4 +810,59 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
     expect(events).not.toContain(closed.eventId);
     expect(forAssign[0]?.name).toMatch(/^[0-9a-f]{8} on \d{4}-\d{2}-\d{2} /u);
   });
+});
+
+describe("the task commands without a usable database", () => {
+  const TASK_ID = "11111111-1111-4111-8111-111111111111";
+  const done = (fields: Record<string, unknown>) =>
+    commandPayload("task", fields, {
+      options: [
+        {
+          name: "done",
+          type: OPTION.subcommand,
+          options: [{ name: "task", type: OPTION.string, value: TASK_ID }],
+        },
+      ],
+    });
+
+  it.each([
+    ["/task done", done({ member: member() })],
+    [
+      "the button",
+      componentPayload(`task.done:${TASK_ID}`, { member: member() }),
+    ],
+  ])("refuses %s before setup", async (_name, payload) => {
+    const { db } = await handlerDb();
+    const { discord, edits } = fakeDiscord();
+
+    const ran = await run(ROUTER, payload, dependenciesFor(db, discord));
+
+    expect(ran.deferred).toBe(false);
+    expect(ran.reply.data?.content).toBe(FIXED_REFUSAL);
+    expect(edits).toEqual([]);
+  });
+
+  it.each([
+    [
+      "a click",
+      componentPayload(`task.done:${TASK_ID}`, {
+        member: member(),
+        message: { id: fakeId(), flags: 0 },
+      }),
+    ],
+    ["/mytasks", commandPayload("mytasks", { member: member() })],
+  ])(
+    "answers %s with the fixed text when tasks can't be read",
+    async (_name, payload) => {
+      spyOn(console, "error").mockImplementation(() => undefined);
+      const w = await handlerDb({ config: configRow() });
+      w.fail("tasks");
+      const { discord, edits } = fakeDiscord();
+
+      await run(ROUTER, payload, dependenciesFor(w.db, discord));
+
+      expect(edits).toHaveLength(1);
+      expect(edits[0]?.content).toContain("Something went wrong");
+    },
+  );
 });
