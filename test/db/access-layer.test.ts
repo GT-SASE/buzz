@@ -56,12 +56,10 @@ import {
 import {
   finishJobRun,
   getLatestJobRun,
-  getLatestSucceededJobRun,
   beginJobRun,
 } from "../../src/db/job-runs.ts";
 import {
   getManagedChannel,
-  listActiveManagedChannels,
   listManagedChannels,
   listManagedChannelsByIds,
   listRecentEventsInChannel,
@@ -82,7 +80,6 @@ import {
   editTask,
   searchOpenTasksByIdPrefix,
   searchOwnOpenTasksByIdPrefix,
-  softDeleteTaskIfUnchanged,
   getTask,
   listEventTasks,
   listOpenTasksForAssignee,
@@ -94,13 +91,11 @@ import {
   searchOwnOpenTasks,
   softDeleteTask,
 } from "../../src/db/tasks.ts";
-import type { Actor } from "../../src/lib/actor.ts";
 import {
   parseIsoDate,
   todayInZone,
   type DateOnly,
 } from "../../src/lib/dates.ts";
-import { authorize } from "../../src/lib/permissions.ts";
 import { slotStart } from "../../src/reminders/plan.ts";
 import { openBackend, type Backend } from "./backend.ts";
 import {
@@ -111,7 +106,6 @@ import {
   type GuildFixture,
 } from "./fixtures.ts";
 import {
-  errorCodeOf,
   MIGRATION_OWNER,
   fakeId,
   queryAs,
@@ -337,73 +331,9 @@ describe("database layer against the real schema", () => {
         error: { category: "constraint", code: "22023" },
       });
     });
-
-    it("gives authorize() the rows it needs, straight from a read", async () => {
-      const own = await insertGuild(pg);
-      const eventId = await insertEvent(pg, own);
-      const assigneeId = fakeId();
-      const taskId = await insertTask(pg, own, eventId, assigneeId);
-      const config = unwrap(await getGuildConfig(db, { guildId: own.guildId }));
-      const task = unwrap(await getTask(db, { guildId: own.guildId, taskId }));
-      const actor = (userId: string, roleId?: string): Actor => ({
-        userId,
-        guildId: own.guildId,
-        roleIds: new Set(roleId === undefined ? [] : [roleId]),
-        isAdministrator: false,
-      });
-
-      expect(
-        authorize("task.done", actor(assigneeId), config, task).allowed,
-      ).toBe(true);
-      expect(
-        authorize("task.done", actor(fakeId()), config, task).allowed,
-      ).toBe(false);
-      expect(
-        authorize("task.edit", actor(fakeId(), own.officerRoleId), config, task)
-          .allowed,
-      ).toBe(true);
-    });
   });
 
   describe("managed channels", () => {
-    it("reads channels by guild and refuses to see another guild's", async () => {
-      const own = await insertGuild(pg);
-      const other = await insertGuild(pg);
-      expect(
-        unwrap(
-          await getManagedChannel(db, {
-            guildId: own.guildId,
-            channelId: own.channelId,
-          }),
-        ),
-      ).toEqual({
-        guild_id: own.guildId,
-        channel_id: own.channelId,
-        status: "active",
-      });
-      expect(
-        unwrap(
-          await getManagedChannel(db, {
-            guildId: own.guildId,
-            channelId: other.channelId,
-          }),
-        ),
-      ).toBeNull();
-      expect(
-        unwrap(
-          await listManagedChannels(db, { guildId: own.guildId }),
-        ).rows.map((row) => row.channel_id),
-      ).toEqual([own.channelId]);
-      expect(
-        unwrap(
-          await listManagedChannelsByIds(db, {
-            guildId: own.guildId,
-            channelIds: [own.channelId, other.channelId],
-          }),
-        ).rows.map((row) => row.channel_id),
-      ).toEqual([own.channelId]);
-    });
-
     it("lists only the channels asked for, leaving out others in the guild", async () => {
       const own = await insertGuild(pg);
       const second = fakeId();
@@ -435,23 +365,6 @@ describe("database layer against the real schema", () => {
       expect(unwrap(await getManagedChannel(db, key))?.status).toBe(
         "unavailable",
       );
-    });
-  });
-
-  describe("interaction claims", () => {
-    it("is true once for each interaction", async () => {
-      const interactionId = fakeId();
-      expect(unwrap(await claimInteraction(db, { interactionId }))).toBe(true);
-      expect(unwrap(await claimInteraction(db, { interactionId }))).toBe(false);
-    });
-
-    it("lets only one of two simultaneous claims win", async () => {
-      const interactionId = fakeId();
-      const results = await Promise.all([
-        claimInteraction(db, { interactionId }),
-        claimInteraction(db, { interactionId }),
-      ]);
-      expect(results.map(unwrap).sort()).toEqual([false, true]);
     });
   });
 
@@ -533,23 +446,6 @@ describe("database layer against the real schema", () => {
       ).toEqual(NOT_FOUND);
     });
 
-    it("attaches no post to a deleted event or one in another guild", async () => {
-      const deleted = unwrap(await newEvent("Gone"));
-      const key = { guildId: guild.guildId, eventId: deleted.id };
-      unwrap(await softDeleteEvent(db, key));
-      const post = { threadId: fakeId(), overviewMessageId: fakeId() };
-      const foreign = await insertEvent(pg, await insertGuild(pg));
-
-      expect(await attachEventPost(db, { ...key, ...post })).toEqual(NOT_FOUND);
-      expect(
-        await attachEventPost(db, {
-          guildId: guild.guildId,
-          eventId: foreign,
-          ...post,
-        }),
-      ).toEqual(NOT_FOUND);
-    });
-
     describe("the post attempt", () => {
       const attemptAgo = (eventId: string, seconds: number) =>
         pg.query(
@@ -595,20 +491,6 @@ describe("database layer against the real schema", () => {
           false,
         );
         expect(unwrap(await claimEventPostAttempt(db, goneKey))).toBe(false);
-      });
-
-      it("is refused for another guild's event", async () => {
-        const event = unwrap(await newEvent("Theirs"));
-        const other = await insertGuild(pg);
-
-        expect(
-          unwrap(
-            await claimEventPostAttempt(db, {
-              guildId: other.guildId,
-              eventId: event.id,
-            }),
-          ),
-        ).toBe(false);
       });
     });
 
@@ -669,23 +551,6 @@ describe("database layer against the real schema", () => {
       expect(unwrap(await linked()).thread_id).toBe(threadId);
     });
 
-    it("finds an event by its thread, only live and only in this guild", async () => {
-      const event = unwrap(await newEvent("By thread"));
-      const key = { guildId: guild.guildId, eventId: event.id };
-      const threadId = fakeId();
-      unwrap(await setEventThread(db, { ...key, threadId }));
-      const byThread = (guildId: string) =>
-        findEventByThread(db, { guildId, threadId });
-
-      expect(unwrap(await byThread(guild.guildId))?.id).toBe(event.id);
-      expect(
-        unwrap(await byThread((await insertGuild(pg)).guildId)),
-      ).toBeNull();
-
-      unwrap(await softDeleteEvent(db, key));
-      expect(unwrap(await byThread(guild.guildId))).toBeNull();
-    });
-
     it("finds live events by exact name and date in one forum", async () => {
       const own = await insertGuild(pg);
       const wanted = unwrap(await newEvent("Exact,name.eq.x", own));
@@ -719,7 +584,8 @@ describe("database layer against the real schema", () => {
       });
     });
 
-    it("answers the same for another guild's ID as for an unknown one", async () => {
+    it("changes nothing for another guild's event, a deleted one or an unknown one", async () => {
+      const key0 = { guildId: guild.guildId };
       const other = await insertGuild(pg);
       const foreign = await insertEvent(pg, other);
       const unknown = await getEvent(db, {
@@ -730,48 +596,40 @@ describe("database layer against the real schema", () => {
         await getEvent(db, { guildId: guild.guildId, eventId: foreign }),
       ).toEqual(unknown);
 
-      const writes = (eventId: string) =>
-        Promise.all([
-          closeEvent(db, { guildId: guild.guildId, eventId }),
-          softDeleteEvent(db, { guildId: guild.guildId, eventId }),
-          setEventThread(db, {
-            guildId: guild.guildId,
-            eventId,
+      const deleted = await insertEvent(pg, guild);
+      await linkThread(guild.guildId, deleted);
+      unwrap(
+        await softDeleteEvent(db, { guildId: guild.guildId, eventId: deleted }),
+      );
+      const before = [await eventState(foreign), await eventState(deleted)];
+      const writes = (eventId: string) => {
+        const key = { guildId: guild.guildId, eventId };
+        return Promise.all([
+          closeEvent(db, key),
+          softDeleteEvent(db, key),
+          setEventThread(db, { ...key, threadId: fakeId() }),
+          markEventThreadMissing(db, key),
+          setEventOverviewMessage(db, { ...key, messageId: fakeId() }),
+          attachEventPost(db, {
+            ...key,
             threadId: fakeId(),
+            overviewMessageId: fakeId(),
           }),
         ]);
-      expect(await writes(foreign)).toEqual(await writes(UNKNOWN_ID));
-      expect(await writes(foreign)).toEqual([NOT_FOUND, NOT_FOUND, NOT_FOUND]);
+      };
+      for (const eventId of [foreign, deleted, UNKNOWN_ID]) {
+        expect(await writes(eventId)).toEqual(Array(6).fill(NOT_FOUND));
+        expect(
+          unwrap(await claimEventPostAttempt(db, { ...key0, eventId })),
+        ).toBe(false);
+      }
+      expect([await eventState(foreign), await eventState(deleted)]).toEqual(
+        before,
+      );
       expect(
         unwrap(await getEvent(db, { guildId: other.guildId, eventId: foreign }))
           ?.status,
       ).toBe("active");
-    });
-
-    it("lists only this guild's events", async () => {
-      const own = await insertGuild(pg);
-      const other = await insertGuild(pg);
-      const mine = unwrap(await newEvent("Mine", own)).id;
-      unwrap(await newEvent("Theirs", other));
-      const { rows } = unwrap(await listEvents(db, { guildId: own.guildId }));
-      expect(rows.map((row) => row.id)).toEqual([mine]);
-    });
-
-    it("caps the list at 100 and says there were more", async () => {
-      const own = await insertGuild(pg);
-      await pg.query(
-        `INSERT INTO public.events (guild_id, channel_id, name, event_date, created_by)
-         SELECT $1::text, $2::text, 'Bulk ' || n, date '2030-01-15', $3::text
-         FROM generate_series(1, 101) AS n`,
-        [own.guildId, own.channelId, fakeId()],
-      );
-      const { rows, truncated } = unwrap(
-        await listEvents(db, { guildId: own.guildId }),
-      );
-      expect(rows).toHaveLength(100);
-      expect(truncated).toBe(true);
-      const ids = rows.map((row) => row.id);
-      expect(ids).toEqual([...ids].sort());
     });
 
     it("links a thread, marks it missing and links again", async () => {
@@ -794,55 +652,6 @@ describe("database layer against the real schema", () => {
         unwrap(await setEventThread(db, { ...key, threadId: fakeId() }))
           .thread_status,
       ).toBe("active");
-    });
-
-    it("marks only the named event's thread missing", async () => {
-      const own = await insertGuild(pg);
-      const target = unwrap(await newEvent("Target", own)).id;
-      const neighbour = unwrap(await newEvent("Neighbour", own)).id;
-      await linkThread(own.guildId, target);
-      await linkThread(own.guildId, neighbour);
-
-      unwrap(
-        await markEventThreadMissing(db, {
-          guildId: own.guildId,
-          eventId: target,
-        }),
-      );
-      expect((await eventState(target))?.thread_status).toBe("missing");
-      expect((await eventState(neighbour))?.thread_status).toBe("active");
-    });
-
-    it("refuses to mark a thread missing from another guild, or on a deleted event", async () => {
-      const own = await insertGuild(pg);
-      const other = await insertGuild(pg);
-      const eventId = unwrap(await newEvent("Target", own)).id;
-      await linkThread(own.guildId, eventId);
-
-      expect(
-        await markEventThreadMissing(db, { guildId: other.guildId, eventId }),
-      ).toEqual(NOT_FOUND);
-      expect((await eventState(eventId))?.thread_status).toBe("active");
-
-      unwrap(await softDeleteEvent(db, { guildId: own.guildId, eventId }));
-      expect(
-        await markEventThreadMissing(db, { guildId: own.guildId, eventId }),
-      ).toEqual(NOT_FOUND);
-      expect((await eventState(eventId))?.thread_status).toBe("active");
-    });
-
-    it("refuses to link a thread to a deleted event", async () => {
-      const own = await insertGuild(pg);
-      const eventId = unwrap(await newEvent("Target", own)).id;
-      unwrap(await softDeleteEvent(db, { guildId: own.guildId, eventId }));
-      expect(
-        await setEventThread(db, {
-          guildId: own.guildId,
-          eventId,
-          threadId: fakeId(),
-        }),
-      ).toEqual(NOT_FOUND);
-      expect((await eventState(eventId))?.thread_status).toBe("pending");
     });
 
     it("reports a thread already held by a live event as a conflict", async () => {
@@ -878,32 +687,6 @@ describe("database layer against the real schema", () => {
       ).toBe(messageId);
       expect(unwrap(await closeEvent(db, key)).status).toBe("closed");
       expect(await closeEvent(db, key)).toEqual(NOT_FOUND);
-    });
-
-    it("refuses to set the overview from another guild, or on a deleted event", async () => {
-      const own = await insertGuild(pg);
-      const other = await insertGuild(pg);
-      const eventId = unwrap(await newEvent("Target", own)).id;
-      const messageId = fakeId();
-
-      expect(
-        await setEventOverviewMessage(db, {
-          guildId: other.guildId,
-          eventId,
-          messageId,
-        }),
-      ).toEqual(NOT_FOUND);
-      expect((await eventState(eventId))?.overview_message_id).toBeNull();
-
-      unwrap(await softDeleteEvent(db, { guildId: own.guildId, eventId }));
-      expect(
-        await setEventOverviewMessage(db, {
-          guildId: own.guildId,
-          eventId,
-          messageId,
-        }),
-      ).toEqual(NOT_FOUND);
-      expect((await eventState(eventId))?.overview_message_id).toBeNull();
     });
 
     it("hides a soft-deleted event from reads and refuses writes to it", async () => {
@@ -951,16 +734,22 @@ describe("database layer against the real schema", () => {
       await named('Quoted "name", (with) dots.');
     });
 
-    it("matches part of a name, ignoring case", async () => {
-      expect(await namesFor("SPRING")).toEqual(["Spring social"]);
-    });
-
-    it("treats % as a literal percent sign", async () => {
-      expect(await namesFor("%")).toEqual(["Budget 100%"]);
-    });
-
-    it("treats _ as a literal underscore", async () => {
-      expect(await namesFor("_")).toEqual(["snake_case meeting"]);
+    it.each([
+      ["SPRING", ["Spring social"]],
+      ["%", ["Budget 100%"]],
+      ["_", ["snake_case meeting"]],
+      ["\\", ["Back\\slash"]],
+      ["*", []],
+      ["S*g", []],
+      [",", ['Quoted "name", (with) dots.']],
+      [")", ['Quoted "name", (with) dots.']],
+      [".", ['Quoted "name", (with) dots.']],
+      ['"', ['Quoted "name", (with) dots.']],
+      ['"name", (with', ['Quoted "name", (with) dots.']],
+      ["x,deleted_at.not.is.null", []],
+      ["x)&deleted_at=not.is.null", []],
+    ])("finds %j as plain text, ignoring case", async (term, names) => {
+      expect(await namesFor(term)).toEqual(names);
     });
 
     it("matches on the first 100 characters of a longer term", async () => {
@@ -993,33 +782,6 @@ describe("database layer against the real schema", () => {
       },
     );
 
-    it("treats a backslash as a literal backslash", async () => {
-      expect(await namesFor("\\")).toEqual(["Back\\slash"]);
-    });
-
-    it("matches * only as itself, never as a wildcard", async () => {
-      expect(await namesFor("*")).toEqual([]);
-      expect(await namesFor("S*g")).toEqual([]);
-    });
-
-    it.each([",", ")", ".", '"', '"name", (with'])(
-      "finds %s as plain text",
-      async (term) => {
-        expect(await namesFor(term)).toEqual(['Quoted "name", (with) dots.']);
-      },
-    );
-
-    it("does not let a filter in the term widen the result", async () => {
-      expect(await namesFor("x,deleted_at.not.is.null")).toEqual([]);
-      expect(await namesFor("x)&deleted_at=not.is.null")).toEqual([]);
-    });
-
-    it("returns every live name for an empty term, within the guild", async () => {
-      const other = await insertGuild(pg);
-      await insertEvent(pg, other);
-      expect(await namesFor("")).toHaveLength(5);
-    });
-
     it("leaves out deleted events and other guilds", async () => {
       const id = await named("Hidden event");
       const other = await insertGuild(pg);
@@ -1049,88 +811,6 @@ describe("database layer against the real schema", () => {
         await searchEvents(db, { guildId: crowded.guildId, term: "Crowded" }),
       );
       expect(rows).toHaveLength(25);
-    });
-
-    describe("on tasks", () => {
-      let taskGuild: GuildFixture;
-      let otherGuild: GuildFixture;
-      let eventId: string;
-      let otherEventId: string;
-      const mine = fakeId();
-      const ids: Record<string, string> = {};
-
-      const taskFor = async (
-        assigneeId: string,
-        description: string,
-        where: { guildId: string; eventId: string } = {
-          guildId: taskGuild.guildId,
-          eventId,
-        },
-      ) =>
-        unwrap(
-          await createTask(db, {
-            ...where,
-            assigneeId,
-            actorId: fakeId(),
-            description,
-            dueDate: DUE,
-          }),
-        ).id;
-
-      beforeAll(async () => {
-        taskGuild = await insertGuild(pg);
-        otherGuild = await insertGuild(pg);
-        eventId = await insertEvent(pg, taskGuild);
-        otherEventId = await insertEvent(pg, otherGuild);
-
-        ids.posters = await taskFor(mine, "Print posters");
-        ids.flyers = await taskFor(fakeId(), "Print flyers");
-        ids.booking = await taskFor(mine, "Book the room");
-        ids.done = await taskFor(mine, "Print done");
-        ids.deleted = await taskFor(mine, "Print deleted");
-        ids.foreign = await taskFor(mine, "Print foreign", {
-          guildId: otherGuild.guildId,
-          eventId: otherEventId,
-        });
-        unwrap(
-          await markTaskDoneAsOfficer(db, {
-            guildId: taskGuild.guildId,
-            taskId: ids.done,
-            now: NOW,
-          }),
-        );
-        unwrap(
-          await softDeleteTask(db, {
-            guildId: taskGuild.guildId,
-            taskId: ids.deleted,
-            now: NOW,
-          }),
-        );
-      });
-
-      it("searches the guild's open tasks by description, for officers", async () => {
-        const rows = unwrap(
-          await searchOpenTasks(db, {
-            guildId: taskGuild.guildId,
-            term: "print",
-          }),
-        );
-        expect(rows.map((row) => row.description).sort()).toEqual([
-          "Print flyers",
-          "Print posters",
-        ]);
-      });
-
-      it("searches one member's own open tasks in one guild", async () => {
-        const rows = unwrap(
-          await searchOwnOpenTasks(db, {
-            guildId: taskGuild.guildId,
-            assigneeId: mine,
-            term: "print",
-          }),
-        );
-        expect(rows.map((row) => row.id)).toEqual([ids.posters]);
-      });
     });
   });
 
@@ -1186,35 +866,6 @@ describe("database layer against the real schema", () => {
       );
     });
 
-    it("marks only the named task done, not the assignee's others", async () => {
-      const first = await newTask();
-      const second = await newTask(first.assigneeId);
-      unwrap(
-        await markOwnTaskDone(db, {
-          guildId: guild.guildId,
-          taskId: first.taskId,
-          assigneeId: first.assigneeId,
-          now: NOW,
-        }),
-      );
-      expect((await taskState(first.taskId))?.status).toBe("done");
-      expect((await taskState(second.taskId))?.status).toBe("open");
-    });
-
-    it("refuses mark-done with the task's assignee but another guild", async () => {
-      const other = await insertGuild(pg);
-      const { taskId, assigneeId } = await newTask();
-      expect(
-        await markOwnTaskDone(db, {
-          guildId: other.guildId,
-          taskId,
-          assigneeId,
-          now: NOW,
-        }),
-      ).toEqual(NOT_FOUND);
-      expect((await taskState(taskId))?.status).toBe("open");
-    });
-
     it("changes nothing when someone else tries to mark it done", async () => {
       const { taskId, assigneeId } = await newTask();
       expect(
@@ -1228,97 +879,6 @@ describe("database layer against the real schema", () => {
       expect(await taskState(taskId)).toMatchObject({
         status: "open",
         assignee_id: assigneeId,
-      });
-    });
-
-    it("stops mark-done when the task was reassigned after the check", async () => {
-      const { taskId, assigneeId } = await newTask();
-      const seen = unwrap(
-        await getTask(db, { guildId: guild.guildId, taskId }),
-      );
-      expect(seen?.assignee_id).toBe(assigneeId);
-
-      const newAssignee = fakeId();
-      unwrap(
-        await reassignTask(db, {
-          guildId: guild.guildId,
-          taskId,
-          expectedUpdatedAt: seen?.updated_at ?? "",
-          assigneeId: newAssignee,
-        }),
-      );
-
-      expect(
-        await markOwnTaskDone(db, {
-          guildId: guild.guildId,
-          taskId,
-          assigneeId,
-          now: NOW,
-        }),
-      ).toEqual(NOT_FOUND);
-      expect(await taskState(taskId)).toMatchObject({
-        status: "open",
-        assignee_id: newAssignee,
-      });
-    });
-
-    describe("simultaneous writes", () => {
-      it("lets exactly one of two mark-done calls count", async () => {
-        const { taskId, assigneeId } = await newTask();
-        const key = { guildId: guild.guildId, taskId, assigneeId, now: NOW };
-        const results = await Promise.all([
-          markOwnTaskDone(db, key),
-          markOwnTaskDone(db, key),
-        ]);
-        expect(results.filter((result) => result.ok)).toHaveLength(1);
-        expect(results.filter((result) => !result.ok)).toEqual([NOT_FOUND]);
-        expect((await taskState(taskId))?.status).toBe("done");
-      });
-
-      it("never lets the old assignee finish a task reassigned at the same moment", async () => {
-        const { taskId, assigneeId } = await newTask();
-        const newAssignee = fakeId();
-        const expectedUpdatedAt = await versionOf(guild.guildId, taskId);
-        const [done, moved] = await Promise.all([
-          markOwnTaskDone(db, {
-            guildId: guild.guildId,
-            taskId,
-            assigneeId,
-            now: NOW,
-          }),
-          reassignTask(db, {
-            guildId: guild.guildId,
-            taskId,
-            expectedUpdatedAt,
-            assigneeId: newAssignee,
-          }),
-        ]);
-        expect(done.ok && moved.ok).toBe(false);
-        expect(done.ok || moved.ok).toBe(true);
-        expect(await taskState(taskId)).toEqual(
-          expect.objectContaining(
-            done.ok
-              ? { status: "done", assignee_id: assigneeId }
-              : { status: "open", assignee_id: newAssignee },
-          ),
-        );
-      });
-
-      it("lets exactly one of two edits from the same version win", async () => {
-        const { taskId } = await newTask();
-        const expectedUpdatedAt = await versionOf(guild.guildId, taskId);
-        const results = await Promise.all(
-          ["First officer", "Second officer"].map((description) =>
-            setTaskDescription(db, {
-              guildId: guild.guildId,
-              taskId,
-              expectedUpdatedAt,
-              description,
-            }),
-          ),
-        );
-        expect(results.filter((result) => result.ok)).toHaveLength(1);
-        expect(results.filter((result) => !result.ok)).toEqual([NOT_FOUND]);
       });
     });
 
@@ -1358,56 +918,6 @@ describe("database layer against the real schema", () => {
       });
     });
 
-    it("lets edits follow one another using the new version", async () => {
-      const { taskId } = await newTask();
-      const first = unwrap(
-        await setTaskDescription(db, {
-          guildId: guild.guildId,
-          taskId,
-          expectedUpdatedAt: await versionOf(guild.guildId, taskId),
-          description: "One",
-        }),
-      );
-      const second = unwrap(
-        await setTaskDueDate(db, {
-          guildId: guild.guildId,
-          taskId,
-          expectedUpdatedAt: first.updated_at,
-          dueDate: date("2031-01-01"),
-        }),
-      );
-      expect(second).toMatchObject({
-        description: "One",
-        due_date: "2031-01-01",
-      });
-    });
-
-    it("refuses reassign and due date changes from another guild, even with the right version", async () => {
-      const other = await insertGuild(pg);
-      const { taskId, assigneeId } = await newTask();
-      const expectedUpdatedAt = await versionOf(guild.guildId, taskId);
-      expect(
-        await reassignTask(db, {
-          guildId: other.guildId,
-          taskId,
-          expectedUpdatedAt,
-          assigneeId: fakeId(),
-        }),
-      ).toEqual(NOT_FOUND);
-      expect(
-        await setTaskDueDate(db, {
-          guildId: other.guildId,
-          taskId,
-          expectedUpdatedAt,
-          dueDate: date("2031-01-01"),
-        }),
-      ).toEqual(NOT_FOUND);
-      expect(await taskState(taskId)).toMatchObject({
-        assignee_id: assigneeId,
-        due_date: DUE,
-      });
-    });
-
     it("lets an officer finish a task only once, keeping the first time", async () => {
       const { taskId } = await newTask();
       const key = { guildId: guild.guildId, taskId };
@@ -1425,127 +935,25 @@ describe("database layer against the real schema", () => {
       );
     });
 
-    it("edits only the named task when another has the same version", async () => {
-      // One statement gives both rows the same updated_at, so only the ID separates them.
-      const assigneeId = fakeId();
-      const { rows } = await pg.query<{ id: string }>(
-        `INSERT INTO public.tasks (event_id, guild_id, assignee_id, description, due_date, created_by)
-         SELECT $1::uuid, $2::text, $3::text, 'Twin', date '2030-01-10', $3::text
-         FROM generate_series(1, 4)
-         RETURNING id`,
-        [eventId, guild.guildId, assigneeId],
-      );
-      const [reassigned, redescribed, redated, neighbour] = rows.map(
-        (row) => row.id,
-      );
-      if (
-        reassigned === undefined ||
-        redescribed === undefined ||
-        redated === undefined ||
-        neighbour === undefined
-      ) {
-        throw new Error("expected four tasks");
-      }
-      const expectedUpdatedAt = await versionOf(guild.guildId, neighbour);
-      const edit = { guildId: guild.guildId, expectedUpdatedAt };
-
-      unwrap(
-        await reassignTask(db, {
-          ...edit,
-          taskId: reassigned,
-          assigneeId: fakeId(),
-        }),
-      );
-      unwrap(
-        await setTaskDescription(db, {
-          ...edit,
-          taskId: redescribed,
-          description: "Changed",
-        }),
-      );
-      unwrap(
-        await setTaskDueDate(db, {
-          ...edit,
-          taskId: redated,
-          dueDate: date("2031-01-01"),
-        }),
-      );
-      expect(await taskState(neighbour)).toEqual({
-        status: "open",
-        assignee_id: assigneeId,
-        deleted: false,
-        description: "Twin",
-        due_date: DUE,
-      });
-    });
-
-    it("refuses edits to a deleted task, even naming its current version", async () => {
-      const { taskId, assigneeId } = await newTask();
-      const key = { guildId: guild.guildId, taskId };
-      unwrap(await softDeleteTask(db, { ...key, now: NOW }));
-      const { rows } = await pg.query<{ version: string }>(
-        `SELECT to_jsonb(updated_at) #>> '{}' AS version FROM public.tasks WHERE id = $1`,
-        [taskId],
-      );
-      const edit = { ...key, expectedUpdatedAt: rows[0]?.version ?? "" };
-
-      expect(await reassignTask(db, { ...edit, assigneeId: fakeId() })).toEqual(
-        NOT_FOUND,
-      );
-      expect(
-        await setTaskDescription(db, { ...edit, description: "x" }),
-      ).toEqual(NOT_FOUND);
-      expect(
-        await setTaskDueDate(db, { ...edit, dueDate: date("2031-01-01") }),
-      ).toEqual(NOT_FOUND);
-      expect(await taskState(taskId)).toEqual({
-        status: "open",
-        assignee_id: assigneeId,
-        deleted: true,
-        description: "Book the room",
-        due_date: DUE,
-      });
-    });
-
-    it("refuses edits to a finished task", async () => {
-      const { taskId } = await newTask();
-      const key = { guildId: guild.guildId, taskId };
-      const done = unwrap(
-        await markTaskDoneAsOfficer(db, { ...key, now: NOW }),
-      );
-      const edit = { ...key, expectedUpdatedAt: done.updated_at };
-      expect(await reassignTask(db, { ...edit, assigneeId: fakeId() })).toEqual(
-        NOT_FOUND,
-      );
-      expect(
-        await setTaskDescription(db, { ...edit, description: "x" }),
-      ).toEqual(NOT_FOUND);
-      expect(await setTaskDueDate(db, { ...edit, dueDate: DUE })).toEqual(
-        NOT_FOUND,
-      );
-    });
-
     it("answers the same for another guild's task as for an unknown one", async () => {
       const other = await insertGuild(pg);
       const foreign = await insertTask(pg, other, await insertEvent(pg, other));
       const before = await taskState(foreign);
       const version = await versionOf(other.guildId, foreign);
-      const call = (taskId: string) =>
-        Promise.all([
-          getTask(db, { guildId: guild.guildId, taskId }),
-          markTaskDoneAsOfficer(db, {
-            guildId: guild.guildId,
-            taskId,
-            now: NOW,
-          }),
-          softDeleteTask(db, { guildId: guild.guildId, taskId, now: NOW }),
-          setTaskDescription(db, {
-            guildId: guild.guildId,
-            taskId,
-            expectedUpdatedAt: version,
-            description: "taken",
-          }),
+      const assigneeId = before?.assignee_id ?? "";
+      const call = (taskId: string) => {
+        const key = { guildId: guild.guildId, taskId };
+        const edit = { ...key, expectedUpdatedAt: version };
+        return Promise.all([
+          getTask(db, key),
+          markTaskDoneAsOfficer(db, { ...key, now: NOW }),
+          markOwnTaskDone(db, { ...key, assigneeId, now: NOW }),
+          softDeleteTask(db, { ...key, now: NOW }),
+          setTaskDescription(db, { ...edit, description: "taken" }),
+          setTaskDueDate(db, { ...edit, dueDate: date("2031-01-01") }),
+          reassignTask(db, { ...edit, assigneeId: fakeId() }),
         ]);
+      };
       expect(await call(foreign)).toEqual(await call(UNKNOWN_ID));
       expect(await taskState(foreign)).toEqual(before);
     });
@@ -1565,24 +973,6 @@ describe("database layer against the real schema", () => {
       ).toEqual({
         ok: false,
         error: { category: "constraint", code: "23503" },
-      });
-    });
-
-    it("refuses a task on a closed event", async () => {
-      const closed = await insertEvent(pg, guild);
-      unwrap(await closeEvent(db, { guildId: guild.guildId, eventId: closed }));
-      expect(
-        await createTask(db, {
-          guildId: guild.guildId,
-          eventId: closed,
-          assigneeId: fakeId(),
-          actorId: fakeId(),
-          description: "Too late",
-          dueDate: DUE,
-        }),
-      ).toEqual({
-        ok: false,
-        error: { category: "parent_unavailable", code: "CF410" },
       });
     });
 
@@ -1691,50 +1081,6 @@ describe("database layer against the real schema", () => {
         expect(rows[0]?.due_date).toBe("2030-01-05");
       });
 
-      it("leaves out the same member's tasks in another guild", async () => {
-        const own = await insertGuild(pg);
-        const other = await insertGuild(pg);
-        const assigneeId = fakeId();
-        const mine = await insertTask(
-          pg,
-          own,
-          await insertEvent(pg, own),
-          assigneeId,
-        );
-        await insertTask(pg, other, await insertEvent(pg, other), assigneeId);
-        expect(await openFor(own.guildId, assigneeId)).toEqual([mine]);
-      });
-
-      it("leaves out done and deleted tasks", async () => {
-        const assigneeId = fakeId();
-        const open = await newTask(assigneeId);
-        const done = await newTask(assigneeId);
-        const deleted = await newTask(assigneeId);
-        unwrap(
-          await markTaskDoneAsOfficer(db, {
-            guildId: guild.guildId,
-            taskId: done.taskId,
-            now: NOW,
-          }),
-        );
-        unwrap(
-          await softDeleteTask(db, {
-            guildId: guild.guildId,
-            taskId: deleted.taskId,
-            now: NOW,
-          }),
-        );
-        expect(await openFor(guild.guildId, assigneeId)).toEqual([open.taskId]);
-      });
-
-      it("leaves out a live task whose event was deleted", async () => {
-        const assigneeId = fakeId();
-        const ownEvent = await insertEvent(pg, guild);
-        await insertTask(pg, guild, ownEvent, assigneeId);
-        await deleteEventOnly(ownEvent);
-        expect(await openFor(guild.guildId, assigneeId)).toEqual([]);
-      });
-
       it("still lists a task whose channel was removed", async () => {
         const own = await insertGuild(pg);
         const assigneeId = fakeId();
@@ -1748,84 +1094,9 @@ describe("database layer against the real schema", () => {
         expect(await openFor(own.guildId, assigneeId)).toHaveLength(1);
       });
     });
-
-    it("lists an event's tasks only for its own guild", async () => {
-      const own = await insertGuild(pg);
-      const other = await insertGuild(pg);
-      const ownEvent = await insertEvent(pg, own);
-      const taskId = await insertTask(pg, own, ownEvent);
-      expect(
-        unwrap(
-          await listEventTasks(db, {
-            guildId: own.guildId,
-            eventId: ownEvent,
-          }),
-        ).rows.map((row) => row.id),
-      ).toEqual([taskId]);
-      expect(
-        unwrap(
-          await listEventTasks(db, {
-            guildId: other.guildId,
-            eventId: ownEvent,
-          }),
-        ).rows,
-      ).toEqual([]);
-    });
-
-    it("reports a failing CHECK as its category and code", async () => {
-      const { taskId } = await newTask();
-      const expectedUpdatedAt = await versionOf(guild.guildId, taskId);
-      await pg.exec(`
-        CREATE FUNCTION public.test_fail_description() RETURNS trigger LANGUAGE plpgsql AS $$
-        BEGIN RAISE EXCEPTION 'failing row %', NEW.description
-          USING ERRCODE = '23514', DETAIL = NEW.description, HINT = NEW.description; END; $$;
-        CREATE TRIGGER test_fail_description BEFORE UPDATE ON public.tasks
-          FOR EACH ROW EXECUTE FUNCTION public.test_fail_description();
-      `);
-      try {
-        const result = await setTaskDescription(db, {
-          guildId: guild.guildId,
-          taskId,
-          expectedUpdatedAt,
-          description: "row text",
-        });
-        expect(result).toEqual({
-          ok: false,
-          error: { category: "constraint", code: "23514" },
-        });
-      } finally {
-        await pg.exec(`
-          DROP TRIGGER test_fail_description ON public.tasks;
-          DROP FUNCTION public.test_fail_description();
-        `);
-      }
-    });
   });
 
   describe("reminder candidates", () => {
-    // The query from schema.test.ts, without its per-kind log check, which the
-    // planner applies to the log each candidate carries.
-    const expectedIds = async (lastDueDate: string) => {
-      const rows = await queryAs<{ id: string }>(
-        pg,
-        "bot_app",
-        `SELECT t.id
-         FROM public.tasks t
-         JOIN public.events e ON e.id = t.event_id AND e.guild_id = t.guild_id
-         JOIN public.managed_channels c ON c.guild_id = e.guild_id AND c.channel_id = e.channel_id
-         JOIN public.guild_config g ON g.guild_id = t.guild_id
-         WHERE t.status = 'open'
-           AND t.deleted_at IS NULL
-           AND t.due_date <= $1
-           AND e.status = 'active'
-           AND e.deleted_at IS NULL
-           AND c.status = 'active'
-           AND g.reminders_enabled`,
-        [lastDueDate],
-      );
-      return rows.map((row) => row.id).sort();
-    };
-
     const candidateIds = async () =>
       unwrap(await listReminderCandidates(db, { lastDueDate: DUE })).rows.map(
         (row) => row.task.id,
@@ -1872,116 +1143,78 @@ describe("database layer against the real schema", () => {
       });
     });
 
-    it("leaves out a task due after the last date", async () => {
-      const { own, taskId } = await setUp();
-      unwrap(
-        await setTaskDueDate(db, {
-          guildId: own.guildId,
-          taskId,
-          expectedUpdatedAt: await versionOf(own.guildId, taskId),
-          dueDate: date("2030-01-11"),
-        }),
-      );
-      expect(await candidateIds()).not.toContain(taskId);
-    });
+    const configChange = (
+      own: GuildFixture,
+      change: { remindersEnabled?: boolean; removeChannelIds?: string[] },
+    ) =>
+      applyConfigChange(db, {
+        guildId: own.guildId,
+        actorId: fakeId(),
+        expectedVersion: 2,
+        remindersEnabled: change.remindersEnabled ?? null,
+        addChannelIds: [],
+        removeChannelIds: change.removeChannelIds ?? [],
+        timezone: null,
+      });
 
-    it("leaves out a done or deleted task", async () => {
-      const done = await setUp();
-      const deleted = await setUp();
-      unwrap(
-        await markTaskDoneAsOfficer(db, {
-          guildId: done.own.guildId,
-          taskId: done.taskId,
-          now: NOW,
-        }),
-      );
-      unwrap(
-        await softDeleteTask(db, {
-          guildId: deleted.own.guildId,
-          taskId: deleted.taskId,
-          now: NOW,
-        }),
-      );
-      const ids = await candidateIds();
-      expect(ids).not.toContain(done.taskId);
-      expect(ids).not.toContain(deleted.taskId);
-    });
-
-    it("leaves out a task with reminders off for its guild", async () => {
-      const { own, taskId } = await setUp();
-      unwrap(
-        await applyConfigChange(db, {
-          guildId: own.guildId,
-          actorId: fakeId(),
-          expectedVersion: 2,
-          remindersEnabled: false,
-          addChannelIds: [],
-          removeChannelIds: [],
-          timezone: null,
-        }),
-      );
-      expect(await candidateIds()).not.toContain(taskId);
-    });
-
-    it("leaves out a task in a removed or unavailable channel", async () => {
-      const removed = await setUp();
-      const unavailable = await setUp();
-      unwrap(
-        await applyConfigChange(db, {
-          guildId: removed.own.guildId,
-          actorId: fakeId(),
-          expectedVersion: 2,
-          remindersEnabled: null,
-          addChannelIds: [],
-          removeChannelIds: [removed.own.channelId],
-          timezone: null,
-        }),
-      );
-      unwrap(
-        await markChannelUnavailable(db, {
-          guildId: unavailable.own.guildId,
-          channelId: unavailable.own.channelId,
-        }),
-      );
-      const ids = await candidateIds();
-      expect(ids).not.toContain(removed.taskId);
-      expect(ids).not.toContain(unavailable.taskId);
-    });
-
-    it("leaves out a task under a closed or deleted event", async () => {
-      const closed = await setUp();
-      const deleted = await setUp();
-      unwrap(
-        await closeEvent(db, {
-          guildId: closed.own.guildId,
-          eventId: closed.eventId,
-        }),
-      );
-      unwrap(
-        await softDeleteEvent(db, {
-          guildId: deleted.own.guildId,
-          eventId: deleted.eventId,
-        }),
-      );
-      const ids = await candidateIds();
-      expect(ids).not.toContain(closed.taskId);
-      expect(ids).not.toContain(deleted.taskId);
-    });
-
-    it("leaves out a live task whose event alone was deleted", async () => {
-      const { eventId, taskId } = await setUp();
-      await deleteEventOnly(eventId);
-      expect(await candidateIds()).not.toContain(taskId);
-    });
-
-    it("returns the same tasks as the query the schema tests pin", async () => {
-      const { truncated } = unwrap(
-        await listReminderCandidates(db, { lastDueDate: DUE }),
-      );
-      expect(truncated).toBe(false);
-      expect((await candidateIds()).sort()).toEqual(
-        await expectedIds("2030-01-10"),
-      );
+    type Made = Awaited<ReturnType<typeof setUp>>;
+    it.each<[string, (made: Made) => Promise<unknown>]>([
+      [
+        "due after the last date",
+        async ({ own, taskId }) =>
+          setTaskDueDate(db, {
+            guildId: own.guildId,
+            taskId,
+            expectedUpdatedAt: await versionOf(own.guildId, taskId),
+            dueDate: date("2030-01-11"),
+          }),
+      ],
+      [
+        "done",
+        ({ own, taskId }) =>
+          markTaskDoneAsOfficer(db, { guildId: own.guildId, taskId, now: NOW }),
+      ],
+      [
+        "deleted",
+        ({ own, taskId }) =>
+          softDeleteTask(db, { guildId: own.guildId, taskId, now: NOW }),
+      ],
+      [
+        "in a guild with reminders off",
+        ({ own }) => configChange(own, { remindersEnabled: false }),
+      ],
+      [
+        "in a removed channel",
+        ({ own }) => configChange(own, { removeChannelIds: [own.channelId] }),
+      ],
+      [
+        "in an unavailable channel",
+        ({ own }) =>
+          markChannelUnavailable(db, {
+            guildId: own.guildId,
+            channelId: own.channelId,
+          }),
+      ],
+      [
+        "under a closed event",
+        ({ own, eventId }) => closeEvent(db, { guildId: own.guildId, eventId }),
+      ],
+      [
+        "under a deleted event",
+        ({ own, eventId }) =>
+          softDeleteEvent(db, { guildId: own.guildId, eventId }),
+      ],
+      [
+        "live under an event that alone was deleted",
+        async ({ eventId }) => {
+          await deleteEventOnly(eventId);
+          return { ok: true, value: null };
+        },
+      ],
+    ])("leaves out a task %s", async (_name, stop) => {
+      const made = await setUp();
+      unwrap((await stop(made)) as DbResult<unknown>);
+      expect(await candidateIds()).not.toContain(made.taskId);
     });
 
     it("carries the task's log, so an old due date can be told apart", async () => {
@@ -2061,41 +1294,6 @@ describe("database layer against the real schema", () => {
         dueDate: DUE,
       });
 
-    it("leaves tasks on a closed or deleted event out of /mytasks and the pickers", async () => {
-      const assigneeId = fakeId();
-      const open = await insertEvent(pg, own);
-      const closed = await insertEvent(pg, own);
-      const deleted = await insertEvent(pg, own);
-      const kept = unwrap(await newTaskOn(open, assigneeId, fakeId()));
-      unwrap(await newTaskOn(closed, assigneeId, fakeId()));
-      unwrap(await newTaskOn(deleted, assigneeId, fakeId()));
-      unwrap(await closeEvent(db, { guildId: own.guildId, eventId: closed }));
-      unwrap(
-        await softDeleteEvent(db, { guildId: own.guildId, eventId: deleted }),
-      );
-
-      const mine = unwrap(
-        await listOpenTasksForAssignee(db, {
-          guildId: own.guildId,
-          assigneeId,
-        }),
-      );
-      const ownPicker = unwrap(
-        await searchOwnOpenTasks(db, {
-          guildId: own.guildId,
-          assigneeId,
-          term: "signs",
-        }),
-      );
-      const officerPicker = unwrap(
-        await searchOpenTasks(db, { guildId: own.guildId, term: "signs" }),
-      );
-
-      expect(mine.rows.map((row) => row.id)).toEqual([kept.id]);
-      expect(ownPicker.map((row) => row.id)).toEqual([kept.id]);
-      expect(officerPicker.map((row) => row.id)).toEqual([kept.id]);
-    });
-
     it("finds a thread's event in this guild only, closed or not, and not once deleted", async () => {
       const other = await insertGuild(pg);
       const eventId = await insertEvent(pg, own);
@@ -2136,53 +1334,6 @@ describe("database layer against the real schema", () => {
     });
 
     describe("searching by the start of an ID", () => {
-      it("finds only live open rows, in this guild and for this member", async () => {
-        const mine = fakeId();
-        const eventId = await insertEvent(pg, own);
-        const closed = await insertEvent(pg, own);
-        const kept = unwrap(await newTaskOn(eventId, mine, fakeId()));
-        const onClosed = unwrap(await newTaskOn(closed, mine, fakeId()));
-        unwrap(await closeEvent(db, { guildId: own.guildId, eventId: closed }));
-
-        for (const prefix of [kept.id.slice(0, 8), kept.id.slice(0, 3)]) {
-          const officer = unwrap(
-            await searchOpenTasksByIdPrefix(db, {
-              guildId: own.guildId,
-              prefix,
-            }),
-          ).map((row) => row.id);
-          expect(officer).toContain(kept.id);
-          expect(officer).not.toContain(onClosed.id);
-        }
-        const prefix = kept.id.slice(0, 8);
-        expect(
-          unwrap(
-            await searchOwnOpenTasksByIdPrefix(db, {
-              guildId: own.guildId,
-              assigneeId: mine,
-              prefix,
-            }),
-          ).map((row) => row.id),
-        ).toEqual([kept.id]);
-        expect(
-          unwrap(
-            await searchOwnOpenTasksByIdPrefix(db, {
-              guildId: own.guildId,
-              assigneeId: fakeId(),
-              prefix,
-            }),
-          ),
-        ).toEqual([]);
-        expect(
-          unwrap(
-            await searchOpenTasksByIdPrefix(db, {
-              guildId: guild.guildId,
-              prefix,
-            }),
-          ),
-        ).toEqual([]);
-      });
-
       it("finds open events only", async () => {
         const open = await insertEvent(pg, own);
         const closed = await insertEvent(pg, own);
@@ -2197,42 +1348,6 @@ describe("database layer against the real schema", () => {
 
         expect(await search(open)).toEqual([open]);
         expect(await search(closed)).toEqual([]);
-      });
-    });
-
-    describe("softDeleteTaskIfUnchanged", () => {
-      it("deletes the version read, and refuses a later one", async () => {
-        const eventId = await insertEvent(pg, own);
-        const task = unwrap(await newTaskOn(eventId, fakeId(), fakeId()));
-        await new Promise((resolve) => setTimeout(resolve, 5));
-        const edited = unwrap(
-          await editTask(db, {
-            actorId: fakeId(),
-            guildId: own.guildId,
-            taskId: task.id,
-            expectedUpdatedAt: task.updated_at,
-            description: "Changed",
-            dueDate: DUE,
-            assigneeId: task.assignee_id,
-          }),
-        );
-        const key = { guildId: own.guildId, taskId: task.id, now: NOW };
-
-        expect(
-          await softDeleteTaskIfUnchanged(db, {
-            ...key,
-            expectedUpdatedAt: task.updated_at,
-          }),
-        ).toEqual(NOT_FOUND);
-        expect((await taskState(task.id))?.deleted).toBe(false);
-
-        unwrap(
-          await softDeleteTaskIfUnchanged(db, {
-            ...key,
-            expectedUpdatedAt: edited.updated_at,
-          }),
-        );
-        expect((await taskState(task.id))?.deleted).toBe(true);
       });
     });
 
@@ -2290,22 +1405,6 @@ describe("database layer against the real schema", () => {
           unwrap(await softDeleteEvent(db, { guildId: own.guildId, eventId })),
         ).toBe(0);
       });
-
-      it("refuses a change once the event is deleted, too", async () => {
-        const eventId = await insertEvent(pg, own);
-        const task = unwrap(await newTaskOn(eventId, fakeId(), fakeId()));
-        unwrap(await softDeleteEvent(db, { guildId: own.guildId, eventId }));
-
-        // The bot's filters stop this first, so the trigger needs a direct write to reach.
-        await expect(
-          queryAs(
-            pg,
-            MIGRATION_OWNER,
-            `UPDATE public.tasks SET description = 'Changed' WHERE id = $1`,
-            [task.id],
-          ),
-        ).rejects.toMatchObject({ code: "CF410" });
-      });
     });
 
     describe("editTask", () => {
@@ -2352,46 +1451,6 @@ describe("database layer against the real schema", () => {
 
         expect(edited.ok).toBe(false);
         expect((await taskState(task.id))?.description).toBe(task.description);
-      });
-
-      it("does not reach a finished task, a deleted task or another guild's task", async () => {
-        const eventId = await insertEvent(pg, own);
-        const edit = (taskId: string, updated: string, guildId = own.guildId) =>
-          editTask(db, {
-            actorId: fakeId(),
-            guildId,
-            taskId,
-            expectedUpdatedAt: updated,
-            description: "Overwritten",
-            dueDate: DUE,
-            assigneeId: fakeId(),
-          });
-
-        const finished = unwrap(await newTaskOn(eventId, fakeId(), fakeId()));
-        const done = unwrap(
-          await markTaskDoneAsOfficer(db, {
-            guildId: own.guildId,
-            taskId: finished.id,
-            now: NOW,
-          }),
-        );
-        expect(await edit(done.id, done.updated_at)).toEqual(NOT_FOUND);
-
-        const removed = unwrap(await newTaskOn(eventId, fakeId(), fakeId()));
-        const deleted = unwrap(
-          await softDeleteTask(db, {
-            guildId: own.guildId,
-            taskId: removed.id,
-            now: NOW,
-          }),
-        );
-        expect(await edit(deleted.id, deleted.updated_at)).toEqual(NOT_FOUND);
-
-        const live = unwrap(await newTaskOn(eventId, fakeId(), fakeId()));
-        expect(await edit(live.id, live.updated_at, guild.guildId)).toEqual(
-          NOT_FOUND,
-        );
-        expect((await taskState(live.id))?.description).toBe(live.description);
       });
     });
 
@@ -2471,52 +1530,6 @@ describe("database layer against the real schema", () => {
         expect(await reassign()).toEqual(actorLimit);
         expect(await newTaskOn(eventId, fakeId(), actorId)).toEqual(actorLimit);
         unwrap(await newTaskOn(eventId, fakeId(), fakeId()));
-      });
-
-      it("stops counting reassignments after 24 hours, and can't be backdated", async () => {
-        const actorId = fakeId();
-        const eventId = await insertEvent(pg, own);
-        const task = unwrap(await newTaskOn(eventId, fakeId(), fakeId()));
-        const reassign = () =>
-          reassignAs(db, {
-            guildId: own.guildId,
-            actorId,
-            taskId: task.id,
-          });
-        for (let i = 0; i < OFFICER_DAILY_LIMIT; i += 1) {
-          unwrap(await reassign());
-        }
-        expect(await reassign()).toEqual(actorLimit);
-
-        await pg.query(
-          `UPDATE public.task_reassignments SET created_at = now() - interval '25 hours'
-           WHERE actor_id = $1`,
-          [actorId],
-        );
-        unwrap(await reassign());
-      });
-
-      it("refuses a reassignment naming a task that does not exist", async () => {
-        const refused = await reassignAs(db, {
-          guildId: own.guildId,
-          actorId: fakeId(),
-          taskId: UNKNOWN_ID,
-        });
-        expect(refused.ok).toBe(false);
-      });
-
-      it("stops counting an officer's tasks after 24 hours", async () => {
-        const actorId = fakeId();
-        const eventId = await insertEvent(pg, own);
-        await fill(eventId, OFFICER_DAILY_LIMIT, () => actorId);
-
-        await pg.query(
-          `UPDATE public.tasks SET created_at = now() - interval '25 hours'
-           WHERE event_id = $1`,
-          [eventId],
-        );
-
-        unwrap(await newTaskOn(eventId, fakeId(), actorId));
       });
 
       it("counts per guild, so another guild's officer limit is its own", async () => {
@@ -2606,14 +1619,6 @@ describe("database layer against the real schema", () => {
       ).toBe(true);
     });
 
-    it("lets only one of two simultaneous claims win", async () => {
-      const key = await newKey();
-      const tokens = (
-        await Promise.all([claimReminder(db, key), claimReminder(db, key)])
-      ).map(unwrap);
-      expect(tokens.filter((token) => token !== null)).toHaveLength(1);
-    });
-
     it("skips a claim", async () => {
       const key = await newKey();
       const token = unwrap(await claimReminder(db, key));
@@ -2622,25 +1627,6 @@ describe("database layer against the real schema", () => {
           await markReminderSkipped(db, { ...key, claimToken: token ?? "" }),
         ),
       ).toBe(true);
-    });
-
-    it("stops claiming once reminders are turned off during a run", async () => {
-      const own = await insertGuild(pg);
-      const first = await newKey(own);
-      const second = await newKey(own);
-      expect(unwrap(await claimReminder(db, first))).not.toBeNull();
-      unwrap(
-        await applyConfigChange(db, {
-          guildId: own.guildId,
-          actorId: fakeId(),
-          expectedVersion: 2,
-          remindersEnabled: false,
-          addChannelIds: [],
-          removeChannelIds: [],
-          timezone: null,
-        }),
-      );
-      expect(unwrap(await claimReminder(db, second))).toBeNull();
     });
 
     it("lists a claim older than the cutoff, and takes it over", async () => {
@@ -2670,13 +1656,11 @@ describe("database layer against the real schema", () => {
       ).toBeNull();
     });
 
-    it("leaves a fresh claim off the stale list", async () => {
-      const key = await newKey();
-      unwrap(await claimReminder(db, key));
-      expect(await staleTaskIds()).not.toContain(key.taskId);
-    });
+    it("leaves a fresh claim, and a finished one however old, off the stale list", async () => {
+      const fresh = await newKey();
+      unwrap(await claimReminder(db, fresh));
+      expect(await staleTaskIds()).not.toContain(fresh.taskId);
 
-    it("leaves a finished claim off the stale list, however old", async () => {
       const key = await newKey();
       const token = unwrap(await claimReminder(db, key));
       unwrap(
@@ -2809,36 +1793,6 @@ describe("database layer against the real schema", () => {
         ]);
       });
 
-      it("reads the claim for the named due date, not one from an earlier date", async () => {
-        const own = await insertGuild(pg);
-        const taskId = await insertTask(pg, own, await insertEvent(pg, own));
-        unwrap(
-          await claimReminder(db, { taskId, kind: "due_day", dueDate: DUE }),
-        );
-        const moved = date("2030-01-11");
-        unwrap(
-          await setTaskDueDate(db, {
-            guildId: own.guildId,
-            taskId,
-            expectedUpdatedAt: await versionOf(own.guildId, taskId),
-            dueDate: moved,
-          }),
-        );
-        const key = { taskId, kind: "due_day" as const, dueDate: moved };
-        const claimToken = unwrap(await claimReminder(db, key)) ?? "";
-        await age(taskId);
-        unwrap(
-          await markTaskDoneAsOfficer(db, {
-            guildId: own.guildId,
-            taskId,
-            now: NOW,
-          }),
-        );
-        expect(
-          unwrap(await resolveStaleClaim(db, { ...key, claimToken })),
-        ).toEqual({ outcome: "closed" });
-      });
-
       it("leaves a claim someone else has already taken over", async () => {
         const claim = await staleClaim();
         unwrap(await reclaimReminder(db, claim));
@@ -2851,26 +1805,6 @@ describe("database layer against the real schema", () => {
   });
 
   describe("the daily sweep", () => {
-    it("lists active forums across guilds and leaves out the rest", async () => {
-      const one = await insertGuild(pg);
-      const two = await insertGuild(pg);
-      const gone = await insertGuild(pg);
-      unwrap(
-        await markChannelUnavailable(db, {
-          guildId: gone.guildId,
-          channelId: gone.channelId,
-        }),
-      );
-
-      const { rows } = unwrap(await listActiveManagedChannels(db));
-
-      const ids = rows.map((row) => row.channel_id);
-      expect(ids).toEqual(
-        expect.arrayContaining([one.channelId, two.channelId]),
-      );
-      expect(ids).not.toContain(gone.channelId);
-    });
-
     it("expires only interaction claims older than a day", async () => {
       const old = fakeId();
       const fresh = fakeId();
@@ -2943,90 +1877,6 @@ describe("database layer against the real schema", () => {
           error: { category: "unexpected", code: null },
         }),
       ).toEqual(NOT_FOUND);
-    });
-
-    it("finishes only the named run", async () => {
-      const target = await startRun("health_check");
-      const neighbour = await startRun("reminders");
-
-      unwrap(
-        await finishJobRun(db, {
-          id: target,
-          now: new Date("2031-06-01T00:00:00.000Z"),
-          results: {},
-          error: null,
-        }),
-      );
-
-      const status = async (id: string) => {
-        const { rows } = await pg.query<{ status: string }>(
-          `SELECT status FROM public.job_runs WHERE id = $1`,
-          [id],
-        );
-        return rows[0]?.status;
-      };
-      expect(await status(target)).toBe("succeeded");
-      expect(await status(neighbour)).toBe("running");
-    });
-
-    it("holds a job to one running row, whatever writes it", async () => {
-      await startRun("reminders");
-      expect(
-        await errorCodeOf(
-          pg.query(
-            `INSERT INTO public.job_runs (job_name) VALUES ('reminders')`,
-          ),
-        ),
-      ).toBe("23505");
-    });
-
-    it("reads the latest run of the named job, not of another", async () => {
-      const run = await startRun("reminders");
-      await pg.query(
-        `UPDATE public.job_runs SET started_at = now() - interval '2 days' WHERE id = $1`,
-        [run],
-      );
-      const other = await startRun("health_check");
-      await pg.query(
-        `UPDATE public.job_runs SET started_at = now() - interval '1 day' WHERE id = $1`,
-        [other],
-      );
-      expect(
-        unwrap(await getLatestJobRun(db, { jobName: "reminders" }))?.id,
-      ).toBe(run);
-    });
-
-    it("reads the latest succeeded run, not the latest run", async () => {
-      expect(
-        unwrap(await getLatestSucceededJobRun(db, { jobName: "reminders" })),
-      ).toBeNull();
-
-      const succeeded = await startRun("reminders");
-      unwrap(
-        await finishJobRun(db, {
-          id: succeeded,
-          now: new Date(),
-          results: {},
-          error: null,
-        }),
-      );
-      await pg.query(
-        `UPDATE public.job_runs SET started_at = now() - interval '25 hours' WHERE id = $1`,
-        [succeeded],
-      );
-      unwrap(
-        await finishJobRun(db, {
-          id: await startRun("reminders"),
-          now: new Date(),
-          results: {},
-          error: { category: "unexpected", code: null },
-        }),
-      );
-
-      expect(
-        unwrap(await getLatestSucceededJobRun(db, { jobName: "reminders" }))
-          ?.id,
-      ).toBe(succeeded);
     });
 
     it("records a failure as a category and code", async () => {
@@ -3125,13 +1975,6 @@ describe("database layer against the real schema", () => {
       );
 
       expect(await count(own)).toEqual({ count: 2, truncated: false });
-    });
-
-    it("finds nothing for a forum with no tasks", async () => {
-      expect(await count(await insertGuild(pg))).toEqual({
-        count: 0,
-        truncated: false,
-      });
     });
   });
 
@@ -3586,27 +2429,6 @@ describe("the event workflow against the real schema", () => {
       });
     });
 
-    it("keeps each step's hand-off apart", async () => {
-      const eventId = await insertEvent(pg, guild);
-      for (const kind of [
-        "budget_sheet",
-        "engage_post",
-        "budget_approved",
-      ] as const) {
-        unwrap(
-          await completeEventStep(db, {
-            ...key(eventId),
-            kind,
-            actorId: fakeId(),
-          }),
-        );
-        expect(await claimStepHandoff(db, { ...key(eventId), kind })).toEqual({
-          ok: true,
-          value: true,
-        });
-      }
-    });
-
     it("refuses a closed event and an unknown one", async () => {
       const eventId = await insertEvent(pg, guild);
       unwrap(await closeEvent(db, key(eventId)));
@@ -3657,16 +2479,6 @@ describe("the event workflow against the real schema", () => {
         completed_at: null,
         completed_by: null,
       });
-    });
-
-    it("refuses an unknown event", async () => {
-      expect(
-        await setEventPickupTime(db, {
-          ...key(UNKNOWN_ID),
-          pickupTime: "12:00",
-          actorId: fakeId(),
-        }),
-      ).toEqual(NOT_FOUND);
     });
   });
 

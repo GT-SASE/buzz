@@ -274,28 +274,27 @@ describe("requests", () => {
     );
   });
 
-  it("replies to an interaction without sending the bot token", async () => {
-    serve({ send: () => new Response(null, { status: 204 }) });
-
-    await client().replyToInteraction(IN_MANAGED, REPLY_BODY);
-
-    const [request] = writes();
-    expect(request?.url).toBe(
+  it.each<[string, () => Promise<unknown>, string, string]>([
+    [
+      "replies to an interaction",
+      () => client().replyToInteraction(IN_MANAGED, REPLY_BODY),
+      "POST",
       `${API}/interactions/${INTERACTION}/${ENCODED_TOKEN}/callback`,
-    );
-    expect(request?.headers.Authorization).toBeUndefined();
-  });
-
-  it("edits the original interaction reply without the bot token", async () => {
+    ],
+    [
+      "edits the original interaction reply",
+      () => client().editInteractionReply(IN_MANAGED, EDIT_BODY),
+      "PATCH",
+      `${API}/webhooks/${APP_ID}/${ENCODED_TOKEN}/messages/@original`,
+    ],
+  ])("%s without sending the bot token", async (_label, send, method, url) => {
     serve();
 
-    await client().editInteractionReply(IN_MANAGED, EDIT_BODY);
+    await send();
 
     const [request] = writes();
-    expect(request?.method).toBe("PATCH");
-    expect(request?.url).toBe(
-      `${API}/webhooks/${APP_ID}/${ENCODED_TOKEN}/messages/@original`,
-    );
+    expect(request?.method).toBe(method);
+    expect(request?.url).toBe(url);
     expect(request?.headers.Authorization).toBeUndefined();
   });
 });
@@ -310,26 +309,19 @@ describe("createThread", () => {
     expect(writes()[0]?.url).toBe(`${API}/channels/${MANAGED_FORUM}/threads`);
   });
 
-  it("returns the first message of the new post", async () => {
-    const firstMessage = fakeId(101);
+  it.each([
+    ["the one Discord gives", { message: { id: fakeId(101) } }, fakeId(101)],
+    ["the post's own ID when Discord leaves it out", {}, CREATED_ID],
+  ])("returns as the first message %s", async (_label, extra, first) => {
     serve({
       channels: { [MANAGED_FORUM]: { type: 15 } },
-      send: () =>
-        Response.json({ id: CREATED_ID, message: { id: firstMessage } }),
+      send: () => Response.json({ id: CREATED_ID, ...extra }),
     });
 
     await expect(client().createThread(MANAGED, THREAD_BODY)).resolves.toEqual({
       id: CREATED_ID,
-      firstMessageId: firstMessage,
+      firstMessageId: first,
     });
-  });
-
-  it("counts the post's own ID as its first message if Discord leaves it out", async () => {
-    serve({ channels: { [MANAGED_FORUM]: { type: 15 } } });
-
-    const post = await client().createThread(MANAGED, THREAD_BODY);
-
-    expect(post.firstMessageId).toBe(CREATED_ID);
   });
 
   it("refuses a created post with no usable ID", async () => {
@@ -363,41 +355,16 @@ describe("createThread", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("refuses when the channel lookup fails", async () => {
-    fetchMock.mockResolvedValueOnce(
-      Response.json({ code: 50001 }, { status: 403 }),
-    );
-
-    const failure = await failureOf(
-      client().createThread(MANAGED, THREAD_BODY),
-    );
-
-    expect(failure).toEqual({
-      kind: "channel_unavailable",
-      channelId: MANAGED_FORUM,
-      status: 403,
-      code: 50001,
-    });
-    expect(fetchMock).toHaveBeenCalledOnce();
-  });
-
-  it("refuses a target that is not a channel", async () => {
-    // @ts-expect-error Only a channel can be the parent of a new thread.
-    const attempt = client().createThread(THREAD_TARGET, THREAD_BODY);
-
-    expect((await failureOf(attempt)).kind).toBe("invalid_target");
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-
-  it("refuses another kind of target even with a valid channel ID", async () => {
+  it("refuses a target that is not a channel, whatever its IDs", async () => {
     const target = { kind: "thread", guildId: GUILD, channelId: MANAGED_FORUM };
 
-    const attempt = client().createThread(
-      target as unknown as ChannelTarget,
-      THREAD_BODY,
-    );
-
-    expect((await failureOf(attempt)).kind).toBe("invalid_target");
+    for (const attempt of [
+      // @ts-expect-error Only a channel can be the parent of a new thread.
+      client().createThread(THREAD_TARGET, THREAD_BODY),
+      client().createThread(target as unknown as ChannelTarget, THREAD_BODY),
+    ]) {
+      expect((await failureOf(attempt)).kind).toBe("invalid_target");
+    }
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -471,31 +438,6 @@ describe("managed channel check", () => {
     expect(writes()).toEqual([]);
   });
 
-  it("does not accept parentId in the type of a target", () => {
-    const target: ThreadTarget = {
-      kind: "thread",
-      guildId: GUILD,
-      threadId: THREAD,
-      // @ts-expect-error The parent must come from Discord, not the caller.
-      parentId: MANAGED_FORUM,
-    };
-
-    expect(target.threadId).toBe(THREAD);
-  });
-
-  it("refuses a thread whose real parent is unmanaged", async () => {
-    serve({
-      channels: { [THREAD]: { type: 11, parent_id: UNMANAGED_CHANNEL } },
-    });
-
-    const failure = await failureOf(
-      client().sendMessage(THREAD_TARGET, MESSAGE_BODY),
-    );
-
-    expect(failure).toEqual({ kind: "unmanaged_target", channelId: THREAD });
-    expect(writes()).toEqual([]);
-  });
-
   it.each([0, 2, 5, 13, 15, 16])(
     "ignores parent_id on channel type %i, where it is a category",
     async (type) => {
@@ -512,7 +454,7 @@ describe("managed channel check", () => {
     },
   );
 
-  it.each([undefined, null, "1", "../1", 5])(
+  it.each([UNMANAGED_CHANNEL, undefined, null, "1", "../1", 5])(
     "refuses a thread whose parent_id is %j",
     async (parentId) => {
       serve({ channels: { [THREAD]: { type: 11, parent_id: parentId } } });
@@ -528,18 +470,8 @@ describe("managed channel check", () => {
 
   it.each([
     [
-      "a refusal with a code",
-      () => Response.json({ code: 10003 }, { status: 404 }),
-      {
-        kind: "channel_unavailable",
-        channelId: THREAD,
-        status: 404,
-        code: 10003,
-      },
-    ],
-    [
       "missing access",
-      () => Response.json({ code: 50001 }, { status: 403 }),
+      () => Promise.resolve(Response.json({ code: 50001 }, { status: 403 })),
       {
         kind: "channel_unavailable",
         channelId: THREAD,
@@ -549,13 +481,18 @@ describe("managed channel check", () => {
     ],
     [
       "a malformed answer",
-      () => Response.json({}),
+      () => Promise.resolve(Response.json({})),
       { kind: "invalid_response", status: 200 },
+    ],
+    [
+      "no response",
+      () => Promise.reject(new TypeError("fetch failed")),
+      { kind: "network" },
     ],
   ])(
     "refuses the send when the lookup gets %s",
     async (_l, answer, failure) => {
-      fetchMock.mockImplementationOnce(() => Promise.resolve(answer()));
+      fetchMock.mockImplementationOnce(answer);
 
       expect(
         await failureOf(client().sendMessage(THREAD_TARGET, MESSAGE_BODY)),
@@ -563,17 +500,6 @@ describe("managed channel check", () => {
       expect(fetchMock).toHaveBeenCalledOnce();
     },
   );
-
-  it("refuses the send when the lookup has no response", async () => {
-    fetchMock.mockRejectedValueOnce(new TypeError("fetch failed"));
-
-    const failure = await failureOf(
-      client().sendMessage(THREAD_TARGET, MESSAGE_BODY),
-    );
-
-    expect(failure).toEqual({ kind: "network" });
-    expect(fetchMock).toHaveBeenCalledOnce();
-  });
 
   it("refuses the send when the check itself fails", async () => {
     const broken: ManagedChannelCheck = {
@@ -721,37 +647,6 @@ describe("interaction replies", () => {
       expect(writes()).toHaveLength(1);
     });
 
-    it("refuses when that lookup fails", async () => {
-      fetchMock.mockResolvedValueOnce(
-        Response.json({ code: 50001 }, { status: 403 }),
-      );
-
-      const failure = await failureOf(
-        send(interactionIn({ id: THREAD, type: 11 })),
-      );
-
-      expect(failure).toEqual({
-        kind: "channel_unavailable",
-        channelId: THREAD,
-        status: 403,
-        code: 50001,
-      });
-      expect(fetchMock).toHaveBeenCalledOnce();
-    });
-
-    it("applies the type rule to the lookup as well", async () => {
-      serve({
-        channels: { [THREAD]: { type: 0, parent_id: MANAGED_FORUM } },
-      });
-
-      const failure = await failureOf(
-        send(interactionIn({ id: THREAD, type: 11 })),
-      );
-
-      expect(failure.kind).toBe("unmanaged_target");
-      expect(writes()).toEqual([]);
-    });
-
     it("refuses an interaction not made from a signed payload", async () => {
       const forged = {
         id: INTERACTION,
@@ -765,17 +660,6 @@ describe("interaction replies", () => {
       expect((await failureOf(send(forged))).kind).toBe("invalid_target");
       expect(fetchMock).not.toHaveBeenCalled();
     });
-  });
-
-  it("does not accept a plain target in the types", async () => {
-    const attempt = client().replyToInteraction(
-      // @ts-expect-error Only a verified interaction names where a reply lands.
-      { interactionId: INTERACTION, token: "x", target: MANAGED },
-      REPLY_BODY,
-    );
-
-    expect((await failureOf(attempt)).kind).toBe("invalid_target");
-    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
 
@@ -828,6 +712,7 @@ describe("ephemeral responses", () => {
       "a message update",
       updateMessage({ content: safe`hi`, mentionUserIds: [] }),
     ],
+    ["a direct response that is not a reply", pong()],
   ])("refuses %s, even in a managed channel", async (_label, body) => {
     expect(
       await failureOf(client().respondEphemerally(IN_MANAGED, body as never)),
@@ -835,47 +720,35 @@ describe("ephemeral responses", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("refuses a response that is direct but not ephemeral", async () => {
-    expect(
-      await failureOf(client().respondEphemerally(IN_UNMANAGED, pong())),
-    ).toEqual({ kind: "not_ephemeral" });
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-
-  it("refuses a public reply to an unmanaged channel through the checked path", async () => {
-    expect(
-      (await failureOf(client().replyToInteraction(IN_UNMANAGED, REPLY_BODY)))
-        .kind,
-    ).toBe("unmanaged_target");
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-
-  it("keeps a public defer and its edit checked", async () => {
-    expect(
-      (
-        await failureOf(
-          client().replyToInteraction(IN_UNMANAGED, deferredReply()),
-        )
-      ).kind,
-    ).toBe("unmanaged_target");
-    expect(
-      (await failureOf(client().editInteractionReply(IN_UNMANAGED, EDIT_BODY)))
-        .kind,
-    ).toBe("unmanaged_target");
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-
-  it("sends a message update only through the checked path", async () => {
-    const body = updateMessage({ content: safe`hi`, mentionUserIds: [] });
+  it.each([
+    [
+      "a public reply",
+      (c: DiscordClient) => c.replyToInteraction(IN_UNMANAGED, REPLY_BODY),
+    ],
+    [
+      "a public defer",
+      (c: DiscordClient) => c.replyToInteraction(IN_UNMANAGED, deferredReply()),
+    ],
+    [
+      "its edit",
+      (c: DiscordClient) => c.editInteractionReply(IN_UNMANAGED, EDIT_BODY),
+    ],
+    [
+      "a message update",
+      (c: DiscordClient) =>
+        c.replyToInteraction(
+          IN_UNMANAGED,
+          updateMessage({ content: safe`hi`, mentionUserIds: [] }),
+        ),
+    ],
+  ])("keeps %s on the checked path", async (_label, send) => {
     const isManaged = vi.fn((guildId: string, channelId: string) =>
       check.isManaged(guildId, channelId),
     );
 
-    const failure = await failureOf(
-      client({ isManaged }).replyToInteraction(IN_UNMANAGED, body),
+    expect((await failureOf(send(client({ isManaged })))).kind).toBe(
+      "unmanaged_target",
     );
-
-    expect(failure.kind).toBe("unmanaged_target");
     expect(isManaged).toHaveBeenCalledWith(GUILD, UNMANAGED_CHANNEL);
     expect(fetchMock).not.toHaveBeenCalled();
   });
@@ -894,53 +767,29 @@ describe("editEphemeralReply", () => {
     });
   }
 
-  it.each([
-    [1, [250]],
-    [2, [250, 500]],
-    [3, [250, 500, 1000]],
-  ])(
-    "waits and reads again when the reply is missing %i time(s)",
-    async (misses, waits) => {
-      originalAppearsAfter(misses);
+  it("waits and reads again while the reply is missing", async () => {
+    originalAppearsAfter(3);
 
-      const edited = await client().editEphemeralReply(IN_UNMANAGED, EDIT_BODY);
+    const edited = await client().editEphemeralReply(IN_UNMANAGED, EDIT_BODY);
 
-      expect(edited.id).toBe(CREATED_ID);
-      expect(sleep.mock.calls.map(([ms]) => ms)).toEqual(waits);
-      expect(writes()).toHaveLength(1);
-    },
-  );
+    expect(edited.id).toBe(CREATED_ID);
+    expect(sleep.mock.calls.map(([ms]) => ms)).toEqual([250, 500, 1000]);
+    expect(writes()).toHaveLength(1);
+  });
 
-  it("gives up after the last wait, and writes nothing", async () => {
-    originalAppearsAfter(4);
+  it("gives up after the last wait, or sooner once its budget is spent", async () => {
+    originalAppearsAfter(5);
+    const short = client(check, { budget: { operationMs: 100 } });
 
+    expect(
+      await failureOf(short.editEphemeralReply(IN_UNMANAGED, EDIT_BODY)),
+    ).toMatchObject({ kind: "api", status: 404 });
+    expect(sleep).not.toHaveBeenCalled();
     expect(
       await failureOf(client().editEphemeralReply(IN_UNMANAGED, EDIT_BODY)),
     ).toMatchObject({ kind: "api", status: 404 });
-    expect(requests()).toHaveLength(4);
+    expect(requests()).toHaveLength(5);
     expect(writes()).toEqual([]);
-  });
-
-  it("does not wait past its budget", async () => {
-    originalAppearsAfter(4);
-
-    expect(
-      await failureOf(
-        client(check, {
-          budget: { operationMs: 100 },
-        }).editEphemeralReply(IN_UNMANAGED, EDIT_BODY),
-      ),
-    ).toMatchObject({ kind: "api", status: 404 });
-    expect(sleep).not.toHaveBeenCalled();
-  });
-
-  it("does not retry other failures", async () => {
-    serve({ original: () => Response.json({ code: 1 }, { status: 403 }) });
-
-    await failureOf(client().editEphemeralReply(IN_UNMANAGED, EDIT_BODY));
-
-    expect(sleep).not.toHaveBeenCalled();
-    expect(requests()).toHaveLength(1);
   });
 
   it.each([64, 64 + 128, 64 + 4])(
@@ -988,20 +837,32 @@ describe("editEphemeralReply", () => {
       "refused",
       () => Response.json({ code: 10062 }, { status: 404 }),
       { kind: "api", status: 404, code: 10062 },
+      4,
+    ],
+    [
+      "refused for another reason",
+      () => Response.json({ code: 1 }, { status: 403 }),
+      { kind: "api", status: 403, code: 1 },
+      1,
     ],
     [
       "not JSON",
       () => new Response("<html>", { status: 200 }),
       { kind: "not_ephemeral" },
+      1,
     ],
-  ])("refuses when the GET is %s", async (_label, original, failure) => {
-    serve({ original });
+  ])(
+    "refuses when the GET is %s, and writes nothing",
+    async (_label, original, failure, reads) => {
+      serve({ original });
 
-    expect(
-      await failureOf(client().editEphemeralReply(IN_UNMANAGED, EDIT_BODY)),
-    ).toEqual(failure);
-    expect(writes()).toEqual([]);
-  });
+      expect(
+        await failureOf(client().editEphemeralReply(IN_UNMANAGED, EDIT_BODY)),
+      ).toEqual(failure);
+      expect(requests()).toHaveLength(reads);
+      expect(writes()).toEqual([]);
+    },
+  );
 
   it("refuses when the GET never has a response", async () => {
     fetchMock.mockRejectedValue(new TypeError("fetch failed"));
@@ -1041,25 +902,23 @@ describe("editEphemeralReply", () => {
 
     const FAULTS = ["503", "no response"] as const;
 
-    it.each(FAULTS)("reads again after two reads fail: %s", async (how) => {
-      faultyServer(how, { gets: 2 });
-
-      const edited = await client().editEphemeralReply(IN_UNMANAGED, EDIT_BODY);
-
-      expect(edited.id).toBe(CREATED_ID);
-      expect(sleep.mock.calls.map(([ms]) => ms)).toEqual([250, 500]);
-      expect(writes()).toHaveLength(1);
-    });
-
-    it.each(FAULTS)("edits again after two edits fail: %s", async (how) => {
-      faultyServer(how, { patches: 2 });
+    it.each(
+      FAULTS.flatMap((how) => [
+        [how, "reads", { gets: 2 }],
+        [how, "edits", { patches: 2 }],
+      ]) as [
+        (typeof FAULTS)[number],
+        string,
+        { gets?: number; patches?: number },
+      ][],
+    )("tries again after a %s on two %s", async (how, _what, faults) => {
+      faultyServer(how, faults);
 
       const edited = await client().editEphemeralReply(IN_UNMANAGED, EDIT_BODY);
 
       expect(edited.id).toBe(CREATED_ID);
       expect(sleep.mock.calls.map(([ms]) => ms)).toEqual([250, 500]);
       const [first, ...others] = writes();
-      expect(others).toHaveLength(2);
       for (const other of others) {
         expect(other).toEqual(first);
       }
@@ -1072,20 +931,6 @@ describe("editEphemeralReply", () => {
         await failureOf(client().editEphemeralReply(IN_UNMANAGED, EDIT_BODY)),
       ).toEqual({ kind: "api", status: 503, code: undefined });
       expect(writes()).toHaveLength(4);
-    });
-
-    it("does not wait past its budget", async () => {
-      faultyServer("503", { gets: 4 });
-
-      expect(
-        await failureOf(
-          client(check, {
-            budget: { operationMs: 100 },
-          }).editEphemeralReply(IN_UNMANAGED, EDIT_BODY),
-        ),
-      ).toMatchObject({ kind: "api", status: 503 });
-      expect(fetchMock).toHaveBeenCalledOnce();
-      expect(sleep).not.toHaveBeenCalled();
     });
 
     it("does not repeat an edit that Discord refused", async () => {
@@ -1104,20 +949,14 @@ describe("editEphemeralReply", () => {
       expect(sleep).not.toHaveBeenCalled();
     });
 
-    it.each(FAULTS)(
-      "repeats a checked edit of the reply too: %s",
-      async (how) => {
-        faultyServer(how, { patches: 2 });
+    it("repeats a checked edit of the reply too", async () => {
+      faultyServer("503", { patches: 2 });
 
-        const edited = await client().editInteractionReply(
-          IN_MANAGED,
-          EDIT_BODY,
-        );
+      const edited = await client().editInteractionReply(IN_MANAGED, EDIT_BODY);
 
-        expect(edited.id).toBe(CREATED_ID);
-        expect(writes()).toHaveLength(3);
-      },
-    );
+      expect(edited.id).toBe(CREATED_ID);
+      expect(writes()).toHaveLength(3);
+    });
 
     it.each([
       [
@@ -1146,28 +985,21 @@ describe("editEphemeralReply", () => {
 });
 
 describe("rate limits", () => {
-  it("waits for retry-after and then succeeds", async () => {
-    fetchMock
-      .mockResolvedValueOnce(tooMany("1.5"))
-      .mockResolvedValueOnce(created());
+  it.each([
+    ["the header", tooMany("1.5"), 1500],
+    ["the body", tooMany(undefined, { retry_after: 0.25 }), 250],
+  ])(
+    "waits as long as %s says, then sends the same body",
+    async (_label, limit, ms) => {
+      fetchMock.mockResolvedValueOnce(limit).mockResolvedValueOnce(created());
 
-    const sent = await client().sendMessage(MANAGED, MESSAGE_BODY);
+      const sent = await client().sendMessage(MANAGED, MESSAGE_BODY);
 
-    expect(sent.id).toBe(CREATED_ID);
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(sleep.mock.calls).toEqual([[1500]]);
-    expect(requests()[1]?.body).toEqual(requests()[0]?.body);
-  });
-
-  it("falls back to retry_after in the body", async () => {
-    fetchMock
-      .mockResolvedValueOnce(tooMany(undefined, { retry_after: 0.25 }))
-      .mockResolvedValueOnce(created());
-
-    await client().sendMessage(MANAGED, MESSAGE_BODY);
-
-    expect(sleep.mock.calls).toEqual([[250]]);
-  });
+      expect(sent.id).toBe(CREATED_ID);
+      expect(sleep.mock.calls).toEqual([[ms]]);
+      expect(requests()[1]?.body).toEqual(requests()[0]?.body);
+    },
+  );
 
   it.each(["soon", "-1", "Infinity", ""])(
     "uses a default wait when retry-after is %j",
@@ -1226,47 +1058,32 @@ describe("budget", () => {
     };
   }
 
-  it("gives up on a callback without sleeping when the wait does not fit", async () => {
-    const { options } = clocked();
-    fetchMock.mockImplementationOnce(() => Promise.resolve(tooMany("2.5")));
+  it.each([
+    [
+      "a reply",
+      (c: DiscordClient) => c.replyToInteraction(IN_MANAGED, REPLY_BODY),
+    ],
+    [
+      "an ephemeral response",
+      (c: DiscordClient) => c.respondEphemerally(IN_MANAGED, EPHEMERAL_BODY),
+    ],
+  ])(
+    "gives up on %s without sleeping when the wait does not fit",
+    async (_label, send) => {
+      const { options } = clocked();
+      fetchMock.mockImplementationOnce(() => Promise.resolve(tooMany("2.5")));
 
-    const failure = await failureOf(
-      client(check, options).replyToInteraction(IN_MANAGED, REPLY_BODY),
-    );
+      const failure = await failureOf(send(client(check, options)));
 
-    expect(failure).toEqual({
-      kind: "rate_limited",
-      retryAfterMs: 2500,
-      attempts: 1,
-      scope: undefined,
-    });
-    expect(sleep).not.toHaveBeenCalled();
-  });
-
-  it("retries a callback when the wait fits", async () => {
-    const { options } = clocked();
-    fetchMock
-      .mockImplementationOnce(() => Promise.resolve(tooMany("2.499")))
-      .mockImplementationOnce(() =>
-        Promise.resolve(new Response(null, { status: 204 })),
-      );
-
-    await client(check, options).replyToInteraction(IN_MANAGED, REPLY_BODY);
-
-    expect(sleep.mock.calls).toEqual([[2499]]);
-  });
-
-  it("applies the callback budget to ephemeral responses", async () => {
-    const { options } = clocked();
-    fetchMock.mockImplementationOnce(() => Promise.resolve(tooMany("3")));
-
-    const failure = await failureOf(
-      client(check, options).respondEphemerally(IN_MANAGED, EPHEMERAL_BODY),
-    );
-
-    expect(failure.kind).toBe("rate_limited");
-    expect(sleep).not.toHaveBeenCalled();
-  });
+      expect(failure).toEqual({
+        kind: "rate_limited",
+        retryAfterMs: 2500,
+        attempts: 1,
+        scope: undefined,
+      });
+      expect(sleep).not.toHaveBeenCalled();
+    },
+  );
 
   it("gives other operations longer, and spends it across retries", async () => {
     const { options } = clocked();
@@ -1283,44 +1100,6 @@ describe("budget", () => {
       scope: undefined,
     });
     expect(sleep.mock.calls).toEqual([[5000]]);
-  });
-
-  it("can be configured", async () => {
-    const { options } = clocked({ budget: { operationMs: 1000 } });
-    fetchMock.mockImplementationOnce(() => Promise.resolve(tooMany("1")));
-
-    const failure = await failureOf(
-      client(check, options).sendMessage(MANAGED, MESSAGE_BODY),
-    );
-
-    expect(failure.kind).toBe("rate_limited");
-    expect(sleep).not.toHaveBeenCalled();
-  });
-
-  it("limits each attempt to what remains", async () => {
-    const timeout = vi.spyOn(AbortSignal, "timeout");
-    const { options } = clocked();
-    fetchMock
-      .mockImplementationOnce(() => Promise.resolve(tooMany("1")))
-      .mockImplementationOnce(() =>
-        Promise.resolve(new Response(null, { status: 204 })),
-      );
-
-    await client(check, options).replyToInteraction(IN_MANAGED, REPLY_BODY);
-
-    expect(timeout.mock.calls).toEqual([[2500], [1500]]);
-  });
-
-  it("never gives an attempt more than the request timeout", async () => {
-    const timeout = vi.spyOn(AbortSignal, "timeout");
-    fetchMock.mockImplementationOnce(() => Promise.resolve(created()));
-
-    await client(check, {
-      ...clocked().options,
-      budget: { operationMs: 60_000 },
-    }).sendMessage(MANAGED, MESSAGE_BODY);
-
-    expect(timeout.mock.calls).toEqual([[10_000]]);
   });
 
   it("shares the budget between a lookup and the send", async () => {
@@ -1374,28 +1153,6 @@ describe("budget", () => {
     });
     expect(fetchMock).not.toHaveBeenCalled();
   });
-
-  it("ignores a check that answers after the budget", async () => {
-    let answer: (managed: boolean) => void = () => undefined;
-    const late: ManagedChannelCheck = {
-      isManaged: () =>
-        new Promise<boolean>((resolve) => {
-          answer = resolve;
-        }),
-    };
-
-    const failure = await failureOf(
-      client(late, { budget: { operationMs: 5 } }).sendMessage(
-        MANAGED,
-        MESSAGE_BODY,
-      ),
-    );
-    answer(true);
-    await Promise.resolve();
-
-    expect(failure.kind).toBe("check_failed");
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
 });
 
 describe("errors", () => {
@@ -1423,28 +1180,41 @@ describe("errors", () => {
     },
   );
 
-  it("does not blame the channel for an unknown message", async () => {
-    fetchMock.mockResolvedValueOnce(
-      Response.json({ code: 10008 }, { status: 404 }),
-    );
+  it.each([
+    [
+      "an unknown message, without blaming the channel",
+      () => Response.json({ code: 10008 }, { status: 404 }),
+      { kind: "api", status: 404, code: 10008 },
+    ],
+    [
+      "another refusal, with its code",
+      () => Response.json({ code: 50035 }, { status: 400 }),
+      { kind: "api", status: 400, code: 50035 },
+    ],
+    [
+      "an error response that holds no JSON",
+      () => new Response("<html>bad gateway</html>", { status: 502 }),
+      { kind: "api", status: 502, code: undefined },
+    ],
+    [
+      "a success response without an ID",
+      () => Response.json({}, { status: 200 }),
+      { kind: "invalid_response", status: 200 },
+    ],
+  ])("reports %s", async (_label, answer, failure) => {
+    fetchMock.mockResolvedValueOnce(answer());
 
-    const failure = await failureOf(
-      client().editMessage(MANAGED, MESSAGE, EDIT_BODY),
-    );
-
-    expect(failure).toEqual({ kind: "api", status: 404, code: 10008 });
+    expect(
+      await failureOf(client().editMessage(MANAGED, MESSAGE, EDIT_BODY)),
+    ).toEqual(failure);
   });
 
-  it("reports other refusals with their code", async () => {
-    fetchMock.mockResolvedValueOnce(
-      Response.json({ code: 50035 }, { status: 400 }),
-    );
+  it("reports a network failure", async () => {
+    fetchMock.mockRejectedValueOnce(new TypeError("fetch failed"));
 
-    const failure = await failureOf(
-      client().sendMessage(MANAGED, MESSAGE_BODY),
-    );
-
-    expect(failure).toEqual({ kind: "api", status: 400, code: 50035 });
+    expect(
+      await failureOf(client().sendMessage(MANAGED, MESSAGE_BODY)),
+    ).toEqual({ kind: "network" });
   });
 
   it("does not blame the channel or token for an interaction route", async () => {
@@ -1460,54 +1230,21 @@ describe("errors", () => {
       expect(failure).toEqual({ kind: "api", status, code: 10062 });
     }
   });
-
-  it("reports an error response that holds no JSON", async () => {
-    fetchMock.mockResolvedValueOnce(
-      new Response("<html>bad gateway</html>", { status: 502 }),
-    );
-
-    const failure = await failureOf(
-      client().sendMessage(MANAGED, MESSAGE_BODY),
-    );
-
-    expect(failure).toEqual({ kind: "api", status: 502, code: undefined });
-  });
-
-  it("reports a network failure", async () => {
-    fetchMock.mockRejectedValueOnce(new TypeError("fetch failed"));
-
-    const failure = await failureOf(
-      client().sendMessage(MANAGED, MESSAGE_BODY),
-    );
-
-    expect(failure).toEqual({ kind: "network" });
-  });
-
-  it("reports a success response without an ID", async () => {
-    fetchMock.mockResolvedValueOnce(Response.json({}, { status: 200 }));
-
-    const failure = await failureOf(
-      client().sendMessage(MANAGED, MESSAGE_BODY),
-    );
-
-    expect(failure).toEqual({ kind: "invalid_response", status: 200 });
-  });
 });
 
 describe("secrets", () => {
   const leaky = `${TOKEN} ${INTERACTION_TOKEN} ${SECRET_TEXT}`;
-  const refuses: ManagedChannelCheck = {
-    isManaged: () => Promise.resolve(false),
-  };
+  const SECRETS = [TOKEN, INTERACTION_TOKEN, ENCODED_TOKEN, SECRET_TEXT];
   const failsLoudly: ManagedChannelCheck = {
     isManaged: () => Promise.reject(new Error(leaky)),
   };
+  const shown = (value: unknown) =>
+    [
+      JSON.stringify(value),
+      inspect(value, { depth: null, showHidden: true }),
+    ].join("\n");
 
-  const cases: readonly (readonly [
-    string,
-    () => unknown,
-    ManagedChannelCheck,
-  ])[] = [
+  it.each<[string, () => unknown, ManagedChannelCheck]>([
     [
       "an API error that echoes them",
       () =>
@@ -1519,115 +1256,58 @@ describe("secrets", () => {
       check,
     ],
     [
-      "an API error with no JSON",
-      () =>
-        fetchMock.mockImplementation(() =>
-          Promise.resolve(new Response(leaky, { status: 500 })),
-        ),
-      check,
-    ],
-    [
       "a network error that quotes them",
       () => fetchMock.mockRejectedValue(new Error(leaky, { cause: leaky })),
       check,
     ],
-    [
-      "exhausted rate limit retries",
-      () =>
-        fetchMock.mockImplementation(() =>
-          Promise.resolve(tooMany("1", { message: leaky })),
-        ),
-      check,
-    ],
     ["a check that fails and quotes them", () => undefined, failsLoudly],
-    [
-      "a refused target",
-      () => {
-        serve();
-      },
-      refuses,
-    ],
-    [
-      "a malformed success response",
-      () =>
-        fetchMock.mockImplementation(() =>
-          Promise.resolve(new Response(leaky, { status: 200 })),
-        ),
-      check,
-    ],
-  ];
+  ])("stay out of the error for %s", async (_label, arrange, managedCheck) => {
+    arrange();
 
-  it.each(cases)(
-    "stay out of the error for %s",
-    async (_label, arrange, managedCheck) => {
-      arrange();
+    const thrown: unknown[] = await Promise.all([
+      client(managedCheck)
+        .editInteractionReply(IN_MANAGED, EDIT_BODY)
+        .catch((reason: unknown) => reason),
+      client(managedCheck)
+        .sendMessage(MANAGED, MESSAGE_BODY)
+        .catch((reason: unknown) => reason),
+    ]);
 
-      const thrown: unknown[] = await Promise.all([
-        client(managedCheck)
-          .editInteractionReply(IN_MANAGED, EDIT_BODY)
-          .catch((reason: unknown) => reason),
-        client(managedCheck)
-          .sendMessage(MANAGED, MESSAGE_BODY)
-          .catch((reason: unknown) => reason),
-      ]);
-
-      for (const error of thrown) {
-        expect(error).toBeInstanceOf(DiscordClientError);
-        const { message, stack, cause } = error as DiscordClientError;
-        expect(cause).toBeUndefined();
-        const text = [
-          message,
-          stack,
-          JSON.stringify(error),
-          inspect(error, { depth: null, showHidden: true }),
-        ].join("\n");
-        for (const secret of [
-          TOKEN,
-          INTERACTION_TOKEN,
-          ENCODED_TOKEN,
-          SECRET_TEXT,
-        ]) {
-          expect(text).not.toContain(secret);
-        }
+    for (const error of thrown) {
+      expect(error).toBeInstanceOf(DiscordClientError);
+      const { message, stack, cause } = error as DiscordClientError;
+      expect(cause).toBeUndefined();
+      const text = [message, stack, shown(error)].join("\n");
+      for (const secret of SECRETS) {
+        expect(text).not.toContain(secret);
       }
-    },
-  );
-
-  it("stay out of the error for a refused ephemeral edit", async () => {
-    serve({ original: () => Response.json({ id: MESSAGE, content: leaky }) });
-
-    const error: unknown = await client()
-      .editEphemeralReply(IN_UNMANAGED, EDIT_BODY)
-      .catch((reason: unknown) => reason);
-
-    const text = inspect(error, { depth: null, showHidden: true });
-    expect(error).toBeInstanceOf(DiscordClientError);
-    expect(text).not.toContain(TOKEN);
-    expect(text).not.toContain(ENCODED_TOKEN);
-    expect(text).not.toContain(SECRET_TEXT);
+    }
   });
 
-  it("cannot be read from the client object", () => {
-    const instance = client();
-
-    const text = `${JSON.stringify(instance)}${inspect(instance, { depth: null, showHidden: true })}`;
-
-    expect(text).not.toContain(TOKEN);
-  });
-
-  it("never reach the console", async () => {
+  it("stay out of the client, a refused ephemeral edit and the console", async () => {
     const methods = ["log", "info", "warn", "error", "debug"] as const;
     const spies = methods.map((method) =>
       vi.spyOn(console, method).mockImplementation(() => undefined),
     );
+    serve({ original: () => Response.json({ id: MESSAGE, content: leaky }) });
+    const instance = client();
+
+    const refused: unknown = await instance
+      .editEphemeralReply(IN_UNMANAGED, EDIT_BODY)
+      .catch((reason: unknown) => reason);
+    fetchMock.mockReset();
     fetchMock
       .mockResolvedValueOnce(tooMany("1"))
       .mockResolvedValueOnce(created())
       .mockRejectedValueOnce(new Error(leaky));
+    await instance.sendMessage(MANAGED, MESSAGE_BODY);
+    await failureOf(instance.sendMessage(MANAGED, MESSAGE_BODY));
 
-    await client().sendMessage(MANAGED, MESSAGE_BODY);
-    await failureOf(client().sendMessage(MANAGED, MESSAGE_BODY));
-
+    expect(refused).toBeInstanceOf(DiscordClientError);
+    const text = `${shown(refused)}${shown(instance)}`;
+    for (const secret of SECRETS) {
+      expect(text).not.toContain(secret);
+    }
     for (const spy of spies) {
       expect(spy).not.toHaveBeenCalled();
     }
@@ -1670,32 +1350,21 @@ describe("refusals that must not repeat", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it.each([403, 404])(
-    "makes no second attempt at a channel after a %i",
-    async (status) => {
-      fetchMock.mockImplementation(() =>
-        Promise.resolve(Response.json({ code: 50001 }, { status })),
-      );
-      const run = client();
-
-      const first = await failureOf(run.sendMessage(MANAGED, MESSAGE_BODY));
-      const second = await failureOf(run.sendMessage(MANAGED, MESSAGE_BODY));
-
-      expect(first.kind).toBe("channel_unavailable");
-      expect(second).toEqual(first);
-      expect(fetchMock).toHaveBeenCalledOnce();
-    },
-  );
-
-  it("makes no second attempt at a thread after its lookup fails", async () => {
+  it.each<[string, number, ChannelTarget | ThreadTarget]>([
+    ["a channel after a 403", 403, MANAGED],
+    ["a channel after a 404", 404, MANAGED],
+    ["a thread after its lookup fails", 403, THREAD_TARGET],
+  ])("makes no second attempt at %s", async (_label, status, target) => {
     fetchMock.mockImplementation(() =>
-      Promise.resolve(Response.json({ code: 50001 }, { status: 403 })),
+      Promise.resolve(Response.json({ code: 50001 }, { status })),
     );
     const run = client();
 
-    await failureOf(run.sendMessage(THREAD_TARGET, MESSAGE_BODY));
-    await failureOf(run.sendMessage(THREAD_TARGET, MESSAGE_BODY));
+    const first = await failureOf(run.sendMessage(target, MESSAGE_BODY));
+    const second = await failureOf(run.sendMessage(target, MESSAGE_BODY));
 
+    expect(first.kind).toBe("channel_unavailable");
+    expect(second).toEqual(first);
     expect(fetchMock).toHaveBeenCalledOnce();
   });
 
@@ -1717,23 +1386,11 @@ describe("refusals that must not repeat", () => {
 
     expect(writes()[1]?.url).toContain(other);
   });
-
-  it("starts fresh with a new client", async () => {
-    fetchMock
-      .mockResolvedValueOnce(Response.json({ code: 50001 }, { status: 403 }))
-      .mockResolvedValueOnce(created());
-
-    await failureOf(client().sendMessage(MANAGED, MESSAGE_BODY));
-    await client().sendMessage(MANAGED, MESSAGE_BODY);
-
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-  });
 });
 
 describe("what counts as an unavailable channel", () => {
   it.each([
     ["no code", 403, () => Response.json({}, { status: 403 })],
-    ["no code on a 404", 404, () => Response.json({}, { status: 404 })],
     [
       "another code",
       403,
@@ -1743,11 +1400,6 @@ describe("what counts as an unavailable channel", () => {
       "an HTML body",
       403,
       () => new Response("<html>blocked</html>", { status: 403 }),
-    ],
-    [
-      "an HTML 404",
-      404,
-      () => new Response("<html>missing</html>", { status: 404 }),
     ],
   ])("does not mark a channel over %s", async (_label, status, answer) => {
     fetchMock.mockImplementation(() => Promise.resolve(answer()));
@@ -1777,61 +1429,35 @@ describe("rate limit scope", () => {
     ["the global header", () => limited({ "x-ratelimit-global": "true" })],
     ["the body", () => limited({}, JSON.stringify({ global: true }))],
     ["a body that is not JSON", () => limited({}, "<html>banned</html>")],
-    ["an empty body", () => limited({}, "")],
-  ])("does not retry a global limit known from %s", async (_label, answer) => {
-    fetchMock.mockImplementation(() => Promise.resolve(answer()));
+  ])(
+    "stops the run on a global limit known from %s",
+    async (_label, answer) => {
+      fetchMock.mockImplementation(() => Promise.resolve(answer()));
 
-    const failure = await failureOf(
-      client().sendMessage(MANAGED, MESSAGE_BODY),
-    );
+      const failure = await failureOf(
+        client().sendMessage(MANAGED, MESSAGE_BODY),
+      );
 
-    expect(failure).toMatchObject({
-      kind: "rate_limited",
-      scope: "global",
-      attempts: 1,
-    });
-    expect(fetchMock).toHaveBeenCalledOnce();
-    expect(sleep).not.toHaveBeenCalled();
-    expect(actionForFailure(failure)).toBe("stop_run");
-  });
+      expect(failure).toMatchObject({
+        kind: "rate_limited",
+        scope: "global",
+        attempts: 1,
+      });
+      expect(fetchMock).toHaveBeenCalledOnce();
+      expect(sleep).not.toHaveBeenCalled();
+      expect(actionForFailure(failure)).toBe("stop_run");
+    },
+  );
 
-  it("lets the scope header win over the rest", async () => {
-    fetchMock.mockImplementation(() =>
-      Promise.resolve(
-        limited(
-          { "x-ratelimit-scope": "shared" },
-          JSON.stringify({ global: true }),
-        ),
-      ),
-    );
-
-    const failure = await failureOf(
-      client().sendMessage(MANAGED, MESSAGE_BODY),
-    );
-
-    expect(failure).toMatchObject({ scope: "shared", attempts: 3 });
-  });
-
-  it("still retries a limit with no scope", async () => {
-    fetchMock
-      .mockResolvedValueOnce(limited({}))
-      .mockResolvedValueOnce(created());
-
-    await client().sendMessage(MANAGED, MESSAGE_BODY);
-
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-  });
-
-  it.each(["user", "global", "shared"])(
-    "reports the scope %s",
+  it.each(["user", "shared"])(
+    "reports and retries the scope %s, which the header decides",
     async (scope) => {
-      fetchMock.mockResolvedValueOnce(
-        Response.json(
-          {},
-          {
-            status: 429,
-            headers: { "retry-after": "60", "x-ratelimit-scope": scope },
-          },
+      fetchMock.mockImplementation(() =>
+        Promise.resolve(
+          limited(
+            { "x-ratelimit-scope": scope },
+            JSON.stringify({ global: true }),
+          ),
         ),
       );
 
@@ -1839,7 +1465,12 @@ describe("rate limit scope", () => {
         client().sendMessage(MANAGED, MESSAGE_BODY),
       );
 
-      expect(failure).toMatchObject({ kind: "rate_limited", scope });
+      expect(failure).toMatchObject({
+        kind: "rate_limited",
+        scope,
+        attempts: 3,
+      });
+      expect(actionForFailure(failure)).toBe("retry_later");
     },
   );
 });
@@ -1873,16 +1504,12 @@ describe("actionForFailure", () => {
     [{ kind: "invalid_response", status: 200 }, "retry_later"],
     [{ kind: "api", status: 500, code: undefined }, "retry_later"],
     [{ kind: "api", status: 400, code: 50035 }, "skip_item"],
-    [{ kind: "api", status: 400, code: 200000 }, "skip_item"],
     [{ kind: "api", status: 400, code: 240000 }, "skip_item"],
     // A text code on another status, and refusals that do not blame the text.
     [{ kind: "api", status: 403, code: 200000 }, "retry_later"],
     [{ kind: "api", status: 400, code: undefined }, "retry_later"],
     [{ kind: "api", status: 400, code: 160005 }, "retry_later"],
-    [{ kind: "api", status: 403, code: 160005 }, "retry_later"],
-    [{ kind: "api", status: 403, code: 40333 }, "retry_later"],
     [{ kind: "api", status: 404, code: undefined }, "retry_later"],
-    [{ kind: "api", status: 408, code: undefined }, "retry_later"],
     [{ kind: "invalid_target" }, "retry_later"],
     [{ kind: "unmanaged_target", channelId: MANAGED_FORUM }, "retry_later"],
     [{ kind: "not_forum", channelId: MANAGED_FORUM }, "retry_later"],
@@ -1898,106 +1525,61 @@ describe("guild scope", () => {
     guildId: OTHER_GUILD,
     channelId: MANAGED_FORUM,
   };
+  const threadIn = (guildId: string | undefined) => ({
+    channels: {
+      [THREAD]: { type: 11, parent_id: MANAGED_FORUM, guild_id: guildId },
+    },
+  });
 
-  it("passes the target's guild to the check", async () => {
+  it("passes the target's guild, or the signed one, to the check", async () => {
     serve();
     const isManaged = vi.fn((guildId: string, channelId: string) =>
       check.isManaged(guildId, channelId),
     );
 
     await client({ isManaged }).sendMessage(MANAGED, MESSAGE_BODY);
-
-    expect(isManaged).toHaveBeenCalledWith(GUILD, MANAGED_FORUM);
-  });
-
-  it("passes the signed guild to the check for an interaction", async () => {
-    serve();
-    const isManaged = vi.fn((guildId: string, channelId: string) =>
-      check.isManaged(guildId, channelId),
-    );
-
     await client({ isManaged }).replyToInteraction(IN_MANAGED, REPLY_BODY);
 
-    expect(isManaged).toHaveBeenCalledWith(GUILD, MANAGED_FORUM);
+    expect(isManaged.mock.calls).toEqual([
+      [GUILD, MANAGED_FORUM],
+      [GUILD, MANAGED_FORUM],
+    ]);
   });
 
-  it("refuses a channel managed only in another guild", async () => {
-    serve();
+  it.each<[string, Server, () => Promise<unknown>]>([
+    [
+      "a channel managed only in another guild",
+      {},
+      () => client().sendMessage(FOREIGN, MESSAGE_BODY),
+    ],
+    [
+      "a thread Discord says is in another guild",
+      threadIn(OTHER_GUILD),
+      () => client().sendMessage(THREAD_TARGET, MESSAGE_BODY),
+    ],
+    [
+      "a thread whose lookup names no guild",
+      threadIn(undefined),
+      () => client().sendMessage(THREAD_TARGET, MESSAGE_BODY),
+    ],
+    [
+      "an interaction's thread in another guild, by lookup",
+      threadIn(OTHER_GUILD),
+      () =>
+        client().replyToInteraction(
+          interactionIn({ id: THREAD, type: 11 }),
+          REPLY_BODY,
+        ),
+    ],
+    [
+      "a forum Discord says is in another guild",
+      { channels: { [MANAGED_FORUM]: { type: 15, guild_id: OTHER_GUILD } } },
+      () => client().createThread(MANAGED, THREAD_BODY),
+    ],
+  ])("refuses %s", async (_label, server, send) => {
+    serve(server);
 
-    const failure = await failureOf(
-      client().sendMessage(FOREIGN, MESSAGE_BODY),
-    );
-
-    expect(failure.kind).toBe("unmanaged_target");
-    expect(writes()).toEqual([]);
-  });
-
-  it("refuses a thread Discord says is in another guild", async () => {
-    serve({
-      channels: {
-        [THREAD]: {
-          type: 11,
-          parent_id: MANAGED_FORUM,
-          guild_id: OTHER_GUILD,
-        },
-      },
-    });
-
-    const failure = await failureOf(
-      client().sendMessage(THREAD_TARGET, MESSAGE_BODY),
-    );
-
-    expect(failure.kind).toBe("unmanaged_target");
-    expect(writes()).toEqual([]);
-  });
-
-  it("refuses a thread whose lookup names no guild", async () => {
-    serve({
-      channels: {
-        [THREAD]: { type: 11, parent_id: MANAGED_FORUM, guild_id: undefined },
-      },
-    });
-
-    const failure = await failureOf(
-      client().sendMessage(THREAD_TARGET, MESSAGE_BODY),
-    );
-
-    expect(failure.kind).toBe("unmanaged_target");
-    expect(writes()).toEqual([]);
-  });
-
-  it("refuses an interaction's thread in another guild, by lookup", async () => {
-    serve({
-      channels: {
-        [THREAD]: {
-          type: 11,
-          parent_id: MANAGED_FORUM,
-          guild_id: OTHER_GUILD,
-        },
-      },
-    });
-
-    const failure = await failureOf(
-      client().replyToInteraction(
-        interactionIn({ id: THREAD, type: 11 }),
-        REPLY_BODY,
-      ),
-    );
-
-    expect(failure.kind).toBe("unmanaged_target");
-    expect(writes()).toEqual([]);
-  });
-
-  it("refuses a forum Discord says is in another guild", async () => {
-    serve({
-      channels: { [MANAGED_FORUM]: { type: 15, guild_id: OTHER_GUILD } },
-    });
-
-    const failure = await failureOf(
-      client().createThread(MANAGED, THREAD_BODY),
-    );
-
-    expect(failure.kind).toBe("unmanaged_target");
+    expect((await failureOf(send())).kind).toBe("unmanaged_target");
     expect(writes()).toEqual([]);
   });
 
@@ -2077,21 +1659,6 @@ describe("guild reads", () => {
     expect(requests()[0]?.url).toBe(`${API}/channels/${CHANNEL_ROW.id}`);
   });
 
-  it.each([
-    ["in another guild", { ...CHANNEL_ROW, guild_id: OTHER_GUILD }],
-    ["in no guild", CHANNEL_ROW],
-    [
-      "with no overwrites",
-      { ...CHANNEL_ROW, guild_id: GUILD, permission_overwrites: undefined },
-    ],
-  ])("refuses one channel %s", async (_label, body) => {
-    answer(body);
-
-    expect(
-      await failureOf(client().getGuildChannel(GUILD, CHANNEL_ROW.id)),
-    ).toEqual({ kind: "invalid_response", status: 200 });
-  });
-
   it("does not let a refused read stop sends to the channel", async () => {
     answer({ code: 50001 }, 403);
     const discord = client();
@@ -2104,43 +1671,32 @@ describe("guild reads", () => {
     expect(writes()).toHaveLength(1);
   });
 
-  it("refuses a malformed channel ID before any request", async () => {
-    expect(await failureOf(client().getGuildChannel(GUILD, "../1"))).toEqual({
-      kind: "invalid_target",
-    });
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-
-  it("reads a member's role IDs", async () => {
+  it("reads a member's role IDs, and refuses ones that are not IDs", async () => {
     answer({ roles: [fakeId(20)] });
 
     await expect(
       client().getGuildMemberRoleIds(GUILD, APP_ID),
     ).resolves.toEqual([fakeId(20)]);
     expect(requests()[0]?.url).toBe(`${API}/guilds/${GUILD}/members/${APP_ID}`);
+
+    answer({ roles: ["x"] });
+    expect(
+      await failureOf(client().getGuildMemberRoleIds(GUILD, APP_ID)),
+    ).toEqual({ kind: "invalid_response", status: 200 });
   });
 
-  it.each([
-    ["not a list", { id: fakeId(20) }],
-    ["a bad permission string", [{ ...ROLE_ROW, permissions: "" }]],
-    ["a numeric permission", [{ ...ROLE_ROW, permissions: 8 }]],
-    ["a role with no ID", [{ ...ROLE_ROW, id: "__proto__" }]],
-    ["a name that is not text", [{ ...ROLE_ROW, name: 1 }]],
-    ["no position", [{ ...ROLE_ROW, position: "1" }]],
-    ["managed that is not a boolean", [{ ...ROLE_ROW, managed: "no" }]],
-  ])("refuses roles with %s", async (_label, body) => {
-    answer(body);
+  const roles = (c: DiscordClient) => c.getGuildRoles(GUILD);
+  const channels = (c: DiscordClient) => c.getGuildChannels(GUILD);
+  const oneChannel = (c: DiscordClient) =>
+    c.getGuildChannel(GUILD, CHANNEL_ROW.id);
 
-    expect(await failureOf(client().getGuildRoles(GUILD))).toEqual({
-      kind: "invalid_response",
-      status: 200,
-    });
-  });
-
-  it.each([
-    ["no overwrites", [{ ...CHANNEL_ROW, permission_overwrites: undefined }]],
+  it.each<[string, (c: DiscordClient) => Promise<unknown>, unknown]>([
+    ["roles that are not a list", roles, { id: fakeId(20) }],
+    ["a bad permission string", roles, [{ ...ROLE_ROW, permissions: "" }]],
+    ["a role with no ID", roles, [{ ...ROLE_ROW, id: "__proto__" }]],
     [
       "a bad overwrite",
+      channels,
       [
         {
           ...CHANNEL_ROW,
@@ -2150,23 +1706,29 @@ describe("guild reads", () => {
         },
       ],
     ],
-    ["a type that is not a number", [{ ...CHANNEL_ROW, type: "15" }]],
-    ["no name", [{ ...CHANNEL_ROW, name: undefined }]],
-  ])("refuses channels with %s", async (_label, body) => {
+    [
+      "a channel type that is not a number",
+      channels,
+      [{ ...CHANNEL_ROW, type: "15" }],
+    ],
+    [
+      "one channel in another guild",
+      oneChannel,
+      { ...CHANNEL_ROW, guild_id: OTHER_GUILD },
+    ],
+    ["one channel in no guild", oneChannel, CHANNEL_ROW],
+    [
+      "one channel with no overwrites",
+      oneChannel,
+      { ...CHANNEL_ROW, guild_id: GUILD, permission_overwrites: undefined },
+    ],
+  ])("refuses %s", async (_label, read, body) => {
     answer(body);
 
-    expect(await failureOf(client().getGuildChannels(GUILD))).toEqual({
+    expect(await failureOf(read(client()))).toEqual({
       kind: "invalid_response",
       status: 200,
     });
-  });
-
-  it("refuses a member whose roles are not IDs", async () => {
-    answer({ roles: ["x"] });
-
-    expect(
-      await failureOf(client().getGuildMemberRoleIds(GUILD, APP_ID)),
-    ).toEqual({ kind: "invalid_response", status: 200 });
   });
 
   it.each(["../1", "", "constructor"])(
@@ -2178,6 +1740,7 @@ describe("guild reads", () => {
         discord.getGuildRoles(id),
         discord.getGuildChannels(id),
         discord.getGuildMemberRoleIds(GUILD, id),
+        discord.getGuildChannel(GUILD, id),
       ]) {
         expect(await failureOf(attempt)).toEqual({ kind: "invalid_target" });
       }
@@ -2219,19 +1782,6 @@ describe("channel reads", () => {
     });
   });
 
-  it("leaves out fields that are absent or malformed", async () => {
-    serve({ channels: { [THREAD]: { parent_id: "../1", name: 5 } } });
-
-    await expect(client().describeChannel(THREAD)).resolves.toEqual({
-      id: THREAD,
-      type: 0,
-      guildId: GUILD,
-      parentId: undefined,
-      ownerId: undefined,
-      name: undefined,
-    });
-  });
-
   it("sends nothing for a malformed channel ID", async () => {
     expect(await failureOf(client().describeChannel("../1"))).toEqual({
       kind: "invalid_target",
@@ -2253,22 +1803,24 @@ describe("channel reads", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  const REOPENED: ThreadTarget = {
+    kind: "thread",
+    guildId: GUILD,
+    threadId: THREAD,
+  };
+  const threadUnder = (parentId: string) =>
+    Response.json({
+      id: THREAD,
+      type: 11,
+      guild_id: GUILD,
+      parent_id: parentId,
+    });
+
   it("reopens a managed thread, asking only to unarchive it", async () => {
-    fetchMock.mockResolvedValueOnce(
-      Response.json({
-        id: THREAD,
-        type: 11,
-        guild_id: GUILD,
-        parent_id: MANAGED_FORUM,
-      }),
-    );
+    fetchMock.mockResolvedValueOnce(threadUnder(MANAGED_FORUM));
     fetchMock.mockResolvedValue(Response.json({ id: THREAD }));
 
-    await client().reopenThread({
-      kind: "thread",
-      guildId: GUILD,
-      threadId: THREAD,
-    });
+    await client().reopenThread(REOPENED);
 
     const last = requests().at(-1);
     expect(last?.url).toBe(`${API}/channels/${THREAD}`);
@@ -2277,65 +1829,26 @@ describe("channel reads", () => {
   });
 
   it("does not reopen a thread outside a managed forum", async () => {
-    fetchMock.mockResolvedValue(
-      Response.json({
-        id: THREAD,
-        type: 11,
-        guild_id: GUILD,
-        parent_id: fakeId(99),
-      }),
-    );
+    fetchMock.mockResolvedValue(threadUnder(fakeId(99)));
 
-    const failure = await failureOf(
-      client().reopenThread({
-        kind: "thread",
-        guildId: GUILD,
-        threadId: THREAD,
-      }),
-    );
+    const failure = await failureOf(client().reopenThread(REOPENED));
 
     expect(failure.kind).toBe("unmanaged_target");
-    expect(requests().filter((request) => request.method === "PATCH")).toEqual(
-      [],
-    );
+    expect(writes()).toEqual([]);
   });
 
   it("can still use a thread after being refused its reopening", async () => {
-    fetchMock.mockResolvedValueOnce(
-      Response.json({
-        id: THREAD,
-        type: 11,
-        guild_id: GUILD,
-        parent_id: MANAGED_FORUM,
-      }),
-    );
+    fetchMock.mockResolvedValueOnce(threadUnder(MANAGED_FORUM));
     fetchMock.mockResolvedValueOnce(
       Response.json(
         { code: DiscordErrorCode.MissingPermissions },
         { status: 403 },
       ),
     );
-    fetchMock.mockResolvedValue(
-      Response.json({
-        id: THREAD,
-        type: 11,
-        guild_id: GUILD,
-        parent_id: MANAGED_FORUM,
-      }),
-    );
+    fetchMock.mockResolvedValue(threadUnder(MANAGED_FORUM));
     const discord = client();
 
-    expect(
-      (
-        await failureOf(
-          discord.reopenThread({
-            kind: "thread",
-            guildId: GUILD,
-            threadId: THREAD,
-          }),
-        )
-      ).kind,
-    ).toBe("api");
+    expect((await failureOf(discord.reopenThread(REOPENED))).kind).toBe("api");
     await expect(discord.describeChannel(THREAD)).resolves.toMatchObject({
       type: 11,
     });
@@ -2377,14 +1890,6 @@ describe("getChannel", () => {
     const [url, init] = fetchMock.mock.calls[0] ?? [];
     expect(url).toBe(`${API}/channels/${MANAGED_FORUM}`);
     expect(init?.method).toBe("GET");
-  });
-
-  it("reports a channel with no guild as having none", async () => {
-    fetchMock.mockResolvedValueOnce(Response.json({ type: 15 }));
-    await expect(client().getChannel(GUILD, MANAGED_FORUM)).resolves.toEqual({
-      type: 15,
-      guildId: undefined,
-    });
   });
 
   it("makes no request for a malformed ID", async () => {

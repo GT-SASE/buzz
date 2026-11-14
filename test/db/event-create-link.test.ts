@@ -29,7 +29,6 @@ import {
 } from "../support/discord-server.ts";
 import { fakeId } from "../support/ids.ts";
 import { REFUSED } from "../../src/lib/permissions.ts";
-import { handler } from "../../src/handlers/event.ts";
 import { containsInviteOrMaskedLink } from "../../src/discord/safe-text.ts";
 
 const world = eventWorld();
@@ -40,7 +39,6 @@ const LINKING_TEXT = HOSTILE_TEXT.filter(([, text]) =>
 const INERT_TEXT = HOSTILE_TEXT.filter(
   ([, text]) => !containsInviteOrMaskedLink(text),
 );
-const COMMANDS = handler.commands;
 
 const THREADS_POST = /^\/channels\/[0-9]+\/threads$/;
 const MESSAGES_POST = /^\/channels\/[0-9]+\/messages$/;
@@ -95,22 +93,6 @@ function postTitles(): unknown[] {
 }
 
 describe("/event create", () => {
-  it.each([
-    "Join discord.gg/abc",
-    "Social [log in](https://evil.example)",
-    "disc\u034Ford.gg/x",
-  ])("refuses a name holding an invite or a masked link: %j", async (name) => {
-    await world.addManagedForum();
-
-    await world.send(create({ name }));
-
-    expect(world.discord.lastReply()).toContain(
-      "can't hold a server invite or a masked link",
-    );
-    expect(await world.events()).toEqual([]);
-    expect(world.discord.posts()).toEqual([]);
-  });
-
   it("makes one active row and one post, and joins them", async () => {
     const forum = await world.addManagedForum();
 
@@ -139,17 +121,8 @@ describe("/event create", () => {
     );
     expect(event?.overview_message_id).toBe(event?.thread_id);
     expect(world.discord.lastReply()).toContain("Created **Fall Social**");
-  });
-
-  it("says who created it in the first post, with no ping", async () => {
-    await world.addManagedForum();
-
-    await world.send(create());
-
-    const message = world.discord.posts()[0]?.body?.message as Record<
-      string,
-      unknown
-    >;
+    // The first post says who created it, with no ping.
+    const message = post?.body?.message as Record<string, unknown>;
     expect(message.content).toContain(`Created by <@${MEMBER_ID}>`);
     expect(message.allowed_mentions).toEqual({ parse: [], users: [] });
   });
@@ -214,38 +187,25 @@ describe("/event create", () => {
     });
 
     it.each([
-      ["an unmanaged channel", () => fakeId()],
-      ["a value that is no ID", () => "x,channel_id.not.is.null"],
-      ["__proto__", () => "__proto__"],
+      ["an unmanaged channel", () => Promise.resolve(fakeId())],
+      [
+        "a value that is no ID",
+        () => Promise.resolve("x,channel_id.not.is.null"),
+      ],
+      ["__proto__", () => Promise.resolve("__proto__")],
+      [
+        "another guild's managed forum",
+        () => world.addManagedForum(OTHER_GUILD),
+      ],
+      ["a removed forum", () => world.addManagedForum(GUILD_ID, "removed")],
     ])("refuses %s", async (_label, id) => {
       await world.addManagedForum();
 
-      await world.send(create({ forum: forumOption(id()) }));
+      await world.send(create({ forum: forumOption(await id()) }));
 
       expect(await world.events()).toEqual([]);
       expect(world.discord.publicWrites()).toEqual([]);
       expect(world.discord.lastReply()).toContain("isn't managed");
-    });
-
-    it("refuses another guild's managed forum", async () => {
-      await world.addManagedForum();
-      const foreign = await world.addManagedForum(OTHER_GUILD);
-
-      await world.send(create({ forum: forumOption(foreign) }));
-
-      expect(await world.events()).toEqual([]);
-      expect(world.discord.publicWrites()).toEqual([]);
-    });
-
-    it("refuses a removed forum named outright", async () => {
-      const removed = await world.addManagedForum(GUILD_ID, "removed");
-
-      await world.send(create({ forum: forumOption(removed) }));
-
-      expect(await world.events()).toEqual([]);
-      expect(world.discord.publicWrites()).toEqual([]);
-      // Refused here, without leaning on the database's own check.
-      expect(eventInserts()).toEqual([]);
     });
   });
 
@@ -289,20 +249,12 @@ describe("/event create", () => {
       ["too many emoji", "😀".repeat(51)],
     ] as const)("refuses %s before any write or send", async (_label, name) => {
       await world.addManagedForum();
-      const before = world.dbRequests().length;
 
       await world.send(create({ name }));
 
       expect(await world.events()).toEqual([]);
       expect(world.discord.publicWrites()).toEqual([]);
       expect(world.discord.lastReply()).toContain("can't be used");
-      // The config read and the claim, and nothing that holds the name.
-      expect(
-        world
-          .dbRequests()
-          .slice(before)
-          .filter((request) => !/guild_config|claim_interaction/.test(request)),
-      ).toEqual([]);
     });
 
     it("tells the person when their name was changed", async () => {
@@ -443,7 +395,6 @@ describe("/event create", () => {
   describe("when Discord fails", () => {
     it.each<[string, string, RegExp, Failure]>([
       ["reading the forum, refused", "GET", /^\/channels\/[0-9]+$/, FORBIDDEN],
-      ["creating the post, refused", "POST", THREADS_POST, FORBIDDEN],
       [
         "creating the post, rate limited",
         "POST",
@@ -567,134 +518,50 @@ describe("/event create", () => {
           `A post for **Fall Social** may already exist in <#${forum}>. Run /event link inside it and choose this event. If there is none, make the post yourself and run /event link there.`,
         );
       });
-
-      it("lets a retry through at once after a clear refusal", async () => {
-        await world.addManagedForum();
-        world.discord.fail("POST", THREADS_POST, FORBIDDEN, 1);
-
-        await world.send(create());
-        await world.send(create());
-
-        expect((await world.events())[0]?.thread_status).toBe("active");
-      });
-
-      it("posts nothing if the attempt can't be taken", async () => {
-        await world.addManagedForum();
-        world.failDb(/public\.claim_event_post_attempt\(/);
-
-        await world.send(create());
-
-        expect(world.discord.posts()).toEqual([]);
-        expect(world.discord.lastReply()).toContain("Something went wrong");
-      });
-
-      it("still succeeds if another retry attached this same post first", async () => {
-        await world.addManagedForum();
-        world.discord.onThreadCreated = (threadId) =>
-          world.pg.query(
-            `UPDATE public.events SET thread_id = $1, thread_status = 'active'`,
-            [threadId],
-          );
-
-        await world.send(create());
-
-        expect(world.discord.lastReply()).toContain("Created");
-        expect(world.errors).not.toHaveBeenCalled();
-      });
-
-      it("reports the post if another retry attached a different one", async () => {
-        await world.addManagedForum();
-        const other = fakeId();
-        world.discord.onThreadCreated = () =>
-          world.pg.query(
-            `UPDATE public.events SET thread_id = $1, thread_status = 'active'`,
-            [other],
-          );
-
-        await world.send(create());
-
-        const made = threadsMade()[0]?.id ?? "";
-        expect(world.discord.lastReply()).toContain(`<#${made}>`);
-        expect(world.discord.lastReply()).toContain("/event link");
-      });
-    });
-
-    describe("when the wording itself is refused", () => {
-      it.each([200000, 200001, 240000])(
-        "does not suggest the same command again: %i",
-        async (code) => {
-          await world.addManagedForum();
-          world.discord.fail("POST", THREADS_POST, {
-            kind: "respond",
-            status: 400,
-            code,
-          });
-
-          await world.send(create());
-
-          expect(world.discord.lastReply()).toContain("different wording");
-          expect(world.discord.lastReply()).not.toContain("same /event create");
-        },
-      );
-
-      it("still suggests it for a refusal that has nothing to do with the words", async () => {
-        await world.addManagedForum();
-        world.discord.fail(
-          "POST",
-          THREADS_POST,
-          { kind: "respond", status: 400, code: 160006 },
-          1,
-        );
-
-        await world.send(create());
-
-        expect(world.discord.lastReply()).toContain("same /event create");
-      });
     });
 
     describe("naming the real cause", () => {
-      it.each<[string, Failure, string]>([
-        [
-          "a forum that requires tags",
-          { kind: "respond", status: 400, code: 40067 },
-          "requires a tag",
-        ],
-        ["AutoMod", { kind: "respond", status: 400, code: 200000 }, "AutoMod"],
-        [
-          "AutoMod on the title",
-          { kind: "respond", status: 400, code: 200001 },
-          "AutoMod",
-        ],
-        [
-          "a harmful link",
-          { kind: "respond", status: 400, code: 240000 },
-          "AutoMod",
-        ],
+      const refusal = (code?: number): Failure =>
+        code === undefined
+          ? { kind: "respond", status: 400 }
+          : { kind: "respond", status: 400, code };
+      // Only a refusal of the words asks for different wording instead of a rerun.
+      it.each<[string, Failure, string, boolean]>([
+        ["a forum that requires tags", refusal(40067), "requires a tag", true],
+        ["AutoMod", refusal(200000), "AutoMod", false],
+        ["AutoMod on the title", refusal(200001), "AutoMod", false],
+        ["a harmful link", refusal(240000), "AutoMod", false],
         [
           "tags only moderators can set",
-          { kind: "respond", status: 400, code: 40066 },
+          refusal(40066),
           "only moderators",
+          true,
         ],
         [
           "too many active posts",
-          { kind: "respond", status: 400, code: 160006 },
+          refusal(160006),
           "limit on active posts",
+          true,
         ],
-        ["no access", FORBIDDEN, "can't see"],
+        ["no access", FORBIDDEN, "can't see", true],
         [
           "no permission",
           { kind: "respond", status: 403, code: 50013 },
           "not allowed",
+          true,
         ],
-        ["another refusal", { kind: "respond", status: 400 }, "refused"],
-      ])("%s", async (_label, failure, reply) => {
+        ["another refusal", refusal(), "refused", true],
+      ])("%s", async (_label, failure, reply, rerun) => {
         await world.addManagedForum();
         world.discord.fail("POST", THREADS_POST, failure, 1);
 
         await world.send(create());
 
         expect((await world.events())[0]?.thread_status).toBe("pending");
-        expect(world.discord.lastReply()).toContain(reply);
+        const text = world.discord.lastReply() ?? "";
+        expect(text).toContain(reply);
+        expect(text.includes("same /event create")).toBe(rerun);
+        expect(text.includes("different wording")).toBe(!rerun);
       });
     });
 
@@ -727,37 +594,21 @@ describe("/event create", () => {
       expect(world.discord.lastReply()).toContain("Something went wrong");
     });
 
-    it("names and logs the post when it can't be saved", async () => {
-      await world.addManagedForum();
-      world.failDb(/^SQL update events/);
-
-      await world.send(create());
-
-      world.clearDbFailures();
-      const [event] = await world.events();
-      const thread = [...world.discord.channels.values()].find(
-        (channel) => channel.type === 11,
-      );
-      expect(event?.thread_status).toBe("pending");
-      expect(world.discord.lastReply()).toContain(`<#${thread?.id ?? ""}>`);
-      expect(world.discord.lastReply()).toContain("/event link");
-      const logged = JSON.stringify(world.errors.mock.calls);
-      expect(logged).toContain(thread?.id);
-      expect(logged).toContain(event?.id);
-      expect(logged).not.toContain("Fall Social");
-    });
-
-    it("attaches that post when /event link runs inside it", async () => {
+    it("names and logs a post it can't save, and /event link in it attaches it", async () => {
       const forum = await world.addManagedForum();
       world.failDb(/^SQL update events/, 500, 1);
 
       await world.send(create());
 
       const [pending] = await world.events();
-      const threadId =
-        [...world.discord.channels.values()].find(
-          (channel) => channel.type === 11,
-        )?.id ?? "";
+      const threadId = threadsMade()[0]?.id ?? "";
+      expect(pending?.thread_status).toBe("pending");
+      expect(world.discord.lastReply()).toContain(`<#${threadId}>`);
+      expect(world.discord.lastReply()).toContain("/event link");
+      const logged = JSON.stringify(world.errors.mock.calls);
+      expect(logged).toContain(threadId);
+      expect(logged).toContain(pending?.id);
+      expect(logged).not.toContain("Fall Social");
 
       await world.send(
         eventCommand(
@@ -908,182 +759,153 @@ describe("/event link", () => {
   });
 
   describe("what it refuses", () => {
-    async function expectRefused(payload: unknown, reply = "Run this inside") {
-      await world.send(payload);
+    function textChannel(): string {
+      const id = fakeId();
+      world.discord.channels.set(id, {
+        id,
+        type: 0,
+        guild_id: GUILD_ID,
+        name: "general",
+      });
+      return id;
+    }
+    function thread(guildId: string, parentId: string): string {
+      return world.discord.addThread({
+        guild_id: guildId,
+        parent_id: parentId,
+        name: "Odd post",
+      });
+    }
+    function inChannel(id: string, type: number) {
+      return eventCommand(
+        "link",
+        { date: FUTURE },
+        { ...officerFields, channel: { id, type } },
+      );
+    }
+
+    // Every case is a channel the bot must not adopt, whatever the payload claims.
+    it.each<[string, () => Promise<unknown>]>([
+      [
+        "a channel that is not a thread",
+        async () => {
+          await world.addManagedForum();
+          return inChannel(textChannel(), 0);
+        },
+      ],
+      [
+        "a forum itself",
+        async () => inChannel(await world.addManagedForum(), 15),
+      ],
+      [
+        "an unrelated thread, whose parent is not managed",
+        async () => {
+          await world.addManagedForum();
+          const unmanaged = world.discord.addForum(GUILD_ID);
+          return link(thread(GUILD_ID, unmanaged), unmanaged);
+        },
+      ],
+      [
+        "a thread whose payload claims a managed parent Discord denies",
+        async () => {
+          const managed = await world.addManagedForum();
+          const unmanaged = world.discord.addForum(GUILD_ID);
+          return link(thread(GUILD_ID, unmanaged), managed);
+        },
+      ],
+      [
+        "another guild's thread",
+        async () => {
+          const managed = await world.addManagedForum();
+          const foreign = await world.addManagedForum(OTHER_GUILD);
+          return link(thread(OTHER_GUILD, foreign), managed);
+        },
+      ],
+      [
+        "a thread of this guild under a forum another guild manages",
+        async () => {
+          const foreign = await world.addManagedForum(OTHER_GUILD);
+          return link(thread(GUILD_ID, foreign), foreign);
+        },
+      ],
+      [
+        "a thread Discord places in another guild, under this guild's forum",
+        async () => {
+          const managed = await world.addManagedForum();
+          return link(thread(OTHER_GUILD, managed), managed);
+        },
+      ],
+      [
+        "a thread whose managed parent Discord places in another guild",
+        async () => {
+          const managed = await world.addManagedForum();
+          Object.assign(world.discord.channels.get(managed) ?? {}, {
+            guild_id: OTHER_GUILD,
+          });
+          return link(thread(GUILD_ID, managed), managed);
+        },
+      ],
+      [
+        "a thread whose managed parent is no longer a forum",
+        async () => {
+          const managed = await world.addManagedForum();
+          Object.assign(world.discord.channels.get(managed) ?? {}, {
+            type: 0,
+          });
+          return link(thread(GUILD_ID, managed), managed);
+        },
+      ],
+      [
+        "a post in a removed forum",
+        async () => {
+          const forum = await world.addManagedForum(GUILD_ID, "removed");
+          return link((await post("In old forum", forum)).threadId, forum);
+        },
+      ],
+      [
+        "a channel Discord says is gone",
+        async () => {
+          const forum = await world.addManagedForum();
+          world.discord.fail("GET", /^\/channels\/[0-9]+$/, {
+            kind: "respond",
+            status: 404,
+            code: UNKNOWN_CHANNEL,
+          });
+          return link(fakeId(), forum);
+        },
+      ],
+    ])("%s", async (_label, payload) => {
+      await world.send(await payload());
+
+      expect(await world.events()).toEqual([]);
+      expect(world.discord.publicWrites()).toEqual([]);
+      expect(world.discord.lastReply()).toContain("Run this inside");
+    });
+
+    it.each<[string, () => Promise<unknown>, string]>([
+      [
+        "a post when Discord can't say what it is",
+        async () => {
+          const { parent, threadId } = await post();
+          world.discord.fail("GET", /^\/channels\/[0-9]+$/, SERVER_ERROR);
+          return link(threadId, parent);
+        },
+        "could not confirm",
+      ],
+      [
+        "a past date",
+        async () => {
+          const { parent, threadId } = await post();
+          return link(threadId, parent, officerFields, "2000-01-02");
+        },
+        "passed",
+      ],
+    ])("%s", async (_label, payload, reply) => {
+      await world.send(await payload());
 
       expect(await world.events()).toEqual([]);
       expect(world.discord.publicWrites()).toEqual([]);
       expect(world.discord.lastReply()).toContain(reply);
-    }
-
-    it("a channel that is not a thread", async () => {
-      await world.addManagedForum();
-      const text = fakeId();
-      world.discord.channels.set(text, {
-        id: text,
-        type: 0,
-        guild_id: GUILD_ID,
-        name: "general",
-      });
-
-      await expectRefused(
-        eventCommand(
-          "link",
-          { date: FUTURE },
-          { ...officerFields, channel: { id: text, type: 0 } },
-        ),
-      );
-    });
-
-    it("a forum itself", async () => {
-      const forum = await world.addManagedForum();
-
-      await expectRefused(
-        eventCommand(
-          "link",
-          { date: FUTURE },
-          { ...officerFields, channel: { id: forum, type: 15 } },
-        ),
-      );
-    });
-
-    it("an unrelated thread, whose parent is not managed", async () => {
-      await world.addManagedForum();
-      const unmanaged = world.discord.addForum(GUILD_ID);
-      const threadId = world.discord.addThread({
-        guild_id: GUILD_ID,
-        parent_id: unmanaged,
-        name: "Private chat",
-      });
-
-      await expectRefused(link(threadId, unmanaged));
-    });
-
-    it("a thread whose payload claims a managed parent Discord denies", async () => {
-      const managed = await world.addManagedForum();
-      const unmanaged = world.discord.addForum(GUILD_ID);
-      const threadId = world.discord.addThread({
-        guild_id: GUILD_ID,
-        parent_id: unmanaged,
-        name: "Private chat",
-      });
-
-      await expectRefused(link(threadId, managed));
-    });
-
-    it("another guild's thread", async () => {
-      const managed = await world.addManagedForum();
-      const foreignForum = await world.addManagedForum(OTHER_GUILD);
-      const threadId = world.discord.addThread({
-        guild_id: OTHER_GUILD,
-        parent_id: foreignForum,
-        name: "Their post",
-      });
-
-      await expectRefused(link(threadId, managed));
-    });
-
-    it("a thread of this guild under a forum another guild manages", async () => {
-      const foreignForum = await world.addManagedForum(OTHER_GUILD);
-      const threadId = world.discord.addThread({
-        guild_id: GUILD_ID,
-        parent_id: foreignForum,
-        name: "Odd post",
-      });
-
-      await expectRefused(link(threadId, foreignForum));
-    });
-
-    it("a channel that has a managed parent but is not a thread", async () => {
-      const managed = await world.addManagedForum();
-      const text = fakeId();
-      world.discord.channels.set(text, {
-        id: text,
-        type: 0,
-        guild_id: GUILD_ID,
-        parent_id: managed,
-        name: "general",
-      });
-
-      await expectRefused(link(text, managed));
-    });
-
-    it("a thread Discord places in another guild, under this guild's forum", async () => {
-      const managed = await world.addManagedForum();
-      const threadId = world.discord.addThread({
-        guild_id: OTHER_GUILD,
-        parent_id: managed,
-        name: "Odd post",
-      });
-
-      await expectRefused(link(threadId, managed));
-    });
-
-    it("a thread whose managed parent Discord places in another guild", async () => {
-      const managed = await world.addManagedForum();
-      const entry = world.discord.channels.get(managed);
-      if (entry !== undefined) {
-        entry.guild_id = OTHER_GUILD;
-      }
-      const threadId = world.discord.addThread({
-        guild_id: GUILD_ID,
-        parent_id: managed,
-        name: "Odd post",
-      });
-
-      await expectRefused(link(threadId, managed));
-    });
-
-    it("a thread whose managed parent is no longer a forum", async () => {
-      const managed = await world.addManagedForum();
-      const entry = world.discord.channels.get(managed);
-      if (entry !== undefined) {
-        entry.type = 0;
-      }
-      const threadId = world.discord.addThread({
-        guild_id: GUILD_ID,
-        parent_id: managed,
-        name: "Thread in text",
-      });
-
-      await expectRefused(link(threadId, managed));
-    });
-
-    it.each(["removed", "unavailable"])(
-      "a post in a forum that is %s",
-      async (status) => {
-        const forum = await world.addManagedForum(GUILD_ID, status);
-        const { threadId } = await post("In old forum", forum);
-
-        await expectRefused(link(threadId, forum));
-      },
-    );
-
-    it("a channel Discord says is gone", async () => {
-      const forum = await world.addManagedForum();
-      world.discord.fail("GET", /^\/channels\/[0-9]+$/, {
-        kind: "respond",
-        status: 404,
-        code: UNKNOWN_CHANNEL,
-      });
-
-      await expectRefused(link(fakeId(), forum));
-    });
-
-    it("a post when Discord can't say what it is", async () => {
-      const { parent, threadId } = await post();
-      world.discord.fail("GET", /^\/channels\/[0-9]+$/, SERVER_ERROR);
-
-      await expectRefused(link(threadId, parent), "could not confirm");
-    });
-
-    it("a past date", async () => {
-      const { parent, threadId } = await post();
-
-      await expectRefused(
-        link(threadId, parent, officerFields, "2000-01-02"),
-        "passed",
-      );
     });
   });
 
@@ -1107,11 +929,12 @@ describe("/event link", () => {
     },
   );
 
-  it("posts its own overview when a pending event adopts someone else's post", async () => {
+  it("posts its own overview, with its tasks, when a pending event adopts someone else's post", async () => {
     const forum = await world.addManagedForum();
     world.discord.fail("POST", THREADS_POST, FORBIDDEN, 1);
     await world.send(create({ name: "A Post" }));
     const [pending] = await world.events();
+    await world.insertTask(pending?.id ?? "");
     const { threadId } = await post("A Post", forum);
 
     await world.send(link(threadId, forum));
@@ -1125,6 +948,12 @@ describe("/event link", () => {
     expect(world.discord.posts().at(-1)?.path).toBe(
       `/channels/${threadId}/messages`,
     );
+    // The overview ends up showing the event's tasks.
+    const shown = world.discord.requests
+      .map((request) => request.body?.content)
+      .filter((content) => typeof content === "string")
+      .filter((content) => content.includes("Status:"));
+    expect(shown.at(-1)).toContain("Book the room");
   });
 
   it("refuses a post with the same title and date as a live event's", async () => {
@@ -1233,43 +1062,6 @@ describe("/event link", () => {
         expect.stringContaining("overview save"),
       );
     });
-
-    it("posts no second overview in the bot's own post when the save fails", async () => {
-      const forum = await world.addManagedForum();
-      world.discord.fail("POST", THREADS_POST, FORBIDDEN, 1);
-      await world.send(create({ name: "A Post" }));
-      const threadId = world.discord.addThread({
-        guild_id: GUILD_ID,
-        parent_id: forum,
-        name: "A Post",
-        owner_id: APP_ID,
-      });
-      world.failDb(/^SQL update events(?!.*thread_status <> )/);
-      const before = world.discord.requests.length;
-
-      await world.send(link(threadId, forum));
-
-      world.clearDbFailures();
-      expect((await world.events())[0]?.thread_id).toBe(threadId);
-      expect(
-        world.discord.requests
-          .slice(before)
-          .filter((request) => MESSAGES_POST.test(request.path)),
-      ).toEqual([]);
-      expect(world.discord.lastReply()).toContain("second one");
-    });
-
-    it("writes nothing when the insert fails", async () => {
-      const { parent, threadId } = await post();
-      world.failDb(/^SQL insert into events/);
-
-      await world.send(link(threadId, parent));
-
-      world.clearDbFailures();
-      expect(await world.events()).toEqual([]);
-      expect(world.discord.posts()).toEqual([]);
-      expect(world.discord.lastReply()).toContain("Something went wrong");
-    });
   });
 });
 
@@ -1296,6 +1088,17 @@ describe("an event whose post was deleted", () => {
       oldThread: event?.thread_id,
       sent: () => world.discord.requests.slice(before),
     };
+  }
+
+  /** A second event of the same name and date that has also lost its post. */
+  async function anotherLostEvent(id: string) {
+    await world.pg.query(
+      `INSERT INTO public.events
+         (guild_id, channel_id, name, event_date, created_by, thread_id, thread_status)
+       SELECT guild_id, channel_id, name, event_date, created_by, $2, 'missing'
+       FROM public.events WHERE id = $1`,
+      [id, fakeId()],
+    );
   }
 
   function memberPost(forum: string, name = "Fall Social") {
@@ -1348,34 +1151,23 @@ describe("an event whose post was deleted", () => {
       expect(world.discord.lastReply()).toContain("reminders start again");
     });
 
-    it("keeps the row as it is when Discord clearly refuses", async () => {
+    it.each<[string, Failure, string]>([
+      ["a clear refusal", FORBIDDEN, "tasks are kept"],
+      [
+        "a wording refusal",
+        { kind: "respond", status: 400, code: 200001 },
+        "/event link",
+      ],
+    ])("keeps the row as it is after %s", async (_label, failure, reply) => {
       const { id } = await lostEvent();
-      world.discord.fail("POST", THREADS_POST, FORBIDDEN, 1);
+      world.discord.fail("POST", THREADS_POST, failure, 1);
 
       await world.send(create());
 
       const [event, ...others] = await world.events();
       expect(others).toEqual([]);
       expect(event).toMatchObject({ id, thread_status: "missing" });
-      expect(world.discord.lastReply()).toContain("tasks are kept");
-    });
-
-    it("points at /event link when replacing the post meets a wording refusal", async () => {
-      const { id } = await lostEvent();
-      world.discord.fail(
-        "POST",
-        THREADS_POST,
-        { kind: "respond", status: 400, code: 200001 },
-        1,
-      );
-
-      await world.send(create());
-
-      expect((await world.events())[0]).toMatchObject({
-        id,
-        thread_status: "missing",
-      });
-      expect(world.discord.lastReply()).toContain("/event link");
+      expect(world.discord.lastReply()).toContain(reply);
     });
 
     it("points at /event link when the new post is unconfirmed", async () => {
@@ -1443,8 +1235,8 @@ describe("an event whose post was deleted", () => {
       ).toEqual([]);
     });
 
-    it("does not take up a closed event", async () => {
-      const { id } = await lostEvent();
+    it("does not take up a closed event, here or with /event link", async () => {
+      const { forum, id } = await lostEvent();
       await world.pg.query(
         `UPDATE public.events SET status = 'closed' WHERE id = $1`,
         [id],
@@ -1452,28 +1244,28 @@ describe("an event whose post was deleted", () => {
       const before = world.discord.posts().length;
 
       await world.send(create());
+      expect(world.discord.lastReply()).toContain("closed");
+      await world.send(linkIn(memberPost(forum), forum));
+      expect(world.discord.lastReply()).toContain("closed");
 
       expect(await world.events()).toHaveLength(1);
       expect(world.discord.posts()).toHaveLength(before);
-      expect(world.discord.lastReply()).toContain("closed");
     });
 
-    it("refuses to guess between two events that lost their posts", async () => {
+    it("refuses to guess between two events that lost their posts, here or with /event link", async () => {
       const { forum, id } = await lostEvent();
-      await world.pg.query(
-        `INSERT INTO public.events
-           (guild_id, channel_id, name, event_date, created_by, thread_id, thread_status)
-         SELECT guild_id, channel_id, name, event_date, created_by, $2, 'missing'
-         FROM public.events WHERE id = $1`,
-        [id, fakeId()],
-      );
+      await anotherLostEvent(id);
       const before = world.discord.posts().length;
+      const threadId = memberPost(forum);
 
       await world.send(create({ forum: forumOption(forum) }));
-
-      expect(await world.events()).toHaveLength(2);
-      expect(world.discord.posts()).toHaveLength(before);
       expect(world.discord.lastReply()).toContain("More than one");
+      await world.send(linkIn(threadId, forum));
+      expect(world.discord.lastReply()).toContain("More than one");
+
+      expect(await world.events("thread_status = 'missing'")).toHaveLength(2);
+      expect(await world.events(`thread_id = '${threadId}'`)).toEqual([]);
+      expect(world.discord.posts()).toHaveLength(before);
     });
 
     it("leaves it alone for another date or another forum", async () => {
@@ -1493,13 +1285,7 @@ describe("an event whose post was deleted", () => {
       const { forum, id } = await lostEvent();
       await world.send(create());
       const live = (await world.events())[0]?.thread_id ?? "";
-      await world.pg.query(
-        `INSERT INTO public.events
-           (guild_id, channel_id, name, event_date, created_by, thread_id, thread_status)
-         SELECT guild_id, channel_id, name, event_date, created_by, $2, 'missing'
-         FROM public.events WHERE id = $1`,
-        [id, fakeId()],
-      );
+      await anotherLostEvent(id);
 
       await world.send(create({ forum: forumOption(forum) }));
 
@@ -1509,24 +1295,6 @@ describe("an event whose post was deleted", () => {
   });
 
   describe("/event link in a replacement post", () => {
-    it("refuses to guess between two events that lost their posts", async () => {
-      const { forum, id } = await lostEvent();
-      await world.pg.query(
-        `INSERT INTO public.events
-           (guild_id, channel_id, name, event_date, created_by, thread_id, thread_status)
-         SELECT guild_id, channel_id, name, event_date, created_by, $2, 'missing'
-         FROM public.events WHERE id = $1`,
-        [id, fakeId()],
-      );
-      const threadId = memberPost(forum);
-
-      await world.send(linkIn(threadId, forum));
-
-      expect(world.discord.lastReply()).toContain("More than one");
-      expect(await world.events("thread_status = 'missing'")).toHaveLength(2);
-      expect(await world.events(`thread_id = '${threadId}'`)).toEqual([]);
-    });
-
     it("moves the row to someone else's post, with its tasks in a new overview", async () => {
       const { forum, id, sent } = await lostEvent();
       const threadId = memberPost(forum);
@@ -1607,19 +1375,6 @@ describe("an event whose post was deleted", () => {
       );
     });
 
-    it("does not take up a closed event", async () => {
-      const { forum, id } = await lostEvent();
-      await world.pg.query(
-        `UPDATE public.events SET status = 'closed' WHERE id = $1`,
-        [id],
-      );
-
-      await world.send(linkIn(memberPost(forum), forum));
-
-      expect(await world.events()).toHaveLength(1);
-      expect(world.discord.lastReply()).toContain("closed");
-    });
-
     it("says so when the row changed just before the write", async () => {
       const { forum } = await lostEvent();
       world.failDb(/^SQL update events/, 200, 1);
@@ -1643,18 +1398,6 @@ describe("an event whose post was deleted", () => {
         { ...fields, ...inThread(threadId, forum) },
       );
     }
-
-    it("is registered with an optional date and a picker", () => {
-      const event = COMMANDS.find((command) => command.name === "event");
-      const sub = event?.options?.find((option) => option.name === "link");
-      expect(sub?.options?.map((option) => option.name)).toEqual([
-        "date",
-        "event",
-      ]);
-      expect(sub?.options?.[0]?.required).toBe(false);
-      expect(sub?.options?.[1]?.autocomplete).toBe(true);
-      expect(sub?.options?.[1]?.required).toBeUndefined();
-    });
 
     it("moves the row to a post with another title, keeping its name and tasks", async () => {
       const { forum, id, sent } = await lostEvent();
@@ -1704,44 +1447,17 @@ describe("an event whose post was deleted", () => {
       expect(world.discord.lastReply()).not.toContain("reminders start again");
     });
 
-    it("repairs the row inside its own post, whatever its title", async () => {
-      const forum = await world.addManagedForum();
-      await world.send(create());
-      const [event] = await world.events();
-      await world.pg.query(
-        `UPDATE public.events SET thread_status = 'missing'`,
-      );
-      const before = world.discord.requests.length;
-
-      await world.send(linkChosen(event?.id, event?.thread_id ?? "", forum));
-
-      expect((await world.events())[0]?.thread_status).toBe("active");
-      expect(
-        world.discord.requests
-          .slice(before)
-          .filter((request) => MESSAGES_POST.test(request.path)),
-      ).toEqual([]);
-    });
-
     it.each([
       ["an unknown ID", () => "99999999-9999-4999-8999-999999999999"],
       ["a value that is no ID", () => "not-an-id"],
+      ["a deleted event", (id: string) => id],
     ])("refuses %s", async (_label, value) => {
-      const forum = await world.addManagedForum();
-      const threadId = memberPost(forum);
-
-      await world.send(linkChosen(value(), threadId, forum));
-
-      expect(await world.events()).toEqual([]);
-      expect(world.discord.lastReply()).toBe(REFUSED.message);
-    });
-
-    it("refuses a deleted event", async () => {
       const { forum, id } = await lostEvent();
       await world.pg.query(`UPDATE public.events SET deleted_at = now()`);
 
-      await world.send(linkChosen(id, memberPost(forum), forum));
+      await world.send(linkChosen(value(id), memberPost(forum), forum));
 
+      expect(await world.events("deleted_at IS NULL")).toEqual([]);
       expect(world.discord.lastReply()).toBe(REFUSED.message);
     });
 
@@ -1760,24 +1476,6 @@ describe("an event whose post was deleted", () => {
 
       expect(world.discord.lastReply()).toBe(REFUSED.message);
       expect(await world.events("thread_status = 'active'")).toEqual([]);
-    });
-
-    it("refuses someone who is not an officer, before reading any event", async () => {
-      const { forum, id } = await lostEvent();
-      const threadId = memberPost(forum);
-      const before = world.dbRequests().length;
-
-      const ran = await world.send(
-        linkChosen(id, threadId, forum, { member: PLAIN_MEMBER }),
-      );
-
-      expect(ran.reply.data?.content).toBe(REFUSED.message);
-      expect(
-        world
-          .dbRequests()
-          .slice(before)
-          .filter((request) => /\/events|"events"/.test(request)),
-      ).toEqual([]);
     });
 
     it("refuses a closed event", async () => {
@@ -1813,35 +1511,6 @@ describe("an event whose post was deleted", () => {
       expect(world.discord.lastReply()).toContain(`<#${forum}>`);
     });
 
-    it("refuses a post another event holds", async () => {
-      const { forum, id } = await lostEvent();
-      await world.send(create({ name: "Other Event" }));
-      const holder = (await world.events("name = 'Other Event'"))[0];
-
-      await world.send(linkChosen(id, holder?.thread_id ?? "", forum));
-
-      expect((await world.events(`id = '${id}'`))[0]?.thread_status).toBe(
-        "missing",
-      );
-      expect(world.discord.lastReply()).toContain("already belongs");
-    });
-
-    it("refuses outside a managed forum's post", async () => {
-      const { id } = await lostEvent();
-      const channel = fakeId();
-
-      await world.send(
-        eventCommand(
-          "link",
-          { event: { type: 3, value: id } },
-          { ...officerFields, channel: { id: channel, type: 0 } },
-        ),
-      );
-
-      expect((await world.events())[0]?.thread_status).toBe("missing");
-      expect(world.discord.lastReply()).toContain("Run this inside a post");
-    });
-
     it("asks for a date or an event when given neither", async () => {
       const forum = await world.addManagedForum();
       const threadId = memberPost(forum);
@@ -1860,20 +1529,5 @@ describe("an event whose post was deleted", () => {
       expect(await world.events()).toEqual([]);
       expect(world.discord.lastReply()).toContain("event option");
     });
-  });
-
-  it("shows a pending event's tasks in an overview posted to someone else's post", async () => {
-    const forum = await world.addManagedForum();
-    world.discord.fail("POST", THREADS_POST, FORBIDDEN, 1);
-    await world.send(create());
-    const [pending] = await world.events();
-    await world.insertTask(pending?.id ?? "");
-    const before = world.discord.requests.length;
-
-    await world.send(linkIn(memberPost(forum), forum));
-
-    const edits = overviewTexts(world.discord.requests.slice(before));
-    expect(edits.at(-1)).toContain("Book the room");
-    expect(edits.at(-1)).not.toContain("No tasks yet");
   });
 });

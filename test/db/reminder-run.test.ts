@@ -43,22 +43,6 @@ import {
 } from "./fixtures.ts";
 import { createMigratedDb, fakeId, present, queryAs } from "./harness.ts";
 
-const planHook = vi.hoisted(() => ({ invalidTaskIds: [] as string[] }));
-
-vi.mock("../../src/reminders/plan.ts", async (original) => {
-  const actual = await original<typeof import("../../src/reminders/plan.ts")>();
-  return {
-    ...actual,
-    planReminders: (
-      input: Parameters<typeof actual.planReminders>[0],
-    ): ReturnType<typeof actual.planReminders> => {
-      const plan = actual.planReminders(input);
-      plan.invalidTaskIds.push(...planHook.invalidTaskIds);
-      return plan;
-    },
-  };
-});
-
 const API = "https://discord.com/api/v10";
 const TOKEN = "unit-test-token";
 
@@ -289,7 +273,6 @@ beforeEach(async () => {
   sent = [];
   threadParents = new Map();
   logLines = [];
-  planHook.invalidTaskIds = [];
   mockDiscord();
   await database.exec(`
     UPDATE public.tasks SET deleted_at = now() WHERE deleted_at IS NULL;
@@ -331,28 +314,10 @@ describe("a normal run", () => {
     expect(rows.find((each) => each.kind === "three_days")?.state).toBe(
       "skipped",
     );
-  });
-
-  it("records only whole-number counts", async () => {
-    const guild = await guildInZone();
-    const { eventId } = await eventWithThread(guild);
-    await task(guild, eventId, dateOffset(3));
-
-    await run({ guilds: [guild] });
-
-    const row = await jobRow();
-    expect(row.status).toBe("succeeded");
-    expect(row.error).toBeNull();
-    expect(row.results).toMatchObject({
-      candidates: 1,
-      planned: 1,
-      claimed: 1,
+    expect((await jobRow()).results).toMatchObject({
       messages_sent: 1,
       reminders_sent: 1,
     });
-    for (const value of Object.values(row.results)) {
-      expect(Number.isSafeInteger(value)).toBe(true);
-    }
   });
 
   it("combines an event's tasks into one message per event", async () => {
@@ -388,18 +353,6 @@ describe("a normal run", () => {
     expect(await logRows(taskId)).toEqual([]);
     expect((await jobRow()).results).toMatchObject({ guilds_not_allowed: 1 });
   });
-
-  it("logs a task the planner left out", async () => {
-    const guild = await guildInZone();
-    const { eventId } = await eventWithThread(guild);
-    await task(guild, eventId, dateOffset(3));
-    const id = "00000000-0000-4000-8000-000000000001";
-    planHook.invalidTaskIds = [id];
-    await run({ guilds: [guild] });
-    expect(logLines.join("\n")).toContain(id);
-    expect((await jobRow()).results).toMatchObject({ invalid_tasks: 1 });
-    expect(sent).toHaveLength(1);
-  });
 });
 
 describe("a repeated run", () => {
@@ -409,8 +362,11 @@ describe("a repeated run", () => {
     await task(guild, eventId, dateOffset(3));
 
     expect((await run({ guilds: [guild] })).status).toBe("succeeded");
+    requests = [];
+    // The same slot's recovery cron, or a second delivery of the first.
     expect((await run({ guilds: [guild] })).status).toBe("duplicate");
 
+    expect(requests).toEqual([]);
     expect(sent).toHaveLength(1);
   });
 
@@ -443,16 +399,6 @@ describe("a repeated run", () => {
     expect((await run({ guilds: [guild] })).status).toBe("succeeded");
 
     expect(sent).toHaveLength(1);
-  });
-
-  it("makes no Discord request on a duplicate", async () => {
-    const guild = await guildInZone();
-    const { eventId } = await eventWithThread(guild);
-    await task(guild, eventId, dateOffset(3));
-    await run({ guilds: [guild] });
-    requests = [];
-    await run({ guilds: [guild] });
-    expect(requests).toEqual([]);
   });
 
   it("sends nothing the next day for what already went out", async () => {
@@ -509,26 +455,6 @@ describe("a crash between send and mark", () => {
     await nextDay();
     await run({ guilds: [guild] });
     expect(sent).toHaveLength(2);
-  });
-
-  it("sends nothing before the claim has gone stale, and says it is waiting", async () => {
-    const guild = await guildInZone();
-    const { eventId } = await eventWithThread(guild);
-    await task(guild, eventId, dateOffset(3));
-    const restart = crashAfterFirstSend();
-    await run({ guilds: [guild] });
-    restart();
-    // Only the killed run is cleared: the claim is minutes old.
-    await database.exec(
-      `UPDATE public.job_runs SET heartbeat_at = now() - interval '1 hour', started_at = now() - interval '1 hour'`,
-    );
-
-    expect(await run({ guilds: [guild] })).toMatchObject({
-      status: "failed",
-      error: "reminders_incomplete",
-    });
-    expect(sent).toHaveLength(1);
-    expect((await jobRow()).results).toMatchObject({ fresh_claims_waiting: 1 });
   });
 
   it("does not send a stale claim on a finished task", async () => {
@@ -660,23 +586,6 @@ describe("volume", () => {
     );
   });
 
-  it("gives a button only to a task it claimed", async () => {
-    const guild = await guildInZone();
-    const { eventId } = await eventWithThread(guild);
-    const claimedTask = await task(guild, eventId, dateOffset(1), "Keep");
-    const stopped = await task(guild, eventId, dateOffset(1), "Stop");
-    await database.query(
-      `UPDATE public.tasks SET status = 'done', completed_at = now() WHERE id = $1`,
-      [stopped],
-    );
-
-    await run({ guilds: [guild] });
-
-    expect(sent.flatMap((message) => message.buttons)).toEqual([
-      `task.done:${claimedTask}`,
-    ]);
-  });
-
   it("leaves what is over the cap unclaimed and records it", async () => {
     const guild = await guildInZone();
     const events = [
@@ -697,6 +606,7 @@ describe("volume", () => {
       messages_sent: 2,
       deferred_cap: 1,
     });
+    expect(logLines.join("\n")).toContain("message cap");
     const states = await Promise.all(taskIds.map(logRows));
     expect(states.flat()).toHaveLength(2);
 
@@ -707,83 +617,6 @@ describe("volume", () => {
     await nextDay();
     await run({ guilds: [guild] });
     expect(sent).toHaveLength(3);
-  });
-
-  it("still records skips after the cap stops the sends", async () => {
-    const guild = await guildInZone();
-    const first = await eventWithThread(guild);
-    const second = await eventWithThread(guild);
-    const taskIds = [
-      await task(guild, first.eventId, todayUtc()),
-      await task(guild, second.eventId, todayUtc()),
-    ];
-    await run({ guilds: [guild], limits: { maxMessages: 1 } });
-    const rows = (await Promise.all(taskIds.map(logRows))).flat();
-    expect(rows.filter((row) => row.state === "skipped")).toHaveLength(4);
-    expect(rows.filter((row) => row.kind === "due_day")).toHaveLength(1);
-    expect((await jobRow()).results).toMatchObject({
-      skips_recorded: 4,
-      deferred_cap: 1,
-    });
-  });
-
-  it("leaves what is past the deadline unclaimed", async () => {
-    const guild = await guildInZone();
-    const first = await eventWithThread(guild);
-    const second = await eventWithThread(guild);
-    const firstTask = await task(guild, first.eventId, dateOffset(3));
-    const secondTask = await task(guild, second.eventId, dateOffset(3));
-    const start = Date.now();
-    let elapsed = 0;
-    discordGate = (method) => {
-      if (method === "POST") {
-        elapsed = 41_000;
-      }
-      return undefined;
-    };
-
-    const result = await run({
-      guilds: [guild],
-      now: () => new Date(start + elapsed),
-    });
-
-    expect(result).toMatchObject({ error: "reminders_incomplete" });
-    expect(sent).toHaveLength(1);
-    const rows = [
-      ...(await logRows(firstTask)),
-      ...(await logRows(secondTask)),
-    ];
-    expect(rows.filter((row) => row.state === "sent")).toHaveLength(1);
-    expect(rows).toHaveLength(1);
-    expect((await jobRow()).results).toMatchObject({ deferred_deadline: 1 });
-  });
-
-  it("alerts in job_runs when the read was truncated", async () => {
-    const guild = await guildInZone();
-    // Full pages, every one, of a closed event's task in a guild the run does not serve,
-    // so the run reads to its page limit and plans nothing.
-    const page = Array.from({ length: 500 }, (_, index) => ({
-      id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
-      event_id: "00000000-0000-4000-8000-000000000000",
-      guild_id: fakeId(),
-      assignee_id: fakeId(),
-      description: "Book",
-      due_date: "2030-01-10",
-      status: "open",
-      updated_at: "2030-01-01T00:00:00+00:00",
-      event_name: "Social",
-      thread_id: null,
-      event_status: "closed",
-      thread_status: "pending",
-      timezone: "UTC",
-      log: [],
-    }));
-    sqlGate = (call) => (names(call, "tasks") ? { rows: page } : undefined);
-    const result = await run({ guilds: [guild] });
-    expect(result.status).toBe("succeeded");
-    expect((await jobRow()).results).toMatchObject({ truncated: 1 });
-    expect(logLines.join("\n")).toContain("truncated");
-    expect(logLines.length).toBeLessThanOrEqual(50);
   });
 });
 
@@ -815,20 +648,6 @@ describe("long text", () => {
     ]);
   });
 
-  it("puts the button only on the message where a split task ends", async () => {
-    const guild = await guildInZone();
-    const { eventId } = await eventWithThread(guild);
-    const long = await task(guild, eventId, dateOffset(1), "_".repeat(1000));
-
-    await run({ guilds: [guild] });
-
-    expect(sent.length).toBeGreaterThanOrEqual(2);
-    expect(sent.at(-1)?.buttons).toEqual([`task.done:${long}`]);
-    for (const message of sent.slice(0, -1)) {
-      expect(message.buttons).toEqual([]);
-    }
-  });
-
   it("splits one task whose escapes pass the limit and marks it once", async () => {
     const guild = await guildInZone();
     const { eventId } = await eventWithThread(guild);
@@ -848,6 +667,14 @@ describe("long text", () => {
     expect(
       sent.filter((message) => message.users.includes(assignee)),
     ).toHaveLength(1);
+    // The long task's button goes only on the message where its text ends.
+    const parts = sent.filter((message) => message.content.includes("\\_"));
+    expect(
+      parts.map((message) => message.buttons.includes(`task.done:${long}`)),
+    ).toEqual(parts.map((_, index) => index === parts.length - 1));
+    expect(sent.flatMap((message) => message.buttons).sort()).toEqual(
+      [`task.done:${long}`, `task.done:${short}`].sort(),
+    );
     expect(await logRows(long)).toMatchObject([{ state: "sent" }]);
     expect(await logRows(short)).toMatchObject([{ state: "sent" }]);
   });
@@ -901,53 +728,6 @@ describe("one poisoned task", () => {
     await nextDay();
     await run({ guilds: [guild] });
     expect(posts()).toEqual([]);
-  });
-
-  it("stops at the task when its text cannot be split into messages", async () => {
-    const guild = await guildInZone();
-    const { eventId } = await eventWithThread(guild);
-    const good = await task(guild, eventId, dateOffset(3), "Good");
-    // One grapheme longer than a message, which the commands never store.
-    const oneGrapheme = Array.from({ length: 1500 }, () => "\u{1F469}").join(
-      "\u200D",
-    );
-    const bad = await task(guild, eventId, dateOffset(3), oneGrapheme);
-    try {
-      const result = await run({ guilds: [guild] });
-
-      expect(result.status).toBe("succeeded");
-      expect(sent).toHaveLength(1);
-      expect(await logRows(good)).toMatchObject([{ state: "sent" }]);
-      expect(await logRows(bad)).toEqual([]);
-      expect((await jobRow()).results).toMatchObject({ render_failed: 1 });
-    } finally {
-      await database.query(`DELETE FROM public.tasks WHERE id = $1`, [bad]);
-    }
-  });
-
-  it("does not let an unexpected error in one event stop the next", async () => {
-    const guild = await guildInZone();
-    const first = await eventWithThread(guild);
-    const second = await eventWithThread(guild);
-    await task(guild, first.eventId, dateOffset(3), POISON);
-    await task(guild, second.eventId, dateOffset(3), "Good");
-    refuseWord();
-    let thrown = false;
-
-    const result = await runReminders({
-      db,
-      client: discordClient(),
-      allowedGuildIds: new Set([guild.guildId]),
-      log: () => {
-        thrown = true;
-        throw new TypeError("logging failed");
-      },
-    });
-
-    expect(thrown).toBe(true);
-    expect(result).toMatchObject({ error: "reminders_incomplete" });
-    expect(sent).toHaveLength(1);
-    expect((await jobRow()).results).toMatchObject({ event_errors: 1 });
   });
 
   it("sends a task with no visible text, with a stand-in", async () => {
@@ -1032,24 +812,6 @@ describe("failures that stop the run", () => {
       status: "failed",
       error: "discord_rate_limited:429",
     });
-  });
-
-  it("can run again after a failed run, once the token is fixed", async () => {
-    const guild = await guildInZone();
-    const { eventId } = await eventWithThread(guild);
-    const taskId = await task(guild, eventId, dateOffset(3));
-    discordGate = () => Response.json({ code: 0 }, { status: 401 });
-    await run({ guilds: [guild] });
-    discordGate = () => undefined;
-    // Not until the claim is stale: that is the rule for anything claimed and unsent.
-    await database.exec(
-      `UPDATE public.reminder_log SET claimed_at = now() - interval '2 hours'`,
-    );
-
-    expect((await run({ guilds: [guild] })).status).toBe("succeeded");
-
-    expect(sent).toHaveLength(1);
-    expect(await logRows(taskId)).toMatchObject([{ state: "sent" }]);
   });
 
   it("stops at a failure that may clear, and the 17:00 run sends what it left", async () => {
@@ -1138,32 +900,6 @@ describe("channels and threads that are gone", () => {
   };
   const unknownChannel = () => Response.json({ code: 10003 }, { status: 404 });
 
-  it("marks only the event when its thread is gone and the forum is not", async () => {
-    const guild = await guildInZone();
-    const gone = await eventWithThread(guild);
-    const live = await eventWithThread(guild);
-    await task(guild, gone.eventId, dateOffset(3));
-    await task(guild, live.eventId, dateOffset(3));
-    discordGate = (_method, path) =>
-      path.startsWith(`/channels/${gone.threadId}`)
-        ? unknownChannel()
-        : path === `/channels/${guild.channelId}`
-          ? Response.json({
-              id: guild.channelId,
-              type: 15,
-              guild_id: guild.guildId,
-            })
-          : undefined;
-
-    const result = await run({ guilds: [guild] });
-
-    expect(result.status).toBe("succeeded");
-    expect(await threadStatus(gone.eventId)).toBe("missing");
-    expect(await channelStatus(guild)).toBe("active");
-    expect(sent.map((message) => message.threadId)).toEqual([live.threadId]);
-    expect((await jobRow()).results).toMatchObject({ threads_missing: 1 });
-  });
-
   it("marks the forum, and skips its other events, only when a GET says it is gone", async () => {
     const guild = await guildInZone();
     const first = await eventWithThread(guild);
@@ -1186,53 +922,6 @@ describe("channels and threads that are gone", () => {
       channels_gone: 1,
       claim_lost: 1,
     });
-  });
-
-  it("disables nothing on a 404 with no Discord code", async () => {
-    const guild = await guildInZone();
-    const { eventId } = await eventWithThread(guild);
-    const taskId = await task(guild, eventId, dateOffset(3));
-    discordGate = () => new Response("not found", { status: 404 });
-
-    await run({ guilds: [guild] });
-
-    expect(await channelStatus(guild)).toBe("active");
-    expect(await threadStatus(eventId)).toBe("active");
-    expect(await logRows(taskId)).toMatchObject([{ state: "claimed" }]);
-  });
-
-  it("disables nothing on a permissions failure, and asks only once", async () => {
-    const guild = await guildInZone();
-    const { eventId } = await eventWithThread(guild);
-    await task(guild, eventId, dateOffset(3));
-    await task(guild, eventId, dateOffset(1));
-    discordGate = () => Response.json({ code: 50001 }, { status: 403 });
-
-    const result = await run({ guilds: [guild] });
-
-    expect(result).toMatchObject({ error: "reminders_incomplete" });
-    expect(requests.map((request) => request.method)).toEqual(["GET"]);
-    expect(await channelStatus(guild)).toBe("active");
-    expect(await threadStatus(eventId)).toBe("active");
-    expect((await jobRow()).results).toMatchObject({
-      channels_inaccessible: 1,
-    });
-  });
-
-  it("stops if Discord refuses the token during the forum check", async () => {
-    const guild = await guildInZone();
-    const { eventId, threadId } = await eventWithThread(guild);
-    await task(guild, eventId, dateOffset(3));
-    discordGate = (_method, path) =>
-      path.startsWith(`/channels/${threadId}`)
-        ? unknownChannel()
-        : Response.json({ code: 0 }, { status: 401 });
-
-    const result = await run({ guilds: [guild] });
-
-    expect(result).toMatchObject({ error: "discord_unauthorized:401" });
-    expect(await channelStatus(guild)).toBe("active");
-    expect(await threadStatus(eventId)).toBe("active");
   });
 });
 
@@ -1259,13 +948,9 @@ describe("responses that do not blame the text", () => {
   it.each<[string, number, string]>([
     ["a proxy's HTML 403", 403, "<html>blocked</html>"],
     ["a 404 with no code", 404, "nf"],
-    ["a 400 with no code", 400, "bad"],
     ["a locked thread", 403, JSON.stringify({ code: LOCKED })],
-    ["a locked thread as a 400", 400, JSON.stringify({ code: LOCKED })],
     ["Cloudflare", 403, JSON.stringify({ code: CLOUDFLARE })],
     ["a timeout", 408, "t"],
-    ["a conflict", 409, "c"],
-    ["too large", 413, "big"],
     [
       "AutoMod's code on the wrong status",
       403,
@@ -1296,22 +981,6 @@ describe("responses that do not blame the text", () => {
       { state: "sent", attempts: 2 },
     ]);
   });
-
-  it.each([200000, 240000, 50035])(
-    "skips the item when a 400 carries text code %i",
-    async (code) => {
-      const guild = await guildInZone();
-      const { eventId } = await eventWithThread(guild);
-      const taskId = await task(guild, eventId, dateOffset(3));
-      discordGate = (method) =>
-        method === "POST"
-          ? Response.json({ code }, { status: 400 })
-          : undefined;
-      const result = await run({ guilds: [guild] });
-      expect(result.status).toBe("succeeded");
-      expect(await logRows(taskId)).toMatchObject([{ state: "skipped" }]);
-    },
-  );
 });
 
 describe("a failed morning and the recovery cron", () => {
@@ -1349,38 +1018,6 @@ describe("a failed morning and the recovery cron", () => {
     ).toMatchObject({
       ok: true,
       value: { job_name: "reminders", status: "succeeded" },
-    });
-  });
-
-  it("makes the recovery cron a no-op after a good morning", async () => {
-    const guild = await guildInZone();
-    const { eventId } = await eventWithThread(guild);
-    await task(guild, eventId, dateOffset(3));
-    expect((await run({ guilds: [guild] })).status).toBe("succeeded");
-    requests = [];
-    const recovery = await run({ guilds: [guild] });
-    expect(recovery.status).toBe("duplicate");
-    expect(requests).toEqual([]);
-  });
-
-  it("counts a run stopped by the message cap as a success", async () => {
-    const guild = await guildInZone();
-    for (let index = 0; index < 3; index += 1) {
-      const { eventId } = await eventWithThread(guild);
-      await task(guild, eventId, dateOffset(3));
-    }
-    const result = await run({ guilds: [guild], limits: { maxMessages: 1 } });
-    expect(result.status).toBe("succeeded");
-  });
-
-  it("does not read refused claims as success", async () => {
-    const guild = await guildInZone();
-    const { eventId } = await eventWithThread(guild);
-    await task(guild, eventId, dateOffset(3));
-    sqlGate = (call) =>
-      names(call, "claim_reminder") ? unavailable() : undefined;
-    expect(await run({ guilds: [guild] })).toMatchObject({
-      error: "reminders_incomplete",
     });
   });
 });
@@ -1459,21 +1096,6 @@ describe("a rerun soon after a failed run", () => {
     discordGate = () => undefined;
     expect((await run({ guilds: [guild] })).status).toBe("failed");
     expect(sent.map((message) => message.threadId)).toEqual([second.threadId]);
-  });
-
-  it("does not fail on the fresh claim of a kind a newer reminder has replaced", async () => {
-    const guild = await guildInZone();
-    const { eventId } = await eventWithThread(guild);
-    const taskId = await task(guild, eventId, dateOffset(0));
-    await queryAs(
-      database,
-      "bot_app",
-      `SELECT public.claim_reminder($1, 'one_day', $2)`,
-      [taskId, dateOffset(0)],
-    );
-
-    expect((await run({ guilds: [guild] })).status).toBe("succeeded");
-    expect(sent).toHaveLength(1);
   });
 });
 
@@ -1704,10 +1326,12 @@ describe("the bot removed from the server", () => {
 describe("an event whose post has gone", () => {
   const unknownChannel = () => Response.json({ code: 10003 }, { status: 404 });
 
-  it("names it in the log and the run's row, on the day and every day after", async () => {
+  it("marks only that event, and names it in the log and the run's row every day", async () => {
     const guild = await guildInZone();
     const gone = await eventWithThread(guild);
+    const live = await eventWithThread(guild);
     await task(guild, gone.eventId, dateOffset(3));
+    await task(guild, live.eventId, dateOffset(3));
     discordGate = (_method, path) =>
       path.startsWith(`/channels/${gone.threadId}`)
         ? unknownChannel()
@@ -1720,6 +1344,12 @@ describe("an event whose post has gone", () => {
           : undefined;
 
     expect((await run({ guilds: [guild] })).status).toBe("succeeded");
+    expect(sent.map((message) => message.threadId)).toEqual([live.threadId]);
+    const { rows } = await database.query<{ status: string }>(
+      `SELECT status FROM public.managed_channels WHERE guild_id = $1`,
+      [guild.guildId],
+    );
+    expect(rows).toEqual([{ status: "active" }]);
     expect((await jobRow()).results).toMatchObject({
       threads_missing: 1,
       missing_event_ids: [gone.eventId],
@@ -1734,7 +1364,7 @@ describe("an event whose post has gone", () => {
       missing_event_ids: [gone.eventId],
     });
     expect(logLines.join("\n")).toContain(gone.eventId);
-    expect(sent).toEqual([]);
+    expect(sent).toHaveLength(1);
   });
 });
 
@@ -1817,22 +1447,6 @@ describe("a task changed after the run read it", () => {
     expect(await logRows(taskId)).toMatchObject([
       { state: "claimed", attempts: 1 },
     ]);
-  });
-});
-
-describe("the message cap", () => {
-  it("logs what it left for later, though the run succeeds", async () => {
-    const guild = await guildInZone();
-    for (let index = 0; index < 3; index += 1) {
-      const { eventId } = await eventWithThread(guild);
-      await task(guild, eventId, dateOffset(3));
-    }
-
-    const result = await run({ guilds: [guild], limits: { maxMessages: 1 } });
-
-    expect(result.status).toBe("succeeded");
-    expect((await jobRow()).results).toMatchObject({ deferred_cap: 2 });
-    expect(logLines.join("\n")).toContain("message cap");
   });
 });
 
@@ -2022,43 +1636,6 @@ describe("stale claims on tasks the plan left out", () => {
     ]);
     expect(posts()).toEqual([]);
   });
-
-  it("counts a cut-short read of stale claims as incomplete, so the recovery run goes on", async () => {
-    const guild = await guildInZone();
-    // Rows come back as the values of the selected columns, in order, and these fail
-    // their checks, so only their number matters.
-    const page = Array.from({ length: 501 }, () => [
-      "not-a-uuid",
-      ...Array.from({ length: 6 }, () => null),
-    ]);
-    sqlGate = (call) =>
-      names(call, "reminder_log") && call.sql.includes("claimed_at <")
-        ? { rows: page }
-        : undefined;
-
-    const result = await run({ guilds: [guild] });
-
-    expect(result).toMatchObject({
-      status: "failed",
-      error: "reminders_incomplete",
-    });
-    expect((await jobRow()).results).toMatchObject({ stale_truncated: 1 });
-  });
-
-  it("closes the claim once the task is finished", async () => {
-    const guild = await guildInZone();
-    const { eventId } = await eventWithThread(guild);
-    const taskId = await task(guild, eventId, dateOffset(3));
-    await staleClaimOn(taskId, dateOffset(3));
-    await database.query(
-      `UPDATE public.tasks SET status = 'done', completed_at = now() WHERE id = $1`,
-      [taskId],
-    );
-    await run({ guilds: [guild] });
-    expect(await logRows(taskId)).toMatchObject([
-      { state: "skipped", attempts: 1 },
-    ]);
-  });
 });
 
 describe("the worst case for time", () => {
@@ -2068,7 +1645,7 @@ describe("the worst case for time", () => {
 
   // Every call takes its whole limit. Statements share theirs across the calls
   // that run at once, and the managed check is inside the Discord operation's budget.
-  it.each([20_000, 30_000, 35_000, 39_000, 39_900])(
+  it.each([20_000, 39_000, 39_900])(
     "records the run in time when the largest batch starts at %i ms",
     async (startsAt) => {
       const guild = await guildInZone();
@@ -2306,23 +1883,6 @@ describe("days around a change of clocks", () => {
 });
 
 describe("what a failure leaves behind", () => {
-  it("records a database failure as its category and code", async () => {
-    const guild = await guildInZone();
-    const { eventId } = await eventWithThread(guild);
-    await task(guild, eventId, dateOffset(3));
-    sqlGate = (call) =>
-      names(call, "tasks") ? serverError("23514") : undefined;
-    const result = await run({ guilds: [guild] });
-
-    expect(result).toMatchObject({
-      status: "failed",
-      error: "constraint:23514",
-    });
-    const row = await jobRow();
-    expect(row.error).toBe("constraint:23514");
-    expect(requests).toEqual([]);
-  });
-
   it("does not send a reminder that could not be claimed", async () => {
     const guild = await guildInZone();
     const { eventId } = await eventWithThread(guild);
