@@ -20,7 +20,7 @@ To restore:
 2. Look before you restore. Create a new branch from the production branch at a past time, the last moment before the damage, and connect to it as the owner to check that the data there is right. A branch made this way is a copy, and changes nothing on the production branch. Delete it when you are done.
 3. Restore the production branch to that time, from its page in the Neon console. Check this in the dashboard. A restore replaces the whole branch, and Neon keeps the state from before it as a separate branch. Unverified: whether the bot's connection string keeps working afterwards, as the branch keeps its compute.
 4. A restore also brings back roles as they were then. If `bot_app`'s password was changed since that time, the old one is back, so set the current one again with `ALTER ROLE bot_app PASSWORD '<password>';` as the owner. It also brings back the reminders setting as it was then, so turn reminders off again straight after.
-5. Check that the restored database has every migration. Run `pnpm db:migrate` as the owner, as [RUNBOOK.md](RUNBOOK.md#deploy-order) describes. It applies any that are missing and prints nothing if none are. Code newer than the schema can fail, so do this before the bot takes traffic.
+5. Check that the restored database has every migration. Run `bun run db:migrate` as the owner, as [RUNBOOK.md](RUNBOOK.md#deploy-order) describes. It applies any that are missing and prints nothing if none are. Code newer than the schema can fail, so do this before the bot takes traffic.
 6. Check `job_runs` and a few recent events and tasks, then turn reminders back on.
 
 Anything done between that time and the restore is lost, including posts the bot made in Discord, which stay in Discord. Tell people to check their tasks.
@@ -42,7 +42,7 @@ unset OWNER_URL
 - Encrypt it, and keep it somewhere private that only the maintainer and one other trusted officer can reach, never in this repository or a chat. `.gitignore` blocks `*.dump`, but do not rely on that.
 - Keep the last two and delete older ones, in line with [Member data retention](RUNBOOK.md#member-data-retention).
 
-Restoring an export is untested. Rehearse it on a new, empty test project before relying on it, restoring as that project's owner with `pg_restore --no-owner --single-transaction`. The export holds `public.schema_migrations`, so `pnpm db:migrate` afterwards should print `Nothing to apply.` It does not hold roles, and its grants name `bot_app`, so that role has to exist first. Unverified: the order of steps that works. Then set `bot_app`'s password and point `DATABASE_URL` in Vercel at the new project's pooled string. Write down what worked here.
+Restoring an export is untested. Rehearse it on a new, empty Neon project before relying on it, restoring as that project's owner with `pg_restore --no-owner --single-transaction`. The export holds `public.schema_migrations`, so `bun run db:migrate` afterwards should print nothing. It does not hold roles, and its grants name `bot_app`, so that role has to exist first. Unverified: the order of steps that works. Then set `bot_app`'s password and point `DATABASE_URL` in Vercel at the new project's `bot_app` string, built as in [SETUP.md](SETUP.md#build-the-bots-connection-string). Write down what worked here.
 
 ## Undoing a change
 

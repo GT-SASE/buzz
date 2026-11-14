@@ -16,7 +16,7 @@ The repository is public, and the project is in development with no release yet.
 
 No system is unhackable, and this one makes no such claim. The aim is to keep the likely failures small and recoverable.
 
-The bot runs on a private test server, and the Neon setup has not yet been tried live. So nothing below has been proved against Neon, and only part of it against real Discord and Vercel. [docs/STAGING_CHECKLIST.md](docs/STAGING_CHECKLIST.md) lists what still has to be, and [README.md](README.md) gives the current status.
+The tests stand in for Discord, Vercel and Neon, so the controls below are proved against the real services only by the smoke checks in [docs/STAGING_CHECKLIST.md](docs/STAGING_CHECKLIST.md). [README.md](README.md) gives the current status.
 
 | Area              | Control                                                                                             |
 | ----------------- | --------------------------------------------------------------------------------------------------- |
@@ -37,7 +37,6 @@ These remain even with every control above in place. [README.md](README.md) list
 - A leaked bot token or `DATABASE_URL` bypasses this code, and rotating it does not undo what was done with it. Row history covers events, tasks, event steps and their people, settings, managed forums and setup drafts. It does not cover the reminder log, job runs or reassignment counts, but a Neon branch restored to before the leak holds them, so it can show what they were. [Check for misuse](#2-check-for-misuse) covers the rest.
 - Officer edits, completions and deletes record no actor. See [What can be attributed](#what-can-be-attributed).
 - Autocomplete must answer in the HTTP response, so it cannot be deferred, and it is not claimed. Someone holding a captured signed autocomplete request can replay it inside the 5-minute window and read up to 25 current task or event choices that its sender could see. Getting one needs a compromised host or proxy. `/mytasks` and `/event delete` defer for this reason, so replaying those returns no content. Claiming autocomplete would cost a write per keystroke, so this is accepted.
-- If the bot loses Send Messages across a server while it can still read the forums, reminders are held and the job goes green after three runs with nothing sent. [The runbook](docs/RUNBOOK.md#reminders-held-while-the-job-is-green) says how to spot it.
 - A takeover of the maintainer's GitHub, Vercel, Neon or Discord account defeats these controls, so two-factor authentication is required on all four.
 - A flood of requests could exhaust free-tier limits and take the bot offline. This costs availability, not money.
 - CI scans only commits still reachable from a ref, so a green run does not clear a secret that was force-pushed away. Rotate it.
@@ -47,7 +46,7 @@ These remain even with every control above in place. [README.md](README.md) list
 The hook reduces the chance of a leak but does not rule one out. It is a local control, and these bypass it:
 
 - `git push --no-verify`
-- a clone where `pnpm hooks:install` was never run, or a checkout that does not contain `.githooks/`
+- a clone where `bun run hooks:install` was never run, or a checkout that does not contain `.githooks/`
 - commits made through the GitHub web interface or API
 
 The CI scan is the backstop for these. It runs the same gitleaks scan over every commit on every ref, with `.gitleaks.toml`: gitleaks' default rules plus rules for Discord bot tokens, Discord webhook URLs and passwords in Postgres connection strings. GitHub secret scanning and push protection also cover the public repository.
@@ -89,7 +88,7 @@ Rotate `bot_app`'s password as above. The login cannot delete rows, read `histor
 
 #### After a bot token leak
 
-Reset the token as above. Then check on the app's General Information page in the Developer Portal that the Interactions Endpoint URL and the app's other settings are yours, and run `pnpm commands:register <guild-id>` for each server to put the command list back.
+Reset the token as above. Then check on the app's General Information page in the Developer Portal that the Interactions Endpoint URL and the app's other settings are yours, and run `bun run commands:register <guild-id>` for each server to put the command list back.
 
 #### What can be attributed
 

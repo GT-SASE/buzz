@@ -4,7 +4,7 @@ A Discord bot for the SASE at Georgia Tech events team. It stores events, tasks 
 
 It runs on free tiers: TypeScript functions on Vercel Hobby and Postgres 17 on Neon. It has no always-on server and no website.
 
-**Status: v2, in testing.** The bot runs on a private test server, where `/setup`, event steps, the Done buttons and the role pings have been tried. The daily reminders have not run there yet, and the Neon setup has not yet been tried live. [docs/STAGING_CHECKLIST.md](docs/STAGING_CHECKLIST.md) lists everything still to check before it joins the club server.
+**Status: v2, before launch.** It is set up fresh on the club's own accounts with [docs/SETUP.md](docs/SETUP.md), and [docs/STAGING_CHECKLIST.md](docs/STAGING_CHECKLIST.md) lists the smoke checks to pass before it joins the club's server.
 
 ## What it does
 
@@ -24,7 +24,7 @@ The bot then reminds the person 3 days before, 1 day before, on the due day and 
 Each event's workflow steps get reminders in the event's post from the same daily run:
 
 - **Step list**, once a day up to and including the event's day, while any step is open. Budget Sheet and Engage post ping the people on them, or the Events Directors role if nobody is. Budget approved is listed without a ping. Food pickup is never on this list. Nothing is sent once Budget Sheet, Engage post and Budget approved are all done.
-- **Food pickup**, two days before the event and on the day, pinging everyone on Food pickup with the time, such as `5:30 PM`. These need Food pickup set up, which can be done at any time, before or after the budget is approved.
+- **Food pickup**, two days before the event and on the day, pinging everyone on Food pickup with the time, which Discord shows in each reader's own time zone. These need Food pickup set up, which can be done at any time, before or after the budget is approved.
 
 None of these go out late: a day's message is sent on that day or not at all.
 
@@ -58,7 +58,7 @@ Admins configure the bot inside Discord: which forums it may post in, and whethe
 flowchart LR
   member[Club member] -->|slash command or click| discord[Discord]
   discord -->|signed POST| interactions["/api/interactions"]
-  cron[Vercel Cron, 15:00 and 17:00 UTC] -->|GET with bearer secret| reminders["/api/cron/reminders"]
+  cron[Vercel Cron, morning and recovery runs] -->|GET with bearer secret| reminders["/api/cron/reminders"]
 
   subgraph vercel[Vercel functions]
     interactions --> verify[Verify signature and server]
@@ -159,14 +159,13 @@ No system is unhackable, and this one makes no such claim. The aim is to keep th
 
 - User text reaches a message only after it is escaped, and every message is built by the same builder functions. Member names and nicknames are never rendered. Masked links and server invites are refused in task text and event names, including a post's title on `/event link`, and plain URLs are escaped so that nothing can click them. Invisible characters, such as zero-width and default-ignorable ones, are removed first, so they cannot hide one.
 - Every message sets `allowed_mentions` to the named users and roles only, and suppresses link previews.
-- The client checks every body again just before it sends it, whatever built it, and so does the interactions endpoint for the replies it returns directly. Every message must set `allowed_mentions`, with `parse` empty and `replied_user` off; every named user and role must be a Discord ID and no role the server's own ID; no message may carry an embed; nothing in the components, at any depth and including text displays, may be a link button, a URL or a masked link; and no `@everyone` or `@here` may be left unescaped in the content or the components. The check reads the exact JSON that is sent, which is serialized once, so nothing on the body can change it afterwards. A body that fails is not sent, and the log says only which check failed.
 - Posts go through one client, which checks the channel or its parent is a managed forum in that server. CI fails on a direct Discord call anywhere else.
 - The bot is invited with `permissions=0` and given View Channel, Send Messages and Send Messages in Threads, per forum. It also gets whatever the server gives `@everyone`, so keep that role narrow.
 
 **Secrets and supply chain**
 
 - Nothing logs a request body or interaction token. Logs hold fixed text, IDs and error codes.
-- Gitleaks scans every commit in CI and the pushed commits in a pre-push hook, with the default rules plus three project rules in `.gitleaks.toml`. `pnpm-lock.yaml` is committed and CI installs with `pnpm install --frozen-lockfile`, which checks each package's hash. Direct dependencies are pinned to exact versions, install scripts are off, Actions are pinned by SHA, and Dependabot has a 7-day cooldown with no auto-merge.
+- Gitleaks scans every commit in CI and the pushed commits in a pre-push hook, with the default rules plus three project rules in `.gitleaks.toml`. `bun.lock` is committed and CI installs with `bun install --frozen-lockfile`. Direct dependencies are pinned to exact versions, install scripts are off, Actions are pinned by SHA, and Dependabot has a 7-day cooldown with no auto-merge.
 
 **Backups**
 
@@ -185,7 +184,7 @@ These stay true with every control working:
 - **Autocomplete replay.** Discord takes autocomplete choices only in the HTTP response, so they cannot be deferred. Someone holding a captured signed request can replay it for 5 minutes and read current task or event text. Getting one needs a compromised host or proxy.
 - **Floods.** A flood of requests can use up Vercel Hobby's limits and take the bot offline, in most cases for 30 days. It costs availability, not money. Hobby's firewall rules reduce this, and do not stop it.
 - **Missed runs.** Vercel Cron is best effort with no retries. A second cron reduces this, but a reminder can be late or, after a crash, sent twice. An event's step list or Food pickup reminder is never late: if both crons of its day miss, it is not sent.
-- **Held reminders.** If the bot loses Send Messages across a server while it can still read the forums, each event's reminders are held after three refused runs, and the job goes green with nothing sent. No alert fires. [The runbook](docs/RUNBOOK.md#reminders-held-while-the-job-is-green) says how to spot it.
+- **A refused post.** A locked post, or a bot that lost its permissions or was removed, fails the daily run every day until someone fixes it. Nothing alerts on a failed run, so [the runbook](docs/RUNBOOK.md#where-to-look) says what to check each week.
 - **Dependencies.** A compromised dependency would run with full access to the secrets. Pinning and cooldowns lower the odds only.
 - **Backups.** How far back Neon can restore depends on its plan. A former member's text stays in that history and in exports until they expire or are deleted.
 - **Short logs.** Hobby keeps logs for one hour, which limits what can be learned after an incident.
@@ -193,31 +192,31 @@ These stay true with every control working:
 
 ## Local development
 
-You need Node.js 24, Git, Bash and curl 7.71 or later, on macOS or Linux. The package manager is pnpm, pinned in `package.json` by version and hash. If pnpm is not installed, run `corepack enable`, which ships with Node 24 and then runs exactly the pinned version.
+You need Node.js 24, Bun 1.4.4, Git, Bash and curl, on macOS or Linux. Bun installs packages and runs the scripts, and the code runs on Node.
 
 ```sh
-pnpm install --frozen-lockfile
-pnpm gitleaks:install
-pnpm hooks:install
+bun install --frozen-lockfile
+bun run gitleaks:install
+bun run hooks:install
 ```
 
-The committed `.npmrc` sets `ignore-scripts=true`, which pnpm reads, so package install scripts stay off in every install, including Vercel's, `node-linker=hoisted`, which gives a flat `node_modules` that Vercel's function tracing copies whole, and `save-exact=true`, so new dependencies are pinned to exact versions. pnpm 10 also runs no dependency's build script unless `package.json` allows it. `hooks:install` turns on a pre-push hook that runs gitleaks over the commits being pushed and blocks the push on a finding. [SECURITY.md](SECURITY.md) lists its limits.
+`bunfig.toml` keeps every install script off, pins new dependencies to exact versions, and gives a flat `node_modules`, which Vercel's function tracing copies whole. `hooks:install` turns on a pre-push hook that runs gitleaks over the commits being pushed and blocks the push on a finding. [SECURITY.md](SECURITY.md) lists its limits.
 
-There is no local bot. Discord needs a public HTTPS URL, so tests stand in for it, and real runs happen on the test deployment. `.env.example` lists every setting. Copy it to `.env` only when you need to register commands.
+There is no local bot. Discord needs a public HTTPS URL, so tests stand in for it, and real runs happen on the deployment, on a private test server. `.env.example` lists every setting. Copy it to `.env` only when you need to register commands.
 
 ### Tests and checks
 
-| Command                    | What it does                                                                                                                                                                            | Needs                                                                         |
-| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| `pnpm typecheck`           | Type check                                                                                                                                                                              | Nothing                                                                       |
-| `pnpm lint`                | ESLint (only the clients may call `fetch`)                                                                                                                                              | Nothing                                                                       |
-| `pnpm format:check`        | Prettier                                                                                                                                                                                | Nothing                                                                       |
-| `pnpm test`                | Unit tests                                                                                                                                                                              | Nothing                                                                       |
-| `pnpm test:db`             | Migrations, grants and access layer on PGlite, logged in as `bot_app`                                                                                                                   | Nothing                                                                       |
-| `pnpm test:db:concurrency` | Races: double Done clicks, retried interactions, overlapping reminder runs, deletes against inserts, config saves and first setup, task quotas at their limit, task changes, lock order | `CONCURRENCY_DATABASE_URL` to a Postgres 17 superuser, and `BOT_APP_PASSWORD` |
-| `pnpm db:migrate`          | Applies new files in `db/migrations` with dbmate, in order                                                                                                                              | `DATABASE_URL` for the database's owner role, never `bot_app`                 |
+| Command                       | What it does                                                                                                                                                                            | Needs                                                                         |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `bun run typecheck`           | Type check                                                                                                                                                                              | Nothing                                                                       |
+| `bun run lint`                | ESLint (only the clients may call `fetch`)                                                                                                                                              | Nothing                                                                       |
+| `bun run format:check`        | Prettier                                                                                                                                                                                | Nothing                                                                       |
+| `bun run test`                | Unit tests                                                                                                                                                                              | Nothing                                                                       |
+| `bun run test:db`             | Migrations, grants and access layer on PGlite, logged in as `bot_app`                                                                                                                   | Nothing                                                                       |
+| `bun run test:db:concurrency` | Races: double Done clicks, retried interactions, overlapping reminder runs, deletes against inserts, config saves and first setup, task quotas at their limit, task changes, lock order | `CONCURRENCY_DATABASE_URL` to a Postgres 17 superuser, and `BOT_APP_PASSWORD` |
+| `bun run db:migrate`          | Applies new files in `db/migrations` with dbmate, in order                                                                                                                              | `DATABASE_URL` for the database's owner role, never `bot_app`                 |
 
-`pnpm test:db` runs the migration files on PGlite and the tests send the bot's own SQL to it as `bot_app`. The concurrency tests need real Postgres 17. CI's database workflow runs one as a service, makes an owner and a database, runs `pnpm db:migrate` and checks nothing is left pending, sets `bot_app`'s password, then runs those tests through `pg`, logged in as `bot_app`. Point `CONCURRENCY_DATABASE_URL` at that migrated database.
+`bun run test:db` runs the migration files on PGlite and the tests send the bot's own SQL to it as `bot_app`. The concurrency tests need real Postgres 17. CI's database workflow runs one as a service, makes an owner and a database, runs `bun run db:migrate` and checks nothing is left pending, sets `bot_app`'s password, then runs those tests through `pg`, logged in as `bot_app`. Point `CONCURRENCY_DATABASE_URL` at that migrated database.
 
 Gitleaks scans every commit on every ref, as CI does. You need a full clone.
 
@@ -237,7 +236,7 @@ Commit messages and pull request titles follow [Conventional Commits](https://ww
 Commands are registered per server, never globally. Set `DISCORD_APP_ID`, `DISCORD_BOT_TOKEN` and `ALLOWED_GUILD_IDS` in `.env`, then run:
 
 ```sh
-pnpm commands:register <guild-id>
+bun run commands:register <guild-id>
 ```
 
 The script stops before sending anything if an ID is not in `ALLOWED_GUILD_IDS`. It replaces the server's whole command list with the one built from `src/handlers/modules.ts`, so run it again after changing a command.
@@ -249,7 +248,7 @@ To add a command, write a file in `src/handlers/` that exports `handler`, add on
 [docs/SETUP.md](docs/SETUP.md) has the full steps. For the database, in short:
 
 1. Create a Neon project on Postgres 17.
-2. Apply the schema as the project's owner role, such as the default `neondb_owner`, never as `bot_app`: `DATABASE_URL='<owner connection string>' pnpm db:migrate`. Neon's Connect dialog shows the owner's string; use the direct one, with pooling off, and `sslmode=verify-full`.
+2. Apply the schema as the project's owner role, such as the default `neondb_owner`, never as `bot_app`: `DATABASE_URL='<owner connection string>' bun run db:migrate`. Neon's Connect dialog shows the owner's string; use the direct one, with pooling off, and `sslmode=verify-full`.
 3. Once, as the owner, in Neon's SQL editor or `psql`, give `bot_app` a long random password: `ALTER ROLE bot_app PASSWORD '<password>';`. The baseline creates `bot_app` with no password.
 4. In Vercel, set `DATABASE_URL` to `bot_app`'s connection string: `postgresql://bot_app:<password>@<host>/<database>?sslmode=verify-full`, with the password from step 3, percent-encoded. The bot sends queries over HTTPS; `sslmode=verify-full` is for `psql` and dbmate.
 
@@ -258,19 +257,17 @@ These settings in the repo are easy to break:
 - `engines` in `package.json` selects the Node.js version.
 - Keep `outputDirectory` set to `public`, and keep `public/robots.txt`, because Vercel refuses an empty output directory. Without a `public` directory, Vercel publishes the repository's files.
 - Do not add tests or helpers under `api/`.
-- `git.deploymentEnabled` deploys `main` and `staging` and nothing else. The rule is `**`, because `*` does not match a branch name containing a slash.
-- `vercel.json` applies to every Vercel project linked to the repo. The production project also builds `staging` as a preview, which holds no secrets.
-- Vercel installs with pnpm from `pnpm-lock.yaml`. Set the Vercel environment variable `ENABLE_EXPERIMENTAL_COREPACK=1`, so it uses exactly the pnpm that `packageManager` in `package.json` pins.
-- Vercel's function builder ignores `installCommand`, so `.npmrc` is what keeps install scripts off.
+- `git.deploymentEnabled` deploys `main` and nothing else. The rule is `**`, because `*` does not match a branch name containing a slash.
+- Vercel installs with Bun from `bun.lock`, and `bunfig.toml` keeps install scripts off.
 - `.vercelignore` keeps local `.env` files out of a deployment made with the Vercel CLI.
-- The two cron schedules must stay in step with `begin_job_run` and `SLOT_START_HOUR_UTC`. The second cron only recovers a failed first run.
+- The first cron schedule must stay in step with `SLOT_START_HOUR_UTC`, which `cron-endpoint.test.ts` checks. The second cron only recovers a failed first run.
 
 ## Documentation
 
-- [docs/SETUP.md](docs/SETUP.md): from nothing to a test server, then production
-- [docs/STAGING_CHECKLIST.md](docs/STAGING_CHECKLIST.md): what only real services can prove
+- [docs/SETUP.md](docs/SETUP.md): setting the bot up from nothing
+- [docs/STAGING_CHECKLIST.md](docs/STAGING_CHECKLIST.md): smoke checks on a private test server
 - [docs/RECOVERY.md](docs/RECOVERY.md): undoing a change, Neon's point-in-time restore and manual exports
-- [docs/RUNBOOK.md](docs/RUNBOOK.md): held reminders, the bot removed from a server, a full database, deploy order and data retention
+- [docs/RUNBOOK.md](docs/RUNBOOK.md): when the runs happen, a failing run, the bot removed from a server, a full database, deploy order and data retention
 - [docs/HANDOFF.md](docs/HANDOFF.md): passing the bot to the next maintainer
 - [docs/adr/](docs/adr/): decision records
 - [SECURITY.md](SECURITY.md): reporting a problem and handling a leak

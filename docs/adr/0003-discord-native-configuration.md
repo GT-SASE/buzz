@@ -25,12 +25,12 @@ Turning reminders back on does not reopen a day's run that has already happened,
 - The panel sends no default values in its channel select, so a deleted channel cannot stop it being drawn. Managed forums are listed as text and removed through their own select.
 - The top-level `app_permissions` in an interaction describes the channel it came from, not a channel chosen in a select, and the bot is granted access per channel, so it is not used. When adding a forum, the bot's permissions come from `resolved.channels[id].app_permissions` if Discord includes it, or else from the guild's roles and that forum's overwrites. If neither is available the panel says it cannot check, and nothing changes.
 
-## Checks on staging
+## Checks against real Discord
 
 These can only be proved against real Discord and Vercel:
 
 - Does a channel select's `resolved.channels[id]` include `app_permissions`, and does it describe that channel? If not, every add relies on the overwrite computation.
-- Does `waitUntil` keep the work running after the acknowledgement? It silently does nothing if Vercel's request context is missing, so no local test can show this. Run `/config` on staging and confirm the deferred reply fills in.
+- Does `waitUntil` keep the work running after the acknowledgement? It silently does nothing if Vercel's request context is missing, so no local test can show this. Run `/config` on the deployment and confirm the deferred reply fills in.
 - How soon can a deferred reply be read? `editEphemeralReply` reads it again after a 404, at about 250, 500 and 1000 ms.
 - `/setup` with `@everyone` chosen for each role: confirm that it is refused and that Discord sends what the handler expects for that role.
 

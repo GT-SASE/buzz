@@ -114,7 +114,7 @@ async function handle(request: Request): Promise<Response> {
   );
   // Vercel would otherwise stop the function as soon as the response is sent. This
   // does nothing, silently, if Vercel's request context is missing, so no test here
-  // can prove it keeps the work alive. Only a staging deployment can.
+  // can prove it keeps the work alive. Only a real deployment can.
   if (after !== undefined) {
     waitUntil(after());
   }
