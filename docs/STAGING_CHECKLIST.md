@@ -97,4 +97,4 @@ Clear the terminal's values with `unset BOT_URL CRON` when you finish.
 - [ ] In Neon, only the owner and `bot_app` can log in, and the Data API and Neon Auth are off. `psql "$BOT_URL&sslrootcert=system" -c 'TRUNCATE public.job_runs;'`, with `psql` 16 or later, says `permission denied`.
 - [ ] The Discord app has Public Bot off, User Install off and Install Link set to None.
 - [ ] Few people hold Administrator, Manage Roles or the five bound roles.
-- [ ] The first manual export is taken, and Neon's restore window is written down, as in [RECOVERY.md](RECOVERY.md).
+- [ ] The first manual export is taken, as in [RECOVERY.md](RECOVERY.md#a-manual-export).

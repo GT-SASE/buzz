@@ -222,7 +222,7 @@ Tests use `bun:test`. Unit tests sit next to the code as `src/**/*.test.ts` and 
 
 ```sh
 bun test --isolate ./src/lib/dates.test.ts
-bun test ./test/db/history.test.ts --timeout 30000
+bun test ./test/db/db-rules.test.ts --timeout 30000
 ```
 
 `bun run test:db` runs the migration files on PGlite and the tests send the bot's own SQL to it as `bot_app`. The concurrency tests need real Postgres 17. CI's database workflow runs one as a service, makes an owner and a database, runs `bun run db:migrate` and checks nothing is left pending, sets `bot_app`'s password, then runs those tests through `pg`, logged in as `bot_app`. Point `CONCURRENCY_DATABASE_URL` at that migrated database.
