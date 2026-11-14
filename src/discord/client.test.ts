@@ -1,11 +1,11 @@
 import { generateKeyPairSync, sign } from "node:crypto";
 import { inspect } from "node:util";
-import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
 import { managedRow } from "../../test/support/interactions.ts";
 import { jsonObject } from "../../test/support/json.ts";
 import { serverError } from "../../test/support/sql-client.ts";
 import { stubDb } from "../../test/support/stub-db.ts";
-import { stubGlobal, type FetchLike } from "../../test/support/stubs.ts";
+import { asFetch, type FetchLike } from "../../test/support/stubs.ts";
 import { managedChannelCheck } from "../handlers/dependencies.ts";
 import { ConfigError } from "../lib/config-error.ts";
 import {
@@ -185,7 +185,7 @@ beforeEach(() => {
   fetchMock.mockReset();
   sleep.mockReset();
   sleep.mockResolvedValue(undefined);
-  stubGlobal("fetch", fetchMock);
+  spyOn(globalThis, "fetch").mockImplementation(asFetch(fetchMock));
 });
 
 it.each([

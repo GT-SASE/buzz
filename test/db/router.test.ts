@@ -54,7 +54,7 @@ import {
 import { handlerDb, type Seed } from "./handler-db.ts";
 import { createMigratedDb, MIGRATION_OWNER, queryAs } from "./harness.ts";
 import { pgliteSql, testDatabaseUrl } from "../support/sql-client.ts";
-import { stubEnv, stubGlobal } from "../support/stubs.ts";
+import { asFetch, stubEnv } from "../support/stubs.ts";
 
 // Only the interactions endpoint below uses these two.
 const pending = { work: [] as Promise<unknown>[] };
@@ -793,7 +793,7 @@ describe("the client built by liveDependencies", () => {
     stubEnv("DISCORD_BOT_TOKEN", "test-bot-token");
     stubEnv("DATABASE_URL", testDatabaseUrl());
     // Only Discord is reached over HTTP. The database is the mocked runner above.
-    stubGlobal("fetch", discord.fetch);
+    spyOn(globalThis, "fetch").mockImplementation(asFetch(discord.fetch));
   });
 
   it("posts in the event's post while its forum is active", async () => {

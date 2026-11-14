@@ -5,7 +5,7 @@
  */
 
 import type { PGlite } from "@electric-sql/pglite";
-import { afterAll, beforeAll, beforeEach } from "bun:test";
+import { afterAll, beforeAll, beforeEach, spyOn } from "bun:test";
 import { createDbClient, type DbClient } from "../../src/db/client.ts";
 import { createDiscordClient } from "../../src/discord/client.ts";
 import { managedChannelCheck } from "../../src/handlers/dependencies.ts";
@@ -17,7 +17,7 @@ import {
 } from "../../src/reminders/run.ts";
 import { messageBody, type MessageBody } from "../support/json.ts";
 import { pgliteSql, type Intercept } from "../support/sql-client.ts";
-import { stubGlobal } from "../support/stubs.ts";
+import { asFetch } from "../support/stubs.ts";
 import {
   insertGuild,
   type GuildFixture,
@@ -31,7 +31,7 @@ export type Sent = MessageBody & { threadId: string };
 
 type Answer = Response | undefined;
 
-export interface ReminderWorld {
+interface ReminderWorld {
   readonly database: PGlite;
   readonly db: DbClient;
   /** Lets a test answer, fail or watch one statement. */
@@ -148,11 +148,12 @@ export function useReminderWorld(): ReminderWorld {
     },
   };
 
-  async function answer(input: string, init?: RequestInit) {
-    if (!input.startsWith(API)) {
-      throw new Error(`Unexpected request to ${input}`);
+  async function answer(input: string | URL | Request, init?: RequestInit) {
+    const url = input instanceof Request ? input.url : String(input);
+    if (!url.startsWith(API)) {
+      throw new Error(`Unexpected request to ${url}`);
     }
-    const path = input.slice(API.length);
+    const path = url.slice(API.length);
     const method = init?.method ?? "GET";
     world.requests.push({ method, path });
     const id = /^\/channels\/([0-9]+)/.exec(path)?.[1] ?? "";
@@ -190,7 +191,7 @@ export function useReminderWorld(): ReminderWorld {
     world.sent = [];
     world.channels = new Map();
     world.logLines = [];
-    stubGlobal("fetch", answer);
+    spyOn(globalThis, "fetch").mockImplementation(asFetch(answer));
     await world.database.exec(`
       UPDATE public.tasks SET deleted_at = now() WHERE deleted_at IS NULL;
       UPDATE public.managed_channels SET status = 'removed';

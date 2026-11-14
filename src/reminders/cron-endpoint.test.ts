@@ -8,7 +8,7 @@ import * as endpoint from "../../api/cron/reminders.ts";
 import { fakeId } from "../../test/support/ids.ts";
 import { vercelConfig } from "../../test/support/json.ts";
 import { testDatabaseUrl } from "../../test/support/sql-client.ts";
-import { stubEnv, stubGlobal } from "../../test/support/stubs.ts";
+import { asFetch, stubEnv } from "../../test/support/stubs.ts";
 import {
   FUNCTION_MAX_MS,
   SLOT_START_HOUR_UTC,
@@ -36,7 +36,7 @@ async function expectRefused(response: Response) {
 
 beforeEach(() => {
   fetchMock.mockClear();
-  stubGlobal("fetch", fetchMock);
+  spyOn(globalThis, "fetch").mockImplementation(asFetch(fetchMock));
   stubEnv("DATABASE_URL", testDatabaseUrl());
   stubEnv("CRON_SECRET", SECRET);
   stubEnv("DISCORD_BOT_TOKEN", "unit-test-token");

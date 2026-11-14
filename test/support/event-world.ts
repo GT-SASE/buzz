@@ -14,7 +14,7 @@ import {
   type Mock,
 } from "bun:test";
 import { pgliteSql, serverError } from "./sql-client.ts";
-import { stubGlobal } from "./stubs.ts";
+import { asFetch } from "./stubs.ts";
 import { createDbClient, type DbClient } from "../../src/db/client.ts";
 import type { EventRow } from "../../src/db/types.ts";
 import { createDiscordClient } from "../../src/discord/client.ts";
@@ -75,7 +75,7 @@ export interface World {
   allowPings(pings: { users?: string[]; roles?: string[] }): void;
 }
 
-export type StoredEvent = EventRow & { event_date: string };
+type StoredEvent = EventRow & { event_date: string };
 
 const EVENT_SELECT = `SELECT id, guild_id, channel_id, name, event_date::text AS event_date,
   thread_id, overview_message_id, status::text AS status,
@@ -139,7 +139,7 @@ export function eventWorld(): World {
        SET session_replication_role = DEFAULT;`,
     );
     server = discordServer(APP_ID);
-    stubGlobal("fetch", server.fetch);
+    spyOn(globalThis, "fetch").mockImplementation(asFetch(server.fetch));
     dbFailures = [];
     seen = [];
     allowed = { users: new Set(), roles: new Set() };

@@ -1,11 +1,6 @@
 import { beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
 import { COMMANDS } from "../src/handlers/registry.ts";
-import {
-  asFetch,
-  stubEnv,
-  stubGlobal,
-  type FetchLike,
-} from "../test/support/stubs.ts";
+import { asFetch, stubEnv, type FetchLike } from "../test/support/stubs.ts";
 import {
   describeFailure,
   main,
@@ -120,7 +115,7 @@ describe("main", () => {
   it("registers an allowed server", async () => {
     stubSettings();
     const send = stubSend();
-    stubGlobal("fetch", send);
+    spyOn(globalThis, "fetch").mockImplementation(asFetch(send));
 
     expect(await main([GUILD_A])).toBe(0);
     expect(send).toHaveBeenCalledTimes(1);
@@ -130,7 +125,7 @@ describe("main", () => {
     stubSettings();
     const errors = captureErrors();
     const send = stubSend();
-    stubGlobal("fetch", send);
+    spyOn(globalThis, "fetch").mockImplementation(asFetch(send));
 
     expect(await main([GUILD_A, OTHER_GUILD])).toBe(1);
     expect(send).not.toHaveBeenCalled();
@@ -141,7 +136,7 @@ describe("main", () => {
     stubSettings(NEWLINE_TOKEN);
     const errors = captureErrors();
     const send = stubSend();
-    stubGlobal("fetch", send);
+    spyOn(globalThis, "fetch").mockImplementation(asFetch(send));
 
     expect(await main([GUILD_A])).toBe(1);
     expect(send).not.toHaveBeenCalled();
@@ -154,9 +149,8 @@ describe("main", () => {
   it("does not print a message from a failed request", async () => {
     stubSettings();
     const errors = captureErrors();
-    stubGlobal(
-      "fetch",
-      mock(() => Promise.reject(new Error(`Bot ${TOKEN}`))),
+    spyOn(globalThis, "fetch").mockImplementation(
+      asFetch(mock(() => Promise.reject(new Error(`Bot ${TOKEN}`)))),
     );
 
     expect(await main([GUILD_A])).toBe(1);

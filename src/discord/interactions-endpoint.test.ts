@@ -24,11 +24,7 @@ import {
   recordingSql,
   testDatabaseUrl,
 } from "../../test/support/sql-client.ts";
-import {
-  stubEnv,
-  stubGlobal,
-  type FetchLike,
-} from "../../test/support/stubs.ts";
+import { asFetch, stubEnv, type FetchLike } from "../../test/support/stubs.ts";
 import * as registry from "../handlers/registry.ts";
 import { isDeclaredLengthWithin, readBodyWithin } from "../lib/read-body.ts";
 import * as outbound from "./outbound.ts";
@@ -386,7 +382,7 @@ describe("work done after the reply", () => {
         Response.json({ id: ROLE_A, flags: init?.method === "GET" ? 64 : 0 }),
       );
     });
-    stubGlobal("fetch", send);
+    spyOn(globalThis, "fetch").mockImplementation(asFetch(send));
     stubEnv("DATABASE_URL", testDatabaseUrl());
     stubEnv("DISCORD_BOT_TOKEN", "unit-test-bot-token");
   });

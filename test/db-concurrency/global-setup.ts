@@ -14,7 +14,7 @@ import pg from "pg";
 const EXPECTED_MAJOR_VERSION = "17";
 
 /** What every file needs to reach the cluster and copy the template. */
-export interface ConcurrencyContext {
+interface ConcurrencyContext {
   /** The superuser, connected to the cluster's postgres database. */
   adminUrl: string;
   /** The migrated database each file copies. */

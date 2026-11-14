@@ -95,7 +95,7 @@ export function subcommand(
   });
 }
 
-export interface Notice {
+interface Notice {
   channelId: string;
   content: string;
   allowed_mentions: { parse: string[]; users: string[] };
@@ -159,7 +159,7 @@ export function refusedWith(
   return ran.reply.data?.content ?? edits[0]?.content;
 }
 
-export interface TaskWorld {
+interface TaskWorld {
   backend: Backend;
   router: Router;
   fixture: GuildFixture;

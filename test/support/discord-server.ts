@@ -14,7 +14,7 @@ const THREAD_TYPE = 11;
 const DISCORD_EPOCH_MS = 1420070400000;
 const EPHEMERAL_FLAG = 64;
 
-export interface FakeChannel {
+interface FakeChannel {
   id: string;
   type: number;
   guild_id: string;
@@ -98,7 +98,7 @@ function contents(value: unknown): string[] {
 }
 
 /** What in this JSON body Discord would render live: a ping to all, or a masked link. */
-export function liveText(json: string): string[] {
+function liveText(json: string): string[] {
   return contents(JSON.parse(json)).flatMap((text) => [
     ...(LIVE_EVERYONE.test(text)
       ? [`a live @everyone or @here in ${text}`]

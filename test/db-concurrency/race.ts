@@ -26,14 +26,14 @@ import {
 
 const BLOCK_TIMEOUT_MS = 10_000;
 
-export interface Outcome {
+interface Outcome {
   rows?: Record<string, unknown>[];
   code?: string | undefined;
 }
 
-export type Statement = [sql: string, params: unknown[]];
+type Statement = [sql: string, params: unknown[]];
 
-export interface RaceDatabase {
+interface RaceDatabase {
   /** A connection outside the race, as the superuser, for setup and checks. */
   readonly observer: pg.Client;
   /** The observer, in the shape test/db/fixtures.ts takes. */
