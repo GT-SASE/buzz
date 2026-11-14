@@ -39,7 +39,6 @@ import {
 } from "./validate.ts";
 
 const MAX_TASKS = 100;
-const MAX_CHOICES = DISCORD_LIMITS.autocompleteChoices;
 
 /** The columns of a `TaskRow`. */
 const TASK_COLUMNS = sql`id, event_id, guild_id, assignee_id, description, due_date,
@@ -214,7 +213,7 @@ export async function searchOpenTasks(
     sql`select ${TASK_CHOICE} from ${TASKS_AND_EVENTS}
       where t.guild_id = ${guildId} and t.status = 'open'
         and t.description ilike ${searchPattern(term)} and ${ON_OPEN_EVENT}
-      order by t.due_date, t.id limit ${MAX_CHOICES}`,
+      order by t.due_date, t.id limit ${DISCORD_LIMITS.autocompleteChoices}`,
   );
 }
 
@@ -234,7 +233,7 @@ export async function searchLiveTasks(
     sql`select ${LIVE_TASK_CHOICE} from ${TASKS_AND_EVENTS}
       where t.guild_id = ${guildId}
         and t.description ilike ${searchPattern(term)} and ${ON_OPEN_EVENT}
-      order by t.status, t.due_date, t.id limit ${MAX_CHOICES}`,
+      order by t.status, t.due_date, t.id limit ${DISCORD_LIMITS.autocompleteChoices}`,
   );
 }
 
@@ -248,7 +247,7 @@ export async function searchLiveTasksByIdPrefix(
     db,
     sql`select ${LIVE_TASK_CHOICE} from ${TASKS_AND_EVENTS}
       where t.guild_id = ${guildId} and t.id >= ${low} and t.id <= ${high} and ${ON_OPEN_EVENT}
-      order by t.id limit ${MAX_CHOICES}`,
+      order by t.id limit ${DISCORD_LIMITS.autocompleteChoices}`,
   );
 }
 
@@ -269,7 +268,7 @@ export async function searchOwnOpenTasks(
     sql`select ${TASK_CHOICE} from ${TASKS_AND_EVENTS}
       where t.guild_id = ${guildId} and t.assignee_id = ${assigneeId}
         and t.status = 'open' and t.description ilike ${searchPattern(term)} and ${ON_OPEN_EVENT}
-      order by t.due_date, t.id limit ${MAX_CHOICES}`,
+      order by t.due_date, t.id limit ${DISCORD_LIMITS.autocompleteChoices}`,
   );
 }
 
@@ -284,7 +283,7 @@ export async function searchOpenTasksByIdPrefix(
     sql`select ${TASK_CHOICE} from ${TASKS_AND_EVENTS}
       where t.guild_id = ${guildId} and t.status = 'open'
         and t.id >= ${low} and t.id <= ${high} and ${ON_OPEN_EVENT}
-      order by t.id limit ${MAX_CHOICES}`,
+      order by t.id limit ${DISCORD_LIMITS.autocompleteChoices}`,
   );
 }
 
@@ -303,7 +302,7 @@ export async function searchOwnOpenTasksByIdPrefix(
     sql`select ${TASK_CHOICE} from ${TASKS_AND_EVENTS}
       where t.guild_id = ${guildId} and t.assignee_id = ${assigneeId}
         and t.status = 'open' and t.id >= ${low} and t.id <= ${high} and ${ON_OPEN_EVENT}
-      order by t.id limit ${MAX_CHOICES}`,
+      order by t.id limit ${DISCORD_LIMITS.autocompleteChoices}`,
   );
 }
 

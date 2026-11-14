@@ -27,8 +27,11 @@ export const MAX_TIMESTAMP_SKEW_MS = 5 * 60 * 1000;
 
 const MINT = Symbol("verify");
 
-// Announcement, public and private threads.
-const THREAD_CHANNEL_TYPES: ReadonlySet<unknown> = new Set([10, 11, 12]);
+const THREAD_CHANNEL_TYPES: ReadonlySet<unknown> = new Set([
+  ChannelType.AnnouncementThread,
+  ChannelType.PublicThread,
+  ChannelType.PrivateThread,
+]);
 
 /** The channel types that hold forum posts. */
 export const FORUM_CHANNEL_TYPES: ReadonlySet<unknown> = new Set([

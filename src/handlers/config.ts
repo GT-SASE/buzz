@@ -88,7 +88,6 @@ import {
 
 // How many forums to list, most first: the most that leaves room for the roles and changes.
 const FORUMS_SHOWN = [15, 10, 5, 0] as const;
-const MAX_SELECT_OPTIONS = DISCORD_LIMITS.selectOptions;
 // The panel only ever changes one forum at a time, but an audit row can name up to 25.
 const MAX_CHANNELS_PER_CHANGE = 3;
 // Re-adding a forum redraws its posts before the panel answers. Each post can take a few
@@ -356,7 +355,7 @@ function panelRows(
   ];
   if (forums.length > 0) {
     const options: SelectOption[] = forums
-      .slice(0, MAX_SELECT_OPTIONS)
+      .slice(0, DISCORD_LIMITS.selectOptions)
       .map((forum) => ({
         label: forumOptionLabel(forum, view),
         value: forum.channel_id,
@@ -442,11 +441,12 @@ interface Change {
   readonly remove?: readonly string[];
 }
 
-/** Literal arguments: guild and actor from the signed payload, the rest named here. */
 /** The time of the day's reminder run, which each reader sees in their own zone. */
 function dayRunTime(): SafeText {
   return discordTimestamp(dayRunStart(new Date()), "t");
 }
+
+/** Literal arguments: guild and actor from the signed payload, the rest named here. */
 
 async function applyChange(
   ctx: FinishContext,
