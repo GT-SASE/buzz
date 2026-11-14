@@ -1,11 +1,11 @@
 #!/bin/sh
 # Scans the commits being pushed for secrets, and blocks the push on a finding.
-# Activate with: pnpm hooks:install
+# Activate with: bun run hooks:install
 remote="$1"
 repo_root="$(git rev-parse --show-toplevel)" || exit 1
 gitleaks="${repo_root}/.tools/gitleaks"
 if [ ! -x "${gitleaks}" ]; then
-  echo "pre-push: gitleaks is not installed. Run: pnpm gitleaks:install" >&2
+  echo "pre-push: gitleaks is not installed. Run: bun run gitleaks:install" >&2
   exit 1
 fi
 # gitleaks would read it and skip the findings it lists.

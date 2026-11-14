@@ -43,7 +43,6 @@ secrets.json
 credentials.json
 service-account*.json
 .npmrc
-!/.npmrc
 .netrc
 .pgpass
 pgpass.conf

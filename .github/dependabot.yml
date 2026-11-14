@@ -2,9 +2,8 @@ version: 2
 
 # Commit prefixes keep these updates in the Conventional Commits format.
 updates:
-  # The npm ecosystem reads package.json and updates pnpm-lock.yaml with the pnpm that
-  # package.json pins.
-  - package-ecosystem: npm
+  # The bun ecosystem reads package.json and updates bun.lock.
+  - package-ecosystem: bun
     directory: /
     schedule:
       interval: weekly

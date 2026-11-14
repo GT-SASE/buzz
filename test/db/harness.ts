@@ -110,7 +110,7 @@ export const SERVER_SETUP = `
   ALTER SCHEMA public OWNER TO ${MIGRATION_OWNER};
 `;
 
-/** Applies every migration as the owner, as `pnpm db:migrate` does on Neon. */
+/** Applies every migration as the owner, as `bun run db:migrate` does on Neon. */
 export async function migrateAsOwner(db: Connection): Promise<void> {
   await db.exec(`SET ROLE ${MIGRATION_OWNER}`);
   try {

@@ -9,7 +9,7 @@
  * environment.
  *
  * Usage:
- *   pnpm commands:register <guild-id> [<guild-id>...]
+ *   bun run commands:register <guild-id> [<guild-id>...]
  */
 
 import { parseArgs } from "node:util";

@@ -1,0 +1,8 @@
+[install]
+# Runs no install script, the project's or any dependency's, even one on Bun's
+# default trusted list.
+ignoreScripts = true
+# New dependencies are pinned to exact versions.
+exact = true
+# A flat node_modules, which Vercel's function file tracing copies whole.
+linker = "hoisted"
