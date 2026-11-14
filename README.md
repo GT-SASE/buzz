@@ -192,7 +192,7 @@ These stay true with every control working:
 
 ## Local development
 
-You need Node.js 24, Bun 1.4.4, Git, Bash and curl, on macOS or Linux. Bun installs packages and runs the scripts, and the code runs on Node.
+You need Bun 1.4.4, Git, Bash and curl, on macOS or Linux. Bun installs packages and runs every script, test and CI step, but the functions run on Node 24 on Vercel, because Vercel's Bun runtime is newer; switching later is one setting.
 
 ```sh
 bun install --frozen-lockfile
@@ -200,7 +200,7 @@ bun run gitleaks:install
 bun run hooks:install
 ```
 
-`bunfig.toml` keeps every install script off, pins new dependencies to exact versions, and gives a flat `node_modules`, which Vercel's function tracing copies whole. `hooks:install` turns on a pre-push hook that runs gitleaks over the commits being pushed and blocks the push on a finding. [SECURITY.md](SECURITY.md) lists its limits.
+`bunfig.toml` keeps every install script off, pins new dependencies to exact versions, and gives a flat `node_modules`, which Vercel's function tracing copies whole. It also makes `bun run` start tools with a `node` shebang on Bun, and stops Bun loading `.env` by itself, so only `commands:register` reads it. `hooks:install` turns on a pre-push hook that runs gitleaks over the commits being pushed and blocks the push on a finding. [SECURITY.md](SECURITY.md) lists its limits.
 
 There is no local bot. Discord needs a public HTTPS URL, so tests stand in for it, and real runs happen on the deployment, on a private test server. `.env.example` lists every setting. Copy it to `.env` only when you need to register commands.
 
@@ -215,6 +215,15 @@ There is no local bot. Discord needs a public HTTPS URL, so tests stand in for i
 | `bun run test:db`             | Migrations, grants and access layer on PGlite, logged in as `bot_app`                                                                                                                   | Nothing                                                                       |
 | `bun run test:db:concurrency` | Races: double Done clicks, retried interactions, overlapping reminder runs, deletes against inserts, config saves and first setup, task quotas at their limit, task changes, lock order | `CONCURRENCY_DATABASE_URL` to a Postgres 17 superuser, and `BOT_APP_PASSWORD` |
 | `bun run db:migrate`          | Applies new files in `db/migrations` with dbmate, in order                                                                                                                              | `DATABASE_URL` for the database's owner role, never `bot_app`                 |
+
+Tests use `bun:test`. Unit tests sit next to the code as `src/**/*.test.ts` and `scripts/*.test.ts`, the PGlite tests are in `test/db/`, the race tests in `test/db-concurrency/`, and shared helpers in `test/support/`. `bunfig.toml` preloads `test/support/setup.ts`, which pins the time zone and undoes stubs after each test, and leaves `test/db/` and `test/db-concurrency/` out of a plain `bun test`. Use the scripts, which run each file in a fresh global. To run one file, give a path starting with `./`, since a bare word only filters file names:
+
+```sh
+bun test --isolate ./src/lib/dates.test.ts
+bun test --isolate --timeout 30000 --path-ignore-patterns 'none' ./test/db/history.test.ts
+```
+
+The second replaces bunfig's ignore list, which would otherwise skip `test/db/`.
 
 `bun run test:db` runs the migration files on PGlite and the tests send the bot's own SQL to it as `bot_app`. The concurrency tests need real Postgres 17. CI's database workflow runs one as a service, makes an owner and a database, runs `bun run db:migrate` and checks nothing is left pending, sets `bot_app`'s password, then runs those tests through `pg`, logged in as `bot_app`. Point `CONCURRENCY_DATABASE_URL` at that migrated database.
 

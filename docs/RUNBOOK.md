@@ -117,7 +117,7 @@ Check the size on the project's usage page in the Neon console. `history.row_ver
    ```sh
    read -rs OWNER_URL
    DATABASE_URL="$OWNER_URL" bun run db:migrate
-   DATABASE_URL="$OWNER_URL" bunx --no-install dbmate --migrations-dir db/migrations status
+   DATABASE_URL="$OWNER_URL" bunx --bun --no-install dbmate --migrations-dir db/migrations status
    ```
 
    The first lists the files it applied, and the second should show nothing pending.

@@ -80,7 +80,7 @@ WHERE status = 'succeeded' AND started_at > now() - interval '1 day';
     - Do: before the morning run, set a wrong `DISCORD_BOT_TOKEN` in Vercel and redeploy. After it, and before the recovery run, put the right one back and redeploy. [RUNBOOK.md](RUNBOOK.md#when-it-runs) gives both times.
     - Expect: a `failed` reminders row from the morning run, a `succeeded` one from the recovery run, and the reminder sent with its ping.
 18. **Neon cold start.**
-    - Do: leave the bot idle until Neon's console shows the compute as suspended, then run `DATABASE_URL="$BOT_URL" node scripts/neon-cold-start.ts`. Let it suspend again and run `/config`.
+    - Do: leave the bot idle until Neon's console shows the compute as suspended, then run `DATABASE_URL="$BOT_URL" bun scripts/neon-cold-start.ts`. Let it suspend again and run `/config`.
     - Expect: `One read took <n> ms, under the 2200 ms deadline.`, and `/config` answers without "did not respond". Write down the time.
 
 Clear the terminal's values with `unset BOT_URL CRON` when you finish.
