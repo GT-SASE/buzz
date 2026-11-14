@@ -11,17 +11,24 @@ import type { Actor } from "./actor.ts";
 /**
  * Officer and admin stack: an admin also holds officer rights, because a Discord
  * Administrator can grant themselves any role anyway, and refusing them would add
- * no security. Bindings stands apart. It needs the Administrator bit, so holding
- * admin_role_id does not reach it. Public is for an action that reveals nothing and
- * changes nothing, and is the only tier that works before setup besides bindings.
+ * no security. The officer tier is the Events Directors role (officer_role_id), the
+ * E-board role, or admin. Budget is the officer tier or the Treasury role, for
+ * approving an event's budget. Bindings stands apart. It needs the Administrator bit,
+ * so holding admin_role_id does not reach it. Public is for an action that reveals
+ * nothing and changes nothing, and is the only tier that works before setup besides
+ * bindings.
  */
-export type Tier = "public" | "self" | "officer" | "admin" | "bindings";
+export type Tier =
+  "public" | "self" | "officer" | "budget" | "admin" | "bindings";
 
 /**
  * What row an action needs. "event" is the row named, or the parent of a new task.
  * event.link is "none": it can create a row from an existing thread, so there may be no
  * row to check, and its handler must confirm the thread's guild and parent, and read any
- * row named in its event option within the signed guild.
+ * row named in its event option within the signed guild. event.step_done is "none" too:
+ * who may mark Budget Sheet or Engage post done depends on the step's assignees, so its
+ * handler loads the event and its steps within the signed guild and calls
+ * `canCompleteStep` on them.
  */
 export type Scope = "none" | "event" | "task";
 
@@ -37,6 +44,11 @@ const COMMAND_TIERS = [
   ["event.list", "officer", "none"],
   ["event.close", "officer", "event"],
   ["event.delete", "officer", "event"],
+  ["event.assign", "officer", "event"],
+  ["event.unassign", "officer", "event"],
+  ["event.pickup", "officer", "event"],
+  ["event.approve_budget", "budget", "event"],
+  ["event.step_done", "self", "none"],
   ["task.assign", "officer", "event"],
   ["task.edit", "officer", "task"],
   ["task.delete", "officer", "task"],
@@ -105,6 +117,9 @@ const AUTOCOMPLETE_COMMANDS = [
   "event.status",
   "event.close",
   "event.delete",
+  "event.assign",
+  "event.unassign",
+  "event.pickup",
   "task.edit",
   "task.delete",
   "task.done",
@@ -129,11 +144,17 @@ export interface AutocompleteScope {
   readonly assigneeId?: string;
 }
 
-/** The columns of a guild_config row that decide access. */
+/**
+ * The columns of a guild_config row that decide access. The E-board and Treasury roles
+ * are null until /setup has chosen them, and a null role is held by nobody.
+ */
 export interface AuthorizationConfig {
   readonly guild_id: string;
+  /** Shown as Events Directors. */
   readonly officer_role_id: string;
   readonly admin_role_id: string;
+  readonly eboard_role_id: string | null;
+  readonly treasury_role_id: string | null;
 }
 
 /** The columns of an events row that decide access. */
@@ -178,22 +199,56 @@ export const REFUSED = Object.freeze({
  * The @everyone role's ID equals the guild ID. The database refuses that binding,
  * and a role bound that way never counts here either, since it would cover everyone.
  */
-function holdsBoundRole(actor: Actor, roleId: string): boolean {
-  return roleId !== actor.guildId && actor.roleIds.has(roleId);
+function holdsBoundRole(actor: Actor, roleId: string | null): boolean {
+  return (
+    roleId !== null && roleId !== actor.guildId && actor.roleIds.has(roleId)
+  );
 }
 
 function isAdmin(actor: Actor, config: AuthorizationConfig): boolean {
   return actor.isAdministrator || holdsBoundRole(actor, config.admin_role_id);
 }
 
-/** True for officer_role_id and for anyone who is an admin, in the actor's guild. */
+/**
+ * True for the Events Directors role (officer_role_id), the E-board role and anyone who
+ * is an admin, in the actor's guild.
+ */
 export function isOfficer(
   actor: Actor,
   config: AuthorizationConfig | null | undefined,
 ): boolean {
   return (
     config?.guild_id === actor.guildId &&
-    (holdsBoundRole(actor, config.officer_role_id) || isAdmin(actor, config))
+    (holdsBoundRole(actor, config.officer_role_id) ||
+      holdsBoundRole(actor, config.eboard_role_id) ||
+      isAdmin(actor, config))
+  );
+}
+
+/** True for the officer tier and the Treasury role, in the actor's guild. */
+export function canApproveBudget(
+  actor: Actor,
+  config: AuthorizationConfig | null | undefined,
+): boolean {
+  return (
+    config?.guild_id === actor.guildId &&
+    (holdsBoundRole(actor, config.treasury_role_id) || isOfficer(actor, config))
+  );
+}
+
+/**
+ * Whether the actor may mark Budget Sheet or Engage post done: someone assigned to that
+ * step, or the officer tier. Pass the step's live assignees as loaded for this event in
+ * the actor's guild.
+ */
+export function canCompleteStep(
+  actor: Actor,
+  config: AuthorizationConfig | null | undefined,
+  assigneeIds: readonly string[],
+): boolean {
+  return (
+    config?.guild_id === actor.guildId &&
+    (assigneeIds.includes(actor.userId) || isOfficer(actor, config))
   );
 }
 
@@ -208,6 +263,8 @@ function holdsTier(
       return true;
     case "officer":
       return isOfficer(actor, config);
+    case "budget":
+      return canApproveBudget(actor, config);
     case "admin":
       return isAdmin(actor, config);
     case "bindings":

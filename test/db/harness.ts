@@ -1,7 +1,9 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { PGlite } from "@electric-sql/pglite";
 import type pg from "pg";
+
+export { fakeId } from "../support/ids.ts";
 
 /** What the helpers here need from a database, so PGlite and pg both fit. */
 export interface Connection {
@@ -25,101 +27,111 @@ export function pgConnection(client: pg.Client): Connection {
   };
 }
 
-export type ApiRole = "anon" | "authenticated" | "service_role";
-export const API_ROLES: readonly ApiRole[] = [
-  "anon",
-  "authenticated",
-  "service_role",
-];
-
-/** Stands in for the hosted `postgres` role: owns the schema, is not a superuser. */
-export const MIGRATION_OWNER = "migration_owner";
-
-/** The read-only role the daily backup connects as. */
-export const BACKUP_ROLE = "backup_ro";
-
-/** Postgres error code for a privilege failure. */
-export const INSUFFICIENT_PRIVILEGE = "42501";
-
 const MIGRATIONS_DIR = join(
   import.meta.dirname,
   "..",
   "..",
-  "supabase",
+  "db",
   "migrations",
 );
 
-/**
- * Recreates the starting state of a Supabase project, as permissively as the
- * platform might set it: API roles with default grants on everything the owner
- * creates, and anon and authenticated with full schema access. Tests only mean
- * something if the migrations have to remove these grants.
- *
- * service_role deliberately gets no USAGE on the schema here. It reaches the schema
- * only through PUBLIC, which the migrations revoke, so the migrations have to grant
- * USAGE themselves. CREATE is granted so that they have to revoke it.
- *
- * Safe to run more than once in a cluster, and in any database.
- */
-export const PLATFORM_BOOTSTRAP = `
-  DO $$
-  DECLARE
-    spec text[];
-  BEGIN
-    FOREACH spec SLICE 1 IN ARRAY ARRAY[
-      ['anon', 'NOLOGIN NOINHERIT'],
-      ['authenticated', 'NOLOGIN NOINHERIT'],
-      ['service_role', 'NOLOGIN NOINHERIT BYPASSRLS'],
-      ['${MIGRATION_OWNER}', 'NOLOGIN NOSUPERUSER CREATEROLE']
-    ] LOOP
-      IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = spec[1]) THEN
-        EXECUTE format('CREATE ROLE %I %s', spec[1], spec[2]);
-      END IF;
-    END LOOP;
-    EXECUTE format('GRANT CREATE ON DATABASE %I TO ${MIGRATION_OWNER}', current_database());
-  END;
-  $$;
-
-  ALTER SCHEMA public OWNER TO ${MIGRATION_OWNER};
-  GRANT ALL ON SCHEMA public TO anon, authenticated;
-  GRANT CREATE ON SCHEMA public TO service_role;
-
-  ALTER DEFAULT PRIVILEGES FOR ROLE ${MIGRATION_OWNER} IN SCHEMA public
-    GRANT ALL ON TABLES TO anon, authenticated, service_role;
-  ALTER DEFAULT PRIVILEGES FOR ROLE ${MIGRATION_OWNER} IN SCHEMA public
-    GRANT ALL ON SEQUENCES TO anon, authenticated, service_role;
-  ALTER DEFAULT PRIVILEGES FOR ROLE ${MIGRATION_OWNER} IN SCHEMA public
-    GRANT ALL ON FUNCTIONS TO anon, authenticated, service_role;
-`;
-
-export function migrationFiles(): string[] {
+/** Each migration's version and its `-- migrate:up` part, in the order dbmate runs them. */
+function migrationsUp(): { version: string; sql: string }[] {
   return readdirSync(MIGRATIONS_DIR)
     .filter((name) => name.endsWith(".sql"))
-    .sort();
+    .sort()
+    .map((name) => {
+      const text = readFileSync(join(MIGRATIONS_DIR, name), "utf8");
+      const version = /^([0-9]+)_/.exec(name)?.[1];
+      const sql =
+        /^-- migrate:up[^\n]*\n([\s\S]*?)(?:^-- migrate:down|$(?![\s\S]))/m.exec(
+          text,
+        )?.[1];
+      if (version === undefined || sql === undefined) {
+        throw new Error(`${name} is not a dbmate migration`);
+      }
+      return { version, sql };
+    });
 }
 
-/** A fresh database in the platform's starting state, with no migrations run. */
-export async function createBootstrappedDb(): Promise<PGlite> {
-  const db = new PGlite();
-  await db.waitReady;
-  await db.exec(PLATFORM_BOOTSTRAP);
-  return db;
+/**
+ * Applies every migration, each in its own transaction, and records it in dbmate's
+ * ledger, as `dbmate up` does.
+ */
+async function applyMigrations(db: Connection): Promise<void> {
+  await db.exec(
+    "CREATE TABLE IF NOT EXISTS public.schema_migrations (version varchar(128) PRIMARY KEY)",
+  );
+  for (const { version, sql } of migrationsUp()) {
+    await db.exec("BEGIN");
+    try {
+      await db.exec(sql);
+      await db.query(
+        "INSERT INTO public.schema_migrations (version) VALUES ($1)",
+        [version],
+      );
+      await db.exec("COMMIT");
+    } catch (error) {
+      await db.exec("ROLLBACK");
+      throw error;
+    }
+  }
 }
 
-/** Scripts that apply each migration in its own transaction, as the owner. */
-export function migrationScripts(): string[] {
-  return migrationFiles().map((file) => {
-    const sql = readFileSync(join(MIGRATIONS_DIR, file), "utf8");
-    return `BEGIN; SET LOCAL ROLE ${MIGRATION_OWNER};\n${sql}\nCOMMIT;`;
-  });
+/**
+ * For beforeAll and similar hooks that build a database. Tests get 30 seconds from
+ * the test:db scripts; a hook that migrates or copies a database may need longer.
+ */
+export const HOOK_TIMEOUT_MS = 120_000;
+
+/** The role the bot logs in as. The baseline migration creates it. */
+export const BOT_APP = "bot_app";
+
+/** Runs the migrations and owns the schema, as a Neon project's owner role does. */
+export const MIGRATION_OWNER = "migration_owner";
+
+/** A role with no grants at all, standing in for any role that is not the bot or owner. */
+export const OTHER_ROLE = "other_role";
+
+/** Postgres error code for a privilege failure. */
+export const INSUFFICIENT_PRIVILEGE = "42501";
+
+/**
+ * What a new server has before the first migration: an owner that is not a superuser but
+ * may create roles, and owns the database and its public schema, as on Neon. Safe to
+ * run more than once in a cluster, and in any database.
+ */
+const SERVER_SETUP = `
+  DO $$
+  BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${MIGRATION_OWNER}') THEN
+      CREATE ROLE ${MIGRATION_OWNER} NOLOGIN NOSUPERUSER CREATEROLE;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${OTHER_ROLE}') THEN
+      CREATE ROLE ${OTHER_ROLE} NOLOGIN;
+    END IF;
+    EXECUTE format('ALTER DATABASE %I OWNER TO ${MIGRATION_OWNER}', current_database());
+  END;
+  $$;
+  ALTER SCHEMA public OWNER TO ${MIGRATION_OWNER};
+`;
+
+/** Applies every migration as the owner, as `bun run db:migrate` does on Neon. */
+async function migrateAsOwner(db: Connection): Promise<void> {
+  await db.exec(`SET ROLE ${MIGRATION_OWNER}`);
+  try {
+    await applyMigrations(db);
+  } finally {
+    await db.exec("RESET ROLE");
+  }
 }
 
 /** A fresh database with every migration applied. */
 export async function createMigratedDb(): Promise<PGlite> {
-  const db = await createBootstrappedDb();
-  for (const script of migrationScripts()) {
-    await db.exec(script);
-  }
+  const db = new PGlite();
+  await db.waitReady;
+  await db.exec(SERVER_SETUP);
+  await migrateAsOwner(db);
   return db;
 }
 
@@ -134,7 +146,7 @@ export function present<T>(value: T | null | undefined): T {
 /** Runs one parameterised statement as the given role, then restores the session role. */
 export async function queryAs<Row = Record<string, unknown>>(
   db: Connection,
-  role: ApiRole | typeof MIGRATION_OWNER | typeof BACKUP_ROLE,
+  role: string,
   sql: string,
   params: unknown[] = [],
 ): Promise<Row[]> {
@@ -159,13 +171,21 @@ export async function errorCodeOf(
   }
 }
 
-// Built at runtime because a literal this long would trip the secret scan's rule
-// against Discord IDs in tracked files. Starting from a random offset keeps IDs from
-// repeating between runs against a long-lived server.
-let nextFakeId = 10n ** 17n + BigInt(Math.floor(Math.random() * 1e9)) * 1000n;
+const sessionQueues = new WeakMap<object, Promise<unknown>>();
 
-/** A placeholder Discord ID, unique within the test run. */
-export function fakeId(): string {
-  nextFakeId += 1n;
-  return nextFakeId.toString();
+/**
+ * Runs `fn` alone on this connection. PGlite has one session, and a caller that switches
+ * its role must not let another caller's statement run under that role.
+ */
+export function onSessionAlone<T>(
+  db: object,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const previous = sessionQueues.get(db) ?? Promise.resolve();
+  const next = previous.then(fn);
+  sessionQueues.set(
+    db,
+    next.catch(() => undefined),
+  );
+  return next;
 }

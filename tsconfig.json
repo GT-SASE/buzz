@@ -3,9 +3,10 @@
     "target": "es2024",
     "lib": ["es2024"],
     "module": "nodenext",
-    "types": ["node"],
+    "types": ["node", "bun"],
     "noEmit": true,
     "allowImportingTsExtensions": true,
+    // Vercel's build reads this. Without it the deployed functions import .ts files and fail to start.
     "rewriteRelativeImportExtensions": true,
     "erasableSyntaxOnly": true,
     "verbatimModuleSyntax": true,
@@ -20,5 +21,5 @@
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true
   },
-  "include": ["api", "src", "scripts", "test", "*.config.ts"]
+  "include": ["api", "src", "scripts", "test"]
 }

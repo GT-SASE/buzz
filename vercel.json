@@ -3,8 +3,8 @@
   "framework": null,
   "outputDirectory": "public",
   "crons": [
-    { "path": "/api/cron/reminders", "schedule": "0 14 * * *" },
-    { "path": "/api/cron/reminders", "schedule": "0 16 * * *" }
+    { "path": "/api/cron/reminders", "schedule": "0 15 * * *" },
+    { "path": "/api/cron/reminders", "schedule": "0 17 * * *" }
   ],
   "functions": {
     "api/cron/reminders.ts": { "maxDuration": 60 },
@@ -13,8 +13,7 @@
   "git": {
     "deploymentEnabled": {
       "**": false,
-      "main": true,
-      "staging": true
+      "main": true
     }
   }
 }

@@ -1,5 +1,0 @@
--- Creates backup_ro on a new project during a recovery, before the restore, because the
--- restored grants name it. Matches the role in 20261104000009_backup_role.sql, and a test
--- keeps the two the same. It cannot log in until the owner enables it.
-CREATE ROLE backup_ro NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION CONNECTION LIMIT 3;
-ALTER ROLE backup_ro SET default_transaction_read_only = on;

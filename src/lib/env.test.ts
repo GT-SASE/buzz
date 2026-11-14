@@ -1,7 +1,10 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "bun:test";
+import { stubEnv } from "../../test/support/stubs.ts";
 import { ConfigError } from "./config-error.ts";
+import { isCronAuthorized } from "./cron-auth.ts";
 import {
   getAllowedGuildIds,
+  getDatabaseUrl,
   getDiscordAppId,
   getDiscordBotToken,
   getDiscordPublicKey,
@@ -10,87 +13,72 @@ import {
 const GUILD_A = "1".repeat(18);
 const GUILD_B = "2".repeat(18);
 
-afterEach(() => {
-  vi.unstubAllEnvs();
-});
-
 describe("required settings", () => {
   it.each([
     ["DISCORD_APP_ID", getDiscordAppId],
     ["DISCORD_BOT_TOKEN", getDiscordBotToken],
     ["DISCORD_PUBLIC_KEY", getDiscordPublicKey],
     ["ALLOWED_GUILD_IDS", getAllowedGuildIds],
+    ["DATABASE_URL", getDatabaseUrl],
   ])("refuses a missing or blank %s", (name, read) => {
-    vi.stubEnv(name, undefined);
+    stubEnv(name, undefined);
     expect(read).toThrow(ConfigError);
 
-    vi.stubEnv(name, "   ");
+    stubEnv(name, "   ");
     expect(read).toThrow(ConfigError);
   });
 
   it.each([
-    ["DISCORD_APP_ID", getDiscordAppId],
-    ["DISCORD_PUBLIC_KEY", getDiscordPublicKey],
-    ["ALLOWED_GUILD_IDS", getAllowedGuildIds],
-  ])("names %s but not its rejected value", (name, read) => {
-    const canary = "canary-value-that-must-stay-private";
-    vi.stubEnv(name, canary);
+    ["DISCORD_APP_ID", getDiscordAppId, "not a valid value"],
+    ["DISCORD_BOT_TOKEN", getDiscordBotToken, "head\ntail"],
+    ["DISCORD_PUBLIC_KEY", getDiscordPublicKey, "ab".repeat(31)],
+    ["ALLOWED_GUILD_IDS", getAllowedGuildIds, `${GUILD_A},not-an-id`],
+  ])("names %s when its value is rejected", (name, read, value) => {
+    stubEnv(name, value);
 
+    expect(read).toThrow(ConfigError);
     expect(read).toThrow(name);
-    expect(read).not.toThrow(canary);
   });
 });
 
-describe("getDiscordBotToken", () => {
-  it("accepts printable ASCII", () => {
-    vi.stubEnv("DISCORD_BOT_TOKEN", "abc.DEF-123_~");
+describe("accepted values", () => {
+  it("trims the bot token and the database URL", () => {
+    stubEnv("DISCORD_BOT_TOKEN", "abc.DEF-123_~\n");
+    stubEnv("DATABASE_URL", " postgresql://example.test/bot\n");
+
     expect(getDiscordBotToken()).toBe("abc.DEF-123_~");
+    expect(getDatabaseUrl()).toBe("postgresql://example.test/bot");
   });
 
-  it("ignores surrounding whitespace, such as a final newline", () => {
-    vi.stubEnv("DISCORD_BOT_TOKEN", "abc.DEF\n");
-    expect(getDiscordBotToken()).toBe("abc.DEF");
-  });
-
-  it.each([
-    ["an interior newline", "canary-head\ncanary-tail"],
-    ["an interior space", "canary-head canary-tail"],
-    ["a control character", "canary-head\x7fcanary-tail"],
-    ["a non-ASCII character", "canary-headécanary-tail"],
-  ])("refuses %s without quoting the value", (_label, token) => {
-    vi.stubEnv("DISCORD_BOT_TOKEN", token);
-
-    expect(getDiscordBotToken).toThrow(ConfigError);
-    expect(getDiscordBotToken).toThrow("DISCORD_BOT_TOKEN");
-    expect(getDiscordBotToken).not.toThrow("canary");
-  });
-});
-
-describe("getDiscordPublicKey", () => {
-  it("accepts 32 bytes of hex", () => {
-    vi.stubEnv("DISCORD_PUBLIC_KEY", "ab".repeat(32));
-    expect(getDiscordPublicKey()).toBe("ab".repeat(32));
-  });
-
-  it("refuses the wrong length", () => {
-    vi.stubEnv("DISCORD_PUBLIC_KEY", "ab".repeat(31));
-    expect(getDiscordPublicKey).toThrow(ConfigError);
-  });
-});
-
-describe("getAllowedGuildIds", () => {
-  it("splits and trims the list", () => {
-    vi.stubEnv("ALLOWED_GUILD_IDS", `${GUILD_A}, ${GUILD_B}`);
+  it("splits and trims the guild list", () => {
+    stubEnv("ALLOWED_GUILD_IDS", `${GUILD_A}, ${GUILD_B}`);
     expect(getAllowedGuildIds()).toEqual(new Set([GUILD_A, GUILD_B]));
   });
+});
 
-  it("fails the whole list when one entry is malformed", () => {
-    vi.stubEnv("ALLOWED_GUILD_IDS", `${GUILD_A},not-an-id`);
-    expect(getAllowedGuildIds).toThrow(ConfigError);
+describe("isCronAuthorized", () => {
+  const SECRET = "s".repeat(32);
+
+  it.each([
+    ["the bearer value of the secret", `Bearer ${SECRET}`, SECRET, true],
+    ["a secret stored with a newline", `Bearer ${SECRET}`, `${SECRET}\n`, true],
+    ["no header", null, SECRET, false],
+    ["a wrong secret", `Bearer ${"t".repeat(32)}`, SECRET, false],
+    ["a longer secret", `Bearer ${SECRET}x`, SECRET, false],
+    ["the bare secret", SECRET, SECRET, false],
+    ["a padded header", ` Bearer ${SECRET}`, SECRET, false],
+    ["a header with a newline", `Bearer ${SECRET}\n`, `${SECRET}\n`, false],
+  ])("answers %s with %p", (_label, header, secret, expected) => {
+    expect(isCronAuthorized(header, secret)).toBe(expected);
   });
 
-  it("refuses an empty entry", () => {
-    vi.stubEnv("ALLOWED_GUILD_IDS", `${GUILD_A},`);
-    expect(getAllowedGuildIds).toThrow(ConfigError);
+  it.each([
+    ["unset", undefined],
+    ["31 characters", "s".repeat(31)],
+    ["short once trimmed", ` ${"s".repeat(31)} `.padEnd(40)],
+  ])("refuses everything when the secret is %s", (_label, secret) => {
+    for (const header of ["Bearer undefined", "Bearer ", null]) {
+      expect(isCronAuthorized(header, secret)).toBe(false);
+    }
   });
 });

@@ -84,6 +84,43 @@ function epochMs(date: DateOnly): number {
   return utcDate(year, month, day).getTime();
 }
 
+/** How far the zone's clock is ahead of UTC at this instant, in milliseconds, to the whole second. */
+function zoneOffsetMs(instant: number, timeZone: string): number {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hourCycle: "h23",
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    hour: "numeric",
+    minute: "numeric",
+    second: "numeric",
+  }).formatToParts(new Date(instant));
+  const part = (type: Intl.DateTimeFormatPartTypes): number =>
+    Number(parts.find((candidate) => candidate.type === type)?.value);
+  const clock =
+    utcDate(part("year"), part("month"), part("day")).getTime() +
+    ((part("hour") % 24) * 3600 + part("minute") * 60 + part("second")) * 1000;
+  return clock - instant;
+}
+
+/**
+ * The instant at which a zone's clock reads this time on this date, using the offset in
+ * force on that date, so it stays right across a daylight saving change. A time the
+ * clocks skip comes out an hour early, and a time they show twice gives the first.
+ * Throws a RangeError for a zone the runtime does not know.
+ */
+export function instantInZone(
+  date: DateOnly,
+  hours: number,
+  minutes: number,
+  timeZone: string,
+): number {
+  const clock = epochMs(date) + (hours * 60 + minutes) * 60_000;
+  const guess = clock - zoneOffsetMs(clock, timeZone);
+  return clock - zoneOffsetMs(guess, timeZone);
+}
+
 /** Whole days from `from` to `to`: positive when `to` is later. */
 export function daysBetween(from: DateOnly, to: DateOnly): number {
   return (epochMs(to) - epochMs(from)) / MS_PER_DAY;

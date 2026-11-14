@@ -11,16 +11,13 @@
 import { ApplicationCommandOptionType } from "discord-api-types/v10";
 import { commandOptionValue } from "../discord/interactions.ts";
 import type { MessageInput } from "../discord/outbound.ts";
-import { escapeUserText, safe, userMention } from "../discord/safe-text.ts";
+import { safe, userMention } from "../discord/safe-text.ts";
 import { isThreadChannelType } from "../discord/verify.ts";
 import { getEvent } from "../db/events.ts";
 import { findEventByThread } from "../db/task-events.ts";
-import {
-  createTask,
-  MAX_TASK_ACTIONS_PER_OFFICER_PER_DAY,
-  MAX_TASKS_PER_EVENT,
-} from "../db/tasks.ts";
+import { createTask } from "../db/tasks.ts";
 import type { EventRow } from "../db/types.ts";
+import { MAX_TASK_DESCRIPTION_LENGTH } from "../db/validate.ts";
 import { authorize } from "../lib/permissions.ts";
 import {
   autocompleteRoute,
@@ -150,11 +147,11 @@ async function assign(
         return message(EVENT_IS_CLOSED);
       case "event_task_limit":
         return message(
-          safe`This event already has ${escapeUserText(String(MAX_TASKS_PER_EVENT))} tasks, the most one event can hold. Delete some before adding more.`,
+          safe`This event already has the most tasks one event can hold. Delete some before adding more.`,
         );
       case "actor_task_limit":
         return message(
-          safe`You've assigned or reassigned ${escapeUserText(String(MAX_TASK_ACTIONS_PER_OFFICER_PER_DAY))} tasks in the last 24 hours, the most allowed. Please try again later.`,
+          safe`You've reached the limit for assigning and reassigning tasks. Please try again later.`,
         );
     }
   }
@@ -191,7 +188,7 @@ export const assignSubcommand: CommandOption = {
       name: "description",
       description: "What needs doing. No server invites or masked links",
       required: true,
-      max_length: 1000,
+      max_length: MAX_TASK_DESCRIPTION_LENGTH,
     },
     {
       type: ApplicationCommandOptionType.String,

@@ -9,7 +9,6 @@
 
 import type { AutocompleteChoice } from "../discord/outbound.ts";
 import type { DbResult } from "../db/errors.ts";
-import type { RowList } from "../db/result.ts";
 import {
   searchOpenEvents,
   searchOpenEventsByIdPrefix,
@@ -30,11 +29,11 @@ import type { RouteContext } from "../handlers/router.ts";
 import { eventChoice, taskChoice } from "./shared.ts";
 
 function merged<T extends { readonly id: string }>(
-  byId: DbResult<RowList<T>> | undefined,
-  byText: DbResult<RowList<T>>,
+  byId: DbResult<T[]> | undefined,
+  byText: DbResult<T[]>,
 ): T[] {
-  const first = byId?.ok === true ? byId.value.rows : [];
-  const rest = byText.ok ? byText.value.rows : [];
+  const first = byId?.ok === true ? byId.value : [];
+  const rest = byText.ok ? byText.value : [];
   const seen = new Set(first.map((row) => row.id));
   return [...first, ...rest.filter((row) => !seen.has(row.id))].slice(
     0,

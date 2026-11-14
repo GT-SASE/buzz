@@ -1,16 +1,20 @@
 /**
  * A stand-in for Discord's REST API, behind the real client. Handler tests go through
  * the client's own checks and see the JSON that would really be sent. A failure is
- * armed per route, so a test can break any one step of a flow.
+ * armed per route, so a test can break any one step of a flow. Every body sent must
+ * be inert, so each test also checks the real output of the templates it reaches.
  */
 
-import { testSnowflake } from "./mock-postgrest.ts";
+import { expect } from "bun:test";
+import { jsonObject } from "./json.ts";
+import { fakeId } from "./ids.ts";
+import type { FetchLike } from "./stubs.ts";
 
 const THREAD_TYPE = 11;
 const DISCORD_EPOCH_MS = 1420070400000;
 const EPHEMERAL_FLAG = 64;
 
-export interface FakeChannel {
+interface FakeChannel {
   id: string;
   type: number;
   guild_id: string;
@@ -35,8 +39,8 @@ export type Failure =
   | { kind: "network" }
   | { kind: "lost" };
 
-export const UNKNOWN_CHANNEL = 10003;
-export const UNKNOWN_MESSAGE = 10008;
+const UNKNOWN_CHANNEL = 10003;
+const UNKNOWN_MESSAGE = 10008;
 export const MISSING_ACCESS = 50001;
 const CANNOT_EDIT = 50005;
 
@@ -48,7 +52,7 @@ interface Armed {
 }
 
 export interface DiscordServer {
-  fetch: typeof fetch;
+  fetch: FetchLike;
   channels: Map<string, FakeChannel>;
   /** Everything sent, in order. */
   requests: SentRequest[];
@@ -61,10 +65,10 @@ export interface DiscordServer {
   messageIds: Set<string>;
   addForum: (guildId: string, name?: string) => string;
   addThread: (fields: Omit<FakeChannel, "id" | "type">) => string;
-  /** Moves the time in new thread IDs, to make a post look older than it is. */
-  threadAgeMs: number;
   /** Runs when a post is made, before Discord answers: another retry could get in. */
   onThreadCreated?: (threadId: string) => Promise<unknown>;
+  /** Runs as a request arrives, before it is answered, as another change could. */
+  onRequest?: (method: string, path: string) => Promise<unknown>;
   fail: (
     method: string,
     path: RegExp,
@@ -72,6 +76,51 @@ export interface DiscordServer {
     times?: number,
   ) => void;
   clearFailures: () => void;
+}
+
+// An @everyone or @here with no backslash before it, or with an even number of them,
+// which escape each other and leave the @ live.
+const LIVE_EVERYONE = /(?<!\\)(?:\\\\)*@(?:everyone|here)/u;
+// The `](` that joins a masked link's text to its URL, unless the bracket is escaped.
+const MASKED_LINK = /(?<!\\)(?:\\\\)*\]\s*\(/u;
+
+/** Every `content` string in a body, at any depth: messages, posts and text displays. */
+function contents(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.flatMap(contents);
+  }
+  if (typeof value !== "object" || value === null) {
+    return [];
+  }
+  return Object.entries(value).flatMap(([key, field]) =>
+    key === "content" && typeof field === "string" ? [field] : contents(field),
+  );
+}
+
+/** What in this JSON body Discord would render live: a ping to all, or a masked link. */
+function liveText(json: string): string[] {
+  return contents(JSON.parse(json)).flatMap((text) => [
+    ...(LIVE_EVERYONE.test(text)
+      ? [`a live @everyone or @here in ${text}`]
+      : []),
+    ...(MASKED_LINK.test(text) ? [`a masked link in ${text}`] : []),
+  ]);
+}
+
+/** Fails the test if Discord would render anything in this body live. */
+export function expectInert(json: string): void {
+  expect(liveText(json)).toEqual([]);
+}
+
+// What the fake server found live in the bodies sent during the current test.
+const liveFound: string[] = [];
+
+/**
+ * Fails the test if any body sent to a fake server had live text. The preload calls
+ * it after each test, since the client would catch a failure thrown while it sends.
+ */
+export function expectSentBodiesInert(): void {
+  expect(liveFound.splice(0)).toEqual([]);
 }
 
 const NOT_FOUND_CHANNEL = {
@@ -98,10 +147,10 @@ export function discordServer(appId: string): DiscordServer {
     return made;
   }
 
-  /** IDs hold the time they were made, and adopting a lost post reads it. */
+  /** IDs hold the time they were made, as Discord's do. */
   function threadId(): string {
     threadsMade += 1n;
-    const madeAt = Date.now() - server.threadAgeMs - DISCORD_EPOCH_MS;
+    const madeAt = Date.now() - DISCORD_EPOCH_MS;
     return ((BigInt(madeAt) << 22n) + threadsMade).toString();
   }
 
@@ -178,7 +227,7 @@ export function discordServer(appId: string): DiscordServer {
       if (!channels.has(messages[1] ?? "")) {
         return answer(NOT_FOUND_CHANNEL);
       }
-      const id = testSnowflake();
+      const id = fakeId();
       messageIds.add(id);
       return json({ id });
     }
@@ -194,7 +243,7 @@ export function discordServer(appId: string): DiscordServer {
         : answer({ kind: "respond", status: 404, code: UNKNOWN_MESSAGE });
     }
     if (path.endsWith("/messages/@original")) {
-      return json({ id: testSnowflake(), flags: EPHEMERAL_FLAG });
+      return json({ id: fakeId(), flags: EPHEMERAL_FLAG });
     }
     throw new Error(`The test server has no route for ${method} ${path}`);
   }
@@ -203,7 +252,6 @@ export function discordServer(appId: string): DiscordServer {
     channels,
     requests,
     messageIds,
-    threadAgeMs: 0,
     posts: () =>
       requests.filter(
         (request) =>
@@ -223,7 +271,7 @@ export function discordServer(appId: string): DiscordServer {
           request.path.endsWith("/messages/@original"),
       )?.body?.content as string | undefined,
     addForum(guildId, name = "events") {
-      const id = testSnowflake();
+      const id = fakeId();
       channels.set(id, { id, type: 15, guild_id: guildId, name });
       return id;
     },
@@ -244,28 +292,42 @@ export function discordServer(appId: string): DiscordServer {
       );
       const method = init?.method ?? "GET";
       const path = url.pathname.replace(/^\/api\/v[0-9]+/, "");
-      const body =
-        typeof init?.body === "string"
-          ? (JSON.parse(init.body) as Record<string, unknown>)
-          : undefined;
+      let body: Record<string, unknown> | undefined;
+      if (typeof init?.body === "string") {
+        liveFound.push(
+          ...liveText(init.body).map((live) => `${method} ${path}: ${live}`),
+        );
+        body = jsonObject(init.body, `the body of ${method} ${path}`);
+      }
       requests.push({ method, path, body });
-      const failure = failureFor(method, path);
-      if (failure === undefined) {
-        const response = route(method, path, body);
-        const made = takeLastThread();
-        return made !== undefined && server.onThreadCreated !== undefined
-          ? server.onThreadCreated(made).then(() => response)
-          : Promise.resolve(response);
-      }
-      if (failure.kind === "network") {
-        return Promise.reject(new TypeError("fetch failed"));
-      }
-      if (failure.kind === "lost") {
-        route(method, path, body);
-        return Promise.reject(new TypeError("fetch failed"));
-      }
-      return Promise.resolve(answer(failure));
+      const before = server.onRequest?.(method, path);
+      return before === undefined
+        ? answerRequest(method, path, body)
+        : before.then(() => answerRequest(method, path, body));
     },
   };
+
+  function answerRequest(
+    method: string,
+    path: string,
+    body: Record<string, unknown> | undefined,
+  ): Promise<Response> {
+    const failure = failureFor(method, path);
+    if (failure === undefined) {
+      const response = route(method, path, body);
+      const made = takeLastThread();
+      return made !== undefined && server.onThreadCreated !== undefined
+        ? server.onThreadCreated(made).then(() => response)
+        : Promise.resolve(response);
+    }
+    if (failure.kind === "network") {
+      return Promise.reject(new TypeError("fetch failed"));
+    }
+    if (failure.kind === "lost") {
+      route(method, path, body);
+      return Promise.reject(new TypeError("fetch failed"));
+    }
+    return Promise.resolve(answer(failure));
+  }
   return server;
 }

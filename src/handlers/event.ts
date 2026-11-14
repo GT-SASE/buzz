@@ -1,6 +1,6 @@
 /**
  * /event: the commands that create, attach and look after an event's forum post.
- * What officers can read, and what happens to a post, are decided in docs/adr/0007.
+ * What officers can read, and what happens to a post, are decided in docs/adr/0006.
  *
  * A guild and an actor only ever come from the signed payload, and an option is read
  * by name, so extra options change nothing. Everything that changes state claims the
@@ -9,15 +9,14 @@
  * Creating an event is a row, then a post, then a write joining them, and Discord or
  * the database can fail between any two:
  *
- * - No post was made: the row stays `pending`. The same /event create takes it up.
- * - Discord did not confirm the post: the post may exist. It is looked for among the
- *   bot's own posts in that forum, now and on any retry, so a retry adopts it rather
- *   than making another. Only a post made since the row and held by no live event can
- *   be it, and if two could be, none is chosen. A person decides.
- * - Two retries at once: each takes the row's post attempt first, which one holds for
- *   60 seconds, and the other is told it is in progress. A clear refusal gives it back.
+ * - No post was made: the row stays `pending`. The same /event create tries again.
+ * - Discord did not confirm the post: the post may exist. The row keeps its post
+ *   attempt, so /event create never posts for it again, and the reply says to run
+ *   /event link inside the post, or to make the post by hand and link that.
+ * - Two runs at once: each takes the row's post attempt first, and the other is told
+ *   the post may already exist. A clear refusal gives the attempt back.
  * - The post exists but could not be saved: the reply names the post, the log holds
- *   both IDs, and /event link inside it, or the same /event create, attaches it.
+ *   both IDs, and /event link inside it attaches it.
  *
  * A post can also be deleted after all this, which marks the row `missing` and stops its
  * reminders. The tasks are on that row and cannot be moved, so nothing here makes a
@@ -34,12 +33,12 @@ import {
   ApplicationCommandOptionType,
   ChannelType,
 } from "discord-api-types/v10";
-import { DiscordClientError, DiscordErrorCode } from "../discord/client.ts";
-import type {
-  ChannelSummary,
-  DiscordFailure,
-  ThreadSummary,
+import {
+  DiscordClientError,
+  DiscordErrorCode,
+  mayHaveLanded,
 } from "../discord/client.ts";
+import type { ChannelSummary, DiscordFailure } from "../discord/client.ts";
 import { commandOptionValue } from "../discord/interactions.ts";
 import {
   actionRow,
@@ -59,10 +58,9 @@ import {
   DISCORD_LIMITS,
 } from "../discord/safe-text.ts";
 import type { SafeText } from "../discord/safe-text.ts";
-import { isThreadChannelType } from "../discord/verify.ts";
-import { findEventByThread, findEventEverOnThread } from "../db/task-events.ts";
-import { withDeadline } from "../db/client.ts";
-import type { DbResult } from "../db/errors.ts";
+import { FORUM_CHANNEL_TYPES, isThreadChannelType } from "../discord/verify.ts";
+import { findEventByThread } from "../db/task-events.ts";
+import type { DbError, DbResult } from "../db/errors.ts";
 import { errorSummary } from "../db/errors.ts";
 import {
   attachEventPost,
@@ -83,25 +81,43 @@ import {
   getManagedChannel,
   listManagedChannels,
 } from "../db/managed-channels.ts";
+import { getEventWorkflow } from "../db/event-steps.ts";
+import { MAX_EVENT_NAME_LENGTH } from "../db/validate.ts";
 import { listEventTasks } from "../db/tasks.ts";
 import { REFUSED_TEXT, versionFingerprint } from "../tasks/shared.ts";
 import type { EventChoice, EventRow, ManagedChannel } from "../db/types.ts";
-import { normaliseEventName, parseEventDate } from "../events/input.ts";
+import {
+  hasInviteOrMaskedLink,
+  normaliseEventName,
+  parseEventDate,
+} from "../events/input.ts";
 import type { EventName } from "../events/input.ts";
 import {
   dateText,
   eventStatusText,
   eventTitle,
   fitLines,
+  overviewWorkflow,
   refreshOverview,
   renderOverview,
   threadTarget,
 } from "../events/overview.ts";
+import {
+  assignStartingOwners,
+  assignSubcommand,
+  pickupSubcommand,
+  retryHandoffs,
+  STARTING_OWNER_OPTIONS,
+  startingOwners,
+  unassignSubcommand,
+  workflowRoutes,
+  type StartingOwners,
+} from "../events/workflow.ts";
 import type { OverviewTasks } from "../events/overview.ts";
 import type { DateOnly } from "../lib/dates.ts";
 import { authorize } from "../lib/permissions.ts";
 import type { EventScopedAction } from "../lib/permissions.ts";
-import { snowflakeTime } from "../lib/snowflake.ts";
+import { lines } from "./render.ts";
 import {
   autocompleteRoute,
   commandRoute,
@@ -114,24 +130,9 @@ import {
   type Handler,
 } from "./router.ts";
 
-const FORUM_TYPES: ReadonlySet<number> = new Set([
-  ChannelType.GuildForum,
-  ChannelType.GuildMedia,
-]);
 const NO_TASKS = { rows: [], truncated: false };
-const SAVE_ATTEMPTS = 3;
-// An overview that is posted and not recorded becomes a second one at the next change,
-// so its ID is worth waiting for. This runs after the acknowledgement, and at worst takes
-// 5 x 4 s + 2 s = 22 s. The function is stopped at 60 s, and being stopped would lose the
-// reply and the log line that say what happened.
-const OVERVIEW_SAVE_PAUSES_MS = [100, 400, 500, 1000];
-const OVERVIEW_SAVE_DEADLINE_MS = 4000;
-// A post's ID comes from Discord's clock and a row's time from the database's.
-const CLOCK_SKEW_MS = 5000;
 // Enough to tell events apart at a glance. The full ID is what a picker submits.
 const SHORT_ID_LENGTH = 8;
-// Enough for a person to go and look. More than this many is a forum to tidy by hand.
-const MAX_POSTS_NAMED = 5;
 
 const NOT_READY = safe`This server hasn't been set up yet. An administrator can run /setup.`;
 const BAD_NAME = safe`That name can't be used. Give it some letters or numbers, up to 100 characters.`;
@@ -140,13 +141,13 @@ const PICK_FORUM = safe`More than one forum is managed, so choose one with the f
 const NOT_MANAGED = safe`That forum isn't managed by this bot, so nothing was created.`;
 const PENDING_HELP = safe`The event is saved without a post. Run the same /event create again to try once more, or /event delete to drop it.`;
 const REWORD_HELP = safe`The event is saved without a post. Use /event delete to drop it, then create it again under different wording.`;
-const UNCLEAR_HELP = safe`The event is saved without a post. Wait a minute, then run the same /event create again: it looks for the post first. Or use /event delete to drop it.`;
-const IN_PROGRESS = safe`Creating this event's post is already in progress. Wait a minute, then run the same /event create again if it hasn't appeared.`;
 const NOT_A_POST = safe`Run this inside a post in a forum this bot manages. Nothing was changed.`;
 const NOT_CONFIRMED = safe`Discord could not confirm what this channel is, so nothing was changed. Please try again in a moment.`;
 const ALREADY_LINKED = safe`This post already belongs to an event, so nothing was changed.`;
 const NO_EVENT_HERE = safe`Run this in an event's post, or choose the event in the event option.`;
 const BAD_POST_NAME = safe`This post's title has no letters or numbers to name an event with. Rename the post, then try again.`;
+const LINK_IN_NAME = safe`An event's name can't hold a server invite or a masked link, because the bot shows it in pings and reminders. Choose a name without one. Nothing was created.`;
+const LINK_IN_POST_NAME = safe`This post's title holds a server invite or a masked link, so it can't name an event. Rename the post, then try again. Nothing was changed.`;
 const MANY_LOST = safe`More than one event with this name and date has lost its post, so nothing was changed. Run /event link inside a replacement post and choose one in the event option.`;
 const NO_DATE = safe`Give the date for a new event, or choose an existing event in the event option. Nothing was changed.`;
 const LOST_AND_CLOSED = safe`An event with this name and date exists, but it is closed and its post has gone, so nothing was changed.`;
@@ -157,6 +158,18 @@ const OVERVIEW_BEHIND = safe`I couldn't bring its overview up to date just now, 
 
 function message(content: SafeText): MessageInput {
   return { content, mentionUserIds: [], components: [] };
+}
+
+type PostTarget = Pick<EventRow, "name" | "channel_id">;
+
+function inProgress(event: PostTarget): SafeText {
+  return safe`A post for **${eventTitle(event)}** may already exist in ${channelMention(event.channel_id)}. Run /event link inside it and choose this event. If there is none, make the post yourself and run /event link there.`;
+}
+
+/** What to do when Discord may have made the post without saying so. */
+function unconfirmedHelp(event: PostTarget): SafeText {
+  const forum = channelMention(event.channel_id);
+  return safe`If **${eventTitle(event)}** is in ${forum}, run /event link inside it and choose this event. If it isn't, make the post yourself in ${forum} and run /event link inside it.`;
 }
 
 function logFailure(what: string, detail: string): void {
@@ -190,15 +203,6 @@ async function chooseForum({
   return active.length === 1
     ? { forumId: only.channel_id }
     : { problem: PICK_FORUM };
-}
-
-/** A send that got no clear answer may have taken effect all the same. */
-function mayHaveLanded(failure: DiscordFailure): boolean {
-  return (
-    failure.kind === "network" ||
-    failure.kind === "invalid_response" ||
-    (failure.kind === "api" && failure.status >= 500)
-  );
 }
 
 // Discord's codes for refusing a post, beyond those the client itself has to tell apart.
@@ -249,117 +253,6 @@ function postProblem(failure: DiscordFailure): SafeText {
 }
 
 /**
- * The forum's archived threads. Discord asks for Read Message History to read these,
- * which the bot's planned permissions leave out. A refusal is what a correctly set up
- * forum gives, so it counts as none: a post archived since then is not found, and
- * refusing to retry would block every retry in that forum.
- */
-async function archivedThreads(
-  { discord }: FinishContext,
-  forumId: string,
-): Promise<readonly ThreadSummary[]> {
-  try {
-    return await discord.listArchivedThreads(forumId);
-  } catch (error) {
-    if (
-      error instanceof DiscordClientError &&
-      error.failure.kind === "api" &&
-      error.failure.status === 403
-    ) {
-      return [];
-    }
-    throw error;
-  }
-}
-
-type PostSearch =
-  | { readonly found: "none" }
-  | { readonly found: "unknown" }
-  | { readonly found: "one"; readonly threadId: string }
-  | { readonly found: "several"; readonly threadIds: readonly string[] };
-
-/**
- * The post this event may already have: the bot's own, in its forum, with its title, made
- * since the row and named by no row. That includes soft-deleted rows, whose posts stay in
- * the forum: a row that lost its post can be months old, so a deleted event of the same
- * name can fall inside its window. "unknown" if Discord or the database could not say,
- * which a retry may settle. "several" if more than one fits, which only a person can.
- */
-async function findOwnPost(
-  ctx: FinishContext,
-  event: EventRow,
-): Promise<PostSearch> {
-  const { actor, db, discord, payload } = ctx;
-  let threads: readonly ThreadSummary[];
-  try {
-    threads = [
-      ...(await discord.listActiveThreads(actor.guildId)),
-      ...(await archivedThreads(ctx, event.channel_id)),
-    ];
-  } catch (error) {
-    if (error instanceof DiscordClientError) {
-      return { found: "unknown" };
-    }
-    throw error;
-  }
-  const notBefore = Date.parse(event.created_at) - CLOCK_SKEW_MS;
-  const candidates = new Set(
-    threads
-      .filter(
-        (thread) =>
-          thread.parentId === event.channel_id &&
-          thread.ownerId === payload.application_id &&
-          normaliseEventName(thread.name)?.name === event.name &&
-          snowflakeTime(thread.id) >= notBefore,
-      )
-      .map((thread) => thread.id),
-  );
-  const free: string[] = [];
-  for (const threadId of candidates) {
-    const holder = await findEventEverOnThread(db, {
-      guildId: actor.guildId,
-      threadId,
-    });
-    if (!holder.ok) {
-      return { found: "unknown" };
-    }
-    if (holder.value === null) {
-      free.push(threadId);
-    }
-  }
-  const [only, ...others] = free;
-  if (only === undefined) {
-    return { found: "none" };
-  }
-  return others.length > 0
-    ? { found: "several", threadIds: free }
-    : { found: "one", threadId: only };
-}
-
-/** Trying again can't help here, so this says which posts and what a person can do. */
-function severalPosts(event: EventRow, threadIds: readonly string[]): SafeText {
-  const named = threadIds
-    .slice(0, MAX_POSTS_NAMED)
-    .map(channelMention)
-    .reduce((list, post) => safe`${list}, ${post}`);
-  const rest = threadIds.length > MAX_POSTS_NAMED ? safe` and others` : safe``;
-  return safe`More than one post could be **${eventTitle(event)}** for ${dateText(event.event_date)}: ${named}${rest}. So I didn't choose one, and I didn't make another. Run /event link inside the right post and choose this event in the event option. If none of them is right, a moderator can remove them, or make a new post and do the same there.`;
-}
-
-async function saveWithRetry<T>(
-  write: () => Promise<DbResult<T>>,
-): Promise<DbResult<T>> {
-  let result = await write();
-  for (let attempt = 1; attempt < SAVE_ATTEMPTS; attempt++) {
-    if (result.ok || result.error.category !== "unavailable") {
-      break;
-    }
-    result = await write();
-  }
-  return result;
-}
-
-/**
  * Records which message is the overview, or logs what is needed to find it. The bot can't
  * search a post for its own overview, since reading history is not among its permissions.
  */
@@ -368,21 +261,11 @@ async function saveOverviewId(
   event: EventRow,
   messageId: string,
 ): Promise<DbResult<EventRow>> {
-  const db = withDeadline(ctx.db, OVERVIEW_SAVE_DEADLINE_MS);
-  const write = () =>
-    setEventOverviewMessage(db, {
-      guildId: event.guild_id,
-      eventId: event.id,
-      messageId,
-    });
-  let result = await write();
-  for (const pause of OVERVIEW_SAVE_PAUSES_MS) {
-    if (result.ok || result.error.category !== "unavailable") {
-      break;
-    }
-    await new Promise((resolve) => setTimeout(resolve, pause));
-    result = await write();
-  }
+  const result = await setEventOverviewMessage(ctx.db, {
+    guildId: event.guild_id,
+    eventId: event.id,
+    messageId,
+  });
   if (!result.ok) {
     logFailure(
       "overview save",
@@ -401,22 +284,35 @@ function created(event: EventRow, threadId: string, cleaned: boolean) {
   );
 }
 
+/** Says a post was made but not saved, and keeps its ID in the log in case the reply is lost. */
+function unsavedPost(
+  event: EventRow,
+  threadId: string,
+  error: DbError,
+): MessageInput {
+  logFailure(
+    "post save",
+    `event ${event.id}, post ${threadId}: ${errorSummary(error)}`,
+  );
+  return message(
+    safe`${channelMention(threadId)} was posted, but it could not be saved to the event. Run /event link ${dateText(event.event_date)} inside that post to attach it.`,
+  );
+}
+
 /** Joins a post that exists to its event, or says plainly that it could not. */
 async function attachPost(
   ctx: FinishContext,
   event: EventRow,
   post: { threadId: string; messageId: string; cleaned: boolean },
 ): Promise<MessageInput> {
-  const saved = await saveWithRetry(() =>
-    attachEventPost(ctx.db, {
-      guildId: event.guild_id,
-      eventId: event.id,
-      threadId: post.threadId,
-      overviewMessageId: post.messageId,
-    }),
-  );
+  const saved = await attachEventPost(ctx.db, {
+    guildId: event.guild_id,
+    eventId: event.id,
+    threadId: post.threadId,
+    overviewMessageId: post.messageId,
+  });
   if (!saved.ok && saved.error.category === "not_found") {
-    // Another retry may have attached this same post first, which is success.
+    // Another run may have attached this same post first, which is success.
     const current = await getEvent(ctx.db, {
       guildId: event.guild_id,
       eventId: event.id,
@@ -426,14 +322,7 @@ async function attachPost(
     }
   }
   if (!saved.ok) {
-    // The one record of this post, if the reply below is lost too. Both are IDs.
-    logFailure(
-      "post save",
-      `event ${event.id}, post ${post.threadId}: ${errorSummary(saved.error)}`,
-    );
-    return message(
-      safe`${channelMention(post.threadId)} was posted, but it could not be saved to the event. Run /event link ${dateText(event.event_date)} inside that post to attach it.`,
-    );
+    return unsavedPost(event, post.threadId, saved.error);
   }
   return created(saved.value, post.threadId, post.cleaned);
 }
@@ -446,12 +335,16 @@ async function makePost(
 ): Promise<MessageInput> {
   const key = { guildId: event.guild_id, eventId: event.id };
   if (!valueOf(await claimEventPostAttempt(ctx.db, key))) {
-    return message(IN_PROGRESS);
+    return message(inProgress(event));
   }
+  const workflow = await overviewWorkflow(ctx.db, event);
   try {
     const post = await ctx.discord.createThread(
       { kind: "channel", guildId: event.guild_id, channelId: event.channel_id },
-      threadCreate({ name: name.title, ...renderOverview(event, NO_TASKS) }),
+      threadCreate({
+        name: name.title,
+        ...renderOverview(event, NO_TASKS, [], workflow),
+      }),
     );
     return await attachPost(ctx, event, {
       threadId: post.id,
@@ -469,50 +362,21 @@ async function makePost(
       const help = wordingBlocked(error.failure) ? REWORD_HELP : PENDING_HELP;
       return message(safe`${postProblem(error.failure)} ${help}`);
     }
-    const search = await findOwnPost(ctx, event);
-    if (search.found === "several") {
-      return message(
-        safe`Discord did not confirm the post. ${severalPosts(event, search.threadIds)}`,
-      );
-    }
-    if (search.found !== "one") {
-      return message(safe`Discord did not confirm the post. ${UNCLEAR_HELP}`);
-    }
-    const reply = await attachPost(ctx, event, {
-      threadId: search.threadId,
-      messageId: search.threadId,
-      cleaned,
-    });
-    // It was drawn before this reply, from a row that may have changed since.
-    await refreshOverview(ctx, event);
-    return reply;
+    // The attempt stays taken, so no later /event create can make a second post.
+    return message(
+      safe`Discord didn't confirm the post, so it may have been made. ${unconfirmedHelp(event)}`,
+    );
   }
 }
 
-/** Takes up a row left pending, adopting its post if one turns out to exist. */
+/** Takes up a row left pending. */
 async function resume(
   ctx: FinishContext,
   event: EventRow,
   name: EventName,
   cleaned: boolean,
 ): Promise<MessageInput> {
-  const search = await findOwnPost(ctx, event);
-  if (search.found === "several") {
-    return message(severalPosts(event, search.threadIds));
-  }
-  if (search.found === "unknown") {
-    return message(
-      safe`I couldn't tell whether this event's post already exists, so I didn't make another. Please try again in a moment. If this keeps happening, check the forum, then run /event link inside the right post.`,
-    );
-  }
-  const reply =
-    search.found === "none"
-      ? await makePost(ctx, event, name, cleaned)
-      : await attachPost(ctx, event, {
-          threadId: search.threadId,
-          messageId: search.threadId,
-          cleaned,
-        });
+  const reply = await makePost(ctx, event, name, cleaned);
   // Tasks may have been added while it was pending.
   await refreshOverview(ctx, event);
   return reply;
@@ -530,10 +394,14 @@ async function postReplacement(
       eventId: event.id,
     }),
   );
+  const workflow = await overviewWorkflow(ctx.db, event);
   try {
     const post = await ctx.discord.createThread(
       { kind: "channel", guildId: event.guild_id, channelId: event.channel_id },
-      threadCreate({ name: name.title, ...renderOverview(event, tasks) }),
+      threadCreate({
+        name: name.title,
+        ...renderOverview(event, tasks, [], workflow),
+      }),
     );
     return { threadId: post.id, messageId: post.firstMessageId };
   } catch (error) {
@@ -548,17 +416,9 @@ async function postReplacement(
           : safe`${postProblem(error.failure)} The event and its tasks are kept. Run the same /event create again when that is sorted out.`,
       };
     }
-    const search = await findOwnPost(ctx, event);
-    if (search.found === "several") {
-      return {
-        problem: safe`Discord did not confirm the post. The event and its tasks are kept. ${severalPosts(event, search.threadIds)}`,
-      };
-    }
-    return search.found === "one"
-      ? { threadId: search.threadId, messageId: search.threadId }
-      : {
-          problem: safe`Discord did not confirm the post. Wait a minute, then run the same /event create again: it looks for the post first. The event and its tasks are kept.`,
-        };
+    return {
+      problem: safe`Discord didn't confirm the post, so it may have been made. The event and its tasks are kept. ${unconfirmedHelp(event)}`,
+    };
   }
 }
 
@@ -572,27 +432,13 @@ async function replacePost(
   event: EventRow,
   name: EventName,
 ): Promise<MessageInput> {
-  const search = await findOwnPost(ctx, event);
-  if (search.found === "several") {
-    return message(severalPosts(event, search.threadIds));
-  }
-  if (search.found === "unknown") {
-    return message(
-      safe`I couldn't tell whether this event already has a new post, so I didn't make another. Please try again in a moment.`,
-    );
-  }
-  const post =
-    search.found === "none"
-      ? await postReplacement(ctx, event, name)
-      : { threadId: search.threadId, messageId: search.threadId };
+  const post = await postReplacement(ctx, event, name);
   if ("problem" in post) {
     return message(post.problem);
   }
   const key = { guildId: event.guild_id, eventId: event.id };
   const { threadId, messageId } = post;
-  const saved = await saveWithRetry(() =>
-    setEventThread(ctx.db, { ...key, threadId }),
-  );
+  const saved = await setEventThread(ctx.db, { ...key, threadId });
   if (!saved.ok) {
     const current = await getEvent(ctx.db, key);
     const holder = current.ok ? current.value?.thread_id : undefined;
@@ -606,14 +452,7 @@ async function replacePost(
         safe`Another request gave this event a post in ${channelMention(holder)} at the same moment. ${channelMention(threadId)} is spare, and a moderator can remove it.`,
       );
     }
-    // The one record of this post, if the reply below is lost too. Both are IDs.
-    logFailure(
-      "post save",
-      `event ${event.id}, post ${threadId}: ${errorSummary(saved.error)}`,
-    );
-    return message(
-      safe`${channelMention(threadId)} was posted, but it could not be saved to the event. Run the same /event create again: it will find that post.`,
-    );
+    return unsavedPost(event, threadId, saved.error);
   }
   const told = safe`**${eventTitle(event)}** for ${dateText(event.event_date)} had lost its post, and now lives in ${channelMention(threadId)}. ${TASKS_KEPT}`;
   const overview = await saveOverviewId(ctx, saved.value, messageId);
@@ -637,6 +476,9 @@ async function finishCreate(ctx: FinishContext): Promise<MessageInput> {
     "name",
     ApplicationCommandOptionType.String,
   );
+  if (hasInviteOrMaskedLink(rawName)) {
+    return message(LINK_IN_NAME);
+  }
   const name = normaliseEventName(rawName);
   if (name === undefined) {
     return message(BAD_NAME);
@@ -648,6 +490,11 @@ async function finishCreate(ctx: FinishContext): Promise<MessageInput> {
   if (!date.ok) {
     return message(date.problem);
   }
+  const picked = startingOwners(payload);
+  if ("problem" in picked) {
+    return message(picked.problem);
+  }
+  const { owners } = picked;
   const forum = await chooseForum(ctx);
   if ("problem" in forum) {
     return message(forum.problem);
@@ -658,11 +505,13 @@ async function finishCreate(ctx: FinishContext): Promise<MessageInput> {
     name: name.name,
     eventDate: date.date,
   };
-  const named = valueOf(await listEventsNamed(db, identity)).rows;
+  const named = valueOf(await listEventsNamed(db, identity));
   const cleaned = rawName !== name.name;
   const pending = named.find((row) => row.thread_status === "pending");
   if (pending !== undefined) {
-    return resume(ctx, pending, name, cleaned);
+    return withOwners(ctx, pending, owners, () =>
+      resume(ctx, pending, name, cleaned),
+    );
   }
   const withPost = named.filter((row) => row.thread_status === "active");
   const existing =
@@ -682,7 +531,7 @@ async function finishCreate(ctx: FinishContext): Promise<MessageInput> {
     return message(MANY_LOST);
   }
   if (only !== undefined) {
-    return replacePost(ctx, only, name);
+    return withOwners(ctx, only, owners, () => replacePost(ctx, only, name));
   }
   if (lost.length > 0) {
     return message(LOST_AND_CLOSED);
@@ -694,7 +543,33 @@ async function finishCreate(ctx: FinishContext): Promise<MessageInput> {
   if (!inserted.ok && inserted.error.category === "parent_unavailable") {
     return message(NOT_MANAGED);
   }
-  return makePost(ctx, valueOf(inserted), name, cleaned);
+  // An earlier try of this create committed after the bot gave up on it.
+  if (!inserted.ok && inserted.error.category === "conflict") {
+    return message(
+      inProgress({ name: identity.name, channel_id: identity.channelId }),
+    );
+  }
+  const event = valueOf(inserted);
+  return withOwners(ctx, event, owners, () =>
+    makePost(ctx, event, name, cleaned),
+  );
+}
+
+/**
+ * Puts the people picked on /event create on their steps before the post is drawn, and
+ * adds what happened to the reply.
+ */
+async function withOwners(
+  ctx: FinishContext,
+  event: EventRow,
+  owners: StartingOwners,
+  next: () => Promise<MessageInput>,
+): Promise<MessageInput> {
+  const notes = await assignStartingOwners(ctx, event, owners);
+  const reply = await next();
+  return notes.length === 0
+    ? reply
+    : { ...reply, content: lines([reply.content, ...notes]) ?? reply.content };
 }
 
 /** What Discord says the channel is, or why that could not be learned. */
@@ -752,7 +627,7 @@ async function linkableThread(
   }
   return parent !== "unavailable" &&
     parent.guildId === actor.guildId &&
-    FORUM_TYPES.has(parent.type)
+    FORUM_CHANNEL_TYPES.has(parent.type)
     ? { thread, parentId }
     : { problem: NOT_A_POST };
 }
@@ -782,7 +657,7 @@ async function linkRow(
     name,
     eventDate: date,
   };
-  const named = valueOf(await listEventsNamed(db, identity)).rows;
+  const named = valueOf(await listEventsNamed(db, identity));
   const pending = named.find((row) => row.thread_status === "pending");
   const live = named.find((row) => row.thread_status === "active");
   if (pending === undefined && typeof live?.thread_id === "string") {
@@ -834,10 +709,11 @@ async function postOverview(
   { adopted, recovered }: { adopted: boolean; recovered: boolean },
 ): Promise<MessageInput> {
   const linked = linkedText(event, recovered);
+  const workflow = await overviewWorkflow(ctx.db, event);
   try {
     const sent = await ctx.discord.sendMessage(
       threadTarget(event.guild_id, threadId),
-      channelMessage(renderOverview(event, NO_TASKS)),
+      channelMessage(renderOverview(event, NO_TASKS, [], workflow)),
     );
     const saved = await saveOverviewId(ctx, event, sent.id);
     if (!saved.ok) {
@@ -876,7 +752,9 @@ async function relinkOwnPost(
   }
   const relinked = valueOf(row);
   const linked = linkedText(relinked, true);
-  return (await refreshOverview(ctx, relinked))
+  const current = await refreshOverview(ctx, relinked);
+  await retryHandoffs(ctx, relinked);
+  return current
     ? message(linked)
     : message(safe`${linked} ${OVERVIEW_BEHIND}`);
 }
@@ -948,8 +826,22 @@ async function linkChosen(
   });
 }
 
-/** The post is now the event's. What is left is an overview for it. */
+/**
+ * The post is now the event's. What is left is an overview for it, and any hand-off a
+ * done step is still owed because it had no post to go to.
+ */
 async function settleOverview(
+  ctx: FinishContext,
+  event: EventRow,
+  thread: ChannelSummary,
+  how: { adopted: boolean; recovered: boolean },
+): Promise<MessageInput> {
+  const reply = await settleOverviewOnly(ctx, event, thread, how);
+  await retryHandoffs(ctx, event);
+  return reply;
+}
+
+async function settleOverviewOnly(
   ctx: FinishContext,
   event: EventRow,
   thread: ChannelSummary,
@@ -1010,6 +902,9 @@ async function finishLink(ctx: FinishContext): Promise<MessageInput> {
   }
   if (held !== null) {
     return message(ALREADY_LINKED);
+  }
+  if (hasInviteOrMaskedLink(thread.name)) {
+    return message(LINK_IN_POST_NAME);
   }
   const name = normaliseEventName(thread.name);
   if (name === undefined) {
@@ -1134,7 +1029,7 @@ const eventChoices: AutocompleteRoute["choices"] = async (
   typed,
 ) => {
   const found = await searchEvents(db, { guildId, term: typed });
-  return found.ok ? found.value.rows.map(eventChoice) : [];
+  return found.ok ? found.value.map(eventChoice) : [];
 };
 
 function postLine(event: EventRow): SafeText {
@@ -1169,7 +1064,8 @@ async function finishStatus(
     postLine(event),
     ...(forum?.status === "active" ? [] : [FORUM_NOTE]),
   ];
-  return { ...renderOverview(event, tasks, notes), components: [] };
+  const workflow = valueOf(await getEventWorkflow(db, key)) ?? undefined;
+  return { ...renderOverview(event, tasks, notes, workflow), components: [] };
 }
 
 function listLine(
@@ -1383,7 +1279,6 @@ const confirmDelete = componentRoute({
   },
 });
 
-const NAME_LIMIT = 100;
 const DATE_INPUT_LIMIT = 32;
 const SUBCOMMAND = ApplicationCommandOptionType.Subcommand;
 const STRING = ApplicationCommandOptionType.String;
@@ -1419,7 +1314,7 @@ export const handler: Handler = {
               name: "name",
               description: "The event's name, which also titles its post",
               required: true,
-              max_length: NAME_LIMIT,
+              max_length: MAX_EVENT_NAME_LENGTH,
             },
             DATE_OPTION,
             {
@@ -1428,6 +1323,7 @@ export const handler: Handler = {
               description: "Where to post, if more than one forum is managed",
               channel_types: [ChannelType.GuildForum],
             },
+            ...STARTING_OWNER_OPTIONS,
           ],
         },
         {
@@ -1469,6 +1365,9 @@ export const handler: Handler = {
           description: "Delete an event and its tasks, after you confirm",
           options: [EVENT_OPTION],
         },
+        assignSubcommand,
+        unassignSubcommand,
+        pickupSubcommand,
       ],
     },
   ],
@@ -1554,6 +1453,22 @@ export const handler: Handler = {
     autocompleteRoute({
       path: "event delete",
       action: "event.delete",
+      choices: eventChoices,
+    }),
+    ...workflowRoutes,
+    autocompleteRoute({
+      path: "event assign",
+      action: "event.assign",
+      choices: eventChoices,
+    }),
+    autocompleteRoute({
+      path: "event unassign",
+      action: "event.unassign",
+      choices: eventChoices,
+    }),
+    autocompleteRoute({
+      path: "event pickup",
+      action: "event.pickup",
       choices: eventChoices,
     }),
   ],

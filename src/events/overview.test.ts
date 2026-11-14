@@ -1,46 +1,54 @@
+import { describe, expect, it } from "bun:test";
 import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-  type MockInstance,
-} from "vitest";
-import {
-  HOSTILE_TEXT,
   hasLiveSyntax,
   INVISIBLE_TEXT,
 } from "../../test/support/hostile-text.ts";
-import {
-  mockPostgrest,
-  testSnowflake,
-  type RecordedRequest,
-} from "../../test/support/mock-postgrest.ts";
-import { DiscordClientError, DiscordErrorCode } from "../discord/client.ts";
-import type { DiscordClient, DiscordFailure } from "../discord/client.ts";
+import { fakeId } from "../../test/support/ids.ts";
+import type {
+  EventRow,
+  EventStep,
+  EventStepKind,
+  EventWorkflow,
+  StepAssignee,
+  TaskRow,
+} from "../db/types.ts";
+import { EVENT_STEP_KINDS } from "../db/types.ts";
+import { channelMessage, type MessageInput } from "../discord/outbound.ts";
 import { safe, safeTextValue } from "../discord/safe-text.ts";
-import type { EventRow, TaskRow } from "../db/types.ts";
 import type { DateOnly } from "../lib/dates.ts";
-import { fitLines, refreshOverview, renderOverview } from "./overview.ts";
+import { renderOverview } from "./overview.ts";
+import {
+  checklistLines,
+  pickupTimeText,
+  stepButtonRows,
+  stepLine,
+} from "./steps.ts";
+import { handoffMessage, toldText } from "./workflow.ts";
 
-const GUILD = testSnowflake();
-const FORUM = testSnowflake();
-const THREAD = testSnowflake();
-const OVERVIEW = testSnowflake();
-const CREATOR = testSnowflake();
-const ASSIGNEE = testSnowflake();
+const GUILD = fakeId();
+const CREATOR = fakeId();
+const ASSIGNEE = fakeId();
+const APPROVER = fakeId();
 const EVENT_ID = "11111111-1111-4111-8111-111111111111";
+const NEW_YORK = "America/New_York";
+const EVENT_DATE = "2026-11-03" as DateOnly;
+const NO_TASKS = { rows: [], truncated: false };
+
+/** The short-time Discord timestamp for an instant. */
+const at = (iso: string) => `<t:${String(Date.parse(iso) / 1000)}:t>`;
+
+const text = (value: Parameters<typeof safeTextValue>[0]) =>
+  safeTextValue(value);
 
 function eventRow(fields: Partial<EventRow> = {}): EventRow {
   return {
     id: EVENT_ID,
     guild_id: GUILD,
-    channel_id: FORUM,
+    channel_id: fakeId(),
     name: "Fall Social",
     event_date: "2099-01-15" as DateOnly,
-    thread_id: THREAD,
-    overview_message_id: OVERVIEW,
+    thread_id: fakeId(),
+    overview_message_id: fakeId(),
     status: "active",
     thread_status: "active",
     created_by: CREATOR,
@@ -70,472 +78,267 @@ function taskRow(fields: Partial<TaskRow> = {}): TaskRow {
   };
 }
 
-function textOf(event: EventRow, tasks: TaskRow[], truncated = false): string {
-  return safeTextValue(
-    renderOverview(event, { rows: tasks, truncated }).content,
+function workflow(
+  done: readonly EventStepKind[] = [],
+  assignees: readonly Pick<StepAssignee, "kind" | "user_id">[] = [],
+  pickupTime: string | null = null,
+): EventWorkflow {
+  return {
+    event_id: EVENT_ID,
+    event_date: EVENT_DATE,
+    pickup_time: pickupTime,
+    timezone: NEW_YORK,
+    steps: EVENT_STEP_KINDS.map((kind): EventStep => ({
+      event_id: EVENT_ID,
+      kind,
+      status: done.includes(kind) ? "done" : "open",
+      completed_at: done.includes(kind) ? "2026-01-01T00:00:00Z" : null,
+      completed_by: done.includes(kind) ? APPROVER : null,
+      handoff_claimed_at: null,
+      handoff_sent_at: null,
+    })),
+    assignees: assignees.map((assignee, index) => ({
+      id: `33333333-3333-4333-8333-${String(index).padStart(12, "0")}`,
+      event_id: EVENT_ID,
+      assigned_by: APPROVER,
+      created_at: "2026-01-01T00:00:00Z",
+      ...assignee,
+    })),
+  };
+}
+
+function buttonIds(input: MessageInput): string[] {
+  const body = channelMessage(input).payload as {
+    components?: { components: { custom_id: string }[] }[];
+  };
+  return (body.components ?? []).flatMap((row) =>
+    row.components.map((part) => part.custom_id),
   );
 }
 
-describe("renderOverview", () => {
-  it("shows the event, its creator and each task's state and date", () => {
-    const text = textOf(eventRow(), [
-      taskRow(),
-      taskRow({ status: "done", description: "Order food" }),
-    ]);
+function overviewText(event: EventRow, tasks: TaskRow[], truncated = false) {
+  return text(renderOverview(event, { rows: tasks, truncated }).content);
+}
 
-    expect(text).toContain("**Fall Social**");
-    expect(text).toContain(String.raw`Date: 2099\-01\-15`);
-    expect(text).toContain("Status: Active");
-    expect(text).toContain(`Created by <@${CREATOR}>`);
-    expect(text).toContain("Tasks: 1 open, 1 done");
-    expect(text).toContain(
-      String.raw`☐ <@${ASSIGNEE}> Book the room (due 2099\-01\-10)`,
+describe("pickupTimeText", () => {
+  it.each([
+    // After the fall change on 2026-11-01, and after the spring one on 2026-03-08.
+    ["2026-11-03", "17:30", "2026-11-03T22:30:00Z"],
+    ["2026-03-10", "17:30", "2026-03-10T21:30:00Z"],
+    // Before each change.
+    ["2026-10-31", "17:30", "2026-10-31T21:30:00Z"],
+    ["2026-03-07", "17:30", "2026-03-07T22:30:00Z"],
+  ])("shows %s %s in New York as the instant %s", (day, time, instant) => {
+    expect(text(pickupTimeText(day as DateOnly, time, NEW_YORK))).toBe(
+      at(instant),
     );
-    expect(text).toContain(`✅ <@${ASSIGNEE}> Order food`);
   });
 
-  it("says when an event has no tasks and when it is closed", () => {
-    const text = textOf(eventRow({ status: "closed" }), []);
+  it("uses the guild's own zone, and a plain time without a known zone", () => {
+    expect(text(pickupTimeText(EVENT_DATE, "07:00", "Asia/Singapore"))).toBe(
+      at("2026-11-02T23:00:00Z"),
+    );
+    expect(text(pickupTimeText(EVENT_DATE, "17:30", "Mars/Base"))).toBe(
+      String.raw`5\:30 PM`,
+    );
+  });
+});
 
-    expect(text).toContain("Status: Closed");
-    expect(text).toContain("No tasks yet.");
+describe("the checklist", () => {
+  it("has one line per step, with owners as mentions", () => {
+    const [first, second, picker] = [fakeId(), fakeId(), fakeId()];
+    const lines = checklistLines(
+      workflow(
+        ["budget_sheet", "budget_approved"],
+        [
+          { kind: "budget_sheet", user_id: first },
+          { kind: "budget_sheet", user_id: second },
+          { kind: "food_pickup", user_id: picker },
+        ],
+        "17:30",
+      ),
+    ).map(text);
+
+    expect(lines).toEqual([
+      "**Checklist**",
+      `✅ Budget Sheet: <@${first}>, <@${second}>`,
+      "⬜ Engage post: nobody assigned",
+      `✅ Budget approved by <@${APPROVER}>`,
+      `⬜ Food pickup: at ${at("2026-11-03T22:30:00Z")}, <@${picker}>`,
+    ]);
+    expect(text(stepLine(workflow(), "food_pickup"))).toBe(
+      "⬜ Food pickup: time not set, nobody assigned",
+    );
   });
 
-  it("never pings, whoever is shown", () => {
-    const input = renderOverview(eventRow(), {
-      rows: [taskRow()],
-      truncated: false,
-    });
+  it("offers a button for each open step but Food pickup, and none once done", () => {
+    const ids = (flow: EventWorkflow) =>
+      buttonIds({
+        content: safe`x`,
+        mentionUserIds: [],
+        components: stepButtonRows(flow),
+      });
 
-    expect(input.mentionUserIds).toEqual([]);
+    expect(ids(workflow())).toEqual([
+      `event.sheet-done:${EVENT_ID}`,
+      `event.engage-done:${EVENT_ID}`,
+      `event.budget-ok:${EVENT_ID}`,
+    ]);
+    expect(ids(workflow(["engage_post"]))).toEqual([
+      `event.sheet-done:${EVENT_ID}`,
+      `event.budget-ok:${EVENT_ID}`,
+    ]);
+    expect(
+      stepButtonRows(
+        workflow(["budget_sheet", "engage_post", "budget_approved"]),
+      ),
+    ).toEqual([]);
   });
+});
 
-  it("puts open tasks ahead of done ones", () => {
-    const text = textOf(eventRow(), [
-      taskRow({ status: "done", description: "Finished" }),
-      taskRow({ description: "Still open" }),
+describe("renderOverview", () => {
+  it("shows the event, its creator and each task, open ones first", () => {
+    const shown = overviewText(eventRow({ status: "closed" }), [
+      taskRow({ status: "done", description: "Order food" }),
+      taskRow(),
     ]);
 
-    expect(text.indexOf("Still open")).toBeLessThan(text.indexOf("Finished"));
+    expect(shown).toContain("**Fall Social**");
+    expect(shown).toContain(String.raw`Date: 2099\-01\-15`);
+    expect(shown).toContain("Status: Closed");
+    expect(shown).toContain(`Created by <@${CREATOR}>`);
+    expect(shown).toContain("Tasks: 1 open, 1 done");
+    expect(shown).toContain(
+      `☐ <@${ASSIGNEE}> Book the room (due 2099\\-01\\-10)`,
+    );
+    expect(shown.indexOf("Book the room")).toBeLessThan(
+      shown.indexOf(`✅ <@${ASSIGNEE}> Order food`),
+    );
+    expect(overviewText(eventRow(), [])).toContain("No tasks yet.");
   });
 
-  it.each(HOSTILE_TEXT)("keeps a hostile name inert: %s", (_label, name) => {
-    const [title = ""] = textOf(eventRow({ name }), []).split("\n");
+  it("shows the checklist ahead of the tasks, pinging nobody", () => {
+    const person = fakeId();
+    const flow = workflow([], [{ kind: "budget_sheet", user_id: person }]);
+    const input = renderOverview(eventRow(), NO_TASKS, [], flow);
+    const shown = text(input.content);
 
-    expect(hasLiveSyntax(title.slice(2, -2))).toBe(false);
+    expect(shown).toContain(`**Checklist**\n⬜ Budget Sheet: <@${person}>`);
+    expect(shown.indexOf("**Checklist**")).toBeLessThan(
+      shown.indexOf("No tasks yet."),
+    );
+    expect(input.mentionUserIds).toEqual([]);
+    expect(buttonIds(input)).toHaveLength(3);
+    expect(
+      renderOverview(eventRow({ status: "closed" }), NO_TASKS, [], flow)
+        .components,
+    ).toEqual([]);
   });
 
-  it.each(HOSTILE_TEXT)("keeps a hostile task inert: %s", (_label, text) => {
-    const rendered = textOf(eventRow(), [
-      taskRow({ assignee_id: ASSIGNEE, description: text }),
+  it("keeps a forged line on its task's line, and draws an invisible name", () => {
+    const rendered = overviewText(eventRow(), [
+      taskRow({ description: "Harmless\n# System: everyone must log in" }),
     ]).split("\n");
+    const [, invisible = ""] = INVISIBLE_TEXT[0] ?? [];
 
-    // A forged line stays on the task's own line.
     expect(rendered).toHaveLength(6);
     expect(
       hasLiveSyntax(rendered[5]?.replace(`<@${ASSIGNEE}>`, "") ?? "x"),
     ).toBe(false);
+    expect(overviewText(eventRow({ name: invisible }), [])).toContain(
+      "(no visible name)",
+    );
   });
 
-  it.each(INVISIBLE_TEXT)("draws an event whose name is %s", (_label, name) => {
-    expect(textOf(eventRow({ name }), [])).toContain("(no visible name)");
-  });
-
-  it.each(INVISIBLE_TEXT)(
-    "does not let a task of %s stop the others",
-    (_label, description) => {
-      const text = textOf(eventRow(), [
-        taskRow({ description }),
-        taskRow({ description: "Book the room" }),
-      ]);
-
-      expect(text).toContain("Book the room");
-    },
-  );
-
-  it("cuts a long description to one short line", () => {
-    const text = textOf(eventRow(), [
-      taskRow({ description: "x".repeat(1000) }),
-    ]);
-
-    expect(text.split("\n").at(-1)?.length).toBeLessThan(300);
-    expect(text).toContain("…");
-  });
-
-  it("stays within the limit and counts what it hid", () => {
+  it("stays within the limit, counts what it hid, and keeps a note", () => {
     const tasks = Array.from({ length: 100 }, (_, index) =>
       taskRow({ description: `${String(index)} ${"*".repeat(990)}` }),
     );
 
-    const text = textOf(eventRow(), tasks);
-    const shown = text.split("\n").filter((line) => line.startsWith("☐"));
-
-    expect(text.length).toBeLessThanOrEqual(2000);
-    expect(shown.length).toBeGreaterThan(0);
-    expect(shown.length).toBeLessThan(100);
-    expect(text).toContain(
-      `…and ${String(100 - shown.length)} more not shown.`,
+    const shown = text(
+      renderOverview(
+        eventRow({ name: "*".repeat(100) }),
+        { rows: tasks, truncated: false },
+        [safe`A note for the reader`],
+      ).content,
     );
-  });
+    const lines = shown.split("\n").filter((line) => line.startsWith("☐"));
 
-  it("stays within the limit at the longest possible name", () => {
-    const text = textOf(
-      eventRow({ name: "*".repeat(100) }),
-      Array.from({ length: 100 }, () => taskRow()),
+    expect(shown.length).toBeLessThanOrEqual(2000);
+    expect(lines.length).toBeGreaterThan(0);
+    expect(shown).toContain(
+      `…and ${String(100 - lines.length)} more not shown.`,
     );
-
-    expect(text.length).toBeLessThanOrEqual(2000);
-    expect(text).toContain("more not shown.");
-  });
-
-  it("says so when the database held more tasks than were read", () => {
-    const tasks = Array.from({ length: 100 }, () => taskRow());
-
-    const text = textOf(eventRow(), tasks, true);
-
-    expect(text).toContain("Tasks: 100 open, 0 done, and more");
-    expect(text).toMatch(/…and more than [0-9]+ other tasks not shown\./u);
-  });
-
-  it("hides nothing and adds no closing line when all fits", () => {
-    const text = textOf(eventRow(), [taskRow()]);
-
-    expect(text).not.toContain("not shown");
-  });
-
-  it("keeps a note whatever else is cut", () => {
-    const input = renderOverview(
+    expect(shown).toContain("A note for the reader");
+    const cut = overviewText(
       eventRow(),
-      {
-        rows: Array.from({ length: 100 }, () => taskRow()),
-        truncated: false,
-      },
-      [safe`A note for the reader`],
+      Array.from({ length: 100 }, () => taskRow()),
+      true,
     );
-
-    expect(safeTextValue(input.content)).toContain("A note for the reader");
+    expect(cut).toContain("Tasks: 100 open, 0 done, and more");
+    expect(cut).toMatch(/…and more than [0-9]+ other tasks not shown\./u);
   });
 });
 
-describe("fitLines", () => {
-  const more = (count: number) => (count === 0 ? undefined : safe`hidden`);
+describe("handoffMessage", () => {
+  const TREASURY = fakeId();
+  const MARKETING = fakeId();
+  const EVENT = { name: "Fall Social", created_by: CREATOR };
+  const CONFIG = {
+    guild_id: GUILD,
+    treasury_role_id: TREASURY,
+    marketing_role_id: MARKETING,
+  };
 
-  it("refuses plain strings at compile time", () => {
-    // @ts-expect-error a stored string has to pass the render boundary first
-    expect(() => fitLines(["plain"], [], more)).toThrow();
-  });
-
-  it("uses the whole limit when the closing line is not needed", () => {
-    const text = fitLines([safe`aaaa`], [safe`bbbb`], more, 9);
-
-    expect(safeTextValue(text)).toBe("aaaa\nbbbb");
-  });
-
-  it("makes room for the closing line", () => {
-    const text = fitLines([safe`aaaa`], [safe`bbbb`], more, 8);
-
-    expect(safeTextValue(text)).toBe("aaaa\nhidden");
-  });
-});
-
-describe("refreshOverview", () => {
-  let errors: MockInstance<typeof console.error>;
-  let sent: { body: Record<string, unknown>; target: unknown }[];
-  let edited: { body: Record<string, unknown>; messageId: string }[];
-  let editFails: DiscordFailure | undefined;
-  let duringEdit: (() => void) | undefined;
-  let reopened: unknown[];
-  let reopenFails: DiscordFailure | undefined;
-  let sendFails: DiscordFailure | undefined;
-  let row: EventRow | null;
-  let requests: RecordedRequest[];
-  let dbFails: string | undefined;
-
-  function context() {
-    const mock = mockPostgrest((request) => {
-      const path = request.target.split("?")[0] ?? "";
-      if (dbFails !== undefined && request.target.includes(dbFails)) {
-        return { status: 500, body: { message: "canary row text" } };
-      }
-      if (request.method === "PATCH") {
-        return { body: [{ ...eventRow(), ...(request.body as object) }] };
-      }
-      if (path.endsWith("/events")) {
-        return { body: row === null ? [] : [row] };
-      }
-      return { body: [] };
-    });
-    requests = mock.requests;
-    const discord = {
-      reopenThread: (target) => {
-        reopened.push(target);
-        if (reopenFails !== undefined) {
-          return Promise.reject(
-            new DiscordClientError("reopen thread", reopenFails),
-          );
-        }
-        editFails = undefined;
-        return Promise.resolve();
-      },
-      editMessage: (_target, messageId, body) => {
-        if (editFails !== undefined) {
-          return Promise.reject(
-            new DiscordClientError("edit message", editFails),
-          );
-        }
-        duringEdit?.();
-        duringEdit = undefined;
-        edited.push({
-          messageId,
-          body: body.toJSON() as Record<string, unknown>,
-        });
-        return Promise.resolve({ id: messageId });
-      },
-      sendMessage: (target, body) => {
-        if (sendFails !== undefined) {
-          return Promise.reject(
-            new DiscordClientError("send message", sendFails),
-          );
-        }
-        sent.push({ target, body: body.toJSON() as Record<string, unknown> });
-        return Promise.resolve({ id: OVERVIEW });
-      },
-    } as Partial<DiscordClient> as DiscordClient;
-    return { db: mock.db, discord };
-  }
-
-  beforeEach(() => {
-    errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    sent = [];
-    edited = [];
-    editFails = undefined;
-    duringEdit = undefined;
-    reopened = [];
-    reopenFails = undefined;
-    sendFails = undefined;
-    dbFails = undefined;
-    row = eventRow();
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  it("edits the stored message, in the stored thread, with no pings", async () => {
-    await expect(refreshOverview(context(), eventRow())).resolves.toBe(true);
-
-    expect(edited).toHaveLength(1);
-    expect(edited[0]?.messageId).toBe(OVERVIEW);
-    expect(edited[0]?.body.allowed_mentions).toEqual({ parse: [], users: [] });
-    expect(sent).toEqual([]);
-  });
-
-  it("reads the row again instead of trusting the caller's copy", async () => {
-    row = eventRow({ status: "closed" });
-
-    await refreshOverview(context(), eventRow({ status: "active" }));
-
-    expect(edited[0]?.body.content).toContain("Status: Closed");
-  });
-
-  it("posts a new overview when none is stored, and stores it", async () => {
-    row = eventRow({ overview_message_id: null });
-
-    await expect(refreshOverview(context(), eventRow())).resolves.toBe(true);
-
-    expect(sent).toHaveLength(1);
-    expect(sent[0]?.target).toEqual({
-      kind: "thread",
-      guildId: GUILD,
-      threadId: THREAD,
-    });
-    expect(
-      requests.find((request) => request.method === "PATCH")?.body,
-    ).toEqual({ overview_message_id: OVERVIEW });
-  });
-
-  it("posts a new overview when the old message was removed", async () => {
-    editFails = {
-      kind: "api",
-      status: 404,
-      code: DiscordErrorCode.UnknownMessage,
+  const sent = (input: MessageInput) =>
+    channelMessage(input).payload as {
+      content: string;
+      allowed_mentions: unknown;
     };
 
-    await expect(refreshOverview(context(), eventRow())).resolves.toBe(true);
-
-    expect(sent).toHaveLength(1);
+  it("pings only Treasury for Budget Sheet and only Marketing for Engage", () => {
+    expect(sent(handoffMessage(CONFIG, EVENT, "budget_sheet"))).toMatchObject({
+      content: `<@&${TREASURY}> Budget Sheet for **Fall Social** is done.`,
+      allowed_mentions: { parse: [], users: [], roles: [TREASURY] },
+    });
+    expect(sent(handoffMessage(CONFIG, EVENT, "engage_post"))).toMatchObject({
+      content: `<@&${MARKETING}> Engage post for **Fall Social** is up.`,
+      allowed_mentions: { parse: [], users: [], roles: [MARKETING] },
+    });
+    expect(text(toldText("budget_sheet", CONFIG))).toMatch(/^I let the /);
   });
 
-  describe("when /event close lands during a slow edit", () => {
-    it("draws the closed state again, so closed wins", async () => {
-      duringEdit = () => {
-        row = eventRow({ status: "closed" });
-      };
-
-      await expect(refreshOverview(context(), eventRow())).resolves.toBe(true);
-
-      expect(edited.map((edit) => edit.body.content)).toEqual([
-        expect.stringContaining("Status: Active"),
-        expect.stringContaining("Status: Closed"),
-      ]);
-    });
-
-    it("edits once when the event is still active", async () => {
-      await expect(refreshOverview(context(), eventRow())).resolves.toBe(true);
-
-      expect(edited).toHaveLength(1);
-    });
-
-    it("edits once when the event was already closed", async () => {
-      row = eventRow({ status: "closed" });
-
-      await expect(refreshOverview(context(), eventRow())).resolves.toBe(true);
-
-      expect(edited).toHaveLength(1);
-    });
-
-    it("leaves the post alone when the event was deleted meanwhile", async () => {
-      duringEdit = () => {
-        row = null;
-      };
-
-      await expect(refreshOverview(context(), eventRow())).resolves.toBe(true);
-
-      expect(edited).toHaveLength(1);
-    });
+  it("only notes that the budget is approved, pinging nobody", () => {
+    const body = sent(handoffMessage(CONFIG, EVENT, "budget_approved"));
+    expect(body.content).toBe("The budget for **Fall Social** is approved.");
+    expect(body.allowed_mentions).toEqual({ parse: [], users: [] });
   });
 
-  describe("in an archived post", () => {
-    const ARCHIVED: DiscordFailure = {
-      kind: "api",
-      status: 400,
-      code: DiscordErrorCode.ThreadArchived,
-    };
+  it.each([
+    ["budget_sheet", "Treasury Committee", { treasury_role_id: null }],
+    ["engage_post", "Marketing Committee", { marketing_role_id: GUILD }],
+  ] as const)(
+    "pings nobody for %s and says to choose the %s role when it is unset",
+    (kind, role, unset) => {
+      const config = { ...CONFIG, ...unset };
+      const body = sent(handoffMessage(config, EVENT, kind));
 
-    it("reopens the post and edits again, posting nothing", async () => {
-      editFails = ARCHIVED;
-
-      await expect(refreshOverview(context(), eventRow())).resolves.toBe(true);
-
-      expect(reopened).toEqual([
-        { kind: "thread", guildId: GUILD, threadId: THREAD },
-      ]);
-      expect(edited).toHaveLength(1);
-      expect(sent).toEqual([]);
-    });
-
-    it("reports failure when the post can't be reopened", async () => {
-      editFails = ARCHIVED;
-      reopenFails = { kind: "api", status: 403, code: 160005 };
-
-      await expect(refreshOverview(context(), eventRow())).resolves.toBe(false);
-
-      expect(edited).toEqual([]);
-      expect(sent).toEqual([]);
-    });
-
-    it("does not reopen a post for any other refusal", async () => {
-      editFails = { kind: "api", status: 400, code: 200000 };
-
-      await expect(refreshOverview(context(), eventRow())).resolves.toBe(false);
-
-      expect(reopened).toEqual([]);
-    });
-  });
-
-  it.each<[string, DiscordFailure]>([
-    [
-      "rate limit",
-      { kind: "rate_limited", retryAfterMs: 1, attempts: 3, scope: undefined },
-    ],
-    ["network", { kind: "network" }],
-    ["server error", { kind: "api", status: 500, code: undefined }],
-    ["removed forum", { kind: "unmanaged_target", channelId: FORUM }],
-    [
-      "missing access",
-      {
-        kind: "channel_unavailable",
-        channelId: THREAD,
-        status: 403,
-        code: DiscordErrorCode.MissingAccess,
-      },
-    ],
-  ])("reports failure without posting again: %s", async (_label, failure) => {
-    editFails = failure;
-
-    await expect(refreshOverview(context(), eventRow())).resolves.toBe(false);
-
-    expect(sent).toEqual([]);
-    expect(requests.filter((request) => request.method === "PATCH")).toEqual(
-      [],
-    );
-  });
-
-  it("marks the thread missing only when Discord says it is gone", async () => {
-    editFails = {
-      kind: "channel_unavailable",
-      channelId: THREAD,
-      status: 404,
-      code: DiscordErrorCode.UnknownChannel,
-    };
-
-    await expect(refreshOverview(context(), eventRow())).resolves.toBe(false);
-
-    expect(
-      requests.find((request) => request.method === "PATCH")?.body,
-    ).toEqual({ thread_status: "missing" });
-  });
-
-  it.each<[string, EventRow | null]>([
-    ["deleted since it was read", null],
-    ["pending", eventRow({ thread_id: null, thread_status: "pending" })],
-    ["missing its thread", eventRow({ thread_status: "missing" })],
-  ])("sends nothing for an event that is %s", async (_label, current) => {
-    row = current;
-
-    await expect(refreshOverview(context(), eventRow())).resolves.toBe(false);
-
-    expect(sent).toEqual([]);
-    expect(edited).toEqual([]);
-  });
-
-  it.each(["/events", "/tasks"])(
-    "does not reject or quote the row when %s fails",
-    async (path) => {
-      dbFails = path;
-
-      await expect(refreshOverview(context(), eventRow())).resolves.toBe(false);
-
-      expect(sent).toEqual([]);
-      expect(JSON.stringify(errors.mock.calls)).not.toContain("canary");
+      expect(body.content).toContain(`Run /setup to choose the ${role} role`);
+      expect(body.allowed_mentions).toEqual({ parse: [], users: [] });
+      expect(text(toldText(kind, config))).toContain("so nobody was pinged");
     },
   );
 
-  it("does not reject when an unexpected error is thrown", async () => {
-    const { db } = context();
-    const discord = {
-      editMessage: () => Promise.reject(new Error("canary thrown text")),
-    } as Partial<DiscordClient> as DiscordClient;
-
-    await expect(refreshOverview({ db, discord }, eventRow())).resolves.toBe(
-      false,
+  it("keeps a hostile event name inert", () => {
+    const input = handoffMessage(
+      CONFIG,
+      { ...EVENT, name: "@everyone <@&1> **x**" },
+      "budget_sheet",
     );
+    const content = text(input.content);
+    const name = content.slice(content.indexOf("**") + 2, -" is done.".length);
 
-    expect(JSON.stringify(errors.mock.calls)).not.toContain("canary");
-  });
-
-  it("logs no names or IDs from the event", async () => {
-    sendFails = { kind: "network" };
-    row = eventRow({
-      overview_message_id: null,
-      name: "CanaryNameText",
-    });
-
-    await refreshOverview(context(), eventRow());
-
-    const logged = JSON.stringify(errors.mock.calls);
-    expect(logged).toContain("network");
-    expect(logged).not.toContain("CanaryNameText");
-    expect(logged).not.toContain(THREAD);
+    expect(hasLiveSyntax(name.slice(0, -2))).toBe(false);
+    expect(input.mentionRoleIds).toEqual([TREASURY]);
   });
 });

@@ -20,18 +20,19 @@ import { setTimeout as delay } from "node:timers/promises";
 import { parsePermissions } from "../lib/actor.ts";
 import { ConfigError } from "../lib/config-error.ts";
 import { isSnowflake } from "../lib/snowflake.ts";
-import {
-  isEphemeralInitialResponse,
-  serializeOutboundBody,
-} from "./outbound.ts";
+import { isEphemeralInitialResponse } from "./outbound.ts";
 import type { OutboundBody } from "./outbound.ts";
-import { interactionToken, isThreadChannelType } from "./verify.ts";
+import {
+  FORUM_CHANNEL_TYPES,
+  interactionToken,
+  isThreadChannelType,
+} from "./verify.ts";
 import type { VerifiedInteraction } from "./verify.ts";
 
 const API_BASE = "https://discord.com/api/v10";
 const WEB_BASE = "https://discord.com/channels";
-// The format Discord requires: a URL for the project and its version.
-const USER_AGENT = "DiscordBot (https://github.com/GT-SASE/discordBot, 0.0.0)";
+// Discord asks bots to name themselves and give a URL in the user agent.
+export const USER_AGENT = "DiscordBot (https://github.com/GT-SASE/discordBot)";
 const REQUEST_TIMEOUT_MS = 10_000;
 const MAX_ATTEMPTS = 3;
 const DEFAULT_RETRY_WAIT_MS = 1_000;
@@ -42,7 +43,6 @@ const EPHEMERAL_FLAG = 64;
 // A deferred reply can take a moment to exist after the acknowledgement, and Discord's
 // webhook routes can fail for a moment. The total stays inside the operation budget.
 const ORIGINAL_RETRY_WAITS_MS = [250, 500, 1000];
-const FORUM_CHANNEL_TYPES: ReadonlySet<unknown> = new Set([15, 16]);
 
 /** Discord error codes that callers are expected to act on. */
 export const DiscordErrorCode = {
@@ -215,6 +215,15 @@ export function actionForFailure(failure: DiscordFailure): FailureAction {
   }
 }
 
+/** A send that got no clear answer may have taken effect all the same. */
+export function mayHaveLanded(failure: DiscordFailure): boolean {
+  return (
+    failure.kind === "network" ||
+    failure.kind === "invalid_response" ||
+    (failure.kind === "api" && failure.status >= 500)
+  );
+}
+
 export interface DiscordResource {
   readonly id: string;
 }
@@ -240,14 +249,6 @@ export interface ChannelSummary {
   readonly ownerId: string | undefined;
   /** Anyone who can name a post controls this, so normalise it before use. */
   readonly name: string | undefined;
-}
-
-export interface ThreadSummary {
-  readonly id: string;
-  readonly parentId: string | undefined;
-  readonly ownerId: string | undefined;
-  /** Anyone who can name a post controls this, so normalise it before use. */
-  readonly name: string;
 }
 
 export interface GuildRole {
@@ -327,16 +328,10 @@ export interface DiscordClient {
   getGuildRoles(guildId: string): Promise<readonly GuildRole[]>;
   /** Every channel in the guild, as Discord reports it now. */
   getGuildChannels(guildId: string): Promise<readonly GuildChannel[]>;
+  /** One channel of the guild, as Discord reports it now. Posts nothing. */
+  getGuildChannel(guildId: string, channelId: string): Promise<GuildChannel>;
   /** Everything Discord reports about a channel or thread, whichever guild it is in. */
   describeChannel(channelId: string): Promise<ChannelSummary>;
-  /** The guild's threads that are not archived, as Discord reports them now. */
-  listActiveThreads(guildId: string): Promise<readonly ThreadSummary[]>;
-  /**
-   * A forum's public archived threads, most recently archived first, up to one page.
-   * Discord asks for Read Message History here, and a refusal says nothing against the
-   * forum: it does not stop this client from using the forum afterwards.
-   */
-  listArchivedThreads(channelId: string): Promise<readonly ThreadSummary[]>;
   /** The roles a member holds, leaving out the @everyone role. */
   getGuildMemberRoleIds(
     guildId: string,
@@ -529,19 +524,6 @@ function parseChannel(value: unknown): GuildChannel | undefined {
 
 function optionalSnowflake(value: unknown): string | undefined {
   return isSnowflake(value) ? value : undefined;
-}
-
-function parseThreadSummary(value: unknown): ThreadSummary | undefined {
-  const id = field(value, "id");
-  const name = field(value, "name");
-  return isSnowflake(id) && typeof name === "string"
-    ? {
-        id,
-        name,
-        parentId: optionalSnowflake(field(value, "parent_id")),
-        ownerId: optionalSnowflake(field(value, "owner_id")),
-      }
-    : undefined;
 }
 
 function parseRoleId(value: unknown): string | undefined {
@@ -940,7 +922,7 @@ export function createDiscordClient(
 
     async sendMessage(target, body) {
       const operation = "send message";
-      const json = serializeOutboundBody(body, "channel-message");
+      const json = JSON.stringify(body.payload);
       const remaining = startBudget(operationBudgetMs);
       const channelId = targetChannelId(target);
       await assertManaged(operation, target.guildId, channelId, remaining);
@@ -958,7 +940,7 @@ export function createDiscordClient(
 
     async editMessage(target, messageId, body) {
       const operation = "edit message";
-      const json = serializeOutboundBody(body, "message-edit");
+      const json = JSON.stringify(body.payload);
       if (!isSnowflake(messageId)) {
         throw new DiscordClientError(operation, { kind: "invalid_target" });
       }
@@ -992,7 +974,7 @@ export function createDiscordClient(
 
     async createThread(parent, body) {
       const operation = "create thread";
-      const json = serializeOutboundBody(body, "thread-create");
+      const json = JSON.stringify(body.payload);
       const { kind, guildId, channelId } = parent;
       if (
         (kind as string) !== "channel" ||
@@ -1040,7 +1022,7 @@ export function createDiscordClient(
 
     async replyToInteraction(interaction, body) {
       const operation = "reply to interaction";
-      const json = serializeOutboundBody(body, "checked-response");
+      const json = JSON.stringify(body.payload);
       const route = callbackRoute(operation, interaction);
       const remaining = startBudget(callbackBudgetMs);
       await assertInteractionManaged(operation, interaction, remaining);
@@ -1049,7 +1031,7 @@ export function createDiscordClient(
 
     async editInteractionReply(interaction, body) {
       const operation = "edit interaction reply";
-      const json = serializeOutboundBody(body, "message-edit");
+      const json = JSON.stringify(body.payload);
       const path = originalPath(operation, interaction);
       const remaining = startBudget(operationBudgetMs);
       await assertInteractionManaged(operation, interaction, remaining);
@@ -1058,7 +1040,7 @@ export function createDiscordClient(
 
     async sendFollowUp(interaction, body) {
       const operation = "send follow-up";
-      const json = serializeOutboundBody(body, "follow-up");
+      const json = JSON.stringify(body.payload);
       const token = tokenOf(operation, interaction);
       const remaining = startBudget(operationBudgetMs);
       await assertInteractionManaged(operation, interaction, remaining);
@@ -1075,7 +1057,7 @@ export function createDiscordClient(
 
     async respondEphemerally(interaction, body) {
       const operation = "reply to interaction";
-      const json = serializeOutboundBody(body, "direct-response");
+      const json = JSON.stringify(body.payload);
       if (!isEphemeralInitialResponse(body)) {
         throw new DiscordClientError(operation, { kind: "not_ephemeral" });
       }
@@ -1085,7 +1067,7 @@ export function createDiscordClient(
 
     async editEphemeralReply(interaction, body) {
       const operation = "edit interaction reply";
-      const json = serializeOutboundBody(body, "message-edit");
+      const json = JSON.stringify(body.payload);
       const path = originalPath(operation, interaction);
       const remaining = startBudget(operationBudgetMs);
       const original = await readOriginal(operation, path, remaining);
@@ -1108,6 +1090,16 @@ export function createDiscordClient(
       );
     },
 
+    getGuildChannel(guildId, channelId) {
+      // Read as a guild read, so a refusal says nothing against sending to the channel.
+      return readGuild(
+        [guildId, channelId],
+        `/channels/${channelId}`,
+        (body) =>
+          field(body, "guild_id") === guildId ? parseChannel(body) : undefined,
+      );
+    },
+
     async describeChannel(channelId) {
       const operation = "read channel";
       if (!isSnowflake(channelId)) {
@@ -1126,20 +1118,6 @@ export function createDiscordClient(
         ownerId: optionalSnowflake(channel.ownerId),
         name: typeof channel.name === "string" ? channel.name : undefined,
       };
-    },
-
-    listActiveThreads(guildId) {
-      return readGuild([guildId], `/guilds/${guildId}/threads/active`, (body) =>
-        parseAll(field(body, "threads"), parseThreadSummary),
-      );
-    },
-
-    listArchivedThreads(channelId) {
-      return readGuild(
-        [channelId],
-        `/channels/${channelId}/threads/archived/public?limit=100`,
-        (body) => parseAll(field(body, "threads"), parseThreadSummary),
-      );
     },
 
     getGuildMemberRoleIds(guildId, userId) {

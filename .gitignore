@@ -26,10 +26,8 @@ logs/
 
 # Deployment and local service state
 .vercel/
-supabase/.branches/
-supabase/.temp/
 
-# Keys, certificates and age identities
+# Keys and certificates
 *.pem
 *.key
 *.crt
@@ -39,21 +37,12 @@ supabase/.temp/
 *.pfx
 id_rsa*
 id_ed25519*
-*.agekey
-age-identity*
-age-key*
-keys.txt
-key.txt
-age.txt
-identity.txt
-backup-identity*
 
 # Credential files
 secrets.json
 credentials.json
 service-account*.json
 .npmrc
-!/.npmrc
 .netrc
 .pgpass
 pgpass.conf
@@ -64,17 +53,14 @@ pgpass.conf
 # All SQL is ignored by default so a dump cannot be committed by accident.
 # Migrations are the one exception.
 *.sql
-!supabase/migrations/*.sql
+!db/migrations/*.sql
 *.sql.*
 *.psql
 *.pgsql
-!/backup/create-backup-role.psql
-!/backup/grant-backup-role.psql
 *.dump
 *.pgdump
 *.bak
 *.backup
-*.age
 *.sqlite*
 *.db
 backups/

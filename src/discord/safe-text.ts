@@ -7,8 +7,9 @@
  * from user data does not type-check where a message needs text.
  *
  * Member nicknames, global names and usernames are never rendered, because any
- * member controls them. Refer to a person with `userMention`. Role and channel
- * names go through `escapeUserText` like any other text.
+ * member controls them. Refer to a person with `userMention` and a role with
+ * `roleMention`. Role and channel names go through `escapeUserText` like any other
+ * text.
  */
 
 import { isSnowflake } from "../lib/snowflake.ts";
@@ -22,6 +23,7 @@ export const DISCORD_LIMITS = {
   content: 2000,
   threadName: 100,
   mentionedUsers: 100,
+  mentionedRoles: 100,
   buttonLabel: 80,
   customId: 100,
   selectOptionLabel: 100,
@@ -31,6 +33,7 @@ export const DISCORD_LIMITS = {
   autocompleteChoiceName: 100,
   autocompleteChoiceValue: 100,
   autocompleteChoices: 25,
+  commandOptions: 25,
   modalTitle: 45,
   textInputLabel: 45,
   actionRows: 5,
@@ -116,35 +119,34 @@ export function plainTextValue(text: PlainText): string {
 
 const WHITESPACE = /[\s\u0085]+/gu;
 
-// Cc, Cf, lone surrogates and private use, plus code points with no visible form
-// such as the Hangul fillers and the blank Braille pattern. ZWJ and VS16 are
-// handled by the alternatives before them, and survive only inside emoji.
-const INVISIBLE = new RegExp(
-  [
-    String.raw`(?<!\p{Extended_Pictographic}(?:\u{FE0F}|[\u{1F3FB}-\u{1F3FF}])?)\u{200D}`,
-    String.raw`\u{200D}(?!\p{Extended_Pictographic})`,
-    String.raw`(?<!\p{Emoji})\u{FE0F}`,
-    String.raw`[[\p{Cc}\p{Cf}\p{Cs}\p{Co}\p{Cn}\p{Default_Ignorable_Code_Point}\u{2800}\u{1D159}\u{FFFC}]--[\u{200D}]--[\u{FE0F}]]`,
-  ].join("|"),
-  "gv",
-);
+// Control, format (zero-width, bidi, tags), lone surrogate, private use and
+// unassigned characters, every default-ignorable code point (such as the combining
+// grapheme joiner and the variation selectors), the object replacement character, the
+// null notehead, and the blank letters used for invisible names. The zero-width joiner
+// and VS16 are among them, but emoji need them, so STRAY_JOINER deals with those.
+const INVISIBLE =
+  /[[\p{Cc}\p{Cf}\p{Cs}\p{Co}\p{Cn}\p{Default_Ignorable_Code_Point}\u{115F}\u{1160}\u{3164}\u{FFA0}\u{2800}\u{FFFC}\u{1D159}]--[\u{200D}]--[\u{FE0F}]]/gv;
+
+// The joiner and VS16 are kept only inside an emoji sequence.
+const STRAY_JOINER =
+  /(?<!\p{Extended_Pictographic}(?:\u{FE0F}|[\u{1F3FB}-\u{1F3FF}])?)\u{200D}|\u{200D}(?!\p{Extended_Pictographic})|(?<!\p{Emoji})\u{FE0F}/gu;
 
 // Stacks of combining marks draw over other lines. Eight is more than real text uses.
 const EXCESS_MARKS = /(\p{M}{8})\p{M}+/gu;
 
 const VISIBLE = /[\p{L}\p{N}\p{P}\p{S}]/u;
 
-/** NFC, one line, and nothing invisible. Empty if nothing visible remains. */
+/** One line with nothing invisible. Empty if nothing visible remains. */
 function clean(raw: string): string {
-  const stripped = raw
-    .normalize("NFC")
+  const text = raw
     .replace(WHITESPACE, " ")
     .replace(INVISIBLE, "")
-    .normalize("NFC")
+    .replace(STRAY_JOINER, "")
+    .normalize("NFC") // Unicode normalization: one form for each accented letter.
     .replace(EXCESS_MARKS, "$1")
     .replace(/ {2,}/g, " ")
     .trim();
-  return VISIBLE.test(stripped) ? stripped : "";
+  return VISIBLE.test(text) ? text : "";
 }
 
 // Every character with a meaning in Discord's markdown or mention syntax. Masked
@@ -264,7 +266,7 @@ export function safe(
   ...values: readonly SafeText[]
 ): SafeText {
   // Catches a plain call by mistake. It is not proof of a real template, since a
-  // frozen array with `raw` would pass, so lint also refuses calling this directly.
+  // frozen array with `raw` would pass, so review must refuse calling this directly.
   if (!Object.isFrozen(literals) || !Array.isArray(literals.raw)) {
     throw new SafeTextError("safe must be used as a template tag");
   }
@@ -298,8 +300,45 @@ export function userMention(userId: string): SafeText {
   return idMention("@", userId);
 }
 
+/**
+ * Shows a role. This alone pings nobody: the message's `mentionRoleIds` decides which
+ * roles are notified. Role IDs must come from the signed guild's config row.
+ */
+export function roleMention(roleId: string): SafeText {
+  return idMention("@&", roleId);
+}
+
 export function channelMention(channelId: string): SafeText {
   return idMention("#", channelId);
+}
+
+/** Discord's timestamp styles: short and long time, date, date and time, and relative. */
+export type TimestampStyle = "t" | "T" | "d" | "D" | "f" | "F" | "R";
+
+const TIMESTAMP_STYLES: ReadonlySet<string> = new Set([
+  "t",
+  "T",
+  "d",
+  "D",
+  "f",
+  "F",
+  "R",
+]);
+
+/**
+ * An instant that each reader sees in their own time zone, such as `<t:1793745000:t>`.
+ * Built only from a number, so no stored or typed text can become one: escaping turns
+ * the `<` and `:` of user text into literals.
+ */
+export function discordTimestamp(
+  epochMs: number,
+  style: TimestampStyle,
+): SafeText {
+  const seconds = Math.floor(epochMs / 1000);
+  if (!Number.isSafeInteger(seconds) || !TIMESTAMP_STYLES.has(style)) {
+    throw new SafeTextError("A timestamp needs a real instant and style");
+  }
+  return new SafeText(MINT, `<t:${String(seconds)}:${style}>`);
 }
 
 const JUMP_LINK = /^https:\/\/discord\.com\/channels\/[0-9]+\/[0-9]+\/[0-9]+$/;
@@ -358,8 +397,8 @@ export interface ChunkLimits {
   readonly maxMentions?: number;
 }
 
-// A mention, a link or an escaped character must stay whole.
-const ATOM = /<[@#][0-9]+>|https:\/\/[^\s<]+|\\[\s\S]/gu;
+// A mention, a timestamp, a link or an escaped character must stay whole.
+const ATOM = /<[@#][0-9]+>|<t:-?[0-9]+:[tTdDfFR]>|https:\/\/[^\s<]+|\\[\s\S]/gu;
 const USER_MENTION = /^<@([0-9]+)>$/;
 
 /** Splits text into pieces that must not be divided. */

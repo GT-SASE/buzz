@@ -1,0 +1,10 @@
+{
+  // Code that must not use Bun APIs, checked against Node's types alone.
+  // tsconfig.json adds Bun's types for the tests.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node"]
+  },
+  "include": ["api", "src", "scripts"],
+  "exclude": ["**/*.test.ts"]
+}
