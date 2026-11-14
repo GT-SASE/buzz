@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 import { createEvent, softDeleteEvent } from "../../src/db/events.ts";
 import { createTask } from "../../src/db/tasks.ts";
 import type { DateOnly } from "../../src/lib/dates.ts";
@@ -9,7 +9,7 @@ import { raceDatabase } from "./race.ts";
 const PARENT_UNAVAILABLE = {
   ok: false,
   error: { category: "parent_unavailable", code: "CF410" },
-};
+} as const;
 
 /** A delete and an insert under it, in either order. Neither may leave an orphan. */
 describe("a delete racing an insert", () => {

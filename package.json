@@ -11,12 +11,12 @@
   "scripts": {
     "gitleaks:install": "bash scripts/install-gitleaks.sh",
     "hooks:install": "git config core.hooksPath .githooks",
-    "typecheck": "tsc --noEmit",
-    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit",
+    "test": "bun test --isolate",
     "format:check": "prettier --check .",
     "lint": "eslint . --max-warnings 0",
-    "test:db": "vitest run --config vitest.db.config.ts",
-    "test:db:concurrency": "vitest run --config vitest.concurrency.config.ts",
+    "test:db": "bun test --parallel --timeout 30000 --path-ignore-patterns 'test/db-concurrency/**' ./test/db",
+    "test:db:concurrency": "CI=true bun test --timeout 30000 --preload ./test/db-concurrency/preload.ts --path-ignore-patterns 'test/db/**' ./test/db-concurrency",
     "db:migrate": "dbmate --migrations-dir db/migrations --no-dump-schema up",
     "commands:register": "node --env-file-if-exists=.env scripts/register-commands.ts"
   },
@@ -25,6 +25,7 @@
   "devDependencies": {
     "@electric-sql/pglite": "0.5.11",
     "@eslint/js": "10.0.1",
+    "@types/bun": "1.4.4",
     "@types/node": "24.19.2",
     "@types/pg": "8.23.1",
     "dbmate": "2.37.0",

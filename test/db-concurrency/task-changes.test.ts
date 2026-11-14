@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 import { closeEvent } from "../../src/db/events.ts";
 import { editTask, getTask, markOwnTaskDone } from "../../src/db/tasks.ts";
 import type { TaskRow } from "../../src/db/types.ts";

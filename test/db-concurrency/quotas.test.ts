@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 import { createTask, editTask, getTask } from "../../src/db/tasks.ts";
 import type { DateOnly } from "../../src/lib/dates.ts";
 import {
@@ -160,13 +160,13 @@ describe("two writes for the last place under a quota", () => {
     const taskId = await insertTask(db.connection, guild, eventId);
 
     await db.t1.query("BEGIN ISOLATION LEVEL REPEATABLE READ");
-    await expect(
+    expect(
       db.t1.query(insertBySql, [eventId, guild.guildId, fakeId(), fakeId()]),
     ).rejects.toMatchObject({ code: FEATURE_NOT_SUPPORTED });
     await db.t1.query("ROLLBACK");
 
     await db.t1.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
-    await expect(
+    expect(
       db.t1.query(reassignSql, [taskId, fakeId(), fakeId()]),
     ).rejects.toMatchObject({ code: FEATURE_NOT_SUPPORTED });
     await db.t1.query("ROLLBACK");

@@ -1,10 +1,18 @@
 import { randomBytes } from "node:crypto";
 import pg from "pg";
-import { afterAll, afterEach, beforeAll, beforeEach, inject } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach } from "bun:test";
 import { createDbClient, type DbClient } from "../../src/db/client.ts";
-import { pgConnection, type Connection } from "../db/harness.ts";
+import {
+  HOOK_TIMEOUT_MS,
+  pgConnection,
+  type Connection,
+} from "../db/harness.ts";
 import { pgSql } from "../support/sql-client.ts";
-import { botUrlForDatabase, urlForDatabase } from "./global-setup.ts";
+import {
+  botUrlForDatabase,
+  concurrencyContext,
+  urlForDatabase,
+} from "./global-setup.ts";
 
 /**
  * Races between real connections, which PGlite cannot run because it has only one.
@@ -77,9 +85,7 @@ async function pidOf(client: pg.Client): Promise<number> {
  * each test, with more on request.
  */
 export function raceDatabase(): RaceDatabase {
-  const adminUrl = inject("concurrencyAdminUrl");
-  const template = inject("concurrencyTemplate");
-  const botPassword = inject("concurrencyBotPassword");
+  const { adminUrl, template, botPassword } = concurrencyContext();
   const databaseName = `concurrency_${randomBytes(6).toString("hex")}`;
   const databaseUrl = urlForDatabase(adminUrl, databaseName);
   const botUrl = botUrlForDatabase(adminUrl, databaseName, botPassword);
@@ -123,13 +129,13 @@ export function raceDatabase(): RaceDatabase {
     const pool = new pg.Pool({ connectionString: botUrl });
     bot = createDbClient(pgSql(pool));
     cleanups.unshift(() => pool.end());
-  });
+  }, HOOK_TIMEOUT_MS);
 
   afterAll(async () => {
     for (const cleanup of cleanups) {
       await cleanup();
     }
-  });
+  }, HOOK_TIMEOUT_MS);
 
   async function connect(): Promise<pg.Client> {
     const client = new pg.Client({ connectionString: botUrl });
@@ -149,7 +155,7 @@ export function raceDatabase(): RaceDatabase {
   beforeEach(async () => {
     t1 = await connect();
     t2 = await connect();
-  });
+  }, HOOK_TIMEOUT_MS);
 
   afterEach(async () => {
     const open = [...pids.keys()];
@@ -159,7 +165,7 @@ export function raceDatabase(): RaceDatabase {
     for (const client of open) {
       await client.end();
     }
-  });
+  }, HOOK_TIMEOUT_MS);
 
   function pidFor(client: pg.Client): number {
     const pid = pids.get(client);

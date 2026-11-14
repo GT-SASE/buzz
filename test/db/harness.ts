@@ -78,6 +78,12 @@ export async function applyMigrations(db: Connection): Promise<void> {
   }
 }
 
+/**
+ * For beforeAll and similar hooks that build a database. Tests get 30 seconds from
+ * the test:db scripts; a hook that migrates or copies a database may need longer.
+ */
+export const HOOK_TIMEOUT_MS = 120_000;
+
 /** The role the bot logs in as. The baseline migration creates it. */
 export const BOT_APP = "bot_app";
 

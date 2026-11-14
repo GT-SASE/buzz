@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 import {
   isUsableTimeZone,
   daysBetween,
@@ -19,7 +19,7 @@ function date(value: string): DateOnly {
   return result;
 }
 
-function parsed(input: string, today: string, rejectPast = false) {
+function parsed(input: string, today: string, rejectPast = false): unknown {
   return parseDateInput(input, { today: date(today), rejectPast });
 }
 
@@ -41,7 +41,7 @@ describe("todayInZone", () => {
     ["2026-11-02T04:59:59Z", "2026-11-01"],
     ["2026-11-02T05:00:00Z", "2026-11-02"],
   ])("reads %s as %s in New York across DST", (instant, expected) => {
-    expect(todayInZone(new Date(instant), NEW_YORK)).toBe(expected);
+    expect<string>(todayInZone(new Date(instant), NEW_YORK)).toBe(expected);
   });
 
   it.each([
@@ -58,13 +58,13 @@ describe("todayInZone", () => {
     ["2026-11-16T03:30:00Z", "Asia/Tokyo", "2026-11-16"],
     ["2026-11-15T14:59:59Z", "Asia/Tokyo", "2026-11-15"],
   ])("reads %s in %s as %s", (instant, zone, expected) => {
-    expect(todayInZone(new Date(instant), zone)).toBe(expected);
+    expect<string>(todayInZone(new Date(instant), zone)).toBe(expected);
   });
 
   it("zero-pads the month and day", () => {
-    expect(todayInZone(new Date("2026-01-05T12:00:00Z"), NEW_YORK)).toBe(
-      "2026-01-05",
-    );
+    expect<string>(
+      todayInZone(new Date("2026-01-05T12:00:00Z"), NEW_YORK),
+    ).toBe("2026-01-05");
   });
 
   it("throws a RangeError for an unknown zone or an invalid instant", () => {
@@ -139,7 +139,7 @@ describe("parseIsoDate", () => {
   it.each(["2026-11-15", "2028-02-29", "2000-02-29", "0001-01-01"])(
     "accepts %s",
     (value) => {
-      expect(parseIsoDate(value)).toBe(value);
+      expect<string | null>(parseIsoDate(value)).toBe(value);
     },
   );
 

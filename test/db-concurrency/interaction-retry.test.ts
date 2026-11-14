@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 import { claimInteraction } from "../../src/db/interaction-claims.ts";
 import { fakeId } from "../db/harness.ts";
 import { raceDatabase } from "./race.ts";

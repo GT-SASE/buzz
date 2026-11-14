@@ -1,11 +1,9 @@
 import pg from "pg";
-import type { TestProject } from "vitest/node";
 
 /**
- * Runs once before every concurrency test file. CI has migrated a database with dbmate,
- * as an operator does, and given bot_app a password. Each file copies that database
- * into one of its own, which writes nothing cluster-wide, so the files can run in
- * parallel.
+ * Runs once, from preload.ts, before any concurrency test file. CI has migrated a
+ * database with dbmate, as an operator does, and given bot_app a password. Each file
+ * copies that database into one of its own, which writes nothing cluster-wide.
  *
  * Needs CONCURRENCY_DATABASE_URL, a Postgres 17 superuser connection to the migrated
  * database, and BOT_APP_PASSWORD, the password CI gave bot_app. The tests log in as
@@ -15,21 +13,18 @@ import type { TestProject } from "vitest/node";
 
 const EXPECTED_MAJOR_VERSION = "17";
 
-declare module "vitest" {
-  export interface ProvidedContext {
-    concurrencyAdminUrl: string;
-    concurrencyTemplate: string;
-    concurrencyBotPassword: string;
-  }
+/** What every file needs to reach the cluster and copy the template. */
+export interface ConcurrencyContext {
+  /** The superuser, connected to the cluster's postgres database. */
+  adminUrl: string;
+  /** The migrated database each file copies. */
+  template: string;
+  /** The password CI gave bot_app. */
+  botPassword: string;
 }
 
-/**
- * Vitest 5 cannot print an error thrown here: mapping its stack fails, and only that
- * failure shows. So the reason is written out first.
- */
 function fail(message: string): never {
-  console.error(`concurrency tests: ${message}`);
-  throw new Error(message);
+  throw new Error(`concurrency tests: ${message}`);
 }
 
 export function urlForDatabase(adminUrl: string, name: string): string {
@@ -63,7 +58,7 @@ async function withClient<T>(
   }
 }
 
-export default async function setup(project: TestProject): Promise<void> {
+async function setup(): Promise<ConcurrencyContext> {
   const migratedUrl = process.env.CONCURRENCY_DATABASE_URL;
   if (!migratedUrl) {
     fail(
@@ -114,7 +109,26 @@ export default async function setup(project: TestProject): Promise<void> {
     },
   );
 
-  project.provide("concurrencyAdminUrl", adminUrl);
-  project.provide("concurrencyBotPassword", botPassword);
-  project.provide("concurrencyTemplate", template);
+  return { adminUrl, template, botPassword };
+}
+
+// Bun runs every test file in one process, so the checks run once for the whole suite.
+let ready: Promise<ConcurrencyContext> | undefined;
+let context: ConcurrencyContext | undefined;
+
+/** Checks the server and settings once, however often it is called. */
+export async function setUpOnce(): Promise<ConcurrencyContext> {
+  ready ??= setup();
+  context = await ready;
+  return context;
+}
+
+/** The context from setUpOnce. Fails if the suite ran without preload.ts. */
+export function concurrencyContext(): ConcurrencyContext {
+  if (context === undefined) {
+    throw new Error(
+      "concurrency tests: run them with `bun run test:db:concurrency`, which preloads test/db-concurrency/preload.ts",
+    );
+  }
+  return context;
 }

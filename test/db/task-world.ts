@@ -6,7 +6,7 @@
  * database directly and named from an interaction in the allowed guild.
  */
 
-import { afterAll, afterEach, beforeAll, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, mock, type Mock } from "bun:test";
 import type { DiscordClient } from "../../src/discord/client.ts";
 import { setEventThread } from "../../src/db/events.ts";
 import type { DbResult } from "../../src/db/errors.ts";
@@ -35,7 +35,7 @@ import {
 import { fakeId } from "../support/ids.ts";
 import { openBackend, type Backend } from "./backend.ts";
 import { insertEvent, insertGuild, type GuildFixture } from "./fixtures.ts";
-import { queryAs } from "./harness.ts";
+import { HOOK_TIMEOUT_MS, queryAs } from "./harness.ts";
 
 export const EPHEMERAL = 64;
 export const SUPPRESS_EMBEDS = 4;
@@ -165,7 +165,7 @@ export interface TaskWorld {
   fixture: GuildFixture;
   foreign: GuildFixture;
   foreignEventId: string;
-  refreshOverview: ReturnType<typeof vi.fn<RefreshOverview>>;
+  refreshOverview: Mock<RefreshOverview>;
   db: () => Backend["db"];
   today: () => DateOnly;
   /** Dependencies whose work after the reply runs `stage` once, just before that write. */
@@ -224,7 +224,7 @@ async function createdTask(
 
 /** Call once inside a describe. Fields are filled in by the time a test runs. */
 export function useTaskWorld(): TaskWorld {
-  const refreshOverview = vi.fn<RefreshOverview>(() => Promise.resolve(true));
+  const refreshOverview = mock<RefreshOverview>(() => Promise.resolve(true));
   const world = { refreshOverview } as TaskWorld;
 
   world.db = () => world.backend.db;
@@ -316,7 +316,7 @@ export function useTaskWorld(): TaskWorld {
       createTaskHandler({ refreshOverview }),
       mytasksHandler,
     ]);
-  });
+  }, HOOK_TIMEOUT_MS);
 
   afterAll(async () => {
     await world.backend.close();
@@ -325,7 +325,6 @@ export function useTaskWorld(): TaskWorld {
   afterEach(() => {
     refreshOverview.mockReset();
     refreshOverview.mockImplementation(() => Promise.resolve(true));
-    vi.restoreAllMocks();
   });
 
   return world;

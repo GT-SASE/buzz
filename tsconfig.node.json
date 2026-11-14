@@ -1,0 +1,10 @@
+{
+  // The code that runs on Vercel, checked against Node's types alone so that it
+  // cannot use a Bun API. tsconfig.json adds Bun's types for the tests.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node"]
+  },
+  "include": ["api", "src", "scripts"],
+  "exclude": ["**/*.test.ts"]
+}

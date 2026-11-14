@@ -4,16 +4,29 @@
  * PGlite. Only the two networks are stand-ins, and either can be made to fail.
  */
 
-import { afterAll, afterEach, beforeAll, beforeEach, expect, vi } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  expect,
+  spyOn,
+  type Mock,
+} from "bun:test";
 import { pgliteSql, serverError } from "./sql-client.ts";
-import type { MockInstance } from "vitest";
+import { stubGlobal } from "./stubs.ts";
 import { createDbClient, type DbClient } from "../../src/db/client.ts";
 import type { EventRow } from "../../src/db/types.ts";
 import { createDiscordClient } from "../../src/discord/client.ts";
 import { managedChannelCheck } from "../../src/handlers/dependencies.ts";
 import { ROUTER } from "../../src/handlers/registry.ts";
 import type { RouterDependencies } from "../../src/handlers/router.ts";
-import { createMigratedDb, MIGRATION_OWNER, queryAs } from "../db/harness.ts";
+import {
+  createMigratedDb,
+  HOOK_TIMEOUT_MS,
+  MIGRATION_OWNER,
+  queryAs,
+} from "../db/harness.ts";
 import { discordServer, type DiscordServer } from "./discord-server.ts";
 import {
   ADMIN_ROLE,
@@ -37,7 +50,7 @@ export interface World {
   readonly db: DbClient;
   readonly pg: Database;
   readonly discord: DiscordServer;
-  readonly errors: MockInstance<typeof console.error>;
+  readonly errors: Mock<typeof console.error>;
   /**
    * Fails database requests whose decoded target matches, until cleared. Status 200
    * instead answers as if no row matched, as a read just before another write would. A
@@ -73,7 +86,7 @@ const EVENT_SELECT = `SELECT id, guild_id, channel_id, name, event_date::text AS
 export function eventWorld(): World {
   let pg: Database;
   let server: DiscordServer;
-  let errorSpy: MockInstance<typeof console.error>;
+  let errorSpy: Mock<typeof console.error>;
   let dbFailures: { pattern: RegExp; status: number; times: number }[] = [];
   let seen: string[] = [];
   let allowed = { users: new Set<string>(), roles: new Set<string>() };
@@ -111,7 +124,7 @@ export function eventWorld(): World {
       `SELECT public.apply_role_bindings($1, 0, $2, $3, $4, NULL, NULL, NULL, NULL)`,
       [OTHER_GUILD, fakeId(), fakeId(), fakeId()],
     );
-  });
+  }, HOOK_TIMEOUT_MS);
 
   afterAll(async () => {
     await pg.close();
@@ -126,11 +139,11 @@ export function eventWorld(): World {
        SET session_replication_role = DEFAULT;`,
     );
     server = discordServer(APP_ID);
-    vi.stubGlobal("fetch", server.fetch);
+    stubGlobal("fetch", server.fetch);
     dbFailures = [];
     seen = [];
     allowed = { users: new Set(), roles: new Set() };
-    errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    errorSpy = spyOn(console, "error").mockImplementation(() => undefined);
   });
 
   afterEach(() => {
@@ -142,6 +155,7 @@ export function eventWorld(): World {
           : (body.message as Record<string, unknown>);
       if (typeof message?.content === "string") {
         const mentions = message.allowed_mentions as {
+          parse?: string[];
           users: string[];
           roles?: string[];
         };
@@ -155,8 +169,7 @@ export function eventWorld(): World {
         expect(Number(message.flags) & 4).toBe(4);
       }
     }
-    vi.restoreAllMocks();
-    vi.unstubAllGlobals();
+    // test/support/setup.ts then restores the spy and fetch.
   });
 
   const dependencies: RouterDependencies = {

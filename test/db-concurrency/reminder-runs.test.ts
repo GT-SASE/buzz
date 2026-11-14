@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 import { claimEventReminder } from "../../src/db/event-steps.ts";
 import { beginJobRun } from "../../src/db/job-runs.ts";
 import { claimReminder } from "../../src/db/reminders.ts";

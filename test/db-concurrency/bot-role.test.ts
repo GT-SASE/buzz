@@ -1,10 +1,10 @@
 import pg from "pg";
-import { describe, expect, inject, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 import { getGuildConfig } from "../../src/db/guild-config.ts";
 import { claimInteraction } from "../../src/db/interaction-claims.ts";
 import { insertGuild } from "../db/fixtures.ts";
 import { errorCodeOf, fakeId } from "../db/harness.ts";
-import { botUrlForDatabase } from "./global-setup.ts";
+import { botUrlForDatabase, concurrencyContext } from "./global-setup.ts";
 import { raceDatabase } from "./race.ts";
 
 const INSUFFICIENT_PRIVILEGE = "42501";
@@ -71,7 +71,7 @@ describe("the bot's role over a real connection", () => {
       expect(rows).toEqual([
         {
           timeout: "0",
-          config: expect.arrayContaining(["statement_timeout=0"]) as unknown,
+          config: expect.arrayContaining(["statement_timeout=0"]) as string[],
         },
       ]);
     } finally {
@@ -90,9 +90,9 @@ describe("the bot's role over a real connection", () => {
   it("is refused with a wrong password", async () => {
     const url = new URL(
       botUrlForDatabase(
-        inject("concurrencyAdminUrl"),
+        concurrencyContext().adminUrl,
         "postgres",
-        inject("concurrencyBotPassword"),
+        concurrencyContext().botPassword,
       ),
     );
     url.password = `${url.password}-wrong`;

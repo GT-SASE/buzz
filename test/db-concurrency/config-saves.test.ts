@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 import {
   applyConfigChange,
   applyRoleBindings,
@@ -11,7 +11,7 @@ import { raceDatabase } from "./race.ts";
 const STALE = {
   ok: false,
   error: { category: "stale_version", code: "CF409" },
-};
+} as const;
 
 /**
  * Two panels saving at once, or two first setups of the same server. Each save names the

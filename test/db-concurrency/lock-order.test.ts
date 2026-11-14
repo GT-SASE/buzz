@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 import { markTaskDoneAsOfficer } from "../../src/db/tasks.ts";
 import { insertEvent, insertGuild, insertTask } from "../db/fixtures.ts";
 import { fakeId, present } from "../db/harness.ts";

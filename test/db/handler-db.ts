@@ -5,7 +5,7 @@
  */
 
 import { PGlite } from "@electric-sql/pglite";
-import { onTestFinished } from "vitest";
+import { onTestFinished } from "bun:test";
 import { createDbClient, type DbClient } from "../../src/db/client.ts";
 import {
   GUILD_ID,

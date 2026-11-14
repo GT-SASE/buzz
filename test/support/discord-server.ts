@@ -5,9 +5,10 @@
  * be inert, so each test also checks the real output of the templates it reaches.
  */
 
-import { expect } from "vitest";
+import { expect } from "bun:test";
 import { jsonObject } from "./json.ts";
 import { fakeId } from "./ids.ts";
+import { expectLater, type FetchLike } from "./stubs.ts";
 
 const THREAD_TYPE = 11;
 const DISCORD_EPOCH_MS = 1420070400000;
@@ -51,7 +52,7 @@ interface Armed {
 }
 
 export interface DiscordServer {
-  fetch: typeof fetch;
+  fetch: FetchLike;
   channels: Map<string, FakeChannel>;
   /** Everything sent, in order. */
   requests: SentRequest[];
@@ -282,8 +283,12 @@ export function discordServer(appId: string): DiscordServer {
       const path = url.pathname.replace(/^\/api\/v[0-9]+/, "");
       let body: Record<string, unknown> | undefined;
       if (typeof init?.body === "string") {
-        // Soft, so the client cannot catch it and turn it into a failed send.
-        expect.soft(liveText(init.body)).toEqual([]);
+        // Fails the test at its end, so the client cannot catch it and turn it into
+        // a failed send.
+        const sent = init.body;
+        expectLater(() => {
+          expect(liveText(sent)).toEqual([]);
+        });
         body = jsonObject(init.body, `the body of ${method} ${path}`);
       }
       requests.push({ method, path, body });
