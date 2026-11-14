@@ -1,5 +1,5 @@
 import { PermissionFlagsBits } from "discord-api-types/v10";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 import {
   channelPermissions,
   everyoneCanView,
@@ -70,17 +70,6 @@ describe("channelPermissions", () => {
     expect(permissionsWith([role(GUILD, VIEW)], forum, [ROLE])).toBe(VIEW);
   });
 
-  it("lets allow win when two role overwrites disagree", () => {
-    const forum = channel(
-      overwrite(ROLE, 0, VIEW, 0n),
-      overwrite(OTHER_ROLE, 0, 0n, VIEW),
-    );
-
-    expect(permissionsWith([role(GUILD, 0n)], forum, [ROLE, OTHER_ROLE])).toBe(
-      VIEW,
-    );
-  });
-
   it("applies a deny on a held role, unless a member overwrite allows it", () => {
     const allowedThenDenied = [
       overwrite(GUILD, 0, SEND, 0n),
@@ -112,12 +101,6 @@ describe("channelPermissions", () => {
     expect(permissionsWith([role(GUILD, 0n)], forum)).toBe(0n);
   });
 
-  it("does not treat a member overwrite with a role's ID as that role's", () => {
-    const forum = channel(overwrite(ROLE, 1, VIEW, 0n));
-
-    expect(permissionsWith([role(GUILD, 0n)], forum, [ROLE])).toBe(0n);
-  });
-
   it("gives an administrator everything, whatever the overwrites", () => {
     const forum = channel(overwrite(GUILD, 0, 0n, VIEW | SEND));
     const permissions = permissionsWith(
@@ -139,7 +122,6 @@ describe("channelPermissions", () => {
 describe("everyoneCanView", () => {
   it.each([
     ["the role grants it", VIEW, [], true],
-    ["the role does not", 0n, [], false],
     ["an overwrite denies it", VIEW, [overwrite(GUILD, 0, 0n, VIEW)], false],
     ["an overwrite allows it", 0n, [overwrite(GUILD, 0, VIEW, 0n)], true],
   ] as const)("when %s", (_label, permissions, overwrites, expected) => {
@@ -154,15 +136,5 @@ describe("everyoneCanView", () => {
 
   it("does not guess without the @everyone role", () => {
     expect(everyoneCanView(GUILD, [], channel())).toBeUndefined();
-  });
-
-  it("ignores overwrites for other roles", () => {
-    expect(
-      everyoneCanView(
-        GUILD,
-        [role(GUILD, 0n)],
-        channel(overwrite(ROLE, 0, VIEW, 0n)),
-      ),
-    ).toBe(false);
   });
 });

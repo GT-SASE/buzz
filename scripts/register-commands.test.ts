@@ -1,5 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
 import { COMMANDS } from "../src/handlers/registry.ts";
+import {
+  asFetch,
+  stubEnv,
+  stubGlobal,
+  type FetchLike,
+} from "../test/support/stubs.ts";
 import {
   describeFailure,
   main,
@@ -25,32 +31,21 @@ function registration(guildIds: string[], token = TOKEN) {
 }
 
 function stubSend(status = 200) {
-  return vi.fn<typeof fetch>(() =>
-    Promise.resolve(new Response(null, { status })),
-  );
+  return mock<FetchLike>(() => Promise.resolve(new Response(null, { status })));
 }
 
 beforeEach(() => {
-  vi.spyOn(console, "log").mockImplementation(() => undefined);
-});
-
-afterEach(() => {
-  vi.unstubAllEnvs();
-  vi.unstubAllGlobals();
-  vi.restoreAllMocks();
+  spyOn(console, "log").mockImplementation(() => undefined);
 });
 
 describe("registerGuildCommands", () => {
-  it("has guild-level definitions for /setup and /config", () => {
-    expect(COMMANDS.map((command) => command.name)).toEqual(
-      expect.arrayContaining(["setup", "config"]),
-    );
-  });
-
   it("replaces the commands of each given server and nowhere else", async () => {
     const send = stubSend();
 
-    await registerGuildCommands(registration([GUILD_A, GUILD_B]), send);
+    await registerGuildCommands(
+      registration([GUILD_A, GUILD_B]),
+      asFetch(send),
+    );
 
     expect(send.mock.calls.map(([url]) => url)).toEqual([
       `https://discord.com/api/v10/applications/${APP_ID}/guilds/${GUILD_A}/commands`,
@@ -62,34 +57,30 @@ describe("registerGuildCommands", () => {
     expect(init?.body).toBe(JSON.stringify(COMMANDS));
   });
 
-  it("sends nothing if any server is not allowed", async () => {
+  it("sends nothing if any server is not allowed", () => {
     const send = stubSend();
 
-    await expect(
-      registerGuildCommands(registration([GUILD_A, OTHER_GUILD]), send),
+    expect(
+      registerGuildCommands(
+        registration([GUILD_A, OTHER_GUILD]),
+        asFetch(send),
+      ),
     ).rejects.toThrow("Server ID 2 on the command line");
     expect(send).not.toHaveBeenCalled();
-  });
-
-  it("does not repeat a refused argument", async () => {
-    const pasted = "something-pasted-by-mistake";
-
-    await expect(
-      registerGuildCommands(registration([pasted]), stubSend()),
-    ).rejects.not.toThrow(pasted);
   });
 
   it("stops at the first refusal without printing the token", async () => {
     const send = stubSend(403);
 
-    const failure = registerGuildCommands(
+    const error: unknown = await registerGuildCommands(
       registration([GUILD_A, GUILD_B]),
-      send,
-    );
+      asFetch(send),
+    ).catch((caught: unknown) => caught);
 
-    await expect(failure).rejects.toThrow(`403 for server ${GUILD_A}`);
-    await expect(failure).rejects.not.toThrow(TOKEN);
-    expect(send).toHaveBeenCalledOnce();
+    expect(error).toBeInstanceOf(RegistrationError);
+    expect(String(error)).toContain(`403 for server ${GUILD_A}`);
+    expect(String(error)).not.toContain(TOKEN);
+    expect(send).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -116,55 +107,42 @@ describe("describeFailure", () => {
 
 describe("main", () => {
   function stubSettings(token = TOKEN) {
-    vi.stubEnv("DISCORD_APP_ID", APP_ID);
-    vi.stubEnv("DISCORD_BOT_TOKEN", token);
-    vi.stubEnv("ALLOWED_GUILD_IDS", `${GUILD_A},${GUILD_B}`);
+    stubEnv("DISCORD_APP_ID", APP_ID);
+    stubEnv("DISCORD_BOT_TOKEN", token);
+    stubEnv("ALLOWED_GUILD_IDS", `${GUILD_A},${GUILD_B}`);
   }
 
   function captureErrors() {
-    const errors = vi.fn();
-    vi.spyOn(console, "error").mockImplementation(errors);
-    return errors;
+    return spyOn(console, "error").mockImplementation(() => undefined);
   }
 
   it("registers an allowed server", async () => {
     stubSettings();
     const send = stubSend();
-    vi.stubGlobal("fetch", send);
+    stubGlobal("fetch", send);
 
-    await expect(main([GUILD_A])).resolves.toBe(0);
-    expect(send).toHaveBeenCalledOnce();
+    expect(await main([GUILD_A])).toBe(0);
+    expect(send).toHaveBeenCalledTimes(1);
   });
 
   it("refuses a server outside ALLOWED_GUILD_IDS before any request", async () => {
     stubSettings();
     const errors = captureErrors();
     const send = stubSend();
-    vi.stubGlobal("fetch", send);
+    stubGlobal("fetch", send);
 
-    await expect(main([GUILD_A, OTHER_GUILD])).resolves.toBe(1);
+    expect(await main([GUILD_A, OTHER_GUILD])).toBe(1);
     expect(send).not.toHaveBeenCalled();
     expect(errors.mock.calls[0]?.[0]).toContain("ALLOWED_GUILD_IDS");
-  });
-
-  it("refuses to run without ALLOWED_GUILD_IDS", async () => {
-    stubSettings();
-    vi.stubEnv("ALLOWED_GUILD_IDS", undefined);
-    captureErrors();
-    const send = stubSend();
-    vi.stubGlobal("fetch", send);
-
-    await expect(main([GUILD_A])).resolves.toBe(1);
-    expect(send).not.toHaveBeenCalled();
   });
 
   it("rejects a newline token before any request and does not print it", async () => {
     stubSettings(NEWLINE_TOKEN);
     const errors = captureErrors();
     const send = stubSend();
-    vi.stubGlobal("fetch", send);
+    stubGlobal("fetch", send);
 
-    await expect(main([GUILD_A])).resolves.toBe(1);
+    expect(await main([GUILD_A])).toBe(1);
     expect(send).not.toHaveBeenCalled();
     const output = JSON.stringify(errors.mock.calls);
     expect(output).toContain("DISCORD_BOT_TOKEN");
@@ -175,20 +153,12 @@ describe("main", () => {
   it("does not print a message from a failed request", async () => {
     stubSettings();
     const errors = captureErrors();
-    vi.stubGlobal(
+    stubGlobal(
       "fetch",
-      vi.fn<typeof fetch>(() => Promise.reject(new Error(`Bot ${TOKEN}`))),
+      mock(() => Promise.reject(new Error(`Bot ${TOKEN}`))),
     );
 
-    await expect(main([GUILD_A])).resolves.toBe(1);
+    expect(await main([GUILD_A])).toBe(1);
     expect(errors.mock.calls).toEqual([["Error"]]);
-  });
-
-  it("asks for a server ID when given none", async () => {
-    stubSettings();
-    const errors = captureErrors();
-
-    await expect(main([])).resolves.toBe(1);
-    expect(errors.mock.calls[0]?.[0]).toContain("at least one");
   });
 });

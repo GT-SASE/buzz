@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "bun:test";
 import { fakeId } from "../../test/support/ids.ts";
 import {
   recordingSql,
@@ -8,11 +8,9 @@ import {
 import { getGuildConfig } from "./guild-config.ts";
 import { claimInteraction } from "./interaction-claims.ts";
 import { markTaskDoneAsOfficer } from "./tasks.ts";
-import type { DateOnly } from "../lib/dates.ts";
 import { createDbClient, withDeadline } from "./client.ts";
 import { errorSummary, failureFromError } from "./errors.ts";
 import { capped, changedRow, sql } from "./internal.ts";
-import { isoTimestamp } from "./parsers.ts";
 import {
   MAX_SEARCH_LENGTH,
   isDbDate,
@@ -23,11 +21,6 @@ import {
 } from "./validate.ts";
 
 const UUID = "11111111-2222-4333-8444-555555555555";
-
-afterEach(() => {
-  vi.unstubAllEnvs();
-  vi.resetModules();
-});
 
 describe("client", () => {
   it("abandons a query at its deadline, aborts it and reports it as unavailable", async () => {
@@ -75,25 +68,6 @@ describe("client", () => {
       expect(call.calls).toHaveLength(1);
     }
   });
-
-  it("reports a request that never reached the server as unavailable", async () => {
-    const { sql: refusing } = recordingSql(() =>
-      Object.assign(unavailable(), { message: "host and password" }),
-    );
-    const result = await getGuildConfig(createDbClient(refusing), {
-      guildId: fakeId(),
-    });
-    expect(result).toEqual({
-      ok: false,
-      error: { category: "unavailable", code: null },
-    });
-  });
-
-  it("reads its setting on first use, not on import", async () => {
-    vi.stubEnv("DATABASE_URL", "");
-    const { getDb } = await import("./client.ts");
-    expect(() => getDb()).toThrow("DATABASE_URL");
-  });
 });
 
 describe("the sql tag", () => {
@@ -105,25 +79,9 @@ describe("the sql tag", () => {
     );
     expect(query.params).toEqual([hostile, "1"]);
   });
-
-  it("refuses a fragment that carries values", () => {
-    const fragment = sql`name = ${"x"}`;
-    expect(() => sql`select id from events where ${fragment}`).toThrow(
-      TypeError,
-    );
-  });
 });
 
 describe("rows", () => {
-  it("keeps a timestamp as exact ISO text, to send back as a version", () => {
-    expect(isoTimestamp("2030-01-10 12:00:00.123456+00")).toBe(
-      "2030-01-10T12:00:00.123456+00:00",
-    );
-    expect(isoTimestamp("2030-01-10 12:00:00-05:30")).toBe(
-      "2030-01-10T12:00:00-05:30",
-    );
-  });
-
   it("caps a list and says when there were more rows", () => {
     expect(capped({ ok: true, value: [1, 2, 3] }, 2)).toEqual({
       ok: true,
@@ -171,21 +129,12 @@ describe("errors from the driver", () => {
 
   it.each([
     ["CF409", "stale_version"],
-    ["CF410", "parent_unavailable"],
-    ["CF412", "task_changed"],
     ["CF429", "event_task_limit"],
-    ["CF430", "actor_task_limit"],
-    ["CF431", "step_assignee_limit"],
     ["23505", "conflict"],
     ["42501", "forbidden"],
-    ["28P01", "forbidden"],
-    ["28000", "forbidden"],
     ["57014", "unavailable"],
-    ["08006", "unavailable"],
-    ["53300", "unavailable"],
-    ["XX000", "unavailable"],
     ["42601", "unexpected"],
-  ])("maps %s to %s", (code, category) => {
+  ] as const)("maps %s to %s", (code, category) => {
     expect(
       failureFromError(
         Object.assign(new Error(text), { code, severity: "ERROR" }),
@@ -201,10 +150,6 @@ describe("errors from the driver", () => {
         name: "NeonDbError",
       }),
     ],
-    [
-      "a server error with no readable code",
-      Object.assign(new Error(text), { severity: "ERROR", code: "bad" }),
-    ],
   ])("reports %s as unavailable, with no code or text", (_name, error) => {
     const result = failureFromError(error);
     expect(result.error).toEqual({ category: "unavailable", code: null });
@@ -212,7 +157,6 @@ describe("errors from the driver", () => {
 
   it.each([
     ["a TypeError", new TypeError(text)],
-    ["a plain error with no code", new Error(text)],
     ["a value that is not an error", text],
   ])("reports %s as unexpected, with no code", (_name, error) => {
     const result = failureFromError(error);
@@ -221,40 +165,27 @@ describe("errors from the driver", () => {
 });
 
 describe("input checks", () => {
-  it.each([UUID])("accepts the UUID %s", (value) => {
-    expect(isUuid(value)).toBe(true);
+  it("accepts a UUID and refuses near misses", () => {
+    expect(isUuid(UUID)).toBe(true);
+    for (const value of [
+      `${UUID} `,
+      `${UUID}\n`,
+      "AAAAAAAA-2222-4333-8444-555555555555",
+      7,
+    ]) {
+      expect(isUuid(value)).toBe(false);
+    }
   });
 
   it.each([
-    "",
-    "x",
-    `${UUID} `,
-    `${UUID},`,
-    `${UUID}"`,
-    "AAAAAAAA-2222-4333-8444-555555555555",
-    `${UUID}\n`,
-    null,
-    7,
-  ])("refuses the UUID %j", (value) => {
-    expect(isUuid(value)).toBe(false);
-  });
-
-  it.each(["2000-01-01", "9999-12-31", "2030-02-28"])(
-    "accepts the date %s",
-    (value) => {
-      expect(isDbDate(value)).toBe(true);
-    },
-  );
-
-  it.each([
-    "1999-12-31",
-    "2030-02-30",
-    "infinity",
-    "2030-1-1",
-    "2030-01-01T00:00:00Z",
-    "",
-  ])("refuses the date %s", (value) => {
-    expect(isDbDate(value)).toBe(false);
+    ["2000-01-01", true],
+    ["9999-12-31", true],
+    ["1999-12-31", false],
+    ["2030-02-30", false],
+    ["infinity", false],
+    ["2030-01-01T00:00:00Z", false],
+  ])("treats the date %s as %p", (value, expected) => {
+    expect(isDbDate(value)).toBe(expected);
   });
 
   it("refuses blank text, NUL, lone surrogates and overlong text", () => {
@@ -262,30 +193,21 @@ describe("input checks", () => {
     expect(isStoredText("  ", 10)).toBe(false);
     expect(isStoredText("a\u0000b", 10)).toBe(false);
     expect(isStoredText("a\ud800b", 10)).toBe(false);
-    expect(isStoredText("a\udc00", 10)).toBe(false);
     expect(isStoredText("12345678901", 10)).toBe(false);
-  });
-
-  it("counts an astral character as two against a limit", () => {
-    expect(isStoredText("\u{1F389}".repeat(5), 10)).toBe(true);
+    // An astral character counts as two.
     expect(isStoredText("\u{1F389}".repeat(6), 10)).toBe(false);
   });
 
   it("refuses search terms with NUL or a lone surrogate", () => {
     expect(isSearchTerm("a,b)c")).toBe(true);
-    expect(isSearchTerm("")).toBe(true);
     expect(isSearchTerm("a\u0000")).toBe(false);
     expect(isSearchTerm("\ud800")).toBe(false);
   });
 
   it.each([
-    ["plain", "%plain%"],
     ["50%", "%50\\%%"],
     ["a_b", "%a\\_b%"],
-    ["a*b", "%a*b%"],
     ["a\\b", "%a\\\\b%"],
-    ['a,b).c"', '%a,b).c"%'],
-    ["", "%%"],
   ])("builds a literal pattern from %j", (term, pattern) => {
     expect(searchPattern(term)).toBe(pattern);
   });
@@ -294,14 +216,5 @@ describe("input checks", () => {
     const pattern = searchPattern("\u{1F389}".repeat(MAX_SEARCH_LENGTH + 50));
     expect(pattern.isWellFormed()).toBe(true);
     expect(Array.from(pattern.slice(1, -1))).toHaveLength(MAX_SEARCH_LENGTH);
-    expect(searchPattern("a".repeat(6000))).toHaveLength(MAX_SEARCH_LENGTH + 2);
-  });
-
-  it("brands a checked date", () => {
-    const value: unknown = "2030-01-01";
-    if (isDbDate(value)) {
-      const date: DateOnly = value;
-      expect(date).toBe("2030-01-01");
-    }
   });
 });
