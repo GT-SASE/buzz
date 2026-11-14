@@ -40,6 +40,7 @@ import {
   DiscordClientError,
   DiscordErrorCode,
   actionForFailure,
+  mayHaveLanded,
   type DiscordClient,
   type DiscordFailure,
 } from "../discord/client.ts";
@@ -284,8 +285,9 @@ function isThreadRefusal(failure: DiscordFailure): boolean {
 
 /**
  * True when the failure is about where the send went: a malformed or unmanaged target, a
- * channel that is not a forum, or a refusal that is neither a server error nor about the
- * text. Nothing about the send or the run would change on a retry within this run.
+ * channel that is not a forum, or a refusal that cannot have landed (`mayHaveLanded`)
+ * and is not about the text. Nothing about the send or the run would change on a retry
+ * within this run.
  */
 function isTargetFailure(failure: DiscordFailure): boolean {
   switch (failure.kind) {
@@ -294,7 +296,7 @@ function isTargetFailure(failure: DiscordFailure): boolean {
     case "not_forum":
       return true;
     case "api":
-      return failure.status < 500;
+      return !mayHaveLanded(failure);
     default:
       return false;
   }

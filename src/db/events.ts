@@ -259,7 +259,8 @@ export async function closeEvent(
 
 /**
  * Reserves the right to create this pending event's post. False if it is no longer
- * pending, or if another attempt began in the last 60 seconds.
+ * pending, or if an earlier attempt holds it: an attempt is only given back after
+ * Discord clearly refused the post.
  */
 export async function claimEventPostAttempt(
   db: DbClient,

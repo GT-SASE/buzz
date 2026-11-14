@@ -33,7 +33,11 @@ import {
   ApplicationCommandOptionType,
   ChannelType,
 } from "discord-api-types/v10";
-import { DiscordClientError, DiscordErrorCode } from "../discord/client.ts";
+import {
+  DiscordClientError,
+  DiscordErrorCode,
+  mayHaveLanded,
+} from "../discord/client.ts";
 import type { ChannelSummary, DiscordFailure } from "../discord/client.ts";
 import { commandOptionValue } from "../discord/interactions.ts";
 import {
@@ -54,7 +58,7 @@ import {
   DISCORD_LIMITS,
 } from "../discord/safe-text.ts";
 import type { SafeText } from "../discord/safe-text.ts";
-import { isThreadChannelType } from "../discord/verify.ts";
+import { FORUM_CHANNEL_TYPES, isThreadChannelType } from "../discord/verify.ts";
 import { findEventByThread } from "../db/task-events.ts";
 import type { DbError, DbResult } from "../db/errors.ts";
 import { errorSummary } from "../db/errors.ts";
@@ -126,10 +130,6 @@ import {
   type Handler,
 } from "./router.ts";
 
-const FORUM_TYPES: ReadonlySet<number> = new Set([
-  ChannelType.GuildForum,
-  ChannelType.GuildMedia,
-]);
 const NO_TASKS = { rows: [], truncated: false };
 // Enough to tell events apart at a glance. The full ID is what a picker submits.
 const SHORT_ID_LENGTH = 8;
@@ -203,15 +203,6 @@ async function chooseForum({
   return active.length === 1
     ? { forumId: only.channel_id }
     : { problem: PICK_FORUM };
-}
-
-/** A send that got no clear answer may have taken effect all the same. */
-function mayHaveLanded(failure: DiscordFailure): boolean {
-  return (
-    failure.kind === "network" ||
-    failure.kind === "invalid_response" ||
-    (failure.kind === "api" && failure.status >= 500)
-  );
 }
 
 // Discord's codes for refusing a post, beyond those the client itself has to tell apart.
@@ -636,7 +627,7 @@ async function linkableThread(
   }
   return parent !== "unavailable" &&
     parent.guildId === actor.guildId &&
-    FORUM_TYPES.has(parent.type)
+    FORUM_CHANNEL_TYPES.has(parent.type)
     ? { thread, parentId }
     : { problem: NOT_A_POST };
 }

@@ -26,6 +26,7 @@ import {
 } from "../../src/discord/verify.ts";
 import type { Router, RouterDependencies } from "../../src/handlers/router.ts";
 import type { DbClient } from "../../src/db/client.ts";
+import { expectInert } from "./discord-server.ts";
 import { fakeId } from "./ids.ts";
 
 const { publicKey, privateKey } = generateKeyPairSync("ed25519");
@@ -299,6 +300,7 @@ export function fakeDiscord(data: FakeDiscordData = {}): {
     sendFollowUp: refuse,
     respondEphemerally: refuse,
     editEphemeralReply: (_interaction, body) => {
+      expectInert(JSON.stringify(body.payload));
       edits.push(body.payload as (typeof edits)[number]);
       return Promise.resolve({ id: fakeId() });
     },
@@ -338,6 +340,7 @@ export async function run(
 ): Promise<Ran> {
   const { interaction, verified } = verify(payload);
   const outcome = await router.handle(interaction, verified, dependencies);
+  expectInert(JSON.stringify(outcome.reply.payload));
   await outcome.after?.();
   return {
     reply: outcome.reply.payload as Ran["reply"],

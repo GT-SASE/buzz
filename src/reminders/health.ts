@@ -20,7 +20,6 @@
  * that run's own row.
  */
 
-import { ChannelType } from "discord-api-types/v10";
 import { withDeadline, type DbClient } from "../db/client.ts";
 import { errorSummary } from "../db/errors.ts";
 import {
@@ -43,6 +42,7 @@ import {
   type DiscordClient,
   type DiscordFailure,
 } from "../discord/client.ts";
+import { FORUM_CHANNEL_TYPES } from "../discord/verify.ts";
 import { slotStart } from "./plan.ts";
 import { DATABASE_CALL_MS, DEFAULT_LIMITS, LOCK_STALE_SECONDS } from "./run.ts";
 
@@ -51,10 +51,6 @@ const HOUR_MS = 3_600_000;
 export const MAX_RUN_AGE_MS = 26 * HOUR_MS;
 /** The database's clock and ours can disagree by this much without it meaning anything. */
 const CLOCK_TOLERANCE_MS = 300_000;
-const FORUM_TYPES: ReadonlySet<number> = new Set([
-  ChannelType.GuildForum,
-  ChannelType.GuildMedia,
-]);
 /** Counts in a reminder run's results that mean a person should look, though it succeeded. */
 const REMINDER_ATTENTION_COUNTS = [
   "deferred_cap",
@@ -239,7 +235,7 @@ export async function runHealthCheck(
         if (channel.guildId !== guildId) {
           count("channels_wrong_guild");
           log(`Channel ${channelId} is not in its guild`);
-        } else if (!FORUM_TYPES.has(channel.type)) {
+        } else if (!FORUM_CHANNEL_TYPES.has(channel.type)) {
           count("channels_not_forum");
           log(`Channel ${channelId} is not a forum`);
         } else {
