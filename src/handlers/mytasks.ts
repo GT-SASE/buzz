@@ -20,7 +20,13 @@ import { pickupTimeText, stepName } from "../events/steps.ts";
 import { todayInZone, type DateOnly } from "../lib/dates.ts";
 import { shownDate, shownId } from "../tasks/shared.ts";
 import { escapedName, lines } from "./render.ts";
-import { commandRoute, noRow, valueOf, type Handler } from "./router.ts";
+import {
+  commandRoute,
+  HandlerFailure,
+  noRow,
+  valueOf,
+  type Handler,
+} from "./router.ts";
 
 const DESCRIPTION_SHOWN = 200;
 const EVENT_NAME_SHOWN = 60;
@@ -88,6 +94,9 @@ export const handler: Handler = {
       gate: noRow("mytasks"),
       changesState: false,
       finish: async (ctx) => {
+        if (ctx.config === null) {
+          throw new HandlerFailure("config row gone");
+        }
         const guildId = ctx.actor.guildId;
         const userId = ctx.actor.userId;
         const tasks = valueOf(
@@ -96,10 +105,7 @@ export const handler: Handler = {
             assigneeId: userId,
           }),
         );
-        const today = todayInZone(
-          new Date(),
-          ctx.config?.timezone ?? "America/New_York",
-        );
+        const today = todayInZone(new Date(), ctx.config.timezone);
         const steps = valueOf(
           await listOpenStepsForUser(ctx.db, { guildId, userId, today }),
         );

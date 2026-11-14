@@ -78,6 +78,7 @@ import {
   listManagedChannels,
 } from "../db/managed-channels.ts";
 import { getEventWorkflow } from "../db/event-steps.ts";
+import { MAX_EVENT_NAME_LENGTH } from "../db/validate.ts";
 import { listEventTasks } from "../db/tasks.ts";
 import { REFUSED_TEXT, versionFingerprint } from "../tasks/shared.ts";
 import type { EventChoice, EventRow, ManagedChannel } from "../db/types.ts";
@@ -1287,7 +1288,6 @@ const confirmDelete = componentRoute({
   },
 });
 
-const NAME_LIMIT = 100;
 const DATE_INPUT_LIMIT = 32;
 const SUBCOMMAND = ApplicationCommandOptionType.Subcommand;
 const STRING = ApplicationCommandOptionType.String;
@@ -1323,7 +1323,7 @@ export const handler: Handler = {
               name: "name",
               description: "The event's name, which also titles its post",
               required: true,
-              max_length: NAME_LIMIT,
+              max_length: MAX_EVENT_NAME_LENGTH,
             },
             DATE_OPTION,
             {
