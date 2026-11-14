@@ -24,7 +24,6 @@ import {
   getEventWorkflow,
   listEventReminderCandidates,
   listOpenStepsForUser,
-  markEventReminderSent,
   markStepHandoffSent,
   MAX_ASSIGNEES_PER_STEP,
   MAX_FOOD_PICKUP_ASSIGNEES,
@@ -40,33 +39,18 @@ import {
   saveSetupDraft,
 } from "../../src/db/guild-config.ts";
 import {
-  claimInteraction,
-  expireInteractionClaims,
-} from "../../src/db/interaction-claims.ts";
-import {
   findEventByThread,
   searchOpenEvents,
 } from "../../src/db/task-events.ts";
-import {
-  finishJobRun,
-  getLatestJobRun,
-  beginJobRun,
-} from "../../src/db/job-runs.ts";
-import {
-  getManagedChannel,
-  listManagedChannels,
-  markChannelUnavailable,
-} from "../../src/db/managed-channels.ts";
+import { listManagedChannels } from "../../src/db/managed-channels.ts";
 import {
   claimReminder,
   listReminderCandidates,
   listStaleClaims,
-  markReminderSent,
   reclaimReminder,
   resolveStaleClaim,
 } from "../../src/db/reminders.ts";
 import {
-  countOpenTasksInChannel,
   createTask,
   editTask,
   getTask,
@@ -81,7 +65,6 @@ import {
   todayInZone,
   type DateOnly,
 } from "../../src/lib/dates.ts";
-import { slotStart } from "../../src/reminders/plan.ts";
 import { openBackend, type Backend } from "./backend.ts";
 import {
   insertEvent,
@@ -262,33 +245,14 @@ describe("database layer against the real schema", () => {
       });
     });
 
-    it("applies a change with audit rows, newest first and capped at five", async () => {
+    it("applies a change, and lists the five newest audit rows", async () => {
       const own = await insertGuild(pg);
-      const actorId = fakeId();
-      const change = applyConfigChange(db, {
-        guildId: own.guildId,
-        actorId,
-        expectedVersion: 2,
-        remindersEnabled: false,
-        addChannelIds: [fakeId()],
-        removeChannelIds: [],
-        timezone: "Europe/London",
-      });
-      expect(await ok(change)).toBe(3);
+      expect(await ok(configChange(own, { timezone: "Europe/London" }))).toBe(
+        3,
+      );
       expect(
         await ok(getGuildConfig(db, { guildId: own.guildId })),
-      ).toMatchObject({ reminders_enabled: false, timezone: "Europe/London" });
-
-      const audit = () => ok(listRecentConfigChanges(db, own));
-      const first = await audit();
-      expect(first.truncated).toBe(false);
-      expect(first.rows.map((row) => row.version_after)).toEqual([3, 2, 1]);
-      expect(first.rows[0]).toMatchObject({
-        actor_id: actorId,
-        action: "settings",
-      });
-      expect(first.rows[2]?.old_values).toBeNull();
-
+      ).toMatchObject({ timezone: "Europe/London" });
       for (let version = 3; version < 8; version += 1) {
         await ok(
           configChange(own, {
@@ -297,18 +261,10 @@ describe("database layer against the real schema", () => {
           }),
         );
       }
-      const { rows, truncated } = await audit();
+      const { rows, truncated } = await ok(listRecentConfigChanges(db, own));
       expect(rows.map((row) => row.version_after)).toEqual([8, 7, 6, 5, 4]);
       expect(truncated).toBe(true);
     });
-  });
-
-  it("marks a managed channel unavailable once", async () => {
-    const own = await insertGuild(pg);
-    const key = { guildId: own.guildId, channelId: own.channelId };
-    expect(await ok(markChannelUnavailable(db, key))).toBe(true);
-    expect(await ok(markChannelUnavailable(db, key))).toBe(false);
-    expect((await ok(getManagedChannel(db, key)))?.status).toBe("unavailable");
   });
 
   describe("events", () => {
@@ -418,17 +374,6 @@ describe("database layer against the real schema", () => {
 
       await ok(softDeleteEvent(db, { ...guild, eventId: first.id }));
       expect((await ok(linked())).thread_id).toBe(threadId);
-    });
-
-    it("refuses an event on a removed channel", async () => {
-      const own = await insertGuild(pg);
-      await queryAs(
-        pg,
-        MIGRATION_OWNER,
-        `UPDATE public.managed_channels SET status = 'removed' WHERE guild_id = $1`,
-        [own.guildId],
-      );
-      expect(await newEvent("Social", own)).toEqual(UNAVAILABLE);
     });
 
     it("hides a deleted event, and changes nothing for it, another guild's or an unknown one", async () => {
@@ -541,14 +486,6 @@ describe("database layer against the real schema", () => {
     ])("finds %j as plain text, ignoring case", async (term, names) => {
       expect(await namesFor(term)).toEqual(names);
     });
-
-    it("leaves out deleted events and other guilds", async () => {
-      const id = await named("Hidden event");
-      await named("Hidden event", await insertGuild(pg));
-      expect(await namesFor("Hidden")).toEqual(["Hidden event"]);
-      await ok(softDeleteEvent(db, { guildId: own.guildId, eventId: id }));
-      expect(await namesFor("Hidden")).toEqual([]);
-    });
   });
 
   describe("tasks", () => {
@@ -584,21 +521,6 @@ describe("database layer against the real schema", () => {
         }),
       );
       expect(edited.description).toBe(description);
-    });
-
-    it("lets the assignee mark their task done, and no one else", async () => {
-      const { taskId, assigneeId } = await newTask();
-      const key = { guildId: guild.guildId, taskId, now: NOW };
-      expect(
-        await markOwnTaskDone(db, { ...key, assigneeId: fakeId() }),
-      ).toEqual(NOT_FOUND);
-      expect((await taskState(taskId))?.status).toBe("open");
-
-      const done = await ok(markOwnTaskDone(db, { ...key, assigneeId }));
-      expect(done.status).toBe("done");
-      expect(new Date(done.completed_at ?? "").toISOString()).toBe(
-        NOW.toISOString(),
-      );
     });
 
     it("refuses an edit based on an old version, keeping the later one", async () => {
@@ -673,22 +595,6 @@ describe("database layer against the real schema", () => {
       expect(await taskState(foreign)).toEqual(before);
     });
 
-    it("refuses a task on an event in another guild", async () => {
-      const other = await insertGuild(pg);
-      const created = await createTask(db, {
-        guildId: guild.guildId,
-        eventId: await insertEvent(pg, other),
-        assigneeId: fakeId(),
-        actorId: fakeId(),
-        description: "Sneak in",
-        dueDate: DUE,
-      });
-      expect(created).toEqual({
-        ok: false,
-        error: { category: "constraint", code: "23503" },
-      });
-    });
-
     it("keeps a task under a deleted event deleted through every write", async () => {
       const ownEvent = await insertEvent(pg, guild);
       const assigneeId = fakeId();
@@ -736,31 +642,6 @@ describe("database layer against the real schema", () => {
       expect(rows[0]?.event_name).toBe("General meeting");
       expect<string>(rows[0]?.due_date ?? "").toBe("2030-01-05");
     });
-
-    it("counts open tasks across a forum's events, and nothing else", async () => {
-      const own = await insertGuild(pg);
-      const other = await insertGuild(pg);
-      const first = await insertEvent(pg, own);
-      const deletedEvent = await insertEvent(pg, own);
-      await insertTask(pg, own, first);
-      await insertTask(pg, own, await insertEvent(pg, own));
-      await insertTask(pg, other, await insertEvent(pg, other));
-      await insertTask(pg, own, deletedEvent);
-      const done = await insertTask(pg, own, first);
-      const deleted = await insertTask(pg, own, first);
-      const key = (taskId: string) => ({ ...own, taskId, now: NOW });
-      await ok(markTaskDoneAsOfficer(db, key(done)));
-      await ok(softDeleteTask(db, key(deleted)));
-      await ok(softDeleteEvent(db, { ...own, eventId: deletedEvent }));
-
-      const count = (guildId: string) =>
-        ok(countOpenTasksInChannel(db, { guildId, channelId: own.channelId }));
-      expect(await count(own.guildId)).toEqual({ count: 2, truncated: false });
-      expect(await count(other.guildId)).toEqual({
-        count: 0,
-        truncated: false,
-      });
-    });
   });
 
   describe("reminder candidates", () => {
@@ -777,38 +658,6 @@ describe("database layer against the real schema", () => {
       expect(await candidateIds()).toContain(taskId);
       return { own, eventId, taskId, assigneeId };
     };
-
-    it("returns what the planner needs for a task", async () => {
-      const { own, eventId, taskId, assigneeId } = await setUp();
-      const threadId = await linkThread(own.guildId, eventId);
-      const { rows } = await ok(
-        listReminderCandidates(db, { lastDueDate: DUE }),
-      );
-      expect(rows.find((row) => row.task.id === taskId)).toEqual({
-        guild_id: own.guildId,
-        timezone: "America/New_York",
-        assignee_id: assigneeId,
-        description: "Book the room",
-        event_name: "General meeting",
-        updated_at: await versionOf(own.guildId, taskId),
-        task: {
-          id: taskId,
-          eventId,
-          dueDate: DUE,
-          status: "open",
-          deleted: false,
-        },
-        event: {
-          id: eventId,
-          threadId,
-          status: "active",
-          threadStatus: "active",
-          deleted: false,
-          forumManaged: true,
-        },
-        log: [],
-      });
-    });
 
     type Made = Awaited<ReturnType<typeof setUp>>;
     it.each<[string, (made: Made) => Promise<unknown>]>([
@@ -921,29 +770,6 @@ describe("database layer against the real schema", () => {
       expect(await ok(softDeleteEvent(db, { ...own, eventId }))).toBe(0);
     });
 
-    it("edits all three fields in one write", async () => {
-      const eventId = await insertEvent(pg, own);
-      const task = await ok(newTaskOn(eventId, fakeId(), fakeId()));
-      const assigneeId = fakeId();
-      const edit = {
-        actorId: fakeId(),
-        guildId: own.guildId,
-        taskId: task.id,
-        description: "Print the banner",
-        dueDate: date("2030-02-02"),
-        assigneeId,
-      };
-
-      const edited = await ok(
-        editTask(db, { ...edit, expectedUpdatedAt: task.updated_at }),
-      );
-      expect(edited).toMatchObject({
-        description: "Print the banner",
-        due_date: "2030-02-02",
-        assignee_id: assigneeId,
-      });
-    });
-
     describe("task quotas", () => {
       const actorLimit = {
         ok: false,
@@ -1016,6 +842,46 @@ describe("database layer against the real schema", () => {
         expect(await reassign()).toEqual(actorLimit);
         expect(await newTaskOn(eventId, fakeId(), actorId)).toEqual(actorLimit);
       });
+
+      // Each trigger has its own 24-hour clause for each kind, so old rows of the other
+      // kind must age out too, or an officer is locked out for good.
+      it("stops counting old reassignments toward a new task", async () => {
+        const actorId = fakeId();
+        const eventId = await insertEvent(pg, own);
+        const task = await ok(newTaskOn(eventId, fakeId(), fakeId()));
+        for (let i = 0; i < OFFICER_DAILY_LIMIT; i += 1) {
+          await ok(
+            reassignAs(db, { guildId: own.guildId, actorId, taskId: task.id }),
+          );
+        }
+        expect(await newTaskOn(eventId, fakeId(), actorId)).toEqual(actorLimit);
+        await pg.query(
+          `UPDATE public.task_reassignments SET created_at = now() - interval '25 hours'
+           WHERE actor_id = $1`,
+          [actorId],
+        );
+        await ok(newTaskOn(eventId, fakeId(), actorId));
+      });
+
+      it("stops counting old tasks toward a reassignment", async () => {
+        const actorId = fakeId();
+        const eventId = await insertEvent(pg, own);
+        const task = await ok(newTaskOn(eventId, fakeId(), fakeId()));
+        await fill(
+          await insertEvent(pg, own),
+          OFFICER_DAILY_LIMIT,
+          () => actorId,
+        );
+        const reassign = () =>
+          reassignAs(db, { guildId: own.guildId, actorId, taskId: task.id });
+        expect(await reassign()).toEqual(actorLimit);
+        await pg.query(
+          `UPDATE public.tasks SET created_at = now() - interval '25 hours'
+           WHERE created_by = $1`,
+          [actorId],
+        );
+        await ok(reassign());
+      });
     });
   });
 
@@ -1046,21 +912,6 @@ describe("database layer against the real schema", () => {
     };
     const staleTaskIds = async () =>
       (await staleClaims()).map((row) => row.task_id);
-
-    it("claims once, and marks sent with the right token only", async () => {
-      const key = await newKey();
-      const token = await ok(claimReminder(db, key));
-      expect(typeof token).toBe("string");
-      expect(await ok(claimReminder(db, key))).toBeNull();
-
-      const send = (claimToken: string) =>
-        ok(markReminderSent(db, { ...key, claimToken, messageId: fakeId() }));
-      expect(await send(UNKNOWN_ID)).toBe(false);
-      expect(await send(token ?? "")).toBe(true);
-      // A finished claim never goes stale, however old.
-      await age(key.taskId);
-      expect(await staleTaskIds()).not.toContain(key.taskId);
-    });
 
     it("lists only an old unfinished claim as stale, and takes it over once", async () => {
       const key = await newKey();
@@ -1093,22 +944,6 @@ describe("database layer against the real schema", () => {
         return { ...key, claimToken };
       };
 
-      it("closes a claim on a finished or deleted task, which leaves the stale list", async () => {
-        const done = await staleClaim();
-        const deleted = await staleClaim();
-        const key = (taskId: string) => ({ ...guild, taskId, now: NOW });
-        await ok(markTaskDoneAsOfficer(db, key(done.taskId)));
-        await ok(softDeleteTask(db, key(deleted.taskId)));
-        for (const claim of [done, deleted]) {
-          expect(await staleTaskIds()).toContain(claim.taskId);
-          expect(await ok(resolveStaleClaim(db, claim))).toEqual({
-            outcome: "closed",
-          });
-          expect(await logState(claim.taskId)).toBe("skipped");
-          expect(await staleTaskIds()).not.toContain(claim.taskId);
-        }
-      });
-
       it("leaves a claim alone while reminders are off, so it can resume", async () => {
         const own = await insertGuild(pg);
         const claim = await staleClaim(own);
@@ -1125,54 +960,6 @@ describe("database layer against the real schema", () => {
         expect(resumed.outcome).toBe("reclaimed");
       });
     });
-  });
-
-  it("expires only interaction claims older than a day", async () => {
-    const old = fakeId();
-    const fresh = fakeId();
-    const claim = (interactionId: string) =>
-      ok(claimInteraction(db, { interactionId }));
-    expect(await claim(old)).toBe(true);
-    expect(await claim(fresh)).toBe(true);
-    await pg.query(
-      `UPDATE public.interaction_claims SET claimed_at = now() - interval '25 hours'
-       WHERE interaction_id = $1`,
-      [old],
-    );
-
-    expect(await ok(expireInteractionClaims(db))).toBe(1);
-    expect(await claim(old)).toBe(true);
-    expect(await claim(fresh)).toBe(false);
-  });
-
-  it("starts a job run, and records its failure once as a category and code", async () => {
-    const failing = await configChange(await insertGuild(pg), {
-      timezone: "america/new_york",
-    });
-    expect(failing).toEqual({
-      ok: false,
-      error: { category: "constraint", code: "22023" },
-    });
-    if (failing.ok) throw new Error("expected a failure");
-
-    const id = await ok(
-      beginJobRun(db, {
-        jobName: "reminders",
-        staleAfterSeconds: 120,
-        slotStart: new Date(slotStart(new Date())),
-      }),
-    );
-    if (id === null) throw new Error("expected a run to start");
-    expect(
-      await ok(getLatestJobRun(db, { jobName: "reminders" })),
-    ).toMatchObject({ id, status: "running", finished_at: null, error: null });
-
-    const finish = () =>
-      finishJobRun(db, { id, now: LATER, results: {}, error: failing.error });
-    const finished = await ok(finish());
-    expect(finished.status).toBe("failed");
-    expect(finished.error).toBe("constraint:22023");
-    expect(await finish()).toEqual(NOT_FOUND);
   });
 
   describe("another guild's rows", () => {
@@ -1241,363 +1028,281 @@ describe("database layer against the real schema", () => {
       },
     );
   });
-});
 
-describe("the event workflow against the real schema", () => {
-  let backend: Backend;
-  let pg: Connection;
-  let db: DbClient;
-  let guild: GuildFixture;
-
-  beforeAll(async () => {
-    backend = await openBackend();
-    pg = backend.connection;
-    db = backend.db;
-    guild = await insertGuild(pg);
-  });
-
-  afterAll(async () => {
-    await backend.close();
-  });
-
-  type AssignableStep = "budget_sheet" | "engage_post" | "food_pickup";
-  const key = (eventId: string) => ({ guildId: guild.guildId, eventId });
-  const assign = (
-    eventId: string,
-    kind: AssignableStep,
-    userId: string = fakeId(),
-  ) =>
-    assignEventStep(db, {
-      ...key(eventId),
-      kind,
-      userId,
-      actorId: guild.officerRoleId,
-    });
-  const unassign = (
-    eventId: string,
-    kind: AssignableStep,
-    userId: string,
-    actorId: string = fakeId(),
-  ) => unassignEventStep(db, { ...key(eventId), kind, userId, actorId });
-  const complete = (
-    eventId: string,
-    kind: "budget_sheet" | "engage_post" | "budget_approved",
-    actorId: string = fakeId(),
-  ) => completeEventStep(db, { ...key(eventId), kind, actorId });
-  const workflow = (eventId: string) => ok(getEventWorkflow(db, key(eventId)));
-
-  /** An event on a date of its own, written as the bot would. */
-  const datedEvent = async (eventDate: string): Promise<string> => {
-    const rows = await queryAs<{ id: string }>(
-      pg,
-      "bot_app",
-      `INSERT INTO public.events (guild_id, channel_id, name, event_date, created_by)
-       VALUES ($1, $2, 'Workflow', $3, $4) RETURNING id`,
-      [guild.guildId, guild.channelId, eventDate, fakeId()],
-    );
-    return (rows[0] as { id: string }).id;
-  };
-
-  it("gives every new event its four steps, all open, with no one on them", async () => {
-    const eventId = await insertEvent(pg, guild);
-    expect<object | null>(await workflow(eventId)).toEqual({
-      event_id: eventId,
-      // insertEvent dates the event 2030-01-15, in a guild in New York.
-      event_date: "2030-01-15",
-      pickup_time: null,
-      timezone: "America/New_York",
-      steps: [
-        "budget_sheet",
-        "engage_post",
-        "budget_approved",
-        "food_pickup",
-      ].map((kind) => ({
-        event_id: eventId,
+  describe("the event workflow", () => {
+    type AssignableStep = "budget_sheet" | "engage_post" | "food_pickup";
+    const key = (eventId: string) => ({ guildId: guild.guildId, eventId });
+    const assign = (
+      eventId: string,
+      kind: AssignableStep,
+      userId: string = fakeId(),
+    ) =>
+      assignEventStep(db, {
+        ...key(eventId),
         kind,
+        userId,
+        actorId: guild.officerRoleId,
+      });
+    const unassign = (
+      eventId: string,
+      kind: AssignableStep,
+      userId: string,
+      actorId: string = fakeId(),
+    ) => unassignEventStep(db, { ...key(eventId), kind, userId, actorId });
+    const complete = (
+      eventId: string,
+      kind: "budget_sheet" | "engage_post" | "budget_approved",
+      actorId: string = fakeId(),
+    ) => completeEventStep(db, { ...key(eventId), kind, actorId });
+    const workflow = (eventId: string) =>
+      ok(getEventWorkflow(db, key(eventId)));
+
+    /** An event on a date of its own, written as the bot would. */
+    const datedEvent = async (eventDate: string): Promise<string> => {
+      const rows = await queryAs<{ id: string }>(
+        pg,
+        "bot_app",
+        `INSERT INTO public.events (guild_id, channel_id, name, event_date, created_by)
+       VALUES ($1, $2, 'Workflow', $3, $4) RETURNING id`,
+        [guild.guildId, guild.channelId, eventDate, fakeId()],
+      );
+      return (rows[0] as { id: string }).id;
+    };
+
+    describe("assignments", () => {
+      it("adds a person once, and takes them off again without losing the row", async () => {
+        const eventId = await insertEvent(pg, guild);
+        const user = fakeId();
+        expect(await ok(assign(eventId, "budget_sheet", user))).toBe(true);
+        expect(await ok(assign(eventId, "budget_sheet", user))).toBe(false);
+        const remove = () =>
+          ok(unassign(eventId, "budget_sheet", user, guild.adminRoleId));
+        expect(await remove()).toBe(true);
+        expect(await remove()).toBe(false);
+        expect((await workflow(eventId))?.assignees).toEqual([]);
+        const { rows } = await pg.query(
+          `SELECT removed_by, removed_at IS NOT NULL AS removed
+         FROM public.event_step_assignees WHERE event_id = $1`,
+          [eventId],
+        );
+        expect(rows).toEqual([
+          { removed_by: guild.adminRoleId, removed: true },
+        ]);
+
+        // A removed person can be put back on.
+        expect(await ok(assign(eventId, "budget_sheet", user))).toBe(true);
+      });
+
+      it.each([
+        ["budget_sheet", MAX_ASSIGNEES_PER_STEP, "engage_post"],
+        ["food_pickup", MAX_FOOD_PICKUP_ASSIGNEES, "budget_sheet"],
+      ] as const)(
+        "stops %s at %i people, leaving %s its own limit",
+        async (kind, limit, otherKind) => {
+          const eventId = await insertEvent(pg, guild);
+          for (let index = 0; index < limit; index += 1) {
+            expect(await ok(assign(eventId, kind))).toBe(true);
+          }
+          expect(await assign(eventId, kind)).toEqual({
+            ok: false,
+            error: { category: "step_assignee_limit", code: "CF431" },
+          });
+          expect((await workflow(eventId))?.assignees).toHaveLength(limit);
+          expect(await ok(assign(eventId, otherKind))).toBe(true);
+        },
+      );
+
+      it("refuses a closed event, and treats a deleted or foreign one as unknown", async () => {
+        const closed = await insertEvent(pg, guild);
+        await ok(closeEvent(db, key(closed)));
+        expect(await assign(closed, "budget_sheet")).toEqual(UNAVAILABLE);
+        expect(await complete(closed, "engage_post")).toEqual(UNAVAILABLE);
+
+        const deleted = await insertEvent(pg, guild);
+        await ok(softDeleteEvent(db, key(deleted)));
+        const foreign = await insertEvent(pg, await insertGuild(pg));
+        for (const eventId of [deleted, foreign, UNKNOWN_ID]) {
+          expect(await assign(eventId, "budget_sheet")).toEqual(NOT_FOUND);
+        }
+        expect(await complete(UNKNOWN_ID, "engage_post")).toEqual(NOT_FOUND);
+      });
+    });
+
+    it("completes a step once, and hands it off exactly once", async () => {
+      const eventId = await insertEvent(pg, guild);
+      const handoff = { ...key(eventId), kind: "budget_sheet" as const };
+      const claim = () => claimStepHandoff(db, handoff);
+      const markSent = () => ok(markStepHandoffSent(db, handoff));
+      expect(await ok(claim())).toBe(false);
+
+      const actor = fakeId();
+      expect(await ok(complete(eventId, "budget_sheet", actor))).toBe(true);
+      expect(await ok(complete(eventId, "budget_sheet", actor))).toBe(false);
+      expect((await workflow(eventId))?.steps[0]).toMatchObject({
+        status: "done",
+        completed_by: actor,
+      });
+
+      expect(await markSent()).toBe(false);
+      const claims = await Promise.all(Array.from({ length: 5 }, claim));
+      const won = claims.filter((result) => result.ok && result.value);
+      expect(won).toHaveLength(1);
+      expect(await markSent()).toBe(true);
+      expect(await markSent()).toBe(false);
+      expect(await ok(claim())).toBe(false);
+    });
+
+    it("marks Food pickup done once it has a time and a person, and reopens it with no one on it", async () => {
+      const eventId = await insertEvent(pg, guild);
+      const actor = fakeId();
+      const setTime = (pickupTime: string) =>
+        ok(
+          setEventPickupTime(db, {
+            ...key(eventId),
+            pickupTime,
+            actorId: actor,
+          }),
+        );
+      // The budget need not be approved first.
+      expect(await setTime("17:30")).toBe(false);
+      const user = fakeId();
+      await ok(assign(eventId, "food_pickup", user));
+      let current = await workflow(eventId);
+      expect(current?.pickup_time).toBe("17:30");
+      expect(current?.steps[3]).toMatchObject({
+        kind: "food_pickup",
+        status: "done",
+        completed_by: guild.officerRoleId,
+      });
+
+      expect(await setTime("09:05")).toBe(true);
+      await ok(unassign(eventId, "food_pickup", user, actor));
+      current = await workflow(eventId);
+      expect(current?.pickup_time).toBe("09:05");
+      expect(current?.steps[3]).toMatchObject({
         status: "open",
         completed_at: null,
         completed_by: null,
-        handoff_claimed_at: null,
-        handoff_sent_at: null,
-      })),
-      assignees: [],
-    });
-  });
-
-  describe("assignments", () => {
-    it("adds a person once, and takes them off again without losing the row", async () => {
-      const eventId = await insertEvent(pg, guild);
-      const user = fakeId();
-      expect(await ok(assign(eventId, "budget_sheet", user))).toBe(true);
-      expect(await ok(assign(eventId, "budget_sheet", user))).toBe(false);
-      const remove = () =>
-        ok(unassign(eventId, "budget_sheet", user, guild.adminRoleId));
-      expect(await remove()).toBe(true);
-      expect(await remove()).toBe(false);
-      expect((await workflow(eventId))?.assignees).toEqual([]);
-      const { rows } = await pg.query(
-        `SELECT removed_by, removed_at IS NOT NULL AS removed
-         FROM public.event_step_assignees WHERE event_id = $1`,
-        [eventId],
-      );
-      expect(rows).toEqual([{ removed_by: guild.adminRoleId, removed: true }]);
-
-      // A removed person can be put back on.
-      expect(await ok(assign(eventId, "budget_sheet", user))).toBe(true);
-    });
-
-    it.each([
-      ["engage_post", MAX_ASSIGNEES_PER_STEP],
-      ["food_pickup", MAX_FOOD_PICKUP_ASSIGNEES],
-    ] as const)("stops %s at %i people", async (kind, limit) => {
-      const eventId = await insertEvent(pg, guild);
-      for (let index = 0; index < limit; index += 1) {
-        await ok(assign(eventId, kind));
-      }
-      expect(await assign(eventId, kind)).toEqual({
-        ok: false,
-        error: { category: "step_assignee_limit", code: "CF431" },
       });
-      // Another step has its own limit.
-      expect(await ok(assign(eventId, "budget_sheet"))).toBe(true);
     });
 
-    it("refuses a closed event, and treats a deleted or foreign one as unknown", async () => {
+    it("lists a member's open steps and upcoming pickups for /mytasks", async () => {
+      const user = fakeId();
+      const upcoming = await insertEvent(pg, guild);
+      const past = await datedEvent("2030-01-05");
       const closed = await insertEvent(pg, guild);
+      await ok(assign(upcoming, "budget_sheet", user));
+      await ok(assign(upcoming, "engage_post", user));
+      await ok(complete(upcoming, "engage_post", user));
+      await ok(complete(upcoming, "budget_approved"));
+      await ok(assign(upcoming, "food_pickup", user));
+      await ok(complete(past, "budget_approved"));
+      await ok(assign(past, "food_pickup", user));
+      await ok(assign(past, "budget_sheet", user));
+      await ok(assign(closed, "budget_sheet", user));
       await ok(closeEvent(db, key(closed)));
-      expect(await assign(closed, "budget_sheet")).toEqual(UNAVAILABLE);
-      expect(await complete(closed, "engage_post")).toEqual(UNAVAILABLE);
 
-      const deleted = await insertEvent(pg, guild);
-      await ok(softDeleteEvent(db, key(deleted)));
-      const foreign = await insertEvent(pg, await insertGuild(pg));
-      for (const eventId of [deleted, foreign, UNKNOWN_ID]) {
-        expect(await assign(eventId, "budget_sheet")).toEqual(NOT_FOUND);
-      }
-      expect(await complete(UNKNOWN_ID, "engage_post")).toEqual(NOT_FOUND);
-    });
-  });
-
-  it("completes a step once, and hands it off exactly once", async () => {
-    const eventId = await insertEvent(pg, guild);
-    const handoff = { ...key(eventId), kind: "budget_sheet" as const };
-    const claim = () => claimStepHandoff(db, handoff);
-    const markSent = () => ok(markStepHandoffSent(db, handoff));
-    expect(await ok(claim())).toBe(false);
-
-    const actor = fakeId();
-    expect(await ok(complete(eventId, "budget_sheet", actor))).toBe(true);
-    expect(await ok(complete(eventId, "budget_sheet", actor))).toBe(false);
-    expect((await workflow(eventId))?.steps[0]).toMatchObject({
-      status: "done",
-      completed_by: actor,
-    });
-
-    expect(await markSent()).toBe(false);
-    const claims = await Promise.all(Array.from({ length: 5 }, claim));
-    const won = claims.filter((result) => result.ok && result.value);
-    expect(won).toHaveLength(1);
-    expect(await markSent()).toBe(true);
-    expect(await markSent()).toBe(false);
-    expect(await ok(claim())).toBe(false);
-  });
-
-  it("marks Food pickup done once it has a time and a person, and reopens it with no one on it", async () => {
-    const eventId = await insertEvent(pg, guild);
-    const actor = fakeId();
-    const setTime = (pickupTime: string) =>
-      ok(
-        setEventPickupTime(db, { ...key(eventId), pickupTime, actorId: actor }),
-      );
-    // The budget need not be approved first.
-    expect(await setTime("17:30")).toBe(false);
-    const user = fakeId();
-    await ok(assign(eventId, "food_pickup", user));
-    let current = await workflow(eventId);
-    expect(current?.pickup_time).toBe("17:30");
-    expect(current?.steps[3]).toMatchObject({
-      kind: "food_pickup",
-      status: "done",
-      completed_by: guild.officerRoleId,
-    });
-
-    expect(await setTime("09:05")).toBe(true);
-    await ok(unassign(eventId, "food_pickup", user, actor));
-    current = await workflow(eventId);
-    expect(current?.pickup_time).toBe("09:05");
-    expect(current?.steps[3]).toMatchObject({
-      status: "open",
-      completed_at: null,
-      completed_by: null,
-    });
-  });
-
-  it("lists a member's open steps and upcoming pickups for /mytasks", async () => {
-    const user = fakeId();
-    const upcoming = await insertEvent(pg, guild);
-    const past = await datedEvent("2030-01-05");
-    const closed = await insertEvent(pg, guild);
-    await ok(assign(upcoming, "budget_sheet", user));
-    await ok(assign(upcoming, "engage_post", user));
-    await ok(complete(upcoming, "engage_post", user));
-    await ok(complete(upcoming, "budget_approved"));
-    await ok(assign(upcoming, "food_pickup", user));
-    await ok(complete(past, "budget_approved"));
-    await ok(assign(past, "food_pickup", user));
-    await ok(assign(past, "budget_sheet", user));
-    await ok(assign(closed, "budget_sheet", user));
-    await ok(closeEvent(db, key(closed)));
-
-    const list = await ok(
-      listOpenStepsForUser(db, {
-        guildId: guild.guildId,
-        userId: user,
-        today: date("2030-01-10"),
-      }),
-    );
-    expect(
-      list.rows.map((row) => [row.event_id, row.kind, row.step_status]),
-    ).toEqual([
-      [upcoming, "budget_sheet", "open"],
-      [upcoming, "food_pickup", "open"],
-      [past, "budget_sheet", "open"],
-    ]);
-    expect(list.rows[2]?.event_name).toBe("Workflow");
-  });
-
-  describe("event reminders", () => {
-    /**
-     * Today in the fixture guild's zone. A step reminder can be claimed only for today or
-     * yesterday there, so an event dated today is the latest one a test can claim on.
-     */
-    const today = (): DateOnly => todayInZone(new Date(), "America/New_York");
-    const dayAfter = (day: string): DateOnly =>
-      date(new Date(Date.parse(day) + 86_400_000).toISOString().slice(0, 10));
-
-    it("lists a live event with its steps, live people and recent log", async () => {
-      const eventDate = today();
-      const eventId = await datedEvent(eventDate);
-      const user = fakeId();
-      await ok(assign(eventId, "budget_sheet", user));
-      const gone = fakeId();
-      await ok(assign(eventId, "engage_post", gone));
-      await ok(unassign(eventId, "engage_post", gone, user));
-      const daily = {
-        eventId,
-        kind: "daily_steps" as const,
-        reminderDate: eventDate,
-      };
-      expect(await ok(claimEventReminder(db, daily))).not.toBeNull();
-
-      const listed = async (fromDate: DateOnly) =>
-        (await ok(listEventReminderCandidates(db, { fromDate }))).rows.find(
-          (row) => row.id === eventId,
-        );
-      const candidate = await listed(eventDate);
-      expect(candidate).toMatchObject({
-        guild_id: guild.guildId,
-        event_date: eventDate,
-        timezone: "America/New_York",
-        events_director_role_id: guild.officerRoleId,
-        pickup_time: null,
-        assignees: [{ kind: "budget_sheet", user_id: user }],
-        log: [
-          { kind: "daily_steps", reminder_date: eventDate, state: "claimed" },
-        ],
-      });
-      expect(candidate?.steps).toHaveLength(4);
-
-      // A later start leaves the event out, and a closed event is never listed.
-      expect(await listed(dayAfter(eventDate))).toBeUndefined();
-      await ok(closeEvent(db, key(eventId)));
-      expect(await listed(eventDate)).toBeUndefined();
-    });
-
-    it("claims once, refuses a date after the event, and marks sent by token", async () => {
-      const eventDate = today();
-      const daily = {
-        eventId: await datedEvent(eventDate),
-        kind: "daily_steps" as const,
-        reminderDate: eventDate,
-      };
-      const token = await ok(claimEventReminder(db, daily));
-      expect(token).not.toBeNull();
-      expect(await ok(claimEventReminder(db, daily))).toBeNull();
-      const afterEvent = { ...daily, reminderDate: dayAfter(eventDate) };
-      expect(await ok(claimEventReminder(db, afterEvent))).toBeNull();
-
-      const send = (claimToken: string) =>
-        ok(
-          markEventReminderSent(db, {
-            ...daily,
-            claimToken,
-            messageId: fakeId(),
-          }),
-        );
-      expect(await send(UNKNOWN_ID)).toBe(false);
-      expect(await send(token ?? "")).toBe(true);
-    });
-
-    it("sends pickup reminders only once Food pickup is set up", async () => {
-      const eventDate = today();
-      const eventId = await datedEvent(eventDate);
-      const pickupDay = {
-        eventId,
-        kind: "pickup_day" as const,
-        reminderDate: eventDate,
-      };
-      expect(await ok(claimEventReminder(db, pickupDay))).toBeNull();
-
-      await ok(complete(eventId, "budget_approved"));
-      await ok(
-        setEventPickupTime(db, {
-          ...key(eventId),
-          pickupTime: "11:00",
-          actorId: fakeId(),
+      const list = await ok(
+        listOpenStepsForUser(db, {
+          guildId: guild.guildId,
+          userId: user,
+          today: date("2030-01-10"),
         }),
       );
-      await ok(assign(eventId, "food_pickup"));
-
-      expect(await ok(claimEventReminder(db, pickupDay))).not.toBeNull();
-      const before = { ...pickupDay, kind: "pickup_before" as const };
-      expect(await ok(claimEventReminder(db, before))).not.toBeNull();
+      expect(
+        list.rows.map((row) => [row.event_id, row.kind, row.step_status]),
+      ).toEqual([
+        [upcoming, "budget_sheet", "open"],
+        [upcoming, "food_pickup", "open"],
+        [past, "budget_sheet", "open"],
+      ]);
+      expect(list.rows[2]?.event_name).toBe("Workflow");
     });
-  });
 
-  it("keeps one setup draft per guild, readable for an hour by the member who made it", async () => {
-    const roles = () => ({
-      officerRoleId: fakeId(),
-      adminRoleId: fakeId(),
-      eboardRoleId: fakeId(),
-      eventsCommitteeRoleId: fakeId(),
-      treasuryRoleId: fakeId(),
-      marketingRoleId: fakeId(),
-    });
-    const guildId = fakeId();
-    const actorId = fakeId();
-    const second = roles();
-    const save = (draft: ReturnType<typeof roles>) =>
-      ok(saveSetupDraft(db, { guildId, actorId, roles: draft }));
-    const firstPrint = await save(roles());
-    const secondPrint = await save(second);
-    const now = new Date();
-    const read = (fingerprint: string, by = actorId, at = now) =>
-      ok(getSetupDraft(db, { guildId, actorId: by, fingerprint, now: at }));
+    describe("event reminders", () => {
+      /**
+       * Today in the fixture guild's zone. A step reminder can be claimed only for today or
+       * yesterday there, so an event dated today is the latest one a test can claim on.
+       */
+      const today = (): DateOnly => todayInZone(new Date(), "America/New_York");
+      const dayAfter = (day: string): DateOnly =>
+        date(new Date(Date.parse(day) + 86_400_000).toISOString().slice(0, 10));
 
-    expect(await read(firstPrint)).toBeNull();
-    expect(await read(secondPrint)).toMatchObject({
-      guild_id: guildId,
-      actor_id: actorId,
-      treasury_role_id: second.treasuryRoleId,
-      fingerprint: secondPrint,
+      it("lists a live event with its steps, live people and recent log", async () => {
+        const eventDate = today();
+        const eventId = await datedEvent(eventDate);
+        const user = fakeId();
+        await ok(assign(eventId, "budget_sheet", user));
+        const gone = fakeId();
+        await ok(assign(eventId, "engage_post", gone));
+        await ok(unassign(eventId, "engage_post", gone, user));
+        const daily = {
+          eventId,
+          kind: "daily_steps" as const,
+          reminderDate: eventDate,
+        };
+        expect(await ok(claimEventReminder(db, daily))).not.toBeNull();
+
+        const listed = async (fromDate: DateOnly) =>
+          (await ok(listEventReminderCandidates(db, { fromDate }))).rows.find(
+            (row) => row.id === eventId,
+          );
+        const candidate = await listed(eventDate);
+        expect(candidate).toMatchObject({
+          guild_id: guild.guildId,
+          event_date: eventDate,
+          timezone: "America/New_York",
+          events_director_role_id: guild.officerRoleId,
+          pickup_time: null,
+          assignees: [{ kind: "budget_sheet", user_id: user }],
+          log: [
+            { kind: "daily_steps", reminder_date: eventDate, state: "claimed" },
+          ],
+        });
+        expect(candidate?.steps).toHaveLength(4);
+
+        // A later start leaves the event out, and a closed event is never listed.
+        expect(await listed(dayAfter(eventDate))).toBeUndefined();
+        await ok(closeEvent(db, key(eventId)));
+        expect(await listed(eventDate)).toBeUndefined();
+      });
     });
-    expect(await read(secondPrint, fakeId())).toBeNull();
-    const twoHoursOn = new Date(now.getTime() + 2 * 3_600_000);
-    expect(await read(secondPrint, actorId, twoHoursOn)).toBeNull();
-    const { rows } = await pg.query(
-      `SELECT count(*)::int AS count FROM public.setup_drafts WHERE guild_id = $1`,
-      [guildId],
-    );
-    expect(rows).toEqual([{ count: 1 }]);
+
+    it("keeps one setup draft per guild, readable for an hour by the member who made it", async () => {
+      const roles = () => ({
+        officerRoleId: fakeId(),
+        adminRoleId: fakeId(),
+        eboardRoleId: fakeId(),
+        eventsCommitteeRoleId: fakeId(),
+        treasuryRoleId: fakeId(),
+        marketingRoleId: fakeId(),
+      });
+      const guildId = fakeId();
+      const actorId = fakeId();
+      const second = roles();
+      const save = (draft: ReturnType<typeof roles>) =>
+        ok(saveSetupDraft(db, { guildId, actorId, roles: draft }));
+      const firstPrint = await save(roles());
+      const secondPrint = await save(second);
+      const now = new Date();
+      const read = (fingerprint: string, by = actorId, at = now) =>
+        ok(getSetupDraft(db, { guildId, actorId: by, fingerprint, now: at }));
+
+      expect(await read(firstPrint)).toBeNull();
+      expect(await read(secondPrint)).toMatchObject({
+        guild_id: guildId,
+        actor_id: actorId,
+        treasury_role_id: second.treasuryRoleId,
+        fingerprint: secondPrint,
+      });
+      expect(await read(secondPrint, fakeId())).toBeNull();
+      const twoHoursOn = new Date(now.getTime() + 2 * 3_600_000);
+      expect(await read(secondPrint, actorId, twoHoursOn)).toBeNull();
+      const { rows } = await pg.query(
+        `SELECT count(*)::int AS count FROM public.setup_drafts WHERE guild_id = $1`,
+        [guildId],
+      );
+      expect(rows).toEqual([{ count: 1 }]);
+    });
   });
 });

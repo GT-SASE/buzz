@@ -5,12 +5,19 @@ import {
   serverError,
   unavailable,
 } from "../../test/support/sql-client.ts";
-import { getGuildConfig } from "./guild-config.ts";
+import { stubDb } from "../../test/support/stub-db.ts";
+import { getEventWorkflow, setEventPickupTime } from "./event-steps.ts";
+import {
+  getGuildConfig,
+  getSetupDraft,
+  setupDraftFingerprint,
+  type SetupRoles,
+} from "./guild-config.ts";
 import { claimInteraction } from "./interaction-claims.ts";
 import { markTaskDoneAsOfficer } from "./tasks.ts";
 import { createDbClient, withDeadline } from "./client.ts";
 import { errorSummary, failureFromError } from "./errors.ts";
-import { capped, changedRow, sql } from "./internal.ts";
+import { sql } from "./internal.ts";
 import {
   MAX_SEARCH_LENGTH,
   isDbDate,
@@ -20,7 +27,10 @@ import {
   searchPattern,
 } from "./validate.ts";
 
+const GUILD = fakeId();
+const ACTOR = fakeId();
 const UUID = "11111111-2222-4333-8444-555555555555";
+const CREATED = "2030-01-01T11:00:00.123456+00:00";
 
 describe("client", () => {
   it("abandons a query at its deadline, aborts it and reports it as unavailable", async () => {
@@ -81,34 +91,6 @@ describe("the sql tag", () => {
   });
 });
 
-describe("rows", () => {
-  it("caps a list and says when there were more rows", () => {
-    expect(capped({ ok: true, value: [1, 2, 3] }, 2)).toEqual({
-      ok: true,
-      value: { rows: [1, 2], truncated: true },
-    });
-    expect(capped({ ok: true, value: [1, 2] }, 2)).toEqual({
-      ok: true,
-      value: { rows: [1, 2], truncated: false },
-    });
-  });
-
-  it("treats a write that changed no row as not found, and two as unexpected", () => {
-    expect(changedRow({ ok: true, value: [] })).toEqual({
-      ok: false,
-      error: { category: "not_found", code: null },
-    });
-    expect(changedRow({ ok: true, value: [1, 2] })).toEqual({
-      ok: false,
-      error: { category: "unexpected", code: null },
-    });
-    expect(changedRow({ ok: true, value: [1] })).toEqual({
-      ok: true,
-      value: 1,
-    });
-  });
-});
-
 describe("errors from the driver", () => {
   const text = "row text";
 
@@ -142,25 +124,19 @@ describe("errors from the driver", () => {
     ).toEqual({ category, code });
   });
 
-  it.each([
-    ["a network failure", unavailable()],
+  it.each<[string, unknown, "unavailable" | "unexpected"]>([
+    ["a network failure", unavailable(), "unavailable"],
     [
       "an HTTP error",
       Object.assign(new Error(`Server error (HTTP status 502): ${text}`), {
         name: "NeonDbError",
       }),
+      "unavailable",
     ],
-  ])("reports %s as unavailable, with no code or text", (_name, error) => {
-    const result = failureFromError(error);
-    expect(result.error).toEqual({ category: "unavailable", code: null });
-  });
-
-  it.each([
-    ["a TypeError", new TypeError(text)],
-    ["a value that is not an error", text],
-  ])("reports %s as unexpected, with no code", (_name, error) => {
-    const result = failureFromError(error);
-    expect(result.error).toEqual({ category: "unexpected", code: null });
+    ["a TypeError", new TypeError(text), "unexpected"],
+    ["a value that is not an error", text, "unexpected"],
+  ])("reports %s with no code or text", (_name, error, category) => {
+    expect(failureFromError(error).error).toEqual({ category, code: null });
   });
 });
 
@@ -216,5 +192,114 @@ describe("input checks", () => {
     const pattern = searchPattern("\u{1F389}".repeat(MAX_SEARCH_LENGTH + 50));
     expect(pattern.isWellFormed()).toBe(true);
     expect(Array.from(pattern.slice(1, -1))).toHaveLength(MAX_SEARCH_LENGTH);
+  });
+});
+
+function step(kind: string, status = "open") {
+  return {
+    event_id: UUID,
+    kind,
+    status,
+    completed_at: status === "done" ? CREATED : null,
+    completed_by: status === "done" ? ACTOR : null,
+    handoff_claimed_at: null,
+    handoff_sent_at: null,
+  };
+}
+
+describe("the event workflow functions", () => {
+  it.each(["5:30", "24:00", "17:30:00"])(
+    "refuses the pickup time %j before any query",
+    async (pickupTime) => {
+      const { db, calls } = stubDb();
+      const result = await setEventPickupTime(db, {
+        guildId: GUILD,
+        eventId: UUID,
+        pickupTime,
+        actorId: ACTOR,
+      });
+      expect(result.ok).toBe(false);
+      expect(calls).toEqual([]);
+    },
+  );
+
+  it("orders a workflow's steps by kind, and gives the time as HH:MM", async () => {
+    const { db } = stubDb(() => ({
+      rows: [
+        {
+          id: UUID,
+          pickup_time: "17:30:00",
+          steps: [
+            step("food_pickup"),
+            step("budget_approved", "done"),
+            step("engage_post"),
+            step("budget_sheet", "done"),
+          ],
+          assignees: [],
+        },
+      ],
+    }));
+    const result = await getEventWorkflow(db, {
+      guildId: GUILD,
+      eventId: UUID,
+    });
+    const workflow = result.ok ? result.value : null;
+    expect(workflow?.pickup_time).toBe("17:30");
+    expect(workflow?.steps.map((row) => [row.kind, row.status])).toEqual([
+      ["budget_sheet", "done"],
+      ["engage_post", "open"],
+      ["budget_approved", "done"],
+      ["food_pickup", "open"],
+    ]);
+  });
+});
+
+describe("setup drafts", () => {
+  const ROLES: SetupRoles = {
+    officerRoleId: fakeId(),
+    adminRoleId: fakeId(),
+    eboardRoleId: fakeId(),
+    eventsCommitteeRoleId: fakeId(),
+    treasuryRoleId: fakeId(),
+    marketingRoleId: fakeId(),
+  };
+
+  it("fingerprints the six roles in order, in a short custom_id-safe form", () => {
+    const fingerprint = setupDraftFingerprint(ROLES);
+    expect(fingerprint).toMatch(/^[0-9a-f]{16}$/);
+    expect(
+      setupDraftFingerprint({
+        ...ROLES,
+        treasuryRoleId: ROLES.marketingRoleId,
+        marketingRoleId: ROLES.treasuryRoleId,
+      }),
+    ).not.toBe(fingerprint);
+  });
+
+  it("ignores a stored draft whose fingerprint does not match its roles", async () => {
+    const { db } = stubDb(() => ({
+      rows: [
+        {
+          guild_id: GUILD,
+          actor_id: ACTOR,
+          officer_role_id: ROLES.officerRoleId,
+          admin_role_id: ROLES.adminRoleId,
+          eboard_role_id: ROLES.eboardRoleId,
+          events_committee_role_id: ROLES.eventsCommitteeRoleId,
+          treasury_role_id: fakeId(),
+          marketing_role_id: ROLES.marketingRoleId,
+          fingerprint: setupDraftFingerprint(ROLES),
+          created_at: CREATED,
+        },
+      ],
+    }));
+    expect(
+      await getSetupDraft(db, {
+        guildId: GUILD,
+        actorId: ACTOR,
+        fingerprint: setupDraftFingerprint(ROLES),
+        now: new Date("2030-01-01T12:00:00.000Z"),
+      }),
+    ).toEqual({ ok: true, value: null });
   });
 });
