@@ -13,8 +13,7 @@
   "git": {
     "deploymentEnabled": {
       "**": false,
-      "main": true,
-      "staging": true
+      "main": true
     }
   }
 }
