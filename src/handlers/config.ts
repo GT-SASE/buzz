@@ -39,6 +39,7 @@ import type { MessageInput, Part, SelectOption } from "../discord/outbound.ts";
 import {
   channelMention,
   DISCORD_LIMITS,
+  discordTimestamp,
   escapeUserText,
   isWithinLimit,
   plain,
@@ -65,6 +66,7 @@ import type { ConfigChange, GuildConfig, ManagedChannel } from "../db/types.ts";
 import { refreshOverview } from "../events/overview.ts";
 import { retryHandoffs } from "../events/workflow.ts";
 import { isSnowflake } from "../lib/snowflake.ts";
+import { dayRunStart } from "../reminders/plan.ts";
 import {
   ADMIN_LABEL,
   boundRole,
@@ -405,7 +407,7 @@ async function renderPanel(
   // The run closes the day's slot even with nothing to send, and the slot stays closed.
   const whenOff = current.reminders_enabled
     ? safe``
-    : safe`\nTurning them on after the day's run (around 15:00 UTC) does not reopen it: they resume with the next day's run.`;
+    : safe`\nTurning them on after the day's run (around ${dayRunTime()}) does not reopen it: they resume with the next day's run.`;
   const compose = (limit: number): SafeText => {
     const body = safe`**Bot settings**
 Reminders: **${reminders}**${whenOff}
@@ -441,6 +443,11 @@ interface Change {
 }
 
 /** Literal arguments: guild and actor from the signed payload, the rest named here. */
+/** The time of the day's reminder run, which each reader sees in their own zone. */
+function dayRunTime(): SafeText {
+  return discordTimestamp(dayRunStart(new Date()), "t");
+}
+
 async function applyChange(
   ctx: FinishContext,
   version: number,
@@ -587,7 +594,7 @@ const remindersOn = componentRoute({
       ctx,
       version,
       { remindersEnabled: true },
-      safe`Reminders are on. If the day's run (around 15:00 UTC) has already happened, they resume with the next day's run.`,
+      safe`Reminders are on. If the day's run (around ${dayRunTime()}) has already happened, they resume with the next day's run.`,
     ),
 });
 

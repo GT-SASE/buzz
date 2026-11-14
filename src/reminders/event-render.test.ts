@@ -6,7 +6,6 @@ import { safeTextValue } from "../discord/safe-text.ts";
 import { parseIsoDate, type DateOnly } from "../lib/dates.ts";
 import {
   EventRenderError,
-  formatPickupTime,
   renderDailySteps,
   renderEventDay,
   renderPickup,
@@ -52,29 +51,15 @@ function candidate(
   };
 }
 
+/** The short-time Discord timestamp for an instant. */
+const at = (iso: string) => `<t:${String(Date.parse(iso) / 1000)}:t>`;
+
 const ALL_DONE: EventStepKind[] = [
   "budget_sheet",
   "engage_post",
   "budget_approved",
   "food_pickup",
 ];
-
-describe("formatPickupTime", () => {
-  it.each([
-    ["00:00", "12:00 AM"],
-    ["09:05", "9:05 AM"],
-    ["11:59", "11:59 AM"],
-    ["12:00", "12:00 PM"],
-    ["17:30", "5:30 PM"],
-    ["23:45", "11:45 PM"],
-  ])("shows %s as %s", (value, shown) => {
-    expect(formatPickupTime(value)).toBe(shown);
-  });
-
-  it.each(["24:00", "5:30", "17:30:00", "", "noon"])("refuses %j", (value) => {
-    expect(() => formatPickupTime(value)).toThrow(EventRenderError);
-  });
-});
 
 describe("renderEventDay", () => {
   it.each([
@@ -220,7 +205,7 @@ describe("renderPickup", () => {
     expect(safeTextValue(rendered.content)).toBe(
       [
         "**Food pickup for Spring social**",
-        `<@${ALICE}> <@${BOB}> you are on food pickup at 5\\:30 PM, on Tue, Nov 17, in 2 days.`,
+        `<@${ALICE}> <@${BOB}> you are on food pickup at ${at("2026-11-17T22:30:00Z")}, on Tue, Nov 17, in 2 days.`,
       ].join("\n"),
     );
     expect(rendered.mentionUserIds).toEqual([ALICE, BOB]);
@@ -230,7 +215,18 @@ describe("renderPickup", () => {
   it("says today on the day", () => {
     expect(
       safeTextValue(renderPickup(ready({ event_date: TODAY }), TODAY).content),
-    ).toContain("at 5\\:30 PM, today, Sun, Nov 15.");
+    ).toContain(`at ${at("2026-11-15T22:30:00Z")}, today, Sun, Nov 15.`);
+  });
+
+  it("gives the time in the guild's zone with the offset on the event's date", () => {
+    const summer = ready({ event_date: date("2026-06-03") });
+    expect(
+      safeTextValue(renderPickup(summer, date("2026-06-01")).content),
+    ).toContain(`at ${at("2026-06-03T21:30:00Z")}, on Wed, Jun 3`);
+    const singapore = ready({ timezone: "Asia/Singapore" });
+    expect(safeTextValue(renderPickup(singapore, TODAY).content)).toContain(
+      `at ${at("2026-11-17T09:30:00Z")},`,
+    );
   });
 
   it("refuses when Food pickup is not set up", () => {

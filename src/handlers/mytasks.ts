@@ -38,7 +38,7 @@ function taskLine(task: OpenTask): SafeText {
 }
 
 /** A step of an event already past says so, after the upcoming ones it is listed below. */
-function stepLine(step: UserStep, today: DateOnly): SafeText {
+function stepLine(step: UserStep, today: DateOnly, timeZone: string): SafeText {
   const event = safe`**${escapedName(step.event_name, EVENT_NAME_SHOWN)}** on ${shownDate(step.event_date)}`;
   if (step.kind !== "food_pickup") {
     return step.event_date < today
@@ -48,7 +48,7 @@ function stepLine(step: UserStep, today: DateOnly): SafeText {
   const time =
     step.pickup_time === null
       ? safe`time not set yet`
-      : safe`at ${pickupTimeText(step.pickup_time)}`;
+      : safe`at ${pickupTimeText(step.event_date, step.pickup_time, timeZone)}`;
   return safe`- Food pickup for ${event}, ${time}`;
 }
 
@@ -105,7 +105,8 @@ export const handler: Handler = {
             assigneeId: userId,
           }),
         );
-        const today = todayInZone(new Date(), ctx.config.timezone);
+        const timeZone = ctx.config.timezone;
+        const today = todayInZone(new Date(), timeZone);
         const steps = valueOf(
           await listOpenStepsForUser(ctx.db, { guildId, userId, today }),
         );
@@ -122,7 +123,7 @@ export const handler: Handler = {
         }
         const taskPart = linesThatFit(tasks.rows.map(taskLine), RESERVED);
         const stepPart = linesThatFit(
-          steps.rows.map((step) => stepLine(step, today)),
+          steps.rows.map((step) => stepLine(step, today, timeZone)),
           taskPart.used,
         );
         const sections: SafeText[] = [];

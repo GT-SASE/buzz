@@ -68,7 +68,9 @@ describe("renderOverview with the event's workflow", () => {
   const PERSON = fakeId();
   const flow = (done: readonly string[] = []): EventWorkflow => ({
     event_id: EVENT_ID,
+    event_date: eventRow().event_date,
     pickup_time: null,
+    timezone: "America/New_York",
     steps: EVENT_STEP_KINDS.map((kind) => ({
       event_id: EVENT_ID,
       kind,

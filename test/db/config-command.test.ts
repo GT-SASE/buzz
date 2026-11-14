@@ -30,6 +30,7 @@ import type {
   GuildRole,
 } from "../../src/discord/client.ts";
 import { REFUSED } from "../../src/lib/permissions.ts";
+import { SLOT_START_HOUR_UTC } from "../../src/reminders/plan.ts";
 import { COMMANDS, ROUTER } from "../../src/handlers/registry.ts";
 import { handlerDb, type HandlerDb, type Seed } from "./handler-db.ts";
 
@@ -1001,6 +1002,16 @@ describe("every button and select on the panel", () => {
 });
 
 describe("reminders", () => {
+  // The day's run, as a timestamp each reader sees in their own zone.
+  const NOW = Date.UTC(2026, 10, 3, 12);
+  const RUN_AT = `<t:${String(Date.UTC(2026, 10, 3, SLOT_START_HOUR_UTC) / 1000)}:t>`;
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"], now: NOW });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("says while they are off that turning them on waits for the next day's run", async () => {
     const { dependencies, edits } = await world({
       config: configRow({ reminders_enabled: false }),
@@ -1009,8 +1020,9 @@ describe("reminders", () => {
     await run(ROUTER, commandPayload("config"), dependencies);
 
     expect(edits[0]?.content).toContain("Reminders: **off**");
-    expect(edits[0]?.content).toContain("does not reopen it");
-    expect(edits[0]?.content).toContain("the next day's run");
+    expect(edits[0]?.content).toContain(
+      `Turning them on after the day's run (around ${RUN_AT}) does not reopen it: they resume with the next day's run.`,
+    );
   });
 
   it("does not mention the run while they are on", async () => {
@@ -1029,7 +1041,7 @@ describe("reminders", () => {
     await run(ROUTER, componentPayload("config.reminders-on:3"), dependencies);
 
     expect(edits[0]?.content).toContain(
-      "If the day's run (around 15:00 UTC) has already happened, they resume with the next day's run.",
+      `If the day's run (around ${RUN_AT}) has already happened, they resume with the next day's run.`,
     );
   });
 

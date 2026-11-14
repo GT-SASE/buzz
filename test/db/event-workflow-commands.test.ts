@@ -35,6 +35,8 @@ const CREATOR = fakeId();
 const REFUSAL = "You can't do that, or it doesn't exist.";
 const SUPPRESS_EMBEDS = 4;
 const EVERY_PERMISSION = String((1n << 50n) - 1n);
+/** 5:30 PM on the event's date in the guild's zone, New York, in winter. */
+const PICKUP_AT = `<t:${String(Date.UTC(2099, 0, 15, 22, 30) / 1000)}:t>`;
 const MESSAGE_EDIT = /^\/channels\/[0-9]+\/messages\/[0-9]+$/;
 
 const officer = (id = fakeId()) => member({ id, roles: [OFFICER_ROLE] });
@@ -451,10 +453,10 @@ describe("/event pickup", () => {
     expect(await pickupTime(event.id)).toBe("17:30");
     expect((await steps(event.id)).food_pickup?.status).toBe("done");
     expect(world.discord.lastReply()).toContain(
-      "Food pickup for **Fall Social** is at 5\\:30 PM on 2099\\-01\\-15.",
+      `Food pickup for **Fall Social** is at ${PICKUP_AT} on 2099\\-01\\-15.`,
     );
     expect(lastOverviewEdit(event)?.body?.content).toContain(
-      `✅ Food pickup: at 5\\:30 PM, <@${person}>`,
+      `✅ Food pickup: at ${PICKUP_AT}, <@${person}>`,
     );
   });
 
@@ -632,7 +634,7 @@ describe("the overview's buttons", () => {
 
   it("keeps an active event's buttons when its workflow can't be read for the overview", async () => {
     const event = await seed();
-    world.failDb(/^SQL select e.id, e.pickup_time, coalesce\(/);
+    world.failDb(/^SQL select e.id, e.event_date, e.pickup_time, g.timezone,/);
 
     await world.send(click("event.budget-ok", event, eboard()));
 
@@ -950,6 +952,14 @@ describe("/mytasks", () => {
     expect(reply).not.toContain("Engage post");
     expect(reply).toContain(
       "- Food pickup for **Fall Social** on 2099\\-02\\-02, time not set yet",
+    );
+
+    await world.send(
+      command("pickup", { event: event.id, time: "17:30" }, {}, officer()),
+    );
+    await world.send(commandPayload("mytasks", { member: plain(person) }));
+    expect(world.discord.lastReply()).toContain(
+      `- Food pickup for **Fall Social** on 2099\\-02\\-02, at <t:${String(Date.UTC(2099, 1, 2, 22, 30) / 1000)}:t>`,
     );
   });
 

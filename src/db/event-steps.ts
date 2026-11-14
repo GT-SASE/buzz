@@ -103,14 +103,17 @@ export async function listEventWorkflows(
   }
   const read = await query<{
     id: string;
+    event_date: DateOnly;
     pickup_time: string | null;
+    timezone: string;
     steps: EventStep[];
     assignees: StepAssignee[];
   }>(
     db,
-    sql`select e.id, e.pickup_time, ${STEPS_OF_EVENT} as steps,
-      ${LIVE_ASSIGNEES_OF_EVENT} as assignees
+    sql`select e.id, e.event_date, e.pickup_time, g.timezone,
+      ${STEPS_OF_EVENT} as steps, ${LIVE_ASSIGNEES_OF_EVENT} as assignees
     from events e
+    join guild_config g on g.guild_id = e.guild_id
     where e.guild_id = ${guildId} and e.id = any(${[...eventIds]}::uuid[])
       and e.deleted_at is null
     order by e.id limit ${MAX_ID_LIST}`,
@@ -120,7 +123,9 @@ export async function listEventWorkflows(
         ok: true,
         value: read.value.map((row) => ({
           event_id: row.id,
+          event_date: row.event_date,
           pickup_time: hoursAndMinutes(row.pickup_time),
+          timezone: row.timezone,
           // Every event has one row per kind, which the baseline adds with the event.
           steps: EVENT_STEP_KINDS.flatMap((kind) =>
             row.steps.filter((step) => step.kind === kind),

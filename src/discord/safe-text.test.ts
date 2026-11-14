@@ -4,6 +4,7 @@ import {
   chunkMessages,
   containsInviteOrMaskedLink,
   DISCORD_LIMITS,
+  discordTimestamp,
   escapeUserText,
   isWithinLimit,
   jumpLink,
@@ -562,6 +563,52 @@ describe("mentions and links", () => {
     "https://discord.com/invite/abc",
   ])("refuses %j as a link", (url) => {
     expect(() => jumpLink(url)).toThrow(SafeTextError);
+  });
+});
+
+describe("discordTimestamp", () => {
+  const instant = Date.UTC(2026, 10, 3, 22, 30);
+
+  it("builds the tag from a number, in whole seconds", () => {
+    expect(safeTextValue(discordTimestamp(instant, "t"))).toBe(
+      `<t:${String(instant / 1000)}:t>`,
+    );
+    expect(safeTextValue(discordTimestamp(instant + 999, "R"))).toBe(
+      `<t:${String(instant / 1000)}:R>`,
+    );
+  });
+
+  it.each([Number.NaN, Number.POSITIVE_INFINITY, 1e30])(
+    "refuses %s as an instant",
+    (value) => {
+      expect(() => discordTimestamp(value, "t")).toThrow(SafeTextError);
+    },
+  );
+
+  it("refuses a style Discord does not have", () => {
+    expect(() =>
+      discordTimestamp(instant, "x>" as Parameters<typeof discordTimestamp>[1]),
+    ).toThrow(SafeTextError);
+  });
+
+  it("cannot be made from user text", () => {
+    expect(safeTextValue(escapeUserText("<t:1793745000:t>"))).toBe(
+      String.raw`\<t\:1793745000\:t\>`,
+    );
+  });
+
+  it("is never split across messages", () => {
+    const tag = discordTimestamp(instant, "F");
+    const text = safe`${escapeUserText("x".repeat(5))}${tag}${tag}`;
+    const chunks = chunkMessages([{ text, mentionUserIds: [] }], {
+      maxLength: 24,
+    }).map((chunk) => safeTextValue(chunk.content));
+
+    expect(chunks.length).toBeGreaterThan(1);
+    expect(chunks.join("")).toBe(safeTextValue(text));
+    for (const chunk of chunks) {
+      expect(chunk.replace(/<t:[0-9]+:F>/g, "")).toMatch(/^x*$/);
+    }
   });
 });
 

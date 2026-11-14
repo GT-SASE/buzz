@@ -476,7 +476,9 @@ describe("Food pickup reminders", () => {
     expect(message.users.sort()).toEqual([...people].sort());
     expect(message.roles).toEqual([]);
     expect(message.content).toContain("Movie night");
-    expect(message.content).toContain("5\\:30 PM");
+    expect(message.content).toContain(
+      `at <t:${String(Date.parse(`${dateOffset(2)}T17:30:00Z`) / 1000)}:t>`,
+    );
     expect(message.content).toContain("in 2 days");
     expect(await logRows(made.eventId)).toEqual([
       {
@@ -573,7 +575,9 @@ describe("Food pickup reminders", () => {
 
     expect(sent).toHaveLength(2);
     const pickup = sent.find((message) =>
-      message.content.includes("9\\:05 AM"),
+      message.content.includes(
+        `<t:${String(Date.parse(`${dateOffset(0)}T09:05:00Z`) / 1000)}:t>`,
+      ),
     );
     expect(pickup?.users).toEqual([person]);
     expect((await logRows(made.eventId)).map((row) => row.kind)).toEqual([

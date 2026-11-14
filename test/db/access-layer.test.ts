@@ -3418,7 +3418,10 @@ describe("the event workflow against the real schema", () => {
     const eventId = await insertEvent(pg, guild);
     expect(unwrap(await getEventWorkflow(db, key(eventId)))).toEqual({
       event_id: eventId,
+      // insertEvent dates the event 2030-01-15, in a guild in New York.
+      event_date: "2030-01-15",
       pickup_time: null,
+      timezone: "America/New_York",
       steps: [
         "budget_sheet",
         "engage_post",

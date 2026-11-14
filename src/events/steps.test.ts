@@ -9,6 +9,7 @@ import type {
   StepAssignee,
 } from "../db/types.ts";
 import { EVENT_STEP_KINDS } from "../db/types.ts";
+import type { DateOnly } from "../lib/dates.ts";
 import {
   checklistLines,
   isStepDone,
@@ -22,6 +23,11 @@ import {
 
 const EVENT_ID = "11111111-1111-4111-8111-111111111111";
 const APPROVER = fakeId();
+const NEW_YORK = "America/New_York";
+const EVENT_DATE = "2026-11-03" as DateOnly;
+
+/** The short-time Discord timestamp for an instant. */
+const at = (iso: string) => `<t:${String(Date.parse(iso) / 1000)}:t>`;
 
 function workflow(
   done: readonly EventStepKind[] = [],
@@ -30,7 +36,9 @@ function workflow(
 ): EventWorkflow {
   return {
     event_id: EVENT_ID,
+    event_date: EVENT_DATE,
     pickup_time: pickupTime,
+    timezone: NEW_YORK,
     steps: EVENT_STEP_KINDS.map((kind): EventStep => ({
       event_id: EVENT_ID,
       kind,
@@ -55,17 +63,38 @@ const text = (value: Parameters<typeof safeTextValue>[0]) =>
 
 describe("pickupTimeText", () => {
   it.each([
+    // After the fall change on 2026-11-01, and after the spring one on 2026-03-08.
+    ["2026-11-03", "17:30", "2026-11-03T22:30:00Z"],
+    ["2026-03-10", "17:30", "2026-03-10T21:30:00Z"],
+    // Before each change.
+    ["2026-10-31", "17:30", "2026-10-31T21:30:00Z"],
+    ["2026-03-07", "17:30", "2026-03-07T22:30:00Z"],
+    ["2026-11-03", "00:05", "2026-11-03T05:05:00Z"],
+  ])("shows %s %s in New York as the instant %s", (day, time, instant) => {
+    expect(text(pickupTimeText(day as DateOnly, time, NEW_YORK))).toBe(
+      at(instant),
+    );
+  });
+
+  it("uses the guild's own zone", () => {
+    expect(text(pickupTimeText(EVENT_DATE, "07:00", "Asia/Singapore"))).toBe(
+      at("2026-11-02T23:00:00Z"),
+    );
+  });
+
+  it.each([
     ["00:05", String.raw`12\:05 AM`],
-    ["09:00", String.raw`9\:00 AM`],
     ["12:00", String.raw`12\:00 PM`],
     ["17:30", String.raw`5\:30 PM`],
-    ["23:59", String.raw`11\:59 PM`],
-  ])("shows %s as %s", (stored, shown) => {
-    expect(text(pickupTimeText(stored))).toBe(shown);
+  ])("shows %s as %s without a zone it knows", (stored, shown) => {
+    expect(text(pickupTimeText(EVENT_DATE, stored, null))).toBe(shown);
+    expect(text(pickupTimeText(EVENT_DATE, stored, "Mars/Base"))).toBe(shown);
   });
 
   it("shows a value that is not a time escaped, rather than hiding it", () => {
-    expect(text(pickupTimeText("**25:00**"))).toBe(String.raw`\*\*25\:00\*\*`);
+    expect(text(pickupTimeText(EVENT_DATE, "**25:00**", NEW_YORK))).toBe(
+      String.raw`\*\*25\:00\*\*`,
+    );
   });
 });
 
@@ -91,7 +120,7 @@ describe("the checklist", () => {
       `✅ Budget Sheet: <@${first}>, <@${second}>`,
       "⬜ Engage post: nobody assigned",
       `✅ Budget approved by <@${APPROVER}>`,
-      String.raw`⬜ Food pickup: at 5\:30 PM, <@${picker}>`,
+      `⬜ Food pickup: at ${at("2026-11-03T22:30:00Z")}, <@${picker}>`,
     ]);
   });
 

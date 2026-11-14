@@ -344,7 +344,7 @@ async function pickup(
   }
   const done = valueOf(written);
   return withNotes(
-    safe`Food pickup for **${eventTitle(event)}** is at ${pickupTimeText(parsed.time)} on ${dateText(event.event_date)}.`,
+    safe`Food pickup for **${eventTitle(event)}** is at ${pickupTimeText(event.event_date, parsed.time, ctx.config?.timezone ?? null)} on ${dateText(event.event_date)}.`,
     done
       ? undefined
       : safe`Add the people picking up with /event assign step:Food pickup.`,

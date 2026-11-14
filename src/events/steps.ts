@@ -12,6 +12,7 @@
 import { actionRow, button } from "../discord/outbound.ts";
 import type { Part } from "../discord/outbound.ts";
 import {
+  discordTimestamp,
   escapeUserText,
   plain,
   safe,
@@ -25,6 +26,11 @@ import type {
   EventWorkflow,
 } from "../db/types.ts";
 import { isPickupTime, isUuid } from "../db/validate.ts";
+import {
+  instantInZone,
+  isUsableTimeZone,
+  type DateOnly,
+} from "../lib/dates.ts";
 import { commaList } from "../handlers/render.ts";
 
 /** The custom_id prefixes of the overview's buttons. Each is followed by the event ID. */
@@ -66,14 +72,27 @@ export function stepMark(step: Pick<EventStep, "status">): SafeText {
 }
 
 /**
- * A stored `HH:MM` on a 24-hour clock, as a 12-hour time such as "5:30 PM". Anything
- * else is shown as it is, escaped, so a bad value is visible rather than hidden.
+ * A stored pickup time, which is the guild's local time on the event's date, as a
+ * Discord timestamp that each reader sees in their own zone. The instant uses the offset
+ * in force on that date, so it is right across a daylight saving change. Without a zone
+ * this runtime knows it is a 12-hour time such as "5:30 PM", and a value that is not a
+ * time is shown escaped, so a bad value is visible rather than hidden.
  */
-export function pickupTimeText(time: string): SafeText {
+export function pickupTimeText(
+  eventDate: DateOnly,
+  time: string,
+  timeZone: string | null,
+): SafeText {
   if (!isPickupTime(time)) {
     return escapeUserText(time);
   }
   const [hours = 0, minutes = 0] = time.split(":").map(Number);
+  if (timeZone !== null && isUsableTimeZone(timeZone)) {
+    return discordTimestamp(
+      instantInZone(eventDate, hours, minutes, timeZone),
+      "t",
+    );
+  }
   const half = hours < 12 ? "AM" : "PM";
   const shown = hours % 12 === 0 ? 12 : hours % 12;
   return escapeUserText(
@@ -118,7 +137,7 @@ export function pickupText(workflow: EventWorkflow): SafeText {
   const time =
     workflow.pickup_time === null
       ? safe`time not set`
-      : safe`at ${pickupTimeText(workflow.pickup_time)}`;
+      : safe`at ${pickupTimeText(workflow.event_date, workflow.pickup_time, workflow.timezone)}`;
   return safe`${time}, ${ownersText(stepOwnerIds(workflow, "food_pickup"))}`;
 }
 

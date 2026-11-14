@@ -35,14 +35,19 @@ const MS_PER_DAY = 86_400_000;
  */
 export const SLOT_START_HOUR_UTC = 15;
 
-/** The start of the schedule slot this instant falls in. */
-export function slotStart(now: Date): number {
-  const today = Date.UTC(
+/** When the schedule slot on this instant's UTC date starts, whether or not it has yet. */
+export function dayRunStart(now: Date): number {
+  return Date.UTC(
     now.getUTCFullYear(),
     now.getUTCMonth(),
     now.getUTCDate(),
     SLOT_START_HOUR_UTC,
   );
+}
+
+/** The start of the schedule slot this instant falls in. */
+export function slotStart(now: Date): number {
+  const today = dayRunStart(now);
   return today <= now.getTime() ? today : today - MS_PER_DAY;
 }
 

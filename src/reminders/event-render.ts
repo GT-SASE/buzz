@@ -21,10 +21,10 @@ import {
 } from "../discord/safe-text.ts";
 import type { EventReminderCandidate, EventReminderKind } from "../db/types.ts";
 import { daysBetween, type DateOnly } from "../lib/dates.ts";
+import { pickupTimeText } from "../events/steps.ts";
 import { openSteps, pickupPeople, type OpenStep } from "./event-plan.ts";
 
 const MAX_EVENT_NAME = 200;
-const PICKUP_TIME = /^([01][0-9]|2[0-3]):([0-5][0-9])$/;
 
 const dateFormat = new Intl.DateTimeFormat("en-US", {
   timeZone: "UTC",
@@ -42,22 +42,6 @@ export interface RenderedEventReminder {
   readonly mentionUserIds: readonly string[];
   /** Only ever the guild's Events Directors role, for a step nobody is on. */
   readonly mentionRoleIds: readonly string[];
-}
-
-/**
- * `HH:MM` on a 24-hour clock, as stored, shown as a 12-hour time such as 5:30 PM. The
- * value is already the guild's local time on the event's date, so no zone is applied.
- */
-export function formatPickupTime(value: string): string {
-  const match = PICKUP_TIME.exec(value);
-  if (match === null) {
-    throw new EventRenderError("Not a pickup time");
-  }
-  const hours = Number(match[1]);
-  const minutes = match[2] ?? "00";
-  const suffix = hours < 12 ? "AM" : "PM";
-  const hour12 = hours % 12 === 0 ? 12 : hours % 12;
-  return `${String(hour12)}:${minutes} ${suffix}`;
 }
 
 function eventName(name: string): SafeText {
@@ -152,7 +136,11 @@ export function renderPickup(
   if (people === null || event.pickup_time === null) {
     throw new EventRenderError("Food pickup is not set up");
   }
-  const time = escapeUserText(formatPickupTime(event.pickup_time));
+  const time = pickupTimeText(
+    event.event_date,
+    event.pickup_time,
+    event.timezone,
+  );
   return checked({
     content: safe`**Food pickup for ${eventName(event.name)}**\n${mentions(people)} you are on food pickup at ${time}, ${renderEventDay(today, event.event_date)}.`,
     mentionUserIds: people,

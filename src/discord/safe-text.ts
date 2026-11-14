@@ -312,6 +312,35 @@ export function channelMention(channelId: string): SafeText {
   return idMention("#", channelId);
 }
 
+/** Discord's timestamp styles: short and long time, date, date and time, and relative. */
+export type TimestampStyle = "t" | "T" | "d" | "D" | "f" | "F" | "R";
+
+const TIMESTAMP_STYLES: ReadonlySet<string> = new Set([
+  "t",
+  "T",
+  "d",
+  "D",
+  "f",
+  "F",
+  "R",
+]);
+
+/**
+ * An instant that each reader sees in their own time zone, such as `<t:1793745000:t>`.
+ * Built only from a number, so no stored or typed text can become one: escaping turns
+ * the `<` and `:` of user text into literals.
+ */
+export function discordTimestamp(
+  epochMs: number,
+  style: TimestampStyle,
+): SafeText {
+  const seconds = Math.floor(epochMs / 1000);
+  if (!Number.isSafeInteger(seconds) || !TIMESTAMP_STYLES.has(style)) {
+    throw new SafeTextError("A timestamp needs a real instant and style");
+  }
+  return new SafeText(MINT, `<t:${String(seconds)}:${style}>`);
+}
+
 const JUMP_LINK = /^https:\/\/discord\.com\/channels\/[0-9]+\/[0-9]+\/[0-9]+$/;
 
 /** Accepts only a link to a message, as made by `messageUrl` in the client. */
@@ -368,8 +397,8 @@ export interface ChunkLimits {
   readonly maxMentions?: number;
 }
 
-// A mention, a link or an escaped character must stay whole.
-const ATOM = /<[@#][0-9]+>|https:\/\/[^\s<]+|\\[\s\S]/gu;
+// A mention, a timestamp, a link or an escaped character must stay whole.
+const ATOM = /<[@#][0-9]+>|<t:-?[0-9]+:[tTdDfFR]>|https:\/\/[^\s<]+|\\[\s\S]/gu;
 const USER_MENTION = /^<@([0-9]+)>$/;
 
 /** Splits text into pieces that must not be divided. */

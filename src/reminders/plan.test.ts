@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { parseIsoDate, todayInZone, type DateOnly } from "../lib/dates.ts";
 import {
+  dayRunStart,
   planReminders,
   REMINDER_KINDS,
   STALE_CLAIM_MS,
@@ -1211,5 +1212,6 @@ describe("slotToday", () => {
     const start = Date.UTC(2026, 10, 10, SLOT_START_HOUR_UTC);
     expect(slotStart(new Date(start))).toBe(start);
     expect(slotStart(new Date(start - 1_000))).toBe(start - 86_400_000);
+    expect(dayRunStart(new Date(start - 1_000))).toBe(start);
   });
 });

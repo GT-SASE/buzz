@@ -221,8 +221,11 @@ export interface StepAssignee {
 /** One event's steps and the people on them, oldest assignment first. */
 export interface EventWorkflow {
   event_id: string;
+  event_date: DateOnly;
   /** `HH:MM` in the guild's timezone on the event's date, or null if not set. */
   pickup_time: string | null;
+  /** The guild's time zone, which the pickup time is in. */
+  timezone: string;
   /** One per kind, in the order of `EVENT_STEP_KINDS`. */
   steps: EventStep[];
   assignees: StepAssignee[];

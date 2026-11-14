@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   isUsableTimeZone,
   daysBetween,
+  instantInZone,
   parseDateInput,
   parseIsoDate,
   todayInZone,
@@ -69,6 +70,36 @@ describe("todayInZone", () => {
   it("throws a RangeError for an unknown zone or an invalid instant", () => {
     expect(() => todayInZone(new Date(0), "Not/AZone")).toThrow(RangeError);
     expect(() => todayInZone(new Date(Number.NaN), "UTC")).toThrow(RangeError);
+  });
+});
+
+describe("instantInZone", () => {
+  it.each([
+    // The fall change was on 2026-11-01 and the spring one on 2026-03-08.
+    ["2026-10-31", 17, 30, NEW_YORK, "2026-10-31T21:30:00.000Z"],
+    ["2026-11-03", 17, 30, NEW_YORK, "2026-11-03T22:30:00.000Z"],
+    ["2026-03-07", 17, 30, NEW_YORK, "2026-03-07T22:30:00.000Z"],
+    ["2026-03-10", 17, 30, NEW_YORK, "2026-03-10T21:30:00.000Z"],
+    // On the day itself, either side of the change.
+    ["2026-11-01", 0, 30, NEW_YORK, "2026-11-01T04:30:00.000Z"],
+    ["2026-11-01", 3, 0, NEW_YORK, "2026-11-01T08:00:00.000Z"],
+    ["2026-03-08", 1, 30, NEW_YORK, "2026-03-08T06:30:00.000Z"],
+    ["2026-03-08", 3, 30, NEW_YORK, "2026-03-08T07:30:00.000Z"],
+    // Ahead of UTC, past midnight UTC, and with no daylight saving.
+    ["2026-11-03", 7, 0, "Asia/Singapore", "2026-11-02T23:00:00.000Z"],
+    ["2026-04-05", 12, 0, "Pacific/Auckland", "2026-04-05T00:00:00.000Z"],
+    ["2026-04-04", 12, 0, "Pacific/Auckland", "2026-04-03T23:00:00.000Z"],
+    ["2026-11-03", 0, 0, "UTC", "2026-11-03T00:00:00.000Z"],
+  ])("reads %s %i:%i in %s as %s", (day, hours, minutes, zone, expected) => {
+    expect(
+      new Date(instantInZone(date(day), hours, minutes, zone)).toISOString(),
+    ).toBe(expected);
+  });
+
+  it("refuses a zone the runtime does not know", () => {
+    expect(() => instantInZone(date("2026-11-03"), 9, 0, "Mars/Base")).toThrow(
+      RangeError,
+    );
   });
 });
 
