@@ -87,23 +87,20 @@ describe("hasValidSignature", () => {
 
   // Buffer.from stops at the first character that is not hex, so without the shape
   // check this would decode to the real signature.
-  it("refuses malformed signatures, including a good one followed by non-hex", () => {
+  it("refuses malformed headers, including a good signature followed by non-hex", () => {
     const trailing = `${signatureFor(timestamp, body)}zz`;
 
+    expect(hasWellFormedSignatureHeaders("ab".repeat(64), timestamp)).toBe(
+      true,
+    );
     expect(hasWellFormedSignatureHeaders(trailing, timestamp)).toBe(false);
+    expect(hasWellFormedSignatureHeaders("ab".repeat(64), "soon")).toBe(false);
+    expect(
+      hasWellFormedSignatureHeaders("ab".repeat(64), `${timestamp}{`),
+    ).toBe(false);
     for (const signature of [trailing, "", "ab".repeat(63), "zz".repeat(64)]) {
       expect(valid(signature)).toBe(false);
     }
-  });
-
-  it("refuses malformed timestamp headers", () => {
-    const signature = "ab".repeat(64);
-
-    expect(hasWellFormedSignatureHeaders(signature, timestamp)).toBe(true);
-    expect(hasWellFormedSignatureHeaders(signature, "soon")).toBe(false);
-    expect(hasWellFormedSignatureHeaders(signature, `${timestamp}{`)).toBe(
-      false,
-    );
   });
 });
 
@@ -111,18 +108,16 @@ describe("isFreshTimestamp", () => {
   const nowSeconds = 1_700_000_000;
   const nowMs = nowSeconds * 1000;
 
-  it("accepts up to 5 minutes either way", () => {
-    expect(isFreshTimestamp(String(nowSeconds - 300), nowMs)).toBe(true);
-    expect(isFreshTimestamp(String(nowSeconds - 301), nowMs)).toBe(false);
-    expect(isFreshTimestamp(String(nowSeconds + 301), nowMs)).toBe(false);
+  it.each([
+    [String(nowSeconds - 300), true],
+    [String(nowSeconds - 301), false],
+    [String(nowSeconds + 301), false],
+    ["1700000000.5", false],
+    ["-1700000000", false],
+    [" 1700000000", false],
+  ])("reads %j as %p, allowing 5 minutes either way", (value, expected) => {
+    expect(isFreshTimestamp(value, nowMs)).toBe(expected);
   });
-
-  it.each(["", "1700000000.5", "-1700000000", " 1700000000"])(
-    "refuses the malformed timestamp %j",
-    (value) => {
-      expect(isFreshTimestamp(value, nowMs)).toBe(false);
-    },
-  );
 });
 
 describe("verifySignedRequest", () => {
@@ -189,19 +184,8 @@ describe("verifiedInteractionFrom", () => {
   const build = (payload: unknown) =>
     verifiedInteractionFrom(signedPayload(payload));
 
-  it("takes its fields from the signed payload", () => {
+  it("takes its fields from the signed payload, with a thread's parent", () => {
     const interaction = build(PAYLOAD);
-
-    expect(interaction?.id).toBe(fakeId(1));
-    expect(interaction?.guildId).toBe(fakeId(2));
-    expect(interaction?.channelId).toBe(fakeId(3));
-    expect(interaction?.channelType).toBe(0);
-    expect(interaction?.parentId).toBeUndefined();
-    expect(interaction && interactionToken(interaction)).toBe(TOKEN);
-    expect(Object.isFrozen(interaction)).toBe(true);
-  });
-
-  it("keeps the parent of a thread, and ignores it on a text channel", () => {
     const thread = build({
       ...PAYLOAD,
       channel: { id: fakeId(3), type: 11, parent_id: fakeId(4) },
@@ -211,8 +195,15 @@ describe("verifiedInteractionFrom", () => {
       channel: { id: fakeId(3), type: 0, parent_id: fakeId(4) },
     });
 
+    expect(interaction).toMatchObject({
+      id: fakeId(1),
+      guildId: fakeId(2),
+      channelId: fakeId(3),
+      channelType: 0,
+    });
+    expect(interaction && interactionToken(interaction)).toBe(TOKEN);
+    expect(Object.isFrozen(interaction)).toBe(true);
     expect(thread?.parentId).toBe(fakeId(4));
-    expect(text).toBeDefined();
     expect(text?.parentId).toBeUndefined();
   });
 

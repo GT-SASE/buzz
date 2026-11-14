@@ -57,15 +57,16 @@ describe("registerGuildCommands", () => {
     expect(init?.body).toBe(JSON.stringify(COMMANDS));
   });
 
-  it("sends nothing if any server is not allowed", () => {
+  it("sends nothing if any server is not allowed", async () => {
     const send = stubSend();
 
-    expect(
-      registerGuildCommands(
-        registration([GUILD_A, OTHER_GUILD]),
-        asFetch(send),
-      ),
-    ).rejects.toThrow("Server ID 2 on the command line");
+    const error: unknown = await registerGuildCommands(
+      registration([GUILD_A, OTHER_GUILD]),
+      asFetch(send),
+    ).catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(Error);
+    expect(String(error)).toContain("Server ID 2 on the command line");
     expect(send).not.toHaveBeenCalled();
   });
 
@@ -160,5 +161,42 @@ describe("main", () => {
 
     expect(await main([GUILD_A])).toBe(1);
     expect(errors.mock.calls).toEqual([["Error"]]);
+  });
+});
+
+describe("the commands as registered", () => {
+  function optionNames(command: string, sub?: string): string[] {
+    const definition = COMMANDS.find((item) => item.name === command);
+    const { options = [] } = (definition ?? {}) as {
+      options?: { name: string; options?: { name: string }[] }[];
+    };
+    const list =
+      sub === undefined
+        ? options
+        : (options.find((option) => option.name === sub)?.options ?? []);
+    return list.map((option) => option.name);
+  }
+
+  it("gives /mytasks no options, and each /task subcommand only what it needs", () => {
+    expect(optionNames("mytasks")).toEqual([]);
+    expect(optionNames("task").sort()).toEqual([
+      "assign",
+      "delete",
+      "done",
+      "edit",
+    ]);
+    expect(optionNames("task", "assign")).toEqual([
+      "person",
+      "description",
+      "due",
+      "event",
+    ]);
+    expect(optionNames("task", "edit")).toEqual([
+      "task",
+      "description",
+      "due",
+      "person",
+    ]);
+    expect(optionNames("task", "done")).toEqual(["task"]);
   });
 });

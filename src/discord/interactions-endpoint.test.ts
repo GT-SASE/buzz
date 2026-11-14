@@ -30,6 +30,7 @@ import {
   type FetchLike,
 } from "../../test/support/stubs.ts";
 import * as registry from "../handlers/registry.ts";
+import { isDeclaredLengthWithin, readBodyWithin } from "../lib/read-body.ts";
 import * as outbound from "./outbound.ts";
 import { safe } from "./safe-text.ts";
 
@@ -100,13 +101,13 @@ function badlySignedRequest(payload: unknown): Request {
   });
 }
 
-/** A request that records how many times its body was pulled from. */
+/** A request that records how often its body was pulled from, and if it was cancelled. */
 function streamedRequest(
-  chunkCount: number,
-  chunkBytes: number,
-  headers: Record<string, string>,
+  chunks: readonly Uint8Array[],
+  headers: Record<string, string> = {},
 ) {
   let pulls = 0;
+  let cancelled = false;
   const request = new Request("https://bot.example.test/api/interactions", {
     method: "POST",
     headers,
@@ -114,18 +115,22 @@ function streamedRequest(
     body: new ReadableStream<Uint8Array>(
       {
         pull(controller) {
+          const chunk = chunks[pulls];
           pulls += 1;
-          if (pulls > chunkCount) {
+          if (chunk === undefined) {
             controller.close();
           } else {
-            controller.enqueue(new Uint8Array(chunkBytes));
+            controller.enqueue(chunk);
           }
+        },
+        cancel() {
+          cancelled = true;
         },
       },
       { highWaterMark: 0 },
     ),
   });
-  return { request, pulls: () => pulls };
+  return { request, pulls: () => pulls, cancelled: () => cancelled };
 }
 
 function command(overrides: Record<string, unknown> = {}) {
@@ -172,18 +177,6 @@ describe("signature checks", () => {
     expect(response.status).toBe(401);
   });
 
-  it("refuses a good signature followed by letters that are not hex", async () => {
-    const body = Buffer.from(JSON.stringify(ping));
-    const timestamp = nowSeconds();
-    const response = await POST(
-      requestWith(body, {
-        "x-signature-ed25519": `${signatureFor(timestamp, body)}zz`,
-        "x-signature-timestamp": timestamp,
-      }),
-    );
-    expect(response.status).toBe(401);
-  });
-
   it.each(["x-signature-ed25519", "x-signature-timestamp"])(
     "refuses a request without %s",
     async (missing) => {
@@ -219,7 +212,8 @@ describe("signature checks", () => {
 
 describe("request size", () => {
   it("does not read an oversized unsigned POST", async () => {
-    const { request, pulls } = streamedRequest(10, 1024 * 1024, {
+    const chunks = Array.from({ length: 10 }, () => new Uint8Array(1 << 20));
+    const { request, pulls } = streamedRequest(chunks, {
       "content-length": String(10 * 1024 * 1024),
     });
 
@@ -235,6 +229,33 @@ describe("request size", () => {
     const padding = Buffer.alloc(size - start.length, " ");
     const response = await POST(signedBytes(Buffer.concat([start, padding])));
     expect(response.status).toBe(status);
+  });
+
+  it.each([
+    [null, true],
+    ["10", true],
+    ["11", false],
+    ["1e1", false],
+    ["10, 10", false],
+  ])("reads a declared length of %j against 10 as %p", (length, expected) => {
+    expect(isDeclaredLengthWithin(length, 10)).toBe(expected);
+  });
+
+  it("keeps the exact bytes, and stops and cancels past the limit", async () => {
+    const small = streamedRequest([
+      Uint8Array.of(0xff, 0x00),
+      Uint8Array.of(0x7b),
+    ]);
+    const large = streamedRequest(
+      Array.from({ length: 100 }, () => new Uint8Array(4)),
+    );
+
+    expect(
+      Buffer.from((await readBodyWithin(small.request, 10)) ?? []),
+    ).toEqual(Buffer.of(0xff, 0x00, 0x7b));
+    expect(await readBodyWithin(large.request, 10)).toBeUndefined();
+    expect(large.pulls()).toBe(3);
+    expect(large.cancelled()).toBe(true);
   });
 });
 

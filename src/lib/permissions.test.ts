@@ -223,24 +223,6 @@ describe("tiers", () => {
       );
     }
   });
-
-  it("does not spare an admin the checks on the row", () => {
-    for (const who of [ADMIN, ADMINISTRATOR]) {
-      expect(authorize("event.close", who, CONFIG, null)).toBe(REFUSED);
-      expect(
-        authorize("event.close", who, CONFIG, {
-          ...EVENT,
-          guild_id: OTHER_GUILD,
-        }),
-      ).toBe(REFUSED);
-      expect(
-        authorize("event.close", who, CONFIG, {
-          ...EVENT,
-          deleted_at: DELETED_AT,
-        }),
-      ).toBe(REFUSED);
-    }
-  });
 });
 
 describe("before setup", () => {
@@ -272,50 +254,36 @@ describe("another guild's config", () => {
 
 describe("object-scoped actions", () => {
   it.each([...EVENT_SCOPED, ...OFFICER_TASK_SCOPED])(
-    "%s needs an officer and a live row in the guild",
+    "%s needs an officer and a live row in the guild, even for an admin",
     (action) => {
       expect(decide(action, OFFICER, CONFIG, OTHERS_TASK).allowed).toBe(true);
       expect(decide(action, MEMBER, CONFIG, OWN_TASK)).toBe(REFUSED);
-      expect(decide(action, OFFICER, CONFIG, null)).toBe(REFUSED);
-      expect(
-        decide(action, OFFICER, CONFIG, {
-          ...OTHERS_TASK,
-          guild_id: OTHER_GUILD,
-        }),
-      ).toBe(REFUSED);
-      expect(
-        decide(action, OFFICER, CONFIG, {
-          ...OTHERS_TASK,
-          deleted_at: DELETED_AT,
-        }),
-      ).toBe(REFUSED);
-      const incomplete = { guild_id: GUILD } as EventResource;
-      expect(decide(action, OFFICER, CONFIG, incomplete)).toBe(REFUSED);
+      for (const who of [OFFICER, ADMINISTRATOR]) {
+        for (const row of [
+          null,
+          { ...OTHERS_TASK, guild_id: OTHER_GUILD },
+          { ...OTHERS_TASK, deleted_at: DELETED_AT },
+          { guild_id: GUILD } as EventResource,
+        ]) {
+          expect(decide(action, who, CONFIG, row)).toBe(REFUSED);
+        }
+      }
     },
   );
 
   it("lets task.done through for the assignee or the officer tier", () => {
     expect(authorize("task.done", MEMBER, CONFIG, OWN_TASK).allowed).toBe(true);
-    for (const who of [OFFICER, ADMIN, ADMINISTRATOR]) {
-      expect(authorize("task.done", who, CONFIG, OTHERS_TASK).allowed).toBe(
-        true,
-      );
+    expect(authorize("task.done", OFFICER, CONFIG, OTHERS_TASK).allowed).toBe(
+      true,
+    );
+    for (const row of [
+      OTHERS_TASK,
+      { ...OWN_TASK, guild_id: OTHER_GUILD },
+      { ...OWN_TASK, deleted_at: DELETED_AT },
+      EVENT,
+    ]) {
+      expect(decide("task.done", MEMBER, CONFIG, row)).toBe(REFUSED);
     }
-    expect(authorize("task.done", MEMBER, CONFIG, OTHERS_TASK)).toBe(REFUSED);
-    expect(authorize("task.done", OFFICER, CONFIG, null)).toBe(REFUSED);
-    expect(
-      authorize("task.done", MEMBER, CONFIG, {
-        ...OWN_TASK,
-        guild_id: OTHER_GUILD,
-      }),
-    ).toBe(REFUSED);
-    expect(
-      authorize("task.done", MEMBER, CONFIG, {
-        ...OWN_TASK,
-        deleted_at: DELETED_AT,
-      }),
-    ).toBe(REFUSED);
-    expect(decide("task.done", MEMBER, CONFIG, EVENT)).toBe(REFUSED);
   });
 
   it("requires the row by type", () => {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { stubEnv } from "../../test/support/stubs.ts";
 import { ConfigError } from "./config-error.ts";
+import { isCronAuthorized } from "./cron-auth.ts";
 import {
   getAllowedGuildIds,
   getDatabaseUrl,
@@ -52,5 +53,32 @@ describe("accepted values", () => {
   it("splits and trims the guild list", () => {
     stubEnv("ALLOWED_GUILD_IDS", `${GUILD_A}, ${GUILD_B}`);
     expect(getAllowedGuildIds()).toEqual(new Set([GUILD_A, GUILD_B]));
+  });
+});
+
+describe("isCronAuthorized", () => {
+  const SECRET = "s".repeat(32);
+
+  it.each([
+    ["the bearer value of the secret", `Bearer ${SECRET}`, SECRET, true],
+    ["a secret stored with a newline", `Bearer ${SECRET}`, `${SECRET}\n`, true],
+    ["no header", null, SECRET, false],
+    ["a wrong secret", `Bearer ${"t".repeat(32)}`, SECRET, false],
+    ["a longer secret", `Bearer ${SECRET}x`, SECRET, false],
+    ["the bare secret", SECRET, SECRET, false],
+    ["a padded header", ` Bearer ${SECRET}`, SECRET, false],
+    ["a header with a newline", `Bearer ${SECRET}\n`, `${SECRET}\n`, false],
+  ])("answers %s with %p", (_label, header, secret, expected) => {
+    expect(isCronAuthorized(header, secret)).toBe(expected);
+  });
+
+  it.each([
+    ["unset", undefined],
+    ["31 characters", "s".repeat(31)],
+    ["short once trimmed", ` ${"s".repeat(31)} `.padEnd(40)],
+  ])("refuses everything when the secret is %s", (_label, secret) => {
+    for (const header of ["Bearer undefined", "Bearer ", null]) {
+      expect(isCronAuthorized(header, secret)).toBe(false);
+    }
   });
 });

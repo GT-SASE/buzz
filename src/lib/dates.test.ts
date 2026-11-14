@@ -121,28 +121,18 @@ describe("parseIsoDate", () => {
 });
 
 describe("parseDateInput", () => {
-  describe("with a full date", () => {
-    it("returns it unchanged", () => {
-      expect(parsed("2026-11-15", "2026-11-04")).toEqual({
-        ok: true,
-        date: "2026-11-15",
-      });
-    });
-
-    it("rejects a past date with rejectPast", () => {
-      expect(parsed("2026-11-03", "2026-11-04", true)).toEqual({
-        ok: false,
-        error: "past_date",
-      });
-    });
-
-    it("treats today and later as not past", () => {
-      expect(parsed("2026-11-04", "2026-11-04", true)).toEqual({
-        ok: true,
-        date: "2026-11-04",
-      });
-    });
-  });
+  it.each([
+    ["2026-11-15", false, { ok: true, date: "2026-11-15" }],
+    ["2026-11-04", true, { ok: true, date: "2026-11-04" }],
+    ["2026-11-03", true, { ok: false, error: "past_date" }],
+    // A month and day is never in the past: yesterday means next year.
+    ["11/03", true, { ok: true, date: "2027-11-03" }],
+  ])(
+    "reads %j on 2026-11-04 with rejectPast %p",
+    (input, rejectPast, result) => {
+      expect(parsed(input, "2026-11-04", rejectPast)).toEqual(result);
+    },
+  );
 
   describe("with a month and day", () => {
     it.each([
@@ -162,13 +152,6 @@ describe("parseDateInput", () => {
       // Feb 28 and Mar 1 around a leap day.
     ])("reads %j on %s as %s", (input, today, expected) => {
       expect(parsed(input, today)).toEqual({ ok: true, date: expected });
-    });
-
-    it("is never in the past, so rejectPast does not reject it", () => {
-      expect(parsed("11/03", "2026-11-04", true)).toEqual({
-        ok: true,
-        date: "2027-11-03",
-      });
     });
   });
 

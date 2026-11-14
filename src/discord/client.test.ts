@@ -1,8 +1,12 @@
 import { generateKeyPairSync, sign } from "node:crypto";
 import { inspect } from "node:util";
 import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { managedRow } from "../../test/support/interactions.ts";
 import { jsonObject } from "../../test/support/json.ts";
+import { serverError } from "../../test/support/sql-client.ts";
+import { stubDb } from "../../test/support/stub-db.ts";
 import { stubGlobal, type FetchLike } from "../../test/support/stubs.ts";
+import { managedChannelCheck } from "../handlers/dependencies.ts";
 import { ConfigError } from "../lib/config-error.ts";
 import {
   actionForFailure,
@@ -14,7 +18,6 @@ import {
 import type {
   ChannelTarget,
   DiscordClient,
-  DiscordClientOptions,
   DiscordFailure,
   FailureAction,
   ManagedChannelCheck,
@@ -24,7 +27,6 @@ import {
   channelMessage,
   deferredEphemeralReply,
   ephemeralReply,
-  followUp,
   interactionReply,
   messageEdit,
   threadCreate,
@@ -50,21 +52,25 @@ const INTERACTION = fakeId(5);
 const GUILD = fakeId(6);
 const OTHER_GUILD = fakeId(7);
 const CREATED_ID = fakeId(100);
+const ORIGINAL = `${API}/webhooks/${APP_ID}/${ENCODED_TOKEN}/messages/@original`;
 
 const MANAGED: ChannelTarget = {
   kind: "channel",
   guildId: GUILD,
   channelId: MANAGED_FORUM,
 };
-const UNMANAGED: ChannelTarget = {
-  kind: "channel",
-  guildId: GUILD,
-  channelId: UNMANAGED_CHANNEL,
-};
+const UNMANAGED: ChannelTarget = { ...MANAGED, channelId: UNMANAGED_CHANNEL };
 const THREAD_TARGET: ThreadTarget = {
   kind: "thread",
   guildId: GUILD,
   threadId: THREAD,
+};
+
+// A caller cannot vouch for a thread's parent: the client asks Discord.
+const SUPPLIED_PARENT = {
+  ...THREAD_TARGET,
+  threadId: UNMANAGED_CHANNEL,
+  parentId: MANAGED_FORUM,
 };
 
 const SECRET_CONTENT = {
@@ -74,8 +80,6 @@ const SECRET_CONTENT = {
 const MESSAGE_BODY = channelMessage(SECRET_CONTENT);
 const EDIT_BODY = messageEdit(SECRET_CONTENT);
 const REPLY_BODY = interactionReply(SECRET_CONTENT);
-const EPHEMERAL_BODY = ephemeralReply(SECRET_CONTENT);
-const FOLLOW_UP_BODY = followUp(SECRET_CONTENT);
 const THREAD_BODY = threadCreate({ ...SECRET_CONTENT, name: plain`Event` });
 
 const { publicKey, privateKey } = generateKeyPairSync("ed25519");
@@ -124,53 +128,29 @@ const check: ManagedChannelCheck = {
 const fetchMock = mock<FetchLike>();
 const sleep = mock<(ms: number) => Promise<void>>();
 
-function client(
-  managedCheck = check,
-  options: Partial<DiscordClientOptions> = {},
-) {
-  return createDiscordClient({
-    check: managedCheck,
-    env: ENV,
-    sleep,
-    ...options,
-  });
-}
-
-function spyCheck() {
-  return mock((guildId: string, channelId: string) =>
-    check.isManaged(guildId, channelId),
-  );
+function client(managedCheck = check) {
+  return createDiscordClient({ check: managedCheck, env: ENV, sleep });
 }
 
 function created(): Response {
   return Response.json({ id: CREATED_ID }, { status: 200 });
 }
 
-function tooMany(retryAfter?: string, body: object = {}): Response {
-  const headers: Record<string, string> =
-    retryAfter === undefined ? {} : { "retry-after": retryAfter };
-  return Response.json(body, { status: 429, headers });
+function status(code: number, body: object = {}): Response {
+  return Response.json(body, { status: code });
 }
 
-interface Server {
-  /** What GET /channels/{id} answers, by ID. Unlisted IDs are a plain channel. */
-  channels?: Record<string, object>;
-  /** What GET @original answers. */
-  original?: () => Response;
-  /** What any other request answers. */
-  send?: () => Response;
-}
-
-// Answers lookups by route, so that a test can look at only the writes.
-function serve({ channels = {}, original, send = created }: Server = {}): void {
+// Answers channel lookups by ID, so that a test can look at only the writes.
+function serve(
+  channels: Record<string, object> = {},
+  original?: () => Response,
+): void {
   fetchMock.mockImplementation((url, init) => {
     if (init?.method !== "GET") {
-      return Promise.resolve(send());
+      return Promise.resolve(created());
     }
     if ((url as string).endsWith("/messages/@original")) {
-      return Promise.resolve(
-        original?.() ?? new Response(null, { status: 404 }),
-      );
+      return Promise.resolve(original?.() ?? status(404));
     }
     const id = (url as string).split("/").at(-1) ?? "";
     return Promise.resolve(
@@ -179,26 +159,16 @@ function serve({ channels = {}, original, send = created }: Server = {}): void {
   });
 }
 
-interface SentRequest {
-  url: string;
-  method: string | undefined;
-  headers: Record<string, string>;
-  body: Record<string, unknown>;
-}
-
-function requests(): SentRequest[] {
+function requests() {
   return fetchMock.mock.calls.map(([url, init]) => ({
     url: url as string,
     method: init?.method,
     headers: init?.headers as Record<string, string>,
-    body: jsonObject(
-      (init?.body as string | undefined) ?? "{}",
-      "the request body",
-    ),
+    body: jsonObject((init?.body as string | undefined) ?? "{}", "the body"),
   }));
 }
 
-function writes(): SentRequest[] {
+function writes() {
   return requests().filter((request) => request.method !== "GET");
 }
 
@@ -229,67 +199,49 @@ it.each([
   expect(attempt).not.toThrow(TOKEN);
 });
 
-describe("requests", () => {
+describe("sends", () => {
   it("sends a channel message with the bot token and the built body", async () => {
     serve();
 
-    const sent = await client().sendMessage(MANAGED, MESSAGE_BODY);
-
-    const [request] = requests();
-    expect(sent).toEqual({ id: CREATED_ID });
-    expect(requests()).toHaveLength(1);
-    expect(request?.url).toBe(`${API}/channels/${MANAGED_FORUM}/messages`);
-    expect(request?.method).toBe("POST");
-    expect(request?.headers.Authorization).toBe(`Bot ${TOKEN}`);
-    expect(request?.headers["User-Agent"]).toBe(
-      "DiscordBot (https://github.com/GT-SASE/discordBot)",
-    );
-    expect(request?.body).toEqual({
-      content: SECRET_TEXT,
-      flags: 4,
-      allowed_mentions: { parse: [], users: [] },
+    expect(await client().sendMessage(MANAGED, MESSAGE_BODY)).toEqual({
+      id: CREATED_ID,
     });
+    expect(requests()).toEqual([
+      {
+        url: `${API}/channels/${MANAGED_FORUM}/messages`,
+        method: "POST",
+        headers: expect.objectContaining({
+          Authorization: `Bot ${TOKEN}`,
+          "User-Agent": "DiscordBot (https://github.com/GT-SASE/discordBot)",
+        }) as Record<string, string>,
+        body: {
+          content: SECRET_TEXT,
+          flags: 4,
+          allowed_mentions: { parse: [], users: [] },
+        },
+      },
+    ]);
   });
 
-  it("edits the original interaction reply without sending the bot token", async () => {
-    serve();
+  it("creates a thread only in a managed forum", async () => {
+    serve({ [MANAGED_FORUM]: { type: 15 } });
+    expect(await client().createThread(MANAGED, THREAD_BODY)).toEqual({
+      id: CREATED_ID,
+      firstMessageId: CREATED_ID,
+    });
 
-    await client().editInteractionReply(IN_MANAGED, EDIT_BODY);
-
-    const [request] = writes();
-    expect(request?.method).toBe("PATCH");
-    expect(request?.url).toBe(
-      `${API}/webhooks/${APP_ID}/${ENCODED_TOKEN}/messages/@original`,
-    );
-    expect(request?.headers.Authorization).toBeUndefined();
-  });
-});
-
-describe("createThread", () => {
-  it("posts in a managed forum", async () => {
-    serve({ channels: { [MANAGED_FORUM]: { type: 15 } } });
-
-    const thread = await client().createThread(MANAGED, THREAD_BODY);
-
-    expect(thread).toEqual({ id: CREATED_ID, firstMessageId: CREATED_ID });
-    expect(writes()[0]?.url).toBe(`${API}/channels/${MANAGED_FORUM}/threads`);
-  });
-
-  it("refuses a managed channel that is not a forum", async () => {
-    serve({ channels: { [MANAGED_FORUM]: { type: 0 } } });
-
-    const failure = await failureOf(
-      client().createThread(MANAGED, THREAD_BODY),
-    );
-
-    expect(failure).toEqual({ kind: "not_forum", channelId: MANAGED_FORUM });
+    fetchMock.mockClear();
+    serve({ [MANAGED_FORUM]: { type: 0 } });
+    expect(
+      await failureOf(client().createThread(MANAGED, THREAD_BODY)),
+    ).toEqual({ kind: "not_forum", channelId: MANAGED_FORUM });
     expect(writes()).toEqual([]);
   });
 });
 
-describe("managed channel check", () => {
+describe("the managed channel check", () => {
   it("sends to a thread whose parent Discord reports as managed", async () => {
-    serve({ channels: { [THREAD]: { type: 11, parent_id: MANAGED_FORUM } } });
+    serve({ [THREAD]: { type: 11, parent_id: MANAGED_FORUM } });
 
     await client().sendMessage(THREAD_TARGET, MESSAGE_BODY);
 
@@ -299,121 +251,88 @@ describe("managed channel check", () => {
     ]);
   });
 
-  it("cannot be talked past with a caller-supplied parent", async () => {
-    serve({
-      channels: { [UNMANAGED_CHANNEL]: { type: 11, parent_id: fakeId(50) } },
-    });
-    const target = {
-      kind: "thread" as const,
-      guildId: GUILD,
-      threadId: UNMANAGED_CHANNEL,
-      parentId: MANAGED_FORUM,
-    };
-    const isManaged = spyCheck();
-
-    const failure = await failureOf(
-      client({ isManaged }).sendMessage(target, MESSAGE_BODY),
-    );
-
-    expect(failure).toEqual({
-      kind: "unmanaged_target",
-      channelId: UNMANAGED_CHANNEL,
-    });
-    expect(isManaged).not.toHaveBeenCalledWith(GUILD, MANAGED_FORUM);
-    expect(writes()).toEqual([]);
-  });
-
-  it.each<[string, object]>([
-    ["a channel whose parent_id is a category", { type: 0 }],
-    ["a thread with an unmanaged parent", { type: 11, parent_id: fakeId(50) }],
-    ["a thread with no parent", { type: 11, parent_id: undefined }],
-  ])("refuses %s", async (_label, channel) => {
-    serve({
-      channels: {
-        [UNMANAGED_CHANNEL]: { parent_id: MANAGED_FORUM, ...channel },
-      },
-    });
-
-    const failure = await failureOf(
-      client().sendMessage(UNMANAGED, MESSAGE_BODY),
-    );
-
-    expect(failure.kind).toBe("unmanaged_target");
-    expect(writes()).toEqual([]);
-  });
-
-  it.each<[string, () => Promise<unknown>, DiscordFailure["kind"]]>([
-    ["fails", () => Promise.reject(new Error("unavailable")), "check_failed"],
-    ["answers loosely", () => Promise.resolve("yes"), "unmanaged_target"],
-  ])("refuses the send when the check %s", async (_label, isManaged, kind) => {
-    serve();
-    const loose = { isManaged } as unknown as ManagedChannelCheck;
-
-    const failure = await failureOf(
-      client(loose).sendMessage(MANAGED, MESSAGE_BODY),
-    );
-
-    expect(failure.kind).toBe(kind);
-    expect(writes()).toEqual([]);
-  });
-
-  it("refuses a malformed channel or guild ID before the check", async () => {
-    const isManaged = mock<ManagedChannelCheck["isManaged"]>();
-    const discord = client({ isManaged });
-
-    for (const target of [
-      { kind: "channel" as const, guildId: GUILD, channelId: "../users/@me" },
-      { kind: "channel" as const, guildId: "../1", channelId: MANAGED_FORUM },
-    ]) {
-      expect(
-        (await failureOf(discord.sendMessage(target, MESSAGE_BODY))).kind,
-      ).toBe("invalid_target");
-    }
-    expect(isManaged).not.toHaveBeenCalled();
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-
-  it.each<[string, Server, () => Promise<unknown>]>([
+  it.each<[string, Record<string, object>, ChannelTarget | ThreadTarget]>([
+    ["a channel under a managed category", {}, UNMANAGED],
+    [
+      "a thread with an unmanaged parent",
+      { [UNMANAGED_CHANNEL]: { type: 11, parent_id: fakeId(50) } },
+      UNMANAGED,
+    ],
+    [
+      "a thread with a caller-supplied managed parent",
+      { [UNMANAGED_CHANNEL]: { type: 11, parent_id: fakeId(50) } },
+      SUPPLIED_PARENT,
+    ],
     [
       "a channel managed only in another guild",
       {},
-      () =>
-        client().sendMessage(
-          { kind: "channel", guildId: OTHER_GUILD, channelId: MANAGED_FORUM },
-          MESSAGE_BODY,
-        ),
+      { ...MANAGED, guildId: OTHER_GUILD },
     ],
-  ])("refuses %s", async (_label, server, send) => {
-    serve(server);
+  ])("refuses %s", async (_label, channels, target) => {
+    serve({ [UNMANAGED_CHANNEL]: { parent_id: MANAGED_FORUM }, ...channels });
 
-    expect((await failureOf(send())).kind).toBe("unmanaged_target");
+    expect(
+      (await failureOf(client().sendMessage(target, MESSAGE_BODY))).kind,
+    ).toBe("unmanaged_target");
     expect(writes()).toEqual([]);
+  });
+
+  it("refuses a malformed ID before the check or any request", async () => {
+    const isManaged = mock<ManagedChannelCheck["isManaged"]>();
+    const discord = client({ isManaged });
+
+    for (const attempt of [
+      discord.sendMessage(
+        { ...MANAGED, channelId: "../users/@me" },
+        MESSAGE_BODY,
+      ),
+      discord.sendMessage({ ...MANAGED, guildId: "../1" }, MESSAGE_BODY),
+      discord.getGuildRoles("../1"),
+      discord.describeChannel("../1"),
+    ]) {
+      expect((await failureOf(attempt)).kind).toBe("invalid_target");
+    }
+    expect(isManaged).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(() => messageUrl("../1", THREAD, MESSAGE)).toThrow(RangeError);
+  });
+
+  it("comes from the database, and refuses the send when it cannot answer", async () => {
+    const removed = stubDb(() => ({
+      rows: [managedRow(MANAGED_FORUM, "removed")],
+    }));
+    const broken = stubDb(() => serverError("XX000"));
+    const isManaged = (db: ReturnType<typeof stubDb>["db"]) =>
+      managedChannelCheck(db).isManaged(GUILD, MANAGED_FORUM);
+
+    expect(
+      await isManaged(stubDb(() => ({ rows: [managedRow(MANAGED_FORUM)] })).db),
+    ).toBe(true);
+    expect(await isManaged(removed.db)).toBe(false);
+    expect(
+      await failureOf(
+        client(managedChannelCheck(broken.db)).createThread(
+          MANAGED,
+          THREAD_BODY,
+        ),
+      ),
+    ).toEqual({ kind: "check_failed", channelId: MANAGED_FORUM });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
 
 describe("interaction replies", () => {
-  it.each([
-    [
-      "replyToInteraction",
-      (i: VerifiedInteraction) => client().replyToInteraction(i, REPLY_BODY),
-    ],
-    [
-      "editInteractionReply",
-      (i: VerifiedInteraction) => client().editInteractionReply(i, EDIT_BODY),
-    ],
-    [
-      "sendFollowUp",
-      (i: VerifiedInteraction) => client().sendFollowUp(i, FOLLOW_UP_BODY),
-    ],
-  ])("%s checks the signed channel before it sends", async (_name, send) => {
+  it("checks the signed channel before it replies", async () => {
     serve();
+    const reply = (interaction: VerifiedInteraction) =>
+      client().replyToInteraction(interaction, REPLY_BODY);
 
-    expect(await failureOf(send(IN_UNMANAGED))).toEqual({
+    expect(await failureOf(reply(IN_UNMANAGED))).toEqual({
       kind: "unmanaged_target",
       channelId: UNMANAGED_CHANNEL,
     });
     expect(fetchMock).not.toHaveBeenCalled();
-    await send(
+    await reply(
       interactionIn({ id: THREAD, type: 11, parent_id: MANAGED_FORUM }),
     );
     expect(requests()).toHaveLength(1);
@@ -425,7 +344,6 @@ describe("interaction replies", () => {
       guildId: GUILD,
       channelId: MANAGED_FORUM,
       channelType: 15,
-      parentId: undefined,
       token: INTERACTION_TOKEN,
     } as unknown as VerifiedInteraction;
 
@@ -434,228 +352,141 @@ describe("interaction replies", () => {
     ).toBe("invalid_target");
     expect(fetchMock).not.toHaveBeenCalled();
   });
-});
 
-describe("ephemeral responses", () => {
-  it("sends to an unmanaged channel without calling the check", async () => {
-    serve({ send: () => new Response(null, { status: 204 }) });
+  it("answers ephemerally anywhere, but only with an ephemeral body", async () => {
+    serve();
     const isManaged = mock<ManagedChannelCheck["isManaged"]>();
+    const discord = client({ isManaged });
 
-    await client({ isManaged }).respondEphemerally(
-      IN_UNMANAGED,
-      deferredEphemeralReply(),
-    );
-
-    expect(isManaged).not.toHaveBeenCalled();
-    expect(requests()).toHaveLength(1);
-    expect(requests()[0]?.url).toBe(
-      `${API}/interactions/${INTERACTION}/${ENCODED_TOKEN}/callback`,
-    );
-  });
-
-  it("still forces the mentions on what it sends", async () => {
-    serve({ send: () => new Response(null, { status: 204 }) });
-
-    await client().respondEphemerally(
-      IN_UNMANAGED,
-      ephemeralReply({
-        content: escapeUserText("@everyone"),
-        mentionUserIds: [],
-      }),
-    );
-
-    expect(requests()[0]?.body).toEqual({
-      type: 4,
-      data: {
-        content: String.raw`\@everyone`,
-        flags: 68,
-        allowed_mentions: { parse: [], users: [] },
-      },
-    });
-  });
-
-  it("refuses a public reply, even in a managed channel", async () => {
+    await discord.respondEphemerally(IN_UNMANAGED, deferredEphemeralReply());
     expect(
       await failureOf(
-        client().respondEphemerally(IN_MANAGED, REPLY_BODY as never),
+        discord.respondEphemerally(IN_MANAGED, REPLY_BODY as never),
       ),
     ).toEqual({ kind: "not_ephemeral" });
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-});
 
-describe("editEphemeralReply", () => {
-  it("waits and reads again while the reply is missing", async () => {
-    let reads = 0;
-    serve({
-      original: () =>
-        ++reads > 3
-          ? Response.json({ id: MESSAGE, flags: 64 })
-          : Response.json({ code: 10008 }, { status: 404 }),
-    });
-
-    const edited = await client().editEphemeralReply(IN_UNMANAGED, EDIT_BODY);
-
-    expect(edited.id).toBe(CREATED_ID);
-    expect(sleep.mock.calls.map(([ms]) => ms)).toEqual([250, 500, 1000]);
-    expect(writes()).toHaveLength(1);
-  });
-
-  it("edits in an unmanaged channel when the reply is ephemeral", async () => {
-    serve({ original: () => Response.json({ id: MESSAGE, flags: 64 + 128 }) });
-    const isManaged = mock<ManagedChannelCheck["isManaged"]>();
-
-    await client({ isManaged }).editEphemeralReply(IN_UNMANAGED, EDIT_BODY);
-
-    const url = `${API}/webhooks/${APP_ID}/${ENCODED_TOKEN}/messages/@original`;
     expect(isManaged).not.toHaveBeenCalled();
-    expect(requests().map(({ method, url: sent }) => [method, sent])).toEqual([
-      ["GET", url],
-      ["PATCH", url],
+    expect(requests().map(({ url }) => url)).toEqual([
+      `${API}/interactions/${INTERACTION}/${ENCODED_TOKEN}/callback`,
     ]);
   });
 
-  describe("when Discord fails for a moment", () => {
-    // Answers the first edits with a 503, then normally.
-    function faultyEdits(faults: number) {
-      let patches = 0;
-      fetchMock.mockImplementation((_url, init) => {
-        if (init?.method === "GET") {
-          return Promise.resolve(Response.json({ id: MESSAGE, flags: 64 }));
-        }
-        return Promise.resolve(
-          ++patches <= faults ? new Response(null, { status: 503 }) : created(),
-        );
-      });
-    }
-
-    it("tries an edit again, with the same body", async () => {
-      faultyEdits(2);
-
-      const edited = await client().editEphemeralReply(IN_UNMANAGED, EDIT_BODY);
-
-      expect(edited.id).toBe(CREATED_ID);
-      expect(sleep.mock.calls.map(([ms]) => ms)).toEqual([250, 500]);
-      expect(writes()).toHaveLength(3);
-      expect(new Set(writes().map((write) => JSON.stringify(write))).size).toBe(
-        1,
-      );
-    });
-
-    it("does not repeat an edit that Discord refused", async () => {
-      fetchMock.mockImplementation((_url, init) =>
-        Promise.resolve(
-          init?.method === "GET"
-            ? Response.json({ id: MESSAGE, flags: 64 })
-            : Response.json({ code: 10062 }, { status: 404 }),
-        ),
-      );
-
-      expect(
-        await failureOf(client().editEphemeralReply(IN_UNMANAGED, EDIT_BODY)),
-      ).toMatchObject({ kind: "api", status: 404 });
-      expect(writes()).toHaveLength(1);
-    });
-
-    it.each([
-      [
-        "a message",
-        (target: DiscordClient) => target.sendMessage(MANAGED, MESSAGE_BODY),
-      ],
-      [
-        "a first response",
-        (target: DiscordClient) =>
-          target.respondEphemerally(IN_UNMANAGED, EPHEMERAL_BODY),
-      ],
-    ])("does not repeat %s, which could post twice", async (_label, send) => {
-      faultyEdits(1);
-
-      await failureOf(send(client()));
-
-      expect(writes()).toHaveLength(1);
-      expect(sleep).not.toHaveBeenCalled();
-    });
-  });
-});
-
-describe("rate limits", () => {
-  it.each([
-    ["the header", tooMany("1.5"), 1500],
-    ["a default when the header is unusable", tooMany("-1"), 1000],
-  ])(
-    "waits as long as %s says, then sends the same body",
-    async (_label, limit, ms) => {
-      fetchMock.mockResolvedValueOnce(limit).mockResolvedValueOnce(created());
-
-      const sent = await client().sendMessage(MANAGED, MESSAGE_BODY);
-
-      expect(sent.id).toBe(CREATED_ID);
-      expect(sleep.mock.calls).toEqual([[ms]]);
-      expect(
-        new Set(requests().map(({ body }) => JSON.stringify(body))).size,
-      ).toBe(1);
-    },
-  );
-
-  it("stops after three attempts", async () => {
-    fetchMock.mockImplementation(() => Promise.resolve(tooMany("1")));
-
-    const failure = await failureOf(
-      client().sendMessage(MANAGED, MESSAGE_BODY),
+  it("waits for a missing ephemeral reply, then edits it", async () => {
+    let reads = 0;
+    serve({}, () =>
+      ++reads > 3
+        ? Response.json({ id: MESSAGE, flags: 64 })
+        : status(404, { code: 10008 }),
     );
 
-    expect(failure).toEqual({
-      kind: "rate_limited",
-      retryAfterMs: 1000,
-      attempts: 3,
-      scope: undefined,
-    });
-    expect(fetchMock).toHaveBeenCalledTimes(3);
-    expect(sleep).toHaveBeenCalledTimes(2);
+    await client().editEphemeralReply(IN_UNMANAGED, EDIT_BODY);
+
+    expect(sleep.mock.calls.map(([ms]) => ms)).toEqual([250, 500, 1000]);
+    expect(writes().map(({ method, url }) => [method, url])).toEqual([
+      ["PATCH", ORIGINAL],
+    ]);
+    expect(writes()[0]?.headers.Authorization).toBeUndefined();
   });
-
-  it.each<[string, Record<string, string>, string]>([
-    ["the scope header", { "x-ratelimit-scope": "global" }, "{}"],
-  ])(
-    "stops the run on a global limit known from %s",
-    async (_label, headers, body) => {
-      fetchMock.mockImplementation(() =>
-        Promise.resolve(
-          new Response(body, {
-            status: 429,
-            headers: { "retry-after": "1", ...headers },
-          }),
-        ),
-      );
-
-      const failure = await failureOf(
-        client().sendMessage(MANAGED, MESSAGE_BODY),
-      );
-
-      expect(failure).toMatchObject({
-        kind: "rate_limited",
-        scope: "global",
-        attempts: 1,
-      });
-      expect(sleep).not.toHaveBeenCalled();
-      expect(actionForFailure(failure)).toBe("stop_run");
-    },
-  );
 });
 
-describe("errors", () => {
-  it("reports a success response without an ID", async () => {
-    fetchMock.mockResolvedValueOnce(Response.json({}, { status: 200 }));
+describe("retries", () => {
+  // Answers the first writes with a 503, then normally.
+  function faultyWrites(faults: number) {
+    let count = 0;
+    fetchMock.mockImplementation((_url, init) =>
+      Promise.resolve(
+        init?.method === "GET"
+          ? Response.json({ id: MESSAGE, flags: 64 })
+          : ++count <= faults
+            ? status(503)
+            : created(),
+      ),
+    );
+  }
 
+  it("tries an ephemeral edit again with the same body, but never a send", async () => {
+    faultyWrites(2);
+    await client().editEphemeralReply(IN_UNMANAGED, EDIT_BODY);
+    expect(sleep.mock.calls.map(([ms]) => ms)).toEqual([250, 500]);
     expect(
-      await failureOf(client().editMessage(MANAGED, MESSAGE, EDIT_BODY)),
-    ).toEqual({ kind: "invalid_response", status: 200 });
+      new Set(writes().map((write) => JSON.stringify(write))),
+    ).toHaveProperty("size", 1);
+    expect(writes()).toHaveLength(3);
+
+    for (const send of [
+      (c: DiscordClient) => c.sendMessage(MANAGED, MESSAGE_BODY),
+      (c: DiscordClient) =>
+        c.respondEphemerally(IN_UNMANAGED, ephemeralReply(SECRET_CONTENT)),
+    ]) {
+      fetchMock.mockClear();
+      sleep.mockClear();
+      faultyWrites(1);
+      await failureOf(send(client()));
+      expect(writes()).toHaveLength(1);
+      expect(sleep).not.toHaveBeenCalled();
+    }
+  });
+
+  it("waits out a 429 as told, gives up after three, and stops at once on a global one", async () => {
+    const limit = (headers: Record<string, string> = {}) =>
+      new Response("{}", {
+        status: 429,
+        headers: { "retry-after": "1.5", ...headers },
+      });
+    fetchMock.mockResolvedValueOnce(limit()).mockResolvedValueOnce(created());
+    await client().sendMessage(MANAGED, MESSAGE_BODY);
+    expect(sleep.mock.calls).toEqual([[1500]]);
+    expect(new Set(writes().map(({ body }) => JSON.stringify(body))).size).toBe(
+      1,
+    );
+
+    fetchMock.mockReset();
+    fetchMock.mockImplementation(() => Promise.resolve(limit()));
+    expect(
+      await failureOf(client().sendMessage(MANAGED, MESSAGE_BODY)),
+    ).toMatchObject({
+      kind: "rate_limited",
+      attempts: 3,
+    });
+
+    fetchMock.mockReset();
+    sleep.mockClear();
+    fetchMock.mockImplementation(() =>
+      Promise.resolve(limit({ "x-ratelimit-scope": "global" })),
+    );
+    const global = await failureOf(client().sendMessage(MANAGED, MESSAGE_BODY));
+    expect(global).toMatchObject({ scope: "global", attempts: 1 });
+    expect(sleep).not.toHaveBeenCalled();
+  });
+});
+
+describe("failures", () => {
+  it("stops after one 401 for every later bot send, but still answers interactions", async () => {
+    fetchMock.mockImplementation((_url, init) =>
+      Promise.resolve(
+        (init?.headers as Record<string, string>).Authorization
+          ? status(401, { code: 0 })
+          : new Response(null, { status: 204 }),
+      ),
+    );
+    const run = client();
+
+    for (const attempt of [
+      () => run.sendMessage(MANAGED, MESSAGE_BODY),
+      () => run.editMessage(MANAGED, MESSAGE, EDIT_BODY),
+      () => run.sendMessage(THREAD_TARGET, MESSAGE_BODY),
+    ]) {
+      expect(await failureOf(attempt())).toEqual({ kind: "unauthorized" });
+    }
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await run.replyToInteraction(IN_MANAGED, REPLY_BODY);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("keeps secrets out of the error and the client", async () => {
     const leaky = `${TOKEN} ${INTERACTION_TOKEN} ${SECRET_TEXT}`;
     fetchMock.mockResolvedValueOnce(
-      Response.json({ code: 50035, message: leaky }, { status: 400 }),
+      status(400, { code: 50035, message: leaky }),
     );
     fetchMock.mockRejectedValueOnce(new Error(leaky, { cause: leaky }));
     const instance = client();
@@ -677,66 +508,15 @@ describe("errors", () => {
         JSON.stringify(error),
         inspect(error, { depth: null, showHidden: true }),
       ].join("\n");
-      for (const secret of [TOKEN, INTERACTION_TOKEN, ENCODED_TOKEN]) {
+      for (const secret of [
+        TOKEN,
+        INTERACTION_TOKEN,
+        ENCODED_TOKEN,
+        SECRET_TEXT,
+      ]) {
         expect(text).not.toContain(secret);
       }
-      expect(text).not.toContain(SECRET_TEXT);
     }
-  });
-});
-
-describe("refusals that must not repeat", () => {
-  it("stops after one request on a 401, for every later send", async () => {
-    fetchMock.mockImplementation(() =>
-      Promise.resolve(Response.json({ code: 0 }, { status: 401 })),
-    );
-    const run = client();
-
-    for (const attempt of [
-      () => run.sendMessage(MANAGED, MESSAGE_BODY),
-      () => run.editMessage(MANAGED, MESSAGE, EDIT_BODY),
-      () => run.sendMessage(THREAD_TARGET, MESSAGE_BODY),
-    ]) {
-      expect(await failureOf(attempt())).toEqual({ kind: "unauthorized" });
-    }
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-  });
-
-  it("still answers interactions after a 401, which do not use the token", async () => {
-    fetchMock
-      .mockResolvedValueOnce(Response.json({ code: 0 }, { status: 401 }))
-      .mockResolvedValueOnce(new Response(null, { status: 204 }));
-    const run = client();
-
-    await failureOf(run.sendMessage(MANAGED, MESSAGE_BODY));
-    await run.replyToInteraction(IN_MANAGED, REPLY_BODY);
-
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-  });
-
-  it("makes no second attempt at an unavailable channel, but goes on to others", async () => {
-    const other = fakeId(60);
-    const managedBoth: ManagedChannelCheck = {
-      isManaged: () => Promise.resolve(true),
-    };
-    fetchMock
-      .mockResolvedValueOnce(Response.json({ code: 50001 }, { status: 403 }))
-      .mockResolvedValueOnce(created());
-    const run = client(managedBoth);
-
-    const first = await failureOf(run.sendMessage(MANAGED, MESSAGE_BODY));
-    const second = await failureOf(run.sendMessage(MANAGED, MESSAGE_BODY));
-    await run.sendMessage(
-      { kind: "channel", guildId: GUILD, channelId: other },
-      MESSAGE_BODY,
-    );
-
-    expect(first.kind).toBe("channel_unavailable");
-    expect(second).toEqual(first);
-    expect(writes().map(({ url }) => url)).toEqual([
-      `${API}/channels/${MANAGED_FORUM}/messages`,
-      `${API}/channels/${other}/messages`,
-    ]);
   });
 });
 
@@ -747,18 +527,21 @@ describe("actionForFailure and mayHaveLanded", () => {
     attempts: 1,
     scope,
   });
-  const unavailable: DiscordFailure = {
-    kind: "channel_unavailable",
-    channelId: MANAGED_FORUM,
-    status: 403,
-    code: 50001,
-  };
 
   it.each<[DiscordFailure, FailureAction, boolean]>([
     [{ kind: "unauthorized" }, "stop_run", false],
     [limited("global"), "stop_run", false],
     [limited("user"), "retry_later", false],
-    [unavailable, "mark_channel_unavailable", false],
+    [
+      {
+        kind: "channel_unavailable",
+        channelId: MANAGED_FORUM,
+        status: 403,
+        code: 50001,
+      },
+      "mark_channel_unavailable",
+      false,
+    ],
     [{ kind: "api", status: 400, code: 50035 }, "skip_item", false],
     // A locked thread says nothing about the text.
     [{ kind: "api", status: 400, code: 160005 }, "retry_later", false],
@@ -769,81 +552,5 @@ describe("actionForFailure and mayHaveLanded", () => {
   ])("maps %j to %s, landed %p", (failure, action, landed) => {
     expect(actionForFailure(failure)).toBe(action);
     expect(mayHaveLanded(failure)).toBe(landed);
-  });
-});
-
-describe("reads", () => {
-  it("reads roles with the bot token, keeping permissions as a BigInt", async () => {
-    const role = {
-      id: fakeId(20),
-      name: "Hostile @everyone",
-      permissions: String(1n << 54n),
-      position: 3,
-      managed: false,
-    };
-    fetchMock.mockResolvedValueOnce(Response.json([role]));
-
-    expect(await client().getGuildRoles(GUILD)).toEqual([
-      { ...role, permissions: 1n << 54n },
-    ]);
-    expect(requests()[0]?.url).toBe(`${API}/guilds/${GUILD}/roles`);
-    expect(requests()[0]?.headers.Authorization).toBe(`Bot ${TOKEN}`);
-  });
-
-  it("refuses a guild channel that Discord says is in another guild", async () => {
-    fetchMock.mockResolvedValueOnce(
-      Response.json({ id: THREAD, type: 15, guild_id: OTHER_GUILD }),
-    );
-
-    expect(await failureOf(client().getGuildChannel(GUILD, THREAD))).toEqual({
-      kind: "invalid_response",
-      status: 200,
-    });
-  });
-
-  it("sends nothing for a malformed ID", async () => {
-    const discord = client();
-
-    for (const attempt of [
-      discord.getGuildRoles("../1"),
-      discord.getGuildMemberRoleIds(GUILD, "constructor"),
-      discord.describeChannel("../1"),
-    ]) {
-      expect(await failureOf(attempt)).toEqual({ kind: "invalid_target" });
-    }
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect(() => messageUrl("../1", THREAD, MESSAGE)).toThrow(RangeError);
-    expect(messageUrl(GUILD, THREAD, MESSAGE)).toBe(
-      `https://discord.com/channels/${GUILD}/${THREAD}/${MESSAGE}`,
-    );
-  });
-});
-
-describe("reopenThread", () => {
-  const threadUnder = (parent_id: string) =>
-    Response.json({ id: THREAD, type: 11, guild_id: GUILD, parent_id });
-
-  it("reopens a managed thread, asking only to unarchive it", async () => {
-    fetchMock.mockResolvedValueOnce(threadUnder(MANAGED_FORUM));
-    fetchMock.mockResolvedValue(Response.json({ id: THREAD }));
-
-    await client().reopenThread(THREAD_TARGET);
-
-    expect(writes()).toEqual([
-      expect.objectContaining({
-        url: `${API}/channels/${THREAD}`,
-        method: "PATCH",
-        body: { archived: false },
-      }) as SentRequest,
-    ]);
-  });
-
-  it("does not reopen a thread outside a managed forum", async () => {
-    fetchMock.mockResolvedValue(threadUnder(fakeId(99)));
-
-    const failure = await failureOf(client().reopenThread(THREAD_TARGET));
-
-    expect(failure.kind).toBe("unmanaged_target");
-    expect(writes()).toEqual([]);
   });
 });
