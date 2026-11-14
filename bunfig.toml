@@ -16,5 +16,6 @@ linker = "hoisted"
 bun = true
 
 [test]
-# Pins the time zone and undoes stubs after each test.
+# Pins the time zone, undoes stubs after each test, and checks every sent body
+# for live mentions and masked links.
 preload = ["./test/support/setup.ts"]

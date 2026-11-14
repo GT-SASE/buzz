@@ -239,7 +239,7 @@ To let a second person act on the Discord app, move it to a team, as [HANDOFF.md
 
 ## 12. Backups
 
-1. Write down Neon's restore window for the project, as [RECOVERY.md](RECOVERY.md) says.
+1. Write down Neon's restore window for the project, from its settings in the Neon console.
 2. Once `/setup` has run, take the first [manual export](RECOVERY.md#a-manual-export) and keep it private.
 3. Rehearse restoring it into a new, empty Neon project before real data arrives.
 

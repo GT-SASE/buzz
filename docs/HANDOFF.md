@@ -112,7 +112,7 @@ The outgoing maintainer also deletes any local `.env`, clones holding real data,
    ```
 
 3. Confirm that the old values fail: logging in with the old `bot_app` password is refused, and the old cron secret gets a 401 from the new project.
-4. Check `job_runs` for a good reminder run the next day, as [RUNBOOK.md](RUNBOOK.md#where-to-look) says, and Neon's restore window.
+4. Check `job_runs` for a good reminder run the next day, as [RUNBOOK.md](RUNBOOK.md#where-to-look) says, and check Neon's restore window in the project's settings.
 5. The incoming maintainer takes their own manual export. The outgoing one then deletes theirs.
 6. Write the date somewhere the next maintainer will find it. Keep that note out of this repo if it names people.
 
@@ -135,7 +135,7 @@ Once a year, ideally when officers change, the current maintainer checks:
 
 **Recovery**
 
-- [ ] Neon's restore window is what you expect for the plan. See [RECOVERY.md](RECOVERY.md).
+- [ ] Neon's restore window, in the project's settings, is what you expect for the plan.
 - [ ] A manual export was taken this term, and older ones beyond the last two are deleted.
 - [ ] A restore was rehearsed on a new, empty Neon project this year.
 

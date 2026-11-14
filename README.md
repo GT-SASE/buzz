@@ -218,7 +218,7 @@ There is no local bot. Discord needs a public HTTPS URL, so tests stand in for i
 | `bun run test:db:concurrency` | Races: double Done clicks, retried interactions, overlapping reminder runs, deletes against inserts, config saves and first setup, task quotas at their limit, task changes, lock order | `CONCURRENCY_DATABASE_URL` to a Postgres 17 superuser, and `BOT_APP_PASSWORD` |
 | `bun run db:migrate`          | Applies new files in `db/migrations` with dbmate, in order                                                                                                                              | `DATABASE_URL` for the database's owner role, never `bot_app`                 |
 
-Tests use `bun:test`. Unit tests sit next to the code as `src/**/*.test.ts` and `scripts/*.test.ts`, the PGlite tests are in `test/db/`, the race tests in `test/db-concurrency/`, and shared helpers in `test/support/`. Every run preloads `test/support/setup.ts`, which pins the time zone and undoes stubs after each test. To run one file, give a path starting with `./`, since a bare word only filters file names:
+Tests use `bun:test`. Unit tests sit next to the code as `src/**/*.test.ts` and `scripts/*.test.ts`, the PGlite tests are in `test/db/`, the race tests in `test/db-concurrency/`, and shared helpers in `test/support/`. Every run preloads `test/support/setup.ts`, which pins the time zone, undoes stubs after each test, and checks every body sent to Discord for live mentions and masked links. To run one file, give a path starting with `./`, since a bare word only filters file names:
 
 ```sh
 bun test --isolate ./src/lib/dates.test.ts

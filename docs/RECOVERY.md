@@ -2,7 +2,7 @@
 
 How to get data back. For a leaked secret, see [SECURITY.md](../SECURITY.md).
 
-Deletes are soft and `history.row_versions` keeps old copies of changed rows, so most mistakes need only [the SQL below](#undoing-a-change). For damage across the board, use [Neon's point-in-time restore](https://neon.com/docs/postgres/backup-restore/branch-restore), then set `bot_app`'s password again and run `bun run db:migrate` as the owner. For damage older than Neon's restore window, or a lost account, use a manual export.
+Deletes are soft and `history.row_versions` keeps old copies of changed rows, so most mistakes need only [the SQL below](#undoing-a-change). For damage across the board, use [Neon's point-in-time restore](https://neon.com/docs/postgres/backup-restore/branch-restore). Turn reminders off with `/config` before restoring, and again after, since a restore brings back the old setting. Then set `bot_app`'s password again and run `bun run db:migrate` as the owner. For damage older than Neon's restore window, or a lost account, use a manual export.
 
 ## A manual export
 
