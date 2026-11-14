@@ -98,6 +98,9 @@ export function pickupPeople(event: EventReminderCandidate): string[] | null {
     : null;
 }
 
+/** Days before the event that the first Food pickup reminder goes out. */
+export const PICKUP_REMINDER_DAYS_BEFORE = 2;
+
 /** The kinds that go out today for this event, before looking at the log. */
 export function kindsDueToday(
   event: EventReminderCandidate,
@@ -112,7 +115,7 @@ export function kindsDueToday(
     kinds.push("daily_steps");
   }
   if (pickupPeople(event) !== null) {
-    if (daysLeft === 2) {
+    if (daysLeft === PICKUP_REMINDER_DAYS_BEFORE) {
       kinds.push("pickup_two_days");
     } else if (daysLeft === 0) {
       kinds.push("pickup_day");

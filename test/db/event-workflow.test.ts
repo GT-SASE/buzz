@@ -275,7 +275,7 @@ describe("the event workflow functions", () => {
     }
   });
 
-  it("refuses a pickup reminder on any date but its own", async () => {
+  it("claims a pickup reminder only for today, and a step list up to the event", async () => {
     const eventId = await insertEvent(db, guild);
     const actor = fakeId();
     await value(`public.complete_event_step($1, $2, 'budget_approved', $3)`, [
@@ -299,10 +299,8 @@ describe("the event workflow functions", () => {
         `public.claim_event_reminder($1, $2::public.event_reminder_kind, $3)`,
         [eventId, kind, day],
       );
-    expect(await claim("pickup_two_days", "2030-01-14")).toBeNull();
-    expect(await claim("pickup_day", "2030-01-14")).toBeNull();
-    expect(await claim("pickup_two_days", "2030-01-13")).not.toBeNull();
-    expect(await claim("pickup_day", "2030-01-15")).not.toBeNull();
+    expect(await claim("pickup_two_days", "2030-01-13")).toBeNull();
+    expect(await claim("pickup_day", "2030-01-15")).toBeNull();
     expect(await claim("daily_steps", "2030-01-16")).toBeNull();
 
     await db.query(
@@ -320,5 +318,6 @@ describe("the event workflow functions", () => {
       );
     }
     expect(await claim("daily_steps", today)).not.toBeNull();
+    expect(await claim("pickup_day", today)).not.toBeNull();
   });
 });

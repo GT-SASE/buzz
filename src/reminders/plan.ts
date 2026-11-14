@@ -59,7 +59,7 @@ export function slotToday(now: Date, timeZone: string): DateOnly {
 }
 
 /** The number of days before the due date at which each kind becomes due. */
-const OPENS_AT_DAYS_BEFORE: Record<ReminderKind, number> = {
+export const OPENS_AT_DAYS_BEFORE: Record<ReminderKind, number> = {
   three_days: 3,
   one_day: 1,
   due_day: 0,

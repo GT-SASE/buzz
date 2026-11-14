@@ -79,8 +79,6 @@ import {
 } from "../../src/db/reminders.ts";
 import {
   countOpenTasksInChannel,
-  MAX_TASK_ACTIONS_PER_OFFICER_PER_DAY,
-  MAX_TASKS_PER_EVENT,
   createTask,
   editTask,
   searchOpenTasksByIdPrefix,
@@ -126,6 +124,10 @@ import {
   setTaskDescription,
   setTaskDueDate,
 } from "./task-edits.ts";
+
+/** The limits the database's triggers enforce. */
+const EVENT_TASK_LIMIT = 100;
+const OFFICER_DAILY_LIMIT = 50;
 
 function date(value: string): DateOnly {
   const parsed = parseIsoDate(value);
@@ -2414,9 +2416,9 @@ describe("database layer against the real schema", () => {
         }
       }
 
-      it(`refuses task ${String(MAX_TASKS_PER_EVENT + 1)} on one event, until one is deleted`, async () => {
+      it(`refuses task ${String(EVENT_TASK_LIMIT + 1)} on one event, until one is deleted`, async () => {
         const eventId = await insertEvent(pg, own);
-        await fill(eventId, MAX_TASKS_PER_EVENT, fakeId);
+        await fill(eventId, EVENT_TASK_LIMIT, fakeId);
 
         expect(await newTaskOn(eventId, fakeId(), fakeId())).toEqual(
           eventLimit,
@@ -2436,15 +2438,11 @@ describe("database layer against the real schema", () => {
         unwrap(await newTaskOn(eventId, fakeId(), fakeId()));
       });
 
-      it(`refuses an officer's task ${String(MAX_TASK_ACTIONS_PER_OFFICER_PER_DAY + 1)} in a day, counting deleted ones`, async () => {
+      it(`refuses an officer's task ${String(OFFICER_DAILY_LIMIT + 1)} in a day, counting deleted ones`, async () => {
         const actorId = fakeId();
         const eventId = await insertEvent(pg, own);
         const secondEvent = await insertEvent(pg, own);
-        await fill(
-          eventId,
-          MAX_TASK_ACTIONS_PER_OFFICER_PER_DAY,
-          () => actorId,
-        );
+        await fill(eventId, OFFICER_DAILY_LIMIT, () => actorId);
 
         await pg.query(
           `UPDATE public.tasks SET deleted_at = now() WHERE event_id = $1`,
@@ -2467,7 +2465,7 @@ describe("database layer against the real schema", () => {
             actorId,
             taskId: task.id,
           });
-        for (let i = 1; i < MAX_TASK_ACTIONS_PER_OFFICER_PER_DAY; i += 1) {
+        for (let i = 1; i < OFFICER_DAILY_LIMIT; i += 1) {
           unwrap(await reassign());
         }
 
@@ -2486,7 +2484,7 @@ describe("database layer against the real schema", () => {
             actorId,
             taskId: task.id,
           });
-        for (let i = 0; i < MAX_TASK_ACTIONS_PER_OFFICER_PER_DAY; i += 1) {
+        for (let i = 0; i < OFFICER_DAILY_LIMIT; i += 1) {
           unwrap(await reassign());
         }
         expect(await reassign()).toEqual(actorLimit);
@@ -2511,11 +2509,7 @@ describe("database layer against the real schema", () => {
       it("stops counting an officer's tasks after 24 hours", async () => {
         const actorId = fakeId();
         const eventId = await insertEvent(pg, own);
-        await fill(
-          eventId,
-          MAX_TASK_ACTIONS_PER_OFFICER_PER_DAY,
-          () => actorId,
-        );
+        await fill(eventId, OFFICER_DAILY_LIMIT, () => actorId);
 
         await pg.query(
           `UPDATE public.tasks SET created_at = now() - interval '25 hours'
@@ -2531,11 +2525,7 @@ describe("database layer against the real schema", () => {
         const actorId = fakeId();
         const eventId = await insertEvent(pg, own);
         const otherEvent = await insertEvent(pg, other);
-        await fill(
-          eventId,
-          MAX_TASK_ACTIONS_PER_OFFICER_PER_DAY,
-          () => actorId,
-        );
+        await fill(eventId, OFFICER_DAILY_LIMIT, () => actorId);
 
         unwrap(
           await createTask(db, {
@@ -2551,7 +2541,7 @@ describe("database layer against the real schema", () => {
 
       it("reports a closed event as closed even when it is also full", async () => {
         const eventId = await insertEvent(pg, own);
-        await fill(eventId, MAX_TASKS_PER_EVENT, fakeId);
+        await fill(eventId, EVENT_TASK_LIMIT, fakeId);
         unwrap(await closeEvent(db, { guildId: own.guildId, eventId }));
 
         expect(await newTaskOn(eventId, fakeId(), fakeId())).toMatchObject({
@@ -3424,13 +3414,6 @@ describe("the event workflow against the real schema", () => {
    */
   const guildToday = (): DateOnly =>
     todayInZone(new Date(), "America/New_York");
-  const farDate = (offsetDays = 0): DateOnly => {
-    const base = Date.UTC(3000 + Math.floor(Math.random() * 5000), 5, 15);
-    return date(
-      new Date(base + offsetDays * 86_400_000).toISOString().slice(0, 10),
-    );
-  };
-
   it("gives every new event its four steps, all open, with no one on them", async () => {
     const eventId = await insertEvent(pg, guild);
     expect(unwrap(await getEventWorkflow(db, key(eventId)))).toEqual({
@@ -3885,14 +3868,9 @@ describe("the event workflow against the real schema", () => {
       ).toEqual({ ok: true, value: true });
     });
 
-    it("sends pickup reminders only once Food pickup is set up, on their own dates", async () => {
-      const eventDate = farDate();
+    it("sends pickup reminders only once Food pickup is set up", async () => {
+      const eventDate = guildToday();
       const eventId = await datedEvent(eventDate);
-      const twoDaysBefore = date(
-        new Date(Date.parse(eventDate) - 2 * 86_400_000)
-          .toISOString()
-          .slice(0, 10),
-      );
       const pickupDay = {
         eventId,
         kind: "pickup_day" as const,
@@ -3901,7 +3879,7 @@ describe("the event workflow against the real schema", () => {
       const twoDays = {
         eventId,
         kind: "pickup_two_days" as const,
-        reminderDate: twoDaysBefore,
+        reminderDate: eventDate,
       };
       expect(await claimEventReminder(db, pickupDay)).toEqual({
         ok: true,
@@ -3918,20 +3896,11 @@ describe("the event workflow against the real schema", () => {
       );
       unwrap(await assign(eventId, "food_pickup"));
 
-      expect(
-        await claimEventReminder(db, {
-          ...pickupDay,
-          reminderDate: twoDaysBefore,
-        }),
-      ).toEqual({ ok: true, value: null });
-      expect(
-        await claimEventReminder(db, { ...twoDays, reminderDate: eventDate }),
-      ).toEqual({ ok: true, value: null });
       expect(unwrap(await claimEventReminder(db, pickupDay))).not.toBeNull();
       expect(unwrap(await claimEventReminder(db, twoDays))).not.toBeNull();
     });
 
-    it("takes over a claim left for over an hour, once", async () => {
+    it("takes over a stale claim, once", async () => {
       const eventDate = guildToday();
       const eventId = await datedEvent(eventDate);
       const daily = {

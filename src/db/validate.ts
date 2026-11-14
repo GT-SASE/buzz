@@ -4,6 +4,7 @@
  * with an error.
  */
 
+import { DISCORD_LIMITS } from "../discord/safe-text.ts";
 import { parseIsoDate, type DateOnly } from "../lib/dates.ts";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -16,7 +17,8 @@ export const MAX_ID_LIST = 100;
 /** Longest search term used, in code points. Longer input is cut to this. */
 export const MAX_SEARCH_LENGTH = 100;
 /** Discord's limit for a forum post title. */
-export const MAX_EVENT_NAME_LENGTH = 100;
+export const MAX_EVENT_NAME_LENGTH = DISCORD_LIMITS.threadName;
+/** The only copy: the table's check asks only for some text. */
 export const MAX_TASK_DESCRIPTION_LENGTH = 1000;
 export const MAX_TIMEZONE_LENGTH = 64;
 

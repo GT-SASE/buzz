@@ -18,13 +18,7 @@ import {
   setEventThread,
   softDeleteEvent,
 } from "../../src/db/events.ts";
-import {
-  createTask,
-  editTask,
-  MAX_TASK_ACTIONS_PER_OFFICER_PER_DAY,
-  MAX_TASKS_PER_EVENT,
-  softDeleteTask,
-} from "../../src/db/tasks.ts";
+import { createTask, editTask, softDeleteTask } from "../../src/db/tasks.ts";
 import {
   componentPayload,
   dependenciesFor,
@@ -57,6 +51,10 @@ import {
   useTaskWorld,
   type OptionValues,
 } from "./task-world.ts";
+
+/** The limits the database's triggers enforce. */
+const EVENT_TASK_LIMIT = 100;
+const OFFICER_DAILY_LIMIT = 50;
 
 /** What Discord sends for a chosen person who is in the guild. */
 function resolvedHuman(id: string, extra: Record<string, unknown> = {}) {
@@ -763,7 +761,7 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
     describe("quotas", () => {
       it("states the event limit in the refusal", async () => {
         const { eventId, threadId } = await eventWithPost();
-        for (let index = 0; index < MAX_TASKS_PER_EVENT; index += 1) {
+        for (let index = 0; index < EVENT_TASK_LIMIT; index += 1) {
           await newTask(eventId, fakeId());
         }
         const { client, edits, notices } = fakeClient();
@@ -774,18 +772,19 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
           dependenciesFor(world.db(), client),
         );
 
-        expect(edits[0]?.content).toContain(String(MAX_TASKS_PER_EVENT));
-        expect(edits[0]?.content).toContain("the most one event can hold");
+        expect(edits[0]?.content).toBe(
+          "This event already has the most tasks one event can hold. Delete some before adding more.",
+        );
         expect(notices).toEqual([]);
-        expect(await tasksOn(eventId)).toHaveLength(MAX_TASKS_PER_EVENT);
+        expect(await tasksOn(eventId)).toHaveLength(EVENT_TASK_LIMIT);
       });
 
-      it("states the officer limit in the refusal", async () => {
+      it("says when the officer limit is reached", async () => {
         const { eventId, threadId } = await eventWithPost();
         const actor = fakeId();
         const { client, edits, notices } = fakeClient();
         const dependencies = dependenciesFor(world.db(), client);
-        for (let i = 0; i < MAX_TASK_ACTIONS_PER_OFFICER_PER_DAY; i += 1) {
+        for (let i = 0; i < OFFICER_DAILY_LIMIT; i += 1) {
           unwrap(
             await createTask(world.db(), {
               guildId: GUILD_ID,
@@ -804,10 +803,9 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
           dependencies,
         );
 
-        expect(edits[0]?.content).toContain(
-          String(MAX_TASK_ACTIONS_PER_OFFICER_PER_DAY),
+        expect(edits[0]?.content).toBe(
+          "You've reached the limit for assigning and reassigning tasks. Please try again later.",
         );
-        expect(edits[0]?.content).toContain("the last 24 hours");
         expect(notices).toEqual([]);
       });
     });
@@ -1068,7 +1066,7 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
       const { client, edits, notices } = fakeClient();
       const dependencies = dependenciesFor(world.db(), client);
 
-      for (let i = 0; i < MAX_TASK_ACTIONS_PER_OFFICER_PER_DAY + 3; i += 1) {
+      for (let i = 0; i < OFFICER_DAILY_LIMIT + 3; i += 1) {
         await new Promise((resolve) => setTimeout(resolve, 2));
         await run(
           world.router,
@@ -1082,15 +1080,16 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
         );
       }
 
-      expect(notices).toHaveLength(MAX_TASK_ACTIONS_PER_OFFICER_PER_DAY);
+      expect(notices).toHaveLength(OFFICER_DAILY_LIMIT);
       const refusal = edits.at(-1)?.content ?? "";
-      expect(refusal).toContain(String(MAX_TASK_ACTIONS_PER_OFFICER_PER_DAY));
-      expect(refusal).toContain("nothing was saved");
+      expect(refusal).toBe(
+        "You've reached the limit for assigning and reassigning tasks, so nothing was saved. Please try again later.",
+      );
       // The rounds alternate, so every second one past the limit left the person alone,
       // which pings nobody and still saves. The last, a change of person, saved nothing.
       expect(await row(task.id)).toMatchObject({
         assignee_id: a,
-        description: `Round ${String(MAX_TASK_ACTIONS_PER_OFFICER_PER_DAY + 1)}`,
+        description: `Round ${String(OFFICER_DAILY_LIMIT + 1)}`,
       });
     });
 

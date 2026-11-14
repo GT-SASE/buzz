@@ -20,6 +20,7 @@
  * that run's own row.
  */
 
+import { ChannelType } from "discord-api-types/v10";
 import { withDeadline, type DbClient } from "../db/client.ts";
 import { errorSummary } from "../db/errors.ts";
 import {
@@ -50,7 +51,10 @@ const HOUR_MS = 3_600_000;
 export const MAX_RUN_AGE_MS = 26 * HOUR_MS;
 /** The database's clock and ours can disagree by this much without it meaning anything. */
 const CLOCK_TOLERANCE_MS = 300_000;
-const FORUM_TYPES: ReadonlySet<number> = new Set([15, 16]);
+const FORUM_TYPES: ReadonlySet<number> = new Set([
+  ChannelType.GuildForum,
+  ChannelType.GuildMedia,
+]);
 /** Counts in a reminder run's results that mean a person should look, though it succeeded. */
 const REMINDER_ATTENTION_COUNTS = [
   "deferred_cap",

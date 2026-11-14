@@ -291,26 +291,6 @@ describe("schema constraints", () => {
     // Four bytes each in UTF-8 and two code units in JavaScript, but one code point.
     const emoji = (count: number) => "\u{1F389}".repeat(count);
 
-    const insertEventNamed = (name: string) =>
-      queryAs(
-        db,
-        "bot_app",
-        `INSERT INTO public.events (guild_id, channel_id, name, event_date, created_by)
-         VALUES ($1, $2, $3, '2030-02-01', $4)`,
-        [guild.guildId, guild.channelId, name, fakeId()],
-      );
-
-    const insertTaskDescribed = async (description: string) => {
-      const eventId = await insertEvent(db, guild);
-      return queryAs(
-        db,
-        "bot_app",
-        `INSERT INTO public.tasks (event_id, guild_id, assignee_id, description, due_date, created_by)
-         VALUES ($1, $2, $3, $4, '2030-01-10', $3)`,
-        [eventId, guild.guildId, fakeId(), description],
-      );
-    };
-
     const insertJobRun = (results: string, error: string | null) =>
       insertFinishedJobRun(db, {
         jobName: "sized",
@@ -318,22 +298,6 @@ describe("schema constraints", () => {
         results,
         error,
       });
-
-    it("an event name can hold 100 code points, not 101", async () => {
-      expect(await errorCodeOf(insertEventNamed(emoji(100)))).toBeUndefined();
-      expect(await errorCodeOf(insertEventNamed(emoji(101)))).toBe(
-        CHECK_VIOLATION,
-      );
-    });
-
-    it("a task description can hold 1000 code points, not 1001", async () => {
-      expect(
-        await errorCodeOf(insertTaskDescribed(emoji(1000))),
-      ).toBeUndefined();
-      expect(await errorCodeOf(insertTaskDescribed(emoji(1001)))).toBe(
-        CHECK_VIOLATION,
-      );
-    });
 
     it("a job error can hold 4000 code points, not 4001", async () => {
       expect(

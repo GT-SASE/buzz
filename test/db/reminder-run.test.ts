@@ -907,13 +907,9 @@ describe("one poisoned task", () => {
     const guild = await guildInZone();
     const { eventId } = await eventWithThread(guild);
     const good = await task(guild, eventId, dateOffset(3), "Good");
-    // One grapheme longer than a message. The length rule stops this today, so the
-    // rule is lifted to show what happens if such a row ever exists.
+    // One grapheme longer than a message, which the commands never store.
     const oneGrapheme = Array.from({ length: 1500 }, () => "\u{1F469}").join(
       "\u200D",
-    );
-    await database.exec(
-      `ALTER TABLE public.tasks DROP CONSTRAINT tasks_description_length`,
     );
     const bad = await task(guild, eventId, dateOffset(3), oneGrapheme);
     try {
@@ -926,10 +922,6 @@ describe("one poisoned task", () => {
       expect((await jobRow()).results).toMatchObject({ render_failed: 1 });
     } finally {
       await database.query(`DELETE FROM public.tasks WHERE id = $1`, [bad]);
-      await database.exec(
-        `ALTER TABLE public.tasks ADD CONSTRAINT tasks_description_length
-           CHECK (char_length(description) BETWEEN 1 AND 1000)`,
-      );
     }
   });
 

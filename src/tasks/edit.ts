@@ -7,9 +7,10 @@
 import { ApplicationCommandOptionType } from "discord-api-types/v10";
 import { commandOptionValue } from "../discord/interactions.ts";
 import type { MessageInput } from "../discord/outbound.ts";
-import { escapeUserText, safe, userMention } from "../discord/safe-text.ts";
+import { safe, userMention } from "../discord/safe-text.ts";
 import type { SafeText } from "../discord/safe-text.ts";
-import { editTask, MAX_TASK_ACTIONS_PER_OFFICER_PER_DAY } from "../db/tasks.ts";
+import { editTask } from "../db/tasks.ts";
+import { MAX_TASK_DESCRIPTION_LENGTH } from "../db/validate.ts";
 import { lines } from "../handlers/render.ts";
 import {
   autocompleteRoute,
@@ -124,7 +125,7 @@ async function edit(
   // limit nothing changes and nobody is pinged.
   if (!written.ok && written.error.category === "actor_task_limit") {
     return message(
-      safe`You've assigned or reassigned ${escapeUserText(String(MAX_TASK_ACTIONS_PER_OFFICER_PER_DAY))} tasks in the last 24 hours, the most allowed, so nothing was saved. Please try again later.`,
+      safe`You've reached the limit for assigning and reassigning tasks, so nothing was saved. Please try again later.`,
     );
   }
   if (!written.ok && written.error.category === "parent_unavailable") {
@@ -177,7 +178,7 @@ export const editSubcommand: CommandOption = {
       type: ApplicationCommandOptionType.String,
       name: "description",
       description: "What needs doing. No server invites or masked links",
-      max_length: 1000,
+      max_length: MAX_TASK_DESCRIPTION_LENGTH,
     },
     {
       type: ApplicationCommandOptionType.String,

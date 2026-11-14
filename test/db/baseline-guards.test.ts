@@ -3,6 +3,7 @@
 import { PGlite } from "@electric-sql/pglite";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { todayInZone } from "../../src/lib/dates.ts";
 import { insertEvent, insertGuild, insertTask } from "./fixtures.ts";
 import {
   BOT_APP,
@@ -226,10 +227,10 @@ describe("the baseline's guards", () => {
       );
       return rows[0]?.token ?? null;
     };
-    // The fixture's event is on 2030-01-15.
-    expect(await claim("pickup_two_days", "2030-01-13")).not.toBeNull();
-    expect(await claim("pickup_day", "2030-01-15")).not.toBeNull();
-    expect(await claim("pickup_day", "2030-01-14")).toBeNull();
+    // The fixture's event is on 2030-01-15, and a reminder is claimed for today.
+    const today = todayInZone(new Date(), "America/New_York");
+    expect(await claim("pickup_two_days", today)).not.toBeNull();
+    expect(await claim("pickup_day", today)).not.toBeNull();
   });
 
   it("claims a day's step reminder only for today or yesterday, never a day to come", async () => {

@@ -86,7 +86,7 @@ import {
 
 // How many forums to list, most first: the most that leaves room for the roles and changes.
 const FORUMS_SHOWN = [15, 10, 5, 0] as const;
-const MAX_SELECT_OPTIONS = 25;
+const MAX_SELECT_OPTIONS = DISCORD_LIMITS.selectOptions;
 // The panel only ever changes one forum at a time, but an audit row can name up to 25.
 const MAX_CHANNELS_PER_CHANGE = 3;
 // Re-adding a forum redraws its posts before the panel answers. Each post can take a few

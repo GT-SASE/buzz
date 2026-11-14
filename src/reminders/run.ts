@@ -54,6 +54,7 @@ import {
 import {
   FUNCTION_MAX_MS,
   MAX_ATTEMPTS_WITH_PING,
+  OPENS_AT_DAYS_BEFORE,
   slotStart,
   slotToday,
   STALE_CLAIM_MS,
@@ -112,9 +113,10 @@ export const DEFAULT_LIMITS: RunLimits = {
 const DB_CONCURRENCY = 8;
 const MAX_LOG_LINES = 50;
 const MS_PER_DAY = 86_400_000;
-// Today somewhere is at most one date ahead of UTC, and the first reminder opens
-// three days before the due date.
-const CANDIDATE_DAYS_AHEAD = 4;
+// Today somewhere is at most one date ahead of UTC, and a task's first reminder opens
+// this many days before its due date. Event reminders read their own candidates.
+const CANDIDATE_DAYS_AHEAD =
+  Math.max(...Object.values(OPENS_AT_DAYS_BEFORE)) + 1;
 
 export interface RunDependencies {
   readonly db: DbClient;

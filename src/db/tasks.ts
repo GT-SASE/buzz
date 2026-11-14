@@ -7,6 +7,7 @@
  * deleted along with its event therefore stays deleted.
  */
 
+import { DISCORD_LIMITS } from "../discord/safe-text.ts";
 import type { DateOnly } from "../lib/dates.ts";
 import { isSnowflake } from "../lib/snowflake.ts";
 import type { DbClient } from "./client.ts";
@@ -38,12 +39,7 @@ import {
 } from "./validate.ts";
 
 const MAX_TASKS = 100;
-/** Enforced by a trigger on tasks: see the baseline migration. */
-export const MAX_TASKS_PER_EVENT = 100;
-/** New tasks and reassignments together. Enforced by triggers in the same file. */
-export const MAX_TASK_ACTIONS_PER_OFFICER_PER_DAY = 50;
-/** Discord's limit for autocomplete choices. */
-const MAX_CHOICES = 25;
+const MAX_CHOICES = DISCORD_LIMITS.autocompleteChoices;
 
 /** The columns of a `TaskRow`. */
 const TASK_COLUMNS = sql`id, event_id, guild_id, assignee_id, description, due_date,

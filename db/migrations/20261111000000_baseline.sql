@@ -747,16 +747,12 @@ CREATE FUNCTION public.event_reminder_allowed(p_event_id uuid, p_kind public.eve
       AND event.deleted_at IS NULL
       AND channel.status = 'active'
       AND config.reminders_enabled
-      AND CASE p_kind
-        -- Up to the event, and today or yesterday in the guild's zone, so a run can claim
-        -- neither a day long gone nor one still to come.
-        WHEN 'daily_steps' THEN p_reminder_date <= event.event_date
-          AND p_reminder_date >= (pg_catalog.now() AT TIME ZONE config.timezone)::date - 1
-          AND p_reminder_date <= (pg_catalog.now() AT TIME ZONE config.timezone)::date
-        WHEN 'pickup_two_days' THEN p_reminder_date = event.event_date - 2
-        WHEN 'pickup_day' THEN p_reminder_date = event.event_date
-        ELSE false
-      END
+      -- Up to the event, and today or yesterday in the guild's zone, so a run can claim
+      -- neither a day long gone nor one still to come. Which day each kind goes out is
+      -- the planner's to decide.
+      AND p_reminder_date <= event.event_date
+      AND p_reminder_date >= (pg_catalog.now() AT TIME ZONE config.timezone)::date - 1
+      AND p_reminder_date <= (pg_catalog.now() AT TIME ZONE config.timezone)::date
       AND (
         p_kind = 'daily_steps'
         OR EXISTS (
@@ -1416,7 +1412,7 @@ CREATE TABLE public.events (
     post_attempt_at timestamp with time zone,
     pickup_time time without time zone,
     CONSTRAINT events_event_date_range CHECK (((event_date >= '2000-01-01'::date) AND (event_date <= '9999-12-31'::date))),
-    CONSTRAINT events_name_length CHECK (((char_length(name) >= 1) AND (char_length(name) <= 100))),
+    CONSTRAINT events_name_length CHECK ((char_length(name) >= 1)),
     CONSTRAINT events_thread_matches_status CHECK (((thread_id IS NULL) = (thread_status = 'pending'::public.thread_status)))
 );
 
@@ -1546,7 +1542,7 @@ CREATE TABLE public.tasks (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT tasks_completed_matches_status CHECK (((completed_at IS NOT NULL) = (status = 'done'::public.task_status))),
-    CONSTRAINT tasks_description_length CHECK (((char_length(description) >= 1) AND (char_length(description) <= 1000))),
+    CONSTRAINT tasks_description_length CHECK ((char_length(description) >= 1)),
     CONSTRAINT tasks_due_date_range CHECK (((due_date >= '2000-01-01'::date) AND (due_date <= '9999-12-31'::date)))
 );
 

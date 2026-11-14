@@ -8,14 +8,14 @@
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { reassignAs } from "./task-edits.ts";
 import type { DbClient } from "../../src/db/client.ts";
-import {
-  createTask,
-  MAX_TASK_ACTIONS_PER_OFFICER_PER_DAY,
-} from "../../src/db/tasks.ts";
+import { createTask } from "../../src/db/tasks.ts";
 import { parseIsoDate } from "../../src/lib/dates.ts";
 import { openBackend, type Backend } from "./backend.ts";
 import { insertEvent, insertGuild, type GuildFixture } from "./fixtures.ts";
 import { fakeId, type Connection } from "./harness.ts";
+
+/** The limits the database's triggers enforce. */
+const OFFICER_DAILY_LIMIT = 50;
 
 const DUE = parseIsoDate("2030-01-10");
 const ACTOR_LIMIT = {
@@ -63,7 +63,7 @@ it("stops counting old reassignments toward a new task", async () => {
   const actorId = fakeId();
   const eventId = await insertEvent(pg, guild);
   const taskId = await taskIdOn(eventId);
-  for (let i = 0; i < MAX_TASK_ACTIONS_PER_OFFICER_PER_DAY; i += 1) {
+  for (let i = 0; i < OFFICER_DAILY_LIMIT; i += 1) {
     expect((await reassign(taskId, actorId)).ok).toBe(true);
   }
   expect(await newTask(eventId, actorId)).toEqual(ACTOR_LIMIT);
@@ -81,7 +81,7 @@ it("stops counting old tasks toward a reassignment", async () => {
   const actorId = fakeId();
   const eventId = await insertEvent(pg, guild);
   const taskId = await taskIdOn(eventId);
-  for (let i = 0; i < MAX_TASK_ACTIONS_PER_OFFICER_PER_DAY; i += 1) {
+  for (let i = 0; i < OFFICER_DAILY_LIMIT; i += 1) {
     expect((await newTask(eventId, actorId)).ok).toBe(true);
   }
   expect(await reassign(taskId, actorId)).toEqual(ACTOR_LIMIT);

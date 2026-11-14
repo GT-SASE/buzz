@@ -557,19 +557,6 @@ describe("Food pickup reminders", () => {
     ]);
   });
 
-  it("is refused by the database on any other day", async () => {
-    const guild = await guildInUtc();
-    const made = await event(guild, 3);
-    await readyForPickup(guild, made);
-    const rows = await queryAs<{ token: string | null }>(
-      database,
-      "bot_app",
-      `SELECT public.claim_event_reminder($1, 'pickup_two_days', $2) AS token`,
-      [made.eventId, dateOffset(0)],
-    );
-    expect(present(rows[0]).token).toBeNull();
-  });
-
   it("sends the step list and the pickup reminder as two messages", async () => {
     const guild = await guildInUtc();
     const made = await event(guild, 0);
