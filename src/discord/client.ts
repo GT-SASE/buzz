@@ -212,6 +212,15 @@ export function actionForFailure(failure: DiscordFailure): FailureAction {
   }
 }
 
+/** A send that got no clear answer may have taken effect all the same. */
+export function mayHaveLanded(failure: DiscordFailure): boolean {
+  return (
+    failure.kind === "network" ||
+    failure.kind === "invalid_response" ||
+    (failure.kind === "api" && failure.status >= 500)
+  );
+}
+
 export interface DiscordResource {
   readonly id: string;
 }

@@ -11,8 +11,7 @@ import {
   channelPermissions,
   hasPermission,
 } from "../discord/channel-permissions.ts";
-import { DiscordClientError } from "../discord/client.ts";
-import type { DiscordFailure } from "../discord/client.ts";
+import { DiscordClientError, mayHaveLanded } from "../discord/client.ts";
 import { channelMessage } from "../discord/outbound.ts";
 import type { MessageInput } from "../discord/outbound.ts";
 import { safe, userMention } from "../discord/safe-text.ts";
@@ -24,15 +23,6 @@ import { markDoneRow } from "./done.ts";
 import { shownDate, shownId, taskText } from "./shared.ts";
 
 export type NoticeOutcome = "posted" | "no_post" | "failed" | "unknown";
-
-/** A send that got no clear answer may have taken effect all the same. */
-function mayHaveLanded(failure: DiscordFailure): boolean {
-  return (
-    failure.kind === "network" ||
-    failure.kind === "invalid_response" ||
-    (failure.kind === "api" && failure.status >= 500)
-  );
-}
 
 function noticeFor(content: SafeText, task: TaskRow): MessageInput {
   return {
