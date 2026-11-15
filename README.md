@@ -274,5 +274,6 @@ These settings in the repo are easy to break:
 - [docs/RECOVERY.md](docs/RECOVERY.md): undoing a change, Neon's point-in-time restore and manual exports
 - [docs/RUNBOOK.md](docs/RUNBOOK.md): when the runs happen, a failing run, the bot removed from a server, a full database, deploy order and data retention
 - [docs/HANDOFF.md](docs/HANDOFF.md): passing the bot to the next maintainer
+- [docs/MERGE_INTO_BUZZ.md](docs/MERGE_INTO_BUZZ.md): moving the bot into the buzz repository
 - [docs/adr/](docs/adr/): decision records
 - [SECURITY.md](SECURITY.md): reporting a problem and handling a leak
