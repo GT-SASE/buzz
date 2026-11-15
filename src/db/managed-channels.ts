@@ -49,22 +49,6 @@ export async function listActiveManagedChannels(
   );
 }
 
-/** The given channels that this guild has a row for, whatever their status. */
-export async function listManagedChannelsByIds(
-  db: DbClient,
-  { guildId, channelIds }: { guildId: string; channelIds: readonly string[] },
-): Promise<DbResult<CappedList<ManagedChannel>>> {
-  return capped(
-    await query<ManagedChannel>(
-      db,
-      sql`select guild_id, channel_id, status from managed_channels
-      where guild_id = ${guildId} and channel_id = any(${[...channelIds]}::text[])
-      order by channel_id limit ${MAX_CHANNELS + 1}`,
-    ),
-    MAX_CHANNELS,
-  );
-}
-
 /**
  * This channel's live events that have a post, open or closed, last changed first. For
  * redrawing posts when a forum is added back. `limit` is the most it returns.

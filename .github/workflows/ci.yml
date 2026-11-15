@@ -24,25 +24,21 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # Bun installs, runs every script and tool, and builds. Only the deployed
-      # functions run on Node, on Vercel. The version is packageManager in package.json.
+      # Bun installs, runs every script and tool, builds, and runs the deployed
+      # functions on Vercel. The version is packageManager in package.json.
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version-file: package.json
-      # Each check runs even if an earlier one failed, so one run reports them all.
-      - id: install
-        if: ${{ !cancelled() }}
-        run: bun install --frozen-lockfile
-      - run: bun run typecheck
-        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
-      - run: bun run lint
-        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
-      - run: bun run format:check
-        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
-      - run: bun run test
-        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
-      - run: bun run test:db
-        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+      - run: bun install --frozen-lockfile
+      # --continue runs every check even if one fails, so one run reports them all.
+      # With TURBO_TOKEN and TURBO_TEAM set, a check whose inputs are unchanged
+      # replays from Vercel's Remote Cache. Without them every check runs.
+      - name: Checks
+        run: bun run check --concurrency=1
+        env:
+          TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+          TURBO_TEAM: ${{ vars.TURBO_TEAM }}
+          TURBO_TELEMETRY_DISABLED: "1"
       # Installed outside the repository, so it cannot touch the project's
       # dependencies or lockfile, and with no install scripts. Its own package.json
       # stops bun add from using one in a parent folder. The build itself installs
@@ -61,6 +57,12 @@ jobs:
           printf '{"projectId":"prj_placeholder","orgId":"team_placeholder","settings":{"framework":null}}' > .vercel/project.json
       - name: Build
         run: bun --bun "${RUNNER_TEMP}/vercel-cli/node_modules/.bin/vercel" build --yes
+      # An engines.node in package.json silently overrides bunVersion in vercel.json.
+      - name: Check the functions run on Bun
+        run: |
+          for config in .vercel/output/functions/api/*.func/.vc-config.json .vercel/output/functions/api/*/*.func/.vc-config.json; do
+            grep -q '"runtime": "bun1\.4\.x"' "${config}" || { echo "${config} is not on the Bun runtime" >&2; exit 1; }
+          done
 
   secret-history:
     name: gitleaks full history

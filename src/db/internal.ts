@@ -8,7 +8,7 @@ import { failure, failureFromError, type DbResult } from "./errors.ts";
 import type { CappedList } from "./types.ts";
 
 /** A statement with its values as `$n` parameters. Only the `sql` tag makes one. */
-export class Query {
+class Query {
   readonly text: string;
   readonly params: readonly unknown[];
 

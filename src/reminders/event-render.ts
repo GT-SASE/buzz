@@ -33,7 +33,7 @@ const dateFormat = new Intl.DateTimeFormat("en-US", {
   day: "numeric",
 });
 
-export class EventRenderError extends Error {
+class EventRenderError extends Error {
   override readonly name = "EventRenderError";
 }
 

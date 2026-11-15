@@ -114,19 +114,10 @@ function body<K extends OutboundKind>(
 }
 
 /**
- * True only for a body that cannot post anything others can see: a pong, an
- * ephemeral first response, autocomplete results, a modal, or an acknowledgement
- * that changes nothing. Reads the payload, never `kind`.
- */
-export function isSilentResponse(
-  response: OutboundBody<"direct-response" | "checked-response">,
-): boolean {
-  return isDirectPayload(response.payload);
-}
-
-/**
  * For the endpoint's HTTP response, which runs no managed channel check. Throws unless
- * `isSilentResponse` holds for the body.
+ * the body cannot post anything others can see: a pong, an ephemeral first response,
+ * autocomplete results, a modal, or an acknowledgement that changes nothing. Reads
+ * the payload, never `kind`.
  */
 export function serializeDirectResponse(
   response: OutboundBody<"direct-response">,

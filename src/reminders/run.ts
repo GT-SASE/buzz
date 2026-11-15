@@ -81,7 +81,7 @@ const WORK_MARGIN_MS = 2_000;
  * no mark starts after `RUN_HARD_STOP_MS`, which leaves time for the last marks to end
  * and the run to record itself inside that limit.
  */
-export const RUN_HARD_STOP_MS = FUNCTION_MAX_MS - 2 * DATABASE_CALL_MS;
+const RUN_HARD_STOP_MS = FUNCTION_MAX_MS - 2 * DATABASE_CALL_MS;
 const RUN_WORK_MS =
   RUN_HARD_STOP_MS - DATABASE_CALL_MS - DISCORD_OPERATION_MS - WORK_MARGIN_MS;
 /** Longer than the function can live, so a 'running' row this old is a killed run. */
