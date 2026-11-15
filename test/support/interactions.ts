@@ -177,7 +177,7 @@ export function firstCustomId(
 }
 
 /** Passes the real signature check, which is the only way to get these two values. */
-export function verify(payload: unknown): {
+function verify(payload: unknown): {
   interaction: GuildInteraction;
   verified: VerifiedInteraction;
 } {

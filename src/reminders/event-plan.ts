@@ -99,7 +99,7 @@ export function pickupPeople(event: EventReminderCandidate): string[] | null {
 }
 
 /** Days before the event that the first Food pickup reminder goes out. */
-export const PICKUP_REMINDER_DAYS_BEFORE = 2;
+const PICKUP_REMINDER_DAYS_BEFORE = 2;
 
 /** The kinds that go out today for this event, before looking at the log. */
 export function kindsDueToday(

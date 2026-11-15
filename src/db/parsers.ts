@@ -8,7 +8,7 @@ const TIMESTAMP_TEXT =
  * Kept as text and not a Date, so the microseconds survive: an edit sends `updated_at`
  * back as the version it read, and a Date would round it to milliseconds and never match.
  */
-export function isoTimestamp(value: string): string {
+function isoTimestamp(value: string): string {
   const match = TIMESTAMP_TEXT.exec(value);
   if (match === null) {
     return value;

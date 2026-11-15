@@ -29,7 +29,7 @@ const DEFAULT_DEADLINE_MS = 8000;
  * still leave time for a fixed reply if it fails. An interaction handler makes one
  * such read and defers anything more.
  */
-export const INTERACTION_DEADLINE_MS = 2200;
+const INTERACTION_DEADLINE_MS = 2200;
 
 /** A client on Neon in production, or PGlite or pg in tests. */
 export function createDbClient(run: Runner): DbClient {

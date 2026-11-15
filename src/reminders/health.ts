@@ -48,7 +48,7 @@ import { DATABASE_CALL_MS, DEFAULT_LIMITS, LOCK_STALE_SECONDS } from "./run.ts";
 
 const HOUR_MS = 3_600_000;
 /** A daily job fires within its hour, so two runs can be up to 25 hours apart. */
-export const MAX_RUN_AGE_MS = 26 * HOUR_MS;
+const MAX_RUN_AGE_MS = 26 * HOUR_MS;
 /** The database's clock and ours can disagree by this much without it meaning anything. */
 const CLOCK_TOLERANCE_MS = 300_000;
 /** Counts in a reminder run's results that mean a person should look, though it succeeded. */

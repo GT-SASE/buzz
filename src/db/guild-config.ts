@@ -83,7 +83,7 @@ export async function applyRoleBindings(
 }
 
 /** How long a /setup draft stays usable. Older ones read as absent. */
-export const SETUP_DRAFT_TTL_MS = 3_600_000;
+const SETUP_DRAFT_TTL_MS = 3_600_000;
 
 /**
  * A short, fixed-length digest of the six roles in a fixed order, for a Confirm
