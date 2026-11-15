@@ -67,7 +67,7 @@ export function stepName(kind: EventStepKind): SafeText {
 }
 
 /** ✅ for a done step, ⬜ for an open one. */
-export function stepMark(step: Pick<EventStep, "status">): SafeText {
+function stepMark(step: Pick<EventStep, "status">): SafeText {
   return step.status === "done" ? safe`✅` : safe`⬜`;
 }
 
@@ -111,7 +111,7 @@ export function stepOwnerIds(
 }
 
 /** Mentions that ping nobody unless the message names them, or "nobody assigned". */
-export function ownersText(userIds: readonly string[]): SafeText {
+function ownersText(userIds: readonly string[]): SafeText {
   return commaList(userIds.map(userMention)) ?? safe`nobody assigned`;
 }
 
@@ -125,15 +125,12 @@ function stepOf(workflow: EventWorkflow, kind: EventStepKind): EventStep {
 }
 
 /** Whether a step is done in this workflow. */
-export function isStepDone(
-  workflow: EventWorkflow,
-  kind: EventStepKind,
-): boolean {
+function isStepDone(workflow: EventWorkflow, kind: EventStepKind): boolean {
   return stepOf(workflow, kind).status === "done";
 }
 
 /** The pickup time and people, or what is still missing. */
-export function pickupText(workflow: EventWorkflow): SafeText {
+function pickupText(workflow: EventWorkflow): SafeText {
   const time =
     workflow.pickup_time === null
       ? safe`time not set`
@@ -170,7 +167,7 @@ export function checklistLines(workflow: EventWorkflow): SafeText[] {
 }
 
 /** The custom_id of one step's button. Throws if the ID is not an event ID. */
-export function stepButtonId(kind: ButtonStepKind, eventId: string): string {
+function stepButtonId(kind: ButtonStepKind, eventId: string): string {
   if (!isUuid(eventId)) {
     throw new RangeError("A step button needs an event ID");
   }

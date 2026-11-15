@@ -1,6 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
+  "bunVersion": "1.4.x",
   "outputDirectory": "public",
   "crons": [
     { "path": "/api/cron/reminders", "schedule": "0 15 * * *" },

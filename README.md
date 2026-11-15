@@ -194,7 +194,7 @@ These stay true with every control working:
 
 You need the Bun version in `package.json` (`packageManager`), Git, Bash and curl, on macOS or Linux. Bun installs packages and runs every script, test and CI step.
 
-The functions run on Node 24 on Vercel. Vercel's Bun runtime, in beta, doesn't support automatic source maps, bytecode caching or request metrics for `node:http`/`node:https` yet; switching is `bunVersion` in `vercel.json`.
+The functions run on Vercel's Bun runtime, in beta, set by `bunVersion` in `vercel.json`. It has no automatic source maps or bytecode caching yet.
 
 ```sh
 bun install --frozen-lockfile
@@ -210,6 +210,7 @@ There is no local bot. Discord needs a public HTTPS URL, so tests stand in for i
 
 | Command                       | What it does                                                                                                                                                                            | Needs                                                                         |
 | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `bun run check`               | Typecheck, lint, format, unit and PGlite tests through Turborepo, replaying any whose inputs are unchanged                                                                              | Nothing                                                                       |
 | `bun run typecheck`           | Type check                                                                                                                                                                              | Nothing                                                                       |
 | `bun run lint`                | ESLint (only the clients may call `fetch`)                                                                                                                                              | Nothing                                                                       |
 | `bun run format:check`        | Prettier                                                                                                                                                                                | Nothing                                                                       |
@@ -234,7 +235,7 @@ test ! -e .gitleaksignore
 .tools/gitleaks git . --config .gitleaks.toml --redact --ignore-gitleaks-allow --no-banner --log-opts="--all -m --text --no-color"
 ```
 
-[CI](.github/workflows/ci.yml) runs on each pull request and on pushes to `main`, and ends with a Vercel build of the functions. [Database](.github/workflows/db.yml) runs only for pull requests into `main` and pushes to `main`, and skips a change to `docs/`, `README.md` or `SECURITY.md` alone. A newer run on the same branch cancels the older one.
+[CI](.github/workflows/ci.yml) runs on each pull request and on pushes to `main`, and ends with a Vercel build of the functions. It runs the checks with `bun run check`, which uses Vercel Remote Cache when the repository has a `TURBO_TOKEN` secret and a `TURBO_TEAM` variable. [Database](.github/workflows/db.yml) runs only for pull requests into `main` and pushes to `main`, and skips a change to `docs/`, `README.md` or `SECURITY.md` alone. A newer run on the same branch cancels the older one.
 
 ### Commits
 
@@ -258,7 +259,7 @@ To add a command, write a file in `src/handlers/` that exports `handler`, add on
 
 These settings in the repo are easy to break:
 
-- `engines` in `package.json` selects the Node.js version.
+- `bunVersion` in `vercel.json` selects the Bun runtime. Do not add `engines.node` to `package.json`: it silently switches the functions back to Node. CI checks this.
 - Keep `outputDirectory` set to `public`, and keep `public/robots.txt`, because Vercel refuses an empty output directory. Without a `public` directory, Vercel publishes the repository's files.
 - Do not add tests or helpers under `api/`.
 - `git.deploymentEnabled` deploys `main` and nothing else. The rule is `**`, because `*` does not match a branch name containing a slash.

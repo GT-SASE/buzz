@@ -71,9 +71,7 @@ import type {
   Action,
   AutocompleteCommand,
   AutocompleteScope,
-  EventResource,
   EventScopedAction,
-  TaskResource,
   TaskScopedAction,
   UnscopedAction,
 } from "../lib/permissions.ts";
@@ -177,10 +175,10 @@ type GateOutcome<R> =
 const MINTED = Symbol("Gate");
 
 /**
- * Decides a route. Only `noRow`, `eventRow`, `taskRow` and `tierOnly` make one. The first
- * three pass through `authorize` with the row their action needs, so absent and forbidden
- * get the same refusal. `tierOnly` checks the tier and leaves the row to its `finish`. A gate refers to itself under a private symbol, which a copy or a
- * hand-written object cannot do, and `createRouter` refuses anything else.
+ * Decides a route. Only `noRow` and `tierOnly` make one. `noRow` passes through
+ * `authorize`. `tierOnly` checks the tier and leaves the row to its `finish`. A gate
+ * refers to itself under a private symbol, which a copy or a hand-written object cannot
+ * do, and `createRouter` refuses anything else.
  */
 export interface Gate<R, V> {
   readonly action: Action;
@@ -230,50 +228,6 @@ export function tierOnly(
           : REFUSE,
       ),
     true,
-  );
-}
-
-function rowGate<R, V>(
-  action: Action,
-  load: (ctx: RouteContext, values: V) => Promise<DbResult<R | null>>,
-  decide: (ctx: RouteContext, row: R | null) => boolean,
-): Gate<R, V> {
-  return mintGate(action, async (ctx, values) => {
-    const row = await load(ctx, values);
-    if (!row.ok) {
-      return row.error.category === "unavailable"
-        ? { kind: "unavailable" }
-        : REFUSE;
-    }
-    return row.value !== null && decide(ctx, row.value)
-      ? { kind: "allowed", resource: row.value }
-      : REFUSE;
-  });
-}
-
-/** `load` reads by ID and signed guild. Null and another guild's row both refuse. */
-export function eventRow<R extends EventResource, V>(
-  action: EventScopedAction,
-  load: (ctx: RouteContext, values: V) => Promise<DbResult<R | null>>,
-): Gate<R, V> {
-  return rowGate(
-    action,
-    load,
-    ({ actor, config }, row) =>
-      authorize<EventScopedAction>(action, actor, config, row).allowed,
-  );
-}
-
-/** `load` reads by ID and signed guild. Null and another guild's row both refuse. */
-export function taskRow<R extends TaskResource, V>(
-  action: TaskScopedAction,
-  load: (ctx: RouteContext, values: V) => Promise<DbResult<R | null>>,
-): Gate<R, V> {
-  return rowGate(
-    action,
-    load,
-    ({ actor, config }, row) =>
-      authorize<TaskScopedAction>(action, actor, config, row).allowed,
   );
 }
 

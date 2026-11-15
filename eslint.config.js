@@ -16,7 +16,7 @@ const databaseOnlyInDb = {
 };
 
 export default defineConfig([
-  globalIgnores(["coverage/", "dist/", ".tools/"]),
+  globalIgnores(["coverage/", "dist/", ".tools/", ".turbo/", ".vercel/"]),
   eslint.configs.recommended,
   tseslint.configs.strictTypeChecked,
   tseslint.configs.stylisticTypeChecked,

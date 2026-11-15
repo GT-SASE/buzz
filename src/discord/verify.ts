@@ -23,7 +23,7 @@ const ED25519_SPKI_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
 const SIGNATURE_HEX = /^[0-9a-f]{128}$/i;
 const UNIX_SECONDS = /^\d{1,12}$/;
 
-export const MAX_TIMESTAMP_SKEW_MS = 5 * 60 * 1000;
+const MAX_TIMESTAMP_SKEW_MS = 5 * 60 * 1000;
 
 const MINT = Symbol("verify");
 

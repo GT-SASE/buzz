@@ -40,7 +40,7 @@ export function unavailable(): Error {
 }
 
 /** PGlite reads each type as Neon's driver is told to in production. */
-export const PGLITE_PARSERS = Object.fromEntries(TYPE_PARSERS);
+const PGLITE_PARSERS = Object.fromEntries(TYPE_PARSERS);
 
 /**
  * Runs every statement on the migrated database as bot_app, the role the bot logs in as,
