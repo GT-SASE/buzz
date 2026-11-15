@@ -1,14 +1,14 @@
 {
-  "name": "gtsase-discord-bot",
+  "name": "@buzz/discord-bot",
   "version": "0.0.0",
   "private": true,
   "description": "Discord bot that tracks events, tasks and deadlines for a student organisation's events team.",
   "license": "UNLICENSED",
   "packageManager": "bun@1.4.4",
   "scripts": {
-    "check": "turbo run typecheck lint format:check test test:db --continue",
+    "check": "turbo run typecheck lint format:check test test:db --continue --concurrency=1",
     "gitleaks:install": "bash scripts/install-gitleaks.sh",
-    "hooks:install": "git config core.hooksPath .githooks",
+    "hooks:install": "git config core.hooksPath \"$(git rev-parse --show-prefix).githooks\"",
     "typecheck": "tsc --noEmit",
     "test": "bun test --isolate ./src ./scripts",
     "format:check": "prettier --check .",
