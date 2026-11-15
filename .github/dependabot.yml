@@ -20,7 +20,7 @@ updates:
       # These types follow the Bun version in packageManager, so they move with it
       # by hand.
       - dependency-name: "@types/bun"
-      # These types follow the Node.js major version in package.json engines.
+      # Newer majors type Node.js APIs that Bun may not implement yet.
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
       # typescript-eslint supports TypeScript below 6.1, so majors wait for it.

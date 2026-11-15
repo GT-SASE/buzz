@@ -94,7 +94,7 @@ function hoursAndMinutes(time: string | null): string | null {
  * The steps and live assignments of each live event named, in this guild. An event that
  * is unknown, deleted or another guild's is left out. At most `MAX_ID_LIST` IDs.
  */
-export async function listEventWorkflows(
+async function listEventWorkflows(
   db: DbClient,
   { guildId, eventIds }: { guildId: string; eventIds: readonly string[] },
 ): Promise<DbResult<EventWorkflow[]>> {

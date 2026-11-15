@@ -102,3 +102,6 @@ Desktop.ini
 *.swp
 *.swo
 *~
+
+# Turborepo's local cache
+.turbo/

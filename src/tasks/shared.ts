@@ -221,7 +221,7 @@ export async function openEventOf(
   return event?.status === "active" ? event : null;
 }
 
-export function shortTaskId(taskId: string): string {
+function shortTaskId(taskId: string): string {
   return taskId.slice(0, SHORT_ID_LENGTH);
 }
 

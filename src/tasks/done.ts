@@ -92,10 +92,7 @@ function buttonLabel(description: string | undefined): PlainText {
 }
 
 /** The button for a task's messages. Throws if the ID is not a task ID. */
-export function markDoneButton(
-  taskId: string,
-  description?: string,
-): Part<"button"> {
+function markDoneButton(taskId: string, description?: string): Part<"button"> {
   if (!isUuid(taskId)) {
     throw new RangeError("A Mark done button needs a task ID");
   }
