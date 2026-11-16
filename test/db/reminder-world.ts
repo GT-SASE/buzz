@@ -100,8 +100,10 @@ export function useReminderWorld(): ReminderWorld {
         env: { DISCORD_BOT_TOKEN: "unit-test-token", DISCORD_APP_ID: fakeId() },
         sleep: () => Promise.resolve(),
       }),
-    run: (guilds, { now, limits } = {}) =>
-      runReminders({
+    // tsrs types `{ now, limits } = {}` here as any, so the options are destructured inside.
+    run: (guilds, options = {}) => {
+      const { now, limits } = options;
+      return runReminders({
         db: world.db,
         client: world.client(),
         allowedGuildIds: new Set(guilds.map((guild) => guild.guildId)),
@@ -110,7 +112,8 @@ export function useReminderWorld(): ReminderWorld {
           ? {}
           : { now: typeof now === "function" ? now : () => now }),
         ...(limits === undefined ? {} : { limits }),
-      }),
+      });
+    },
     async guildInZone(timezone = "UTC") {
       const guild = await insertGuild(world.database);
       await world.database.query(
