@@ -196,6 +196,8 @@ You need the Bun version in `package.json` (`packageManager`), Git, Bash and cur
 
 The functions run on Vercel's Bun runtime, in beta, set by `bunVersion` in `vercel.json`. It has no automatic source maps or bytecode caching yet.
 
+The code type-checks with TypeScript 7, installed as `typescript-7`. `typescript` stays on 6.0, because typescript-eslint and Vercel's build read it and typescript-eslint supports only versions below 6.1.
+
 ```sh
 bun install --frozen-lockfile
 bun run gitleaks:install
@@ -211,7 +213,7 @@ There is no local bot. Discord needs a public HTTPS URL, so tests stand in for i
 | Command                       | What it does                                                                                                                                                                            | Needs                                                                         |
 | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
 | `bun run check`               | Typecheck, lint, format, unit and PGlite tests through Turborepo, replaying any whose inputs are unchanged                                                                              | Nothing                                                                       |
-| `bun run typecheck`           | Type check                                                                                                                                                                              | Nothing                                                                       |
+| `bun run typecheck`           | Type check with TypeScript 7                                                                                                                                                            | Nothing                                                                       |
 | `bun run lint`                | ESLint (only the clients may call `fetch`)                                                                                                                                              | Nothing                                                                       |
 | `bun run format:check`        | Prettier                                                                                                                                                                                | Nothing                                                                       |
 | `bun run test`                | Unit tests                                                                                                                                                                              | Nothing                                                                       |
