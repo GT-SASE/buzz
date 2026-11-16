@@ -9,7 +9,7 @@
     "check": "turbo run typecheck lint format:check test test:db --continue --concurrency=1",
     "gitleaks:install": "bash scripts/install-gitleaks.sh",
     "hooks:install": "git config core.hooksPath \"$(git rev-parse --show-prefix).githooks\"",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "bun node_modules/typescript-7/bin/tsc --noEmit",
     "test": "bun test --isolate ./src ./scripts",
     "format:check": "prettier --check .",
     "lint": "eslint . --max-warnings 0",
@@ -31,6 +31,7 @@
     "prettier": "3.9.10",
     "turbo": "2.11.10",
     "typescript": "6.0.3",
+    "typescript-7": "npm:typescript@7.0.2",
     "typescript-eslint": "8.72.1"
   },
   "dependencies": {
