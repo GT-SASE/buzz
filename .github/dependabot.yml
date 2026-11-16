@@ -23,7 +23,8 @@ updates:
       # Newer majors type Node.js APIs that Bun may not implement yet.
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
-      # typescript-eslint supports TypeScript below 6.1, so majors wait for it.
+      # typescript-eslint supports TypeScript below 6.1, so majors wait for it. The type
+      # check runs on typescript-7, which updates on its own.
       - dependency-name: typescript
         update-types: ["version-update:semver-major"]
       # Newer majors add many runtime packages for one function, waitUntil.

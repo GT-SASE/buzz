@@ -30,11 +30,12 @@ jobs:
         with:
           bun-version-file: package.json
       - run: bun install --frozen-lockfile
-      # --continue runs every check even if one fails, so one run reports them all.
-      # With TURBO_TOKEN and TURBO_TEAM set, a check whose inputs are unchanged
-      # replays from Vercel's Remote Cache. Without them every check runs.
+      # check runs every check even if one fails, one at a time, because test:db has
+      # failed under CPU contention. With TURBO_TOKEN and TURBO_TEAM set, a check whose
+      # inputs are unchanged replays from Vercel's Remote Cache. Without them every
+      # check runs.
       - name: Checks
-        run: bun run check --concurrency=1
+        run: bun run check
         env:
           TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
           TURBO_TEAM: ${{ vars.TURBO_TEAM }}
