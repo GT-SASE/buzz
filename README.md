@@ -196,6 +196,8 @@ You need the Bun version in `package.json` (`packageManager`), Git, Bash and cur
 
 The functions run on Vercel's Bun runtime, in beta, set by `bunVersion` in `vercel.json`. It has no automatic source maps or bytecode caching yet.
 
+The code type-checks with TypeScript 7, installed as `typescript-7`, and with [tsrs](https://github.com/oxc-project/tsrs), its Rust port, as buzz does. tsrs is a beta, so it is pinned exactly and `bun run check` runs both. `typescript` stays on 6.0, because typescript-eslint and Vercel's build read it and typescript-eslint supports only versions below 6.1.
+
 ```sh
 bun install --frozen-lockfile
 bun run gitleaks:install
@@ -211,7 +213,8 @@ There is no local bot. Discord needs a public HTTPS URL, so tests stand in for i
 | Command                       | What it does                                                                                                                                                                            | Needs                                                                         |
 | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
 | `bun run check`               | Typecheck, lint, format, unit and PGlite tests through Turborepo, replaying any whose inputs are unchanged                                                                              | Nothing                                                                       |
-| `bun run typecheck`           | Type check                                                                                                                                                                              | Nothing                                                                       |
+| `bun run typecheck`           | Type check with tsrs, the Rust port of TypeScript 7                                                                                                                                     | Nothing                                                                       |
+| `bun run typecheck:tsc`       | Type check with TypeScript 7's `tsc`, the deciding check while tsrs is a beta                                                                                                           | Nothing                                                                       |
 | `bun run lint`                | ESLint (only the clients may call `fetch`)                                                                                                                                              | Nothing                                                                       |
 | `bun run format:check`        | Prettier                                                                                                                                                                                | Nothing                                                                       |
 | `bun run test`                | Unit tests                                                                                                                                                                              | Nothing                                                                       |
@@ -274,5 +277,6 @@ These settings in the repo are easy to break:
 - [docs/RECOVERY.md](docs/RECOVERY.md): undoing a change, Neon's point-in-time restore and manual exports
 - [docs/RUNBOOK.md](docs/RUNBOOK.md): when the runs happen, a failing run, the bot removed from a server, a full database, deploy order and data retention
 - [docs/HANDOFF.md](docs/HANDOFF.md): passing the bot to the next maintainer
+- [docs/MERGE_INTO_BUZZ.md](docs/MERGE_INTO_BUZZ.md): moving the bot into the buzz repository
 - [docs/adr/](docs/adr/): decision records
 - [SECURITY.md](SECURITY.md): reporting a problem and handling a leak
