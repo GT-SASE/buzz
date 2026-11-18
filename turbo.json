@@ -1,5 +1,6 @@
 {
   "$schema": "https://turborepo.dev/schema.json",
+  "globalPassThroughEnv": ["SKIP_ENV_VALIDATION"],
   "tasks": {
     "//#lint": {
       "tags": ["ci"]
