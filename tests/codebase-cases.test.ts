@@ -193,6 +193,7 @@ describe("site map and navigation", () => {
     expect(member).not.toContain("/portal/committees");
     expect(admin).not.toContain("/portal/check-in");
     expect(admin).toContain("/portal/admin/committees");
+    expect(admin).toContain("/portal/admin/pages");
   });
 });
 

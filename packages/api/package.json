@@ -9,6 +9,7 @@
     ".": "./src/index.ts",
     "./trpc": "./src/trpc.ts",
     "./terms": "./src/terms.ts",
+    "./page-slug": "./src/page-slug.ts",
     "./event-length": "./src/event-length.ts"
   },
   "scripts": {
