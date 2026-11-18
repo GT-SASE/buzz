@@ -591,6 +591,42 @@ export const committeeCycles = createTable("committee_cycle", (d) => ({
   updatedAt: d.timestamp({ withTimezone: true }).$onUpdate(() => new Date()),
 }));
 
+/**
+ * A page officers publish without a code change, served at `/{slug}`. Only
+ * `published` rows render; a draft is a 404 to everyone, officers included,
+ * and the editor preview is where it is read.
+ */
+export const pages = createTable(
+  "page",
+  (d) => ({
+    id: d
+      .varchar({ length: 255 })
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    slug: d.varchar({ length: 60 }).notNull(),
+    title: d.varchar({ length: 200 }).notNull(),
+    description: d.varchar({ length: 300 }).notNull().default(""),
+    body: d.text().notNull().default(""),
+    published: d.boolean().notNull().default(false),
+    createdById: d.varchar({ length: 255 }).references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: d
+      .timestamp({ withTimezone: true })
+      .$defaultFn(() => /* @__PURE__ */ new Date())
+      .notNull(),
+    updatedAt: d
+      .timestamp({ withTimezone: true })
+      .$defaultFn(() => /* @__PURE__ */ new Date())
+      .$onUpdate(() => new Date())
+      .notNull(),
+  }),
+  (t) => [
+    uniqueIndex(idx("page_slug_idx")).on(t.slug),
+    index(idx("page_updated_at_idx")).on(t.updatedAt),
+  ],
+);
+
 export type ElectionPhase = "nominating" | "voting" | "closed" | "published";
 export type CandidateStatus = "pending" | "approved" | "rejected";
 
