@@ -130,6 +130,7 @@ function AlertDialogCancel({
 
 export {
   AlertDialog,
+  AlertDialogProvider,
   AlertDialogTrigger,
   AlertDialogContent,
   AlertDialogHeader,
