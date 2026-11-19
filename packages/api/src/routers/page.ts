@@ -3,10 +3,15 @@ import { desc, eq } from "drizzle-orm";
 import { z } from "zod";
 
 import { notFound } from "../errors";
-import { pageSlugSchema } from "../page-slug";
+import { pageSlugProblem } from "../page-slug";
 import { isUniqueViolation } from "../pg-errors";
 import { adminProcedure, createTRPCRouter } from "../trpc";
 import { pages } from "@buzz/db";
+
+const pageSlugSchema = z.string().superRefine((slug, ctx) => {
+  const problem = pageSlugProblem(slug);
+  if (problem) ctx.addIssue({ code: "custom", message: problem });
+});
 
 const pageInput = z.object({
   slug: pageSlugSchema,
