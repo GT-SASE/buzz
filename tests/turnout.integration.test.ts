@@ -11,7 +11,7 @@ mock.module("../packages/auth/src/index.ts", () => ({
 const { db, eventCheckIns, eventRsvps, events, users } =
   await import("../packages/db/src/index");
 const { createCaller } = await import("../packages/api/src/root");
-const { inArray } =
+const { eq, inArray } =
   await import("../packages/db/node_modules/drizzle-orm/index.js");
 
 const SLOW = 30_000;
@@ -181,3 +181,79 @@ describe.skipIf(!process.env.DATABASE_URL)("chapter.turnout", () => {
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 });
+
+describe.skipIf(!process.env.DATABASE_URL)(
+  "chapter stats for uncapped zero-point events",
+  () => {
+    const suffix = crypto.randomUUID().slice(0, 8);
+    let admin: TestUser;
+    let memberId = "";
+    let eventId = "";
+
+    beforeAll(async () => {
+      const [officer] = await db
+        .insert(users)
+        .values({
+          email: `vitest-uncapped-officer-${suffix}@example.invalid`,
+          name: "vitest officer",
+          role: "ADMIN",
+        })
+        .returning();
+      const [member] = await db
+        .insert(users)
+        .values({
+          email: `vitest-uncapped-member-${suffix}@example.invalid`,
+          name: "vitest member",
+          role: "MEMBER",
+        })
+        .returning();
+      if (!officer || !member) throw new Error("could not create test users");
+      admin = { id: officer.id, email: officer.email, role: "ADMIN" };
+      memberId = member.id;
+
+      // Check-in was turned off after people came. Uncapped events never bump
+      // currentCheckIns, so only the check-in rows say the event happened.
+      const [event] = await db
+        .insert(events)
+        .values({
+          title: "vitest uncapped zero-point",
+          startsAt: new Date(Date.now() - 24 * HOUR_MS),
+          checkInCode: randomCode(),
+          createdById: admin.id,
+          pointsValue: 0,
+          checkInEnabled: false,
+        })
+        .returning({ id: events.id });
+      if (!event) throw new Error("could not create the test event");
+      eventId = event.id;
+      await db.insert(eventCheckIns).values({
+        eventId,
+        userId: memberId,
+        pointsEarned: 0,
+        checkedInAt: new Date(Date.now() - 24 * HOUR_MS),
+      });
+    }, SLOW);
+
+    afterAll(async () => {
+      if (eventId) {
+        await db
+          .delete(eventCheckIns)
+          .where(eq(eventCheckIns.eventId, eventId));
+        await db.delete(events).where(eq(events.id, eventId));
+      }
+      await db.delete(users).where(inArray(users.id, [admin.id, memberId]));
+    }, SLOW);
+
+    it("still counts the event in chapter.attendance", async () => {
+      const result = await callerFor(admin).chapter.attendance({
+        period: "all",
+      });
+      expect(result.series.find((row) => row.id === eventId)?.checkIns).toBe(1);
+    });
+
+    it("still counts the event in chapter.turnout", async () => {
+      const result = await callerFor(admin).chapter.turnout({ period: "all" });
+      expect(result.events.find((row) => row.id === eventId)?.checkIns).toBe(1);
+    });
+  },
+);

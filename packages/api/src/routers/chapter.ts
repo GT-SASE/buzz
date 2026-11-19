@@ -145,10 +145,12 @@ export const chapterRouter = createTRPCRouter({
       const inWindow = since
         ? and(lt(events.startsAt, now), gte(events.startsAt, since))
         : lt(events.startsAt, now);
+      const anyCheckIn = sql.identifier("any_check_in");
       const countable = or(
         eq(events.checkInEnabled, true),
         gt(events.pointsValue, 0),
-        gt(events.currentCheckIns, 0),
+        // Uncapped events never bump currentCheckIns, so look at the rows.
+        sql`exists (select 1 from ${eventCheckIns} as ${anyCheckIn} where ${anyCheckIn}.${sql.identifier(eventCheckIns.eventId.name)} = ${events.id})`,
       );
       const where = and(inWindow, countable, isNull(events.archivedAt));
 
@@ -218,10 +220,12 @@ export const chapterRouter = createTRPCRouter({
       const inWindow = since
         ? and(lt(events.startsAt, now), gte(events.startsAt, since))
         : lt(events.startsAt, now);
+      const anyCheckIn = sql.identifier("any_check_in");
       const countable = or(
         eq(events.checkInEnabled, true),
         gt(events.pointsValue, 0),
-        gt(events.currentCheckIns, 0),
+        // Uncapped events never bump currentCheckIns, so look at the rows.
+        sql`exists (select 1 from ${eventCheckIns} as ${anyCheckIn} where ${anyCheckIn}.${sql.identifier(eventCheckIns.eventId.name)} = ${events.id})`,
       );
       // Earlier check-ins by the same member, from the same table. An archived
       // event counts for nothing, so it cannot make someone "returning".
