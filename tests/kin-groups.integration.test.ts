@@ -12,7 +12,7 @@ const { db, kinGroups, kinMemberships, mentorshipEnrollments, users } =
 const { createCaller } = await import("../packages/api/src/root");
 const { resetRateLimits } = await import("../packages/api/src/rate-limit");
 const { schoolYear, semester } = await import("../packages/api/src/terms");
-const { inArray } =
+const { and, eq, inArray } =
   await import("../packages/db/node_modules/drizzle-orm/index.js");
 
 type TestUser = { id: string; email: string; role: "MEMBER" | "ADMIN" };
@@ -234,3 +234,83 @@ describe.skipIf(!process.env.DATABASE_URL)("kin groups", () => {
     groupIds.shift();
   });
 });
+
+describe.skipIf(!process.env.DATABASE_URL)(
+  "deleteGroup across semesters",
+  () => {
+    const suffix = crypto.randomUUID().slice(0, 8);
+    const year = "2031-2032";
+    const userIds: string[] = [];
+    const groupIds: string[] = [];
+    let officer: TestUser;
+    let both: TestUser;
+    let fallOnly: TestUser;
+    let fallGroupId = "";
+
+    async function makeUser(label: string, role: TestUser["role"]) {
+      const id = `kin-del-${label}-${suffix}`;
+      const email = `${id}@vitest.local`;
+      await db.insert(users).values({ id, email, role, name: label });
+      userIds.push(id);
+      return { id, email, role };
+    }
+
+    async function status(user: TestUser) {
+      const [row] = await db
+        .select({ status: mentorshipEnrollments.status })
+        .from(mentorshipEnrollments)
+        .where(
+          and(
+            eq(mentorshipEnrollments.userId, user.id),
+            eq(mentorshipEnrollments.year, year),
+          ),
+        );
+      return row?.status;
+    }
+
+    beforeAll(async () => {
+      officer = await makeUser("officer", "ADMIN");
+      both = await makeUser("both", "MEMBER");
+      fallOnly = await makeUser("fall-only", "MEMBER");
+      const groups = await db
+        .insert(kinGroups)
+        .values([
+          { name: `Del fall ${suffix}`, year, semester: "fall-2031" },
+          { name: `Del spring ${suffix}`, year, semester: "spring-2032" },
+        ])
+        .returning();
+      const fall = groups.find((group) => group.semester === "fall-2031")!;
+      const spring = groups.find((group) => group.semester === "spring-2032")!;
+      fallGroupId = fall.id;
+      groupIds.push(fall.id, spring.id);
+      await db.insert(mentorshipEnrollments).values(
+        [both, fallOnly].map((user) => ({
+          userId: user.id,
+          year,
+          role: "mentee" as const,
+          status: "enrolled" as const,
+          enrolledAt: new Date(),
+        })),
+      );
+      await db.insert(kinMemberships).values([
+        { userId: both.id, semester: "fall-2031", groupId: fall.id },
+        { userId: both.id, semester: "spring-2032", groupId: spring.id },
+        { userId: fallOnly.id, semester: "fall-2031", groupId: fall.id },
+      ]);
+    });
+
+    afterAll(async () => {
+      await db
+        .delete(mentorshipEnrollments)
+        .where(inArray(mentorshipEnrollments.userId, userIds));
+      await db.delete(kinGroups).where(inArray(kinGroups.id, groupIds));
+      await db.delete(users).where(inArray(users.id, userIds));
+    });
+
+    it("keeps enrollment for someone still seated in another semester of the year, and resets the rest", async () => {
+      await callerFor(officer).mentorship.deleteGroup({ id: fallGroupId });
+      expect(await status(both)).toBe("enrolled");
+      expect(await status(fallOnly)).toBe("interested");
+    });
+  },
+);
