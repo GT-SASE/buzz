@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 
 import { codeFromScan } from "~/app/portal/(member)/check-in/scanner";
 import {
@@ -72,7 +72,7 @@ describe("tierFor", () => {
         continue;
       }
       expect(tier.pointsToNext).toBeGreaterThan(0);
-      expect(tierFor(points + tier.pointsToNext).name).toBe(tier.next);
+      expect(tierFor(points + tier.pointsToNext).name).toBe(tier.next!);
     }
   });
 

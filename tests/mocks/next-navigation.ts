@@ -1,4 +1,4 @@
-import { vi } from "vitest";
+import { vi } from "bun:test";
 
 export const push = vi.fn();
 export const refresh = vi.fn();

@@ -1,5 +1,5 @@
 # Bun auto-loads the repo-root .env, which holds the deployment's DATABASE_URL.
-# next.config.ts, drizzle.config.ts and vitest.config.ts already load it
+# next.config.ts, drizzle.config.ts and tests/setup/env.ts already load it
 # explicitly, so nothing needs the implicit load.
 env = false
 
@@ -11,3 +11,6 @@ publicHoistPattern = ["*eslint*", "*prettier*"]
 # Links each peer from the tree (as pnpm did); off, typescript-eslint falls
 # through to the hidden hoist and loads TypeScript 7, which it rejects.
 peer = true
+
+[test]
+preload = ["./tests/setup/env.ts"]

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 
 import { visibleEvents } from "../sites/web/src/app/portal/(member)/admin/visible-events";
 

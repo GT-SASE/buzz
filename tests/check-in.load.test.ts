@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, mock } from "bun:test";
 
 /**
  * `packages/api/src/trpc.ts` imports the auth package at module load, and
@@ -9,7 +9,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
  * bundler. Nothing under test is stubbed by this: every context below is
  * hand-built, so no procedure ever calls `auth()`.
  */
-vi.mock("../packages/auth/src/index.ts", () => ({
+mock.module("../packages/auth/src/index.ts", () => ({
   auth: async () => null,
   handlers: {},
   signIn: async () => undefined,
