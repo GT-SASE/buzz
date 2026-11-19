@@ -4,6 +4,8 @@ import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
+import { appBuild } from "../sites/web/build-version";
+
 const root = path.resolve(import.meta.dirname, "..");
 
 describe("buzz mcp server over stdio", () => {
@@ -22,6 +24,10 @@ describe("buzz mcp server over stdio", () => {
       }),
     );
     try {
+      const serverVersion = client.getServerVersion()?.version;
+      expect(serverVersion).toMatch(/^\d+\.\d+\.\d+$/);
+      expect(serverVersion).toBe(appBuild().version);
+
       const { tools } = await client.listTools();
       expect(tools.map((t) => t.name).sort()).toEqual([
         "buzz_db_schema",
