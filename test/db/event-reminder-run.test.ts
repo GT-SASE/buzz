@@ -290,13 +290,13 @@ describe("countdown pings", () => {
       "slides_due",
       2,
       async (made) => ({ users: [await assign(made, "slides")], roles: [] }),
-      "Slides for **Spring social** are due on",
+      "Slides for **Spring social** are needed for the event on",
     ],
     [
       "slides_tomorrow",
       1,
       async (made) => ({ users: [await assign(made, "slides")], roles: [] }),
-      "Slides for **Spring social** are due tomorrow",
+      "Slides for **Spring social** are needed for the event tomorrow",
     ],
     [
       "event_today",

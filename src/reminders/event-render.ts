@@ -242,7 +242,7 @@ export function renderEventReminder(
     case "slides_tomorrow":
       return ping(
         event,
-        safe`Slides for **${name}** are due ${when}.`,
+        safe`Slides for **${name}** are needed for the event ${when}.`,
         assigneesOf(event, "slides"),
       );
     case "event_today":

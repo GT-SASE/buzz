@@ -712,11 +712,25 @@ describe("/event undo", () => {
     await finish(event, "engage_post");
     await finish(event, "engage_picture");
 
-    await undo(event, "engage_post");
+    const who = fakeId();
+
+    await undo(event, "engage_post", officer(who));
 
     const after = await steps(event.id);
     expect(after.engage_post?.status).toBe("open");
     expect(after.engage_picture?.status).toBe("open");
+    expect(postedIn(event).at(-1)?.body).toMatchObject({
+      content: `Engage post reopened by <@${who}>. This also reopened Engage picture added.`,
+      allowed_mentions: { parse: [], users: [] },
+    });
+
+    // Without the picture added, the line is the plain one.
+    await finish(event, "engage_post");
+    await undo(event, "engage_post", officer(who));
+    expect(postedIn(event).at(-1)?.body).toMatchObject({
+      content: `Engage post reopened by <@${who}>.`,
+      allowed_mentions: { parse: [], users: [] },
+    });
   });
 
   it("undoes No slides needed", async () => {
