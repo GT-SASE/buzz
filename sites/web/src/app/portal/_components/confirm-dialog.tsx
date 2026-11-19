@@ -1,16 +1,13 @@
 "use client";
 
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "~/components/ui/alert-dialog";
+import { AlertDialog } from "radix-ui";
+import { lazy, Suspense, useState } from "react";
+
+const ConfirmDialogContent = lazy(() =>
+  import("./confirm-dialog-content").then((m) => ({
+    default: m.ConfirmDialogContent,
+  })),
+);
 
 export function ConfirmDialog({
   children,
@@ -27,28 +24,34 @@ export function ConfirmDialog({
   onConfirm: () => void;
   danger?: boolean;
 }) {
+  const [open, setOpen] = useState(false);
+  const [opened, setOpened] = useState(false);
+
   return (
-    <AlertDialog>
-      <AlertDialogTrigger asChild>{children}</AlertDialogTrigger>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>{title}</AlertDialogTitle>
-          <AlertDialogDescription>{body}</AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction
-            onClick={onConfirm}
-            className={
-              danger
-                ? "bg-destructive hover:bg-destructive/90 text-white"
-                : undefined
-            }
-          >
-            {action}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+    <AlertDialog.Root
+      data-slot="alert-dialog"
+      open={open}
+      onOpenChange={(next) => {
+        if (next) setOpened(true);
+        setOpen(next);
+      }}
+    >
+      <AlertDialog.Trigger data-slot="alert-dialog-trigger" asChild>
+        {children}
+      </AlertDialog.Trigger>
+      {opened && (
+        <Suspense fallback={null}>
+          <ConfirmDialogContent
+            open={open}
+            onOpenChange={setOpen}
+            title={title}
+            body={body}
+            action={action}
+            onConfirm={onConfirm}
+            danger={danger}
+          />
+        </Suspense>
+      )}
+    </AlertDialog.Root>
   );
 }

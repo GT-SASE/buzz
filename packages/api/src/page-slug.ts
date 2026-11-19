@@ -1,5 +1,3 @@
-import { z } from "zod";
-
 export const PAGE_SLUG_MAX = 60;
 
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -49,11 +47,6 @@ export function pageSlugProblem(slug: string): string | null {
 export function isValidPageSlug(slug: string) {
   return pageSlugProblem(slug) === null;
 }
-
-export const pageSlugSchema = z.string().superRefine((slug, ctx) => {
-  const problem = pageSlugProblem(slug);
-  if (problem) ctx.addIssue({ code: "custom", message: problem });
-});
 
 /** A starting point for the URL field, trimmed to fit and not yet validated. */
 export function slugFromTitle(title: string) {
