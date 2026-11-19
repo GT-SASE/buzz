@@ -15,3 +15,10 @@ export {
   semester,
   semesterLabel,
 } from "./terms";
+export {
+  isValidPageSlug,
+  pageSlugProblem,
+  PAGE_SLUG_MAX,
+  RESERVED_PAGE_SLUGS,
+  slugFromTitle,
+} from "./page-slug";
