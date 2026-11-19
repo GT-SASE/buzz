@@ -2,9 +2,26 @@ import { execFile } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 
+import { readdirSync } from "node:fs";
+
 import { listDir, readRepoFile, repoPath } from "./repo";
 
 const run = promisify(execFile);
+
+/** Root plus each directory matched by the root workspaces globs ("" is the root). */
+function workspaceDirs(): string[] {
+  const globs =
+    (JSON.parse(readRepoFile("package.json")) as { workspaces?: string[] })
+      .workspaces ?? [];
+  const dirs = [""];
+  for (const glob of globs) {
+    const base = glob.replace(/\/\*$/, "");
+    for (const e of readdirSync(repoPath(base), { withFileTypes: true })) {
+      if (e.isDirectory()) dirs.push(`${base}/${e.name}`);
+    }
+  }
+  return dirs;
+}
 
 export function migrations(): string {
   const files = listDir("packages/db/drizzle").filter((f) =>
@@ -31,6 +48,23 @@ export async function version(): Promise<string> {
     version: string;
   };
   const lines = [`sites/web/package.json version: ${pkg.version}`];
+  const mismatched: string[] = [];
+  for (const dir of workspaceDirs()) {
+    const w = JSON.parse(readRepoFile(dir, "package.json")) as {
+      name: string;
+      version: string;
+    };
+    const flag = w.version === pkg.version ? "" : "  MISMATCH";
+    if (flag) mismatched.push(w.name);
+    lines.push(
+      `  ${w.name}  ${w.version}  (${dir || "."}/package.json)${flag}`,
+    );
+  }
+  if (mismatched.length > 0) {
+    lines.push(
+      `MISMATCH: ${mismatched.join(", ")} differ from the site version; tests/versions.test.ts fails.`,
+    );
+  }
   try {
     const { appBuild } = (await import(
       pathToFileURL(repoPath("sites/web/build-version.ts")).href
@@ -41,7 +75,7 @@ export async function version(): Promise<string> {
     lines.push(`computed build unavailable: ${(e as Error).message}`);
   }
   lines.push(
-    "Rule: MAJOR.MINOR from package.json by hand; PATCH = first-parent commits since the version line last changed, rolls into MINOR at 100.",
+    "Rule: one version for the whole repo. MAJOR.MINOR from package.json by hand (every workspace shares X.Y.0); PATCH = first-parent commits since the version line last changed, rolls into MINOR at 100.",
     "",
   );
   const readme = readRepoFile("README.md").split(/\r?\n/);
