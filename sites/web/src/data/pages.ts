@@ -8,18 +8,31 @@ import { db, pages } from "@buzz/db";
 
 export const PAGES_TAG = "pages";
 
+// Throws on a database error: unstable_cache does not store a throw, so one
+// transient failure is not served for the whole revalidate window.
 async function fetchPage(slug: string) {
   if (!process.env.DATABASE_URL) return null;
+  const [row] = await db
+    .select({
+      title: pages.title,
+      description: pages.description,
+      body: pages.body,
+    })
+    .from(pages)
+    .where(and(eq(pages.slug, slug), eq(pages.published, true)));
+  return row ?? null;
+}
+
+const loadPage = unstable_cache(fetchPage, [PAGES_TAG, "v1"], {
+  tags: [PAGES_TAG],
+  revalidate: process.env.NODE_ENV === "production" ? 3600 : 60,
+});
+
+/** A published page's content, or null for a draft, a missing slug, or no database. */
+export async function getPublishedPage(slug: string) {
+  if (!isValidPageSlug(slug)) return null;
   try {
-    const [row] = await db
-      .select({
-        title: pages.title,
-        description: pages.description,
-        body: pages.body,
-      })
-      .from(pages)
-      .where(and(eq(pages.slug, slug), eq(pages.published, true)));
-    return row ?? null;
+    return await loadPage(slug);
   } catch (error) {
     console.error(
       JSON.stringify({
@@ -30,14 +43,4 @@ async function fetchPage(slug: string) {
     );
     return null;
   }
-}
-
-const loadPage = unstable_cache(fetchPage, [PAGES_TAG, "v1"], {
-  tags: [PAGES_TAG],
-  revalidate: process.env.NODE_ENV === "production" ? 3600 : 60,
-});
-
-/** A published page's content, or null for a draft, a missing slug, or no database. */
-export function getPublishedPage(slug: string) {
-  return isValidPageSlug(slug) ? loadPage(slug) : Promise.resolve(null);
 }
