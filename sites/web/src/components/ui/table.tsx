@@ -13,7 +13,7 @@ function Table({
    * Names the scroll container. Local addition to the vendored component: a
    * box that scrolls has to be reachable by keyboard, and a focusable region
    * has to say what it holds. Re-adding this component via `bun run ui:add`
-   * drops this — see PLAN.md.
+   * drops this — see docs/archive/PLAN.md.
    */
   label?: string;
 }) {
