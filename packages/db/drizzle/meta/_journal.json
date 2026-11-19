@@ -78,6 +78,13 @@
       "when": 1792105000000,
       "tag": "0010_restore_check_in_points",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1795044609853,
+      "tag": "0011_page",
+      "breakpoints": true
     }
   ]
 }
