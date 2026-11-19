@@ -1,8 +1,9 @@
 "use client";
 
+// Local edit of vendored Watermelon UI: framer-motion replaced with CSS (data-state + tw-animate-css) to keep it out of the client bundle.
+
 import * as React from "react";
 import { Dialog as DialogPrime } from "radix-ui";
-import { AnimatePresence, motion, type HTMLMotionProps } from "motion/react";
 import { XIcon } from "lucide-react";
 import { cn } from "~/lib/utils";
 
@@ -133,32 +134,10 @@ export {
   type DialogDescriptionProps,
 };
 
-type DialogContextType = {
-  isOpen: boolean;
-  setIsOpen: DialogProps["onOpenChange"];
-};
-
-const [DialogProvider, useDialog] =
-  getStrictContext<DialogContextType>("DialogContext");
-
 type DialogPrimitiveProps = React.ComponentProps<typeof DialogPrime.Root>;
 
 function DialogPrimitive(props: DialogPrimitiveProps) {
-  const [isOpen, setIsOpen] = useControlledState({
-    value: props?.open,
-    defaultValue: props?.defaultOpen,
-    onChange: props?.onOpenChange,
-  });
-
-  return (
-    <DialogProvider value={{ isOpen, setIsOpen }}>
-      <DialogPrime.Root
-        data-slot="dialog"
-        {...props}
-        onOpenChange={setIsOpen}
-      />
-    </DialogProvider>
-  );
+  return <DialogPrime.Root data-slot="dialog" {...props} />;
 }
 
 type DialogTriggerPrimitiveProps = React.ComponentProps<
@@ -175,38 +154,27 @@ type DialogPortalProps = Omit<
 >;
 
 function DialogPortalPrimitive(props: DialogPortalProps) {
-  const { isOpen } = useDialog();
-
-  return (
-    <AnimatePresence>
-      {isOpen && (
-        <DialogPrime.Portal data-slot="dialog-portal" forceMount {...props} />
-      )}
-    </AnimatePresence>
-  );
+  return <DialogPrime.Portal data-slot="dialog-portal" {...props} />;
 }
 
 type DialogOverlayPrimitiveProps = Omit<
   React.ComponentProps<typeof DialogPrime.Overlay>,
   "forceMount" | "asChild"
-> &
-  HTMLMotionProps<"div">;
+>;
 
 function DialogOverlayPrimitive({
-  transition = { duration: 0.2, ease: "easeInOut" },
+  className,
   ...props
-}: DialogOverlayProps) {
+}: DialogOverlayPrimitiveProps) {
   return (
-    <DialogPrime.Overlay data-slot="dialog-overlay" asChild forceMount>
-      <motion.div
-        key="dialog-overlay"
-        initial={{ opacity: 0, filter: "blur(4px)" }}
-        animate={{ opacity: 1, filter: "blur(0px)" }}
-        exit={{ opacity: 0, filter: "blur(4px)" }}
-        transition={transition}
-        {...props}
-      />
-    </DialogPrime.Overlay>
+    <DialogPrime.Overlay
+      data-slot="dialog-overlay"
+      className={cn(
+        "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 duration-200 motion-reduce:animate-none",
+        className,
+      )}
+      {...props}
+    />
   );
 }
 
@@ -215,58 +183,34 @@ type DialogFlipDirection = "top" | "bottom" | "left" | "right";
 type DialogContentPrimitiveProps = Omit<
   React.ComponentProps<typeof DialogPrime.Content>,
   "forceMount" | "asChild"
-> &
-  HTMLMotionProps<"div"> & {
-    from?: DialogFlipDirection;
-  };
+> & {
+  from?: DialogFlipDirection;
+};
+
+const dialogSlideFrom: Record<DialogFlipDirection, string> = {
+  top: "data-[state=open]:slide-in-from-top-4 data-[state=closed]:slide-out-to-top-4",
+  bottom:
+    "data-[state=open]:slide-in-from-bottom-4 data-[state=closed]:slide-out-to-bottom-4",
+  left: "data-[state=open]:slide-in-from-left-4 data-[state=closed]:slide-out-to-left-4",
+  right:
+    "data-[state=open]:slide-in-from-right-4 data-[state=closed]:slide-out-to-right-4",
+};
 
 function DialogContentPrimitive({
   from = "top",
-  onOpenAutoFocus,
-  onCloseAutoFocus,
-  onEscapeKeyDown,
-  onPointerDownOutside,
-  onInteractOutside,
-  transition = { type: "spring", stiffness: 150, damping: 25 },
+  className,
   ...props
 }: DialogContentPrimitiveProps) {
-  const initialRotation =
-    from === "bottom" || from === "left" ? "20deg" : "-20deg";
-  const isVertical = from === "top" || from === "bottom";
-  const rotateAxis = isVertical ? "rotateX" : "rotateY";
-
   return (
     <DialogPrime.Content
-      asChild
-      forceMount
-      onOpenAutoFocus={onOpenAutoFocus}
-      onCloseAutoFocus={onCloseAutoFocus}
-      onEscapeKeyDown={onEscapeKeyDown}
-      onPointerDownOutside={onPointerDownOutside}
-      onInteractOutside={onInteractOutside}
-    >
-      <motion.div
-        key="dialog-content"
-        data-slot="dialog-content"
-        initial={{
-          opacity: 0,
-          filter: "blur(4px)",
-          transform: `perspective(500px) ${rotateAxis}(${initialRotation}) scale(0.8)`,
-        }}
-        animate={{
-          opacity: 1,
-          filter: "blur(0px)",
-          transform: `perspective(500px) ${rotateAxis}(0deg) scale(1)`,
-        }}
-        exit={{
-          opacity: 0,
-          filter: "blur(4px)",
-          transform: `perspective(500px) ${rotateAxis}(${initialRotation}) scale(0.8)`,
-        }}
-        transition={transition}
-        {...props}
-      />
-    </DialogPrime.Content>
+      data-slot="dialog-content"
+      className={cn(
+        "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 data-[state=open]:zoom-in-95 data-[state=closed]:zoom-out-95 duration-300 motion-reduce:animate-none",
+        dialogSlideFrom[from],
+        className,
+      )}
+      {...props}
+    />
   );
 }
 
@@ -330,38 +274,3 @@ export function useControlledState<T, Rest extends any[] = []>(
 
   return [state, setState] as const;
 }
-
-function getStrictContext<T>(
-  name?: string,
-): readonly [
-  ({
-    value,
-    children,
-  }: {
-    value: T;
-    children?: React.ReactNode;
-  }) => React.JSX.Element,
-  () => T,
-] {
-  const Context = React.createContext<T | undefined>(undefined);
-
-  const Provider = ({
-    value,
-    children,
-  }: {
-    value: T;
-    children?: React.ReactNode;
-  }) => <Context.Provider value={value}>{children}</Context.Provider>;
-
-  const useSafeContext = () => {
-    const ctx = React.useContext(Context);
-    if (ctx === undefined) {
-      throw new Error(`useContext must be used within ${name ?? "a Provider"}`);
-    }
-    return ctx;
-  };
-
-  return [Provider, useSafeContext] as const;
-}
-
-export { getStrictContext };
