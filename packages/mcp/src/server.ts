@@ -24,8 +24,8 @@ const guarded =
     }
   };
 
-export function createServer(): McpServer {
-  const server = new McpServer({ name: "buzz", version: "0.0.0" });
+export function createServer(serverVersion = "0.0.0"): McpServer {
+  const server = new McpServer({ name: "buzz", version: serverVersion });
 
   server.registerResource(
     "agents-guide",

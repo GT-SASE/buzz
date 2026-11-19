@@ -64,6 +64,22 @@ async function gh(...args: string[]): Promise<string> {
 
 const REPO = "GT-SASE/buzz";
 
+export type CommitStatus = {
+  context: string;
+  state: string;
+  description: string;
+};
+
+/** GitHub lists statuses newest first and keeps history: keep one per context. */
+export function latestVercelStatuses(statuses: CommitStatus[]): CommitStatus[] {
+  const seen = new Set<string>();
+  return statuses.filter((s) => {
+    if (!/vercel/i.test(s.context) || seen.has(s.context)) return false;
+    seen.add(s.context);
+    return true;
+  });
+}
+
 /** Never touches /api/health or any route that reads the database. */
 export async function deployStatus(): Promise<string> {
   const lines: string[] = [];
@@ -78,10 +94,10 @@ export async function deployStatus(): Promise<string> {
     lines.push(`main: ${sha.slice(0, 7)} ${msg}`);
     const statuses = JSON.parse(
       await gh("api", `repos/${REPO}/commits/${sha}/statuses`),
-    ) as { context: string; state: string; description: string }[];
-    const vercel = statuses.filter((s) => /vercel/i.test(s.context));
+    ) as CommitStatus[];
+    const vercel = latestVercelStatuses(statuses);
     if (vercel.length === 0) lines.push("vercel status: none reported yet");
-    for (const s of vercel.slice(0, 3)) {
+    for (const s of vercel) {
       lines.push(`vercel status: ${s.state} (${s.context}) ${s.description}`);
     }
   } catch (e) {
@@ -102,4 +118,32 @@ export async function deployStatus(): Promise<string> {
     lines.push(`live site unreachable: ${(e as Error).message}`);
   }
   return lines.join("\n");
+}
+
+/**
+ * The site's version (footer vX.Y.Z), computed once at startup. A shallow clone
+ * would make appBuild fetch over the network, so it gets MAJOR.MINOR.0 from
+ * package.json instead.
+ */
+export async function serverVersion(): Promise<string> {
+  const pkg = JSON.parse(readRepoFile("sites/web/package.json")) as {
+    version: string;
+  };
+  const [major, minor] = pkg.version.split(".");
+  const fallback = `${major}.${minor}.0`;
+  try {
+    const shallow = (
+      await run("git", ["rev-parse", "--is-shallow-repository"], {
+        cwd: repoPath("sites/web"),
+        timeout: 5_000,
+      })
+    ).stdout.trim();
+    if (shallow === "true") return fallback;
+    const { appBuild } = (await import(
+      pathToFileURL(repoPath("sites/web/build-version.ts")).href
+    )) as { appBuild: () => { version: string } };
+    return appBuild().version;
+  } catch {
+    return fallback;
+  }
 }

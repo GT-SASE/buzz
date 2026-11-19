@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
 import { guardTestDatabase } from "../packages/mcp/src/checks";
+import { latestVercelStatuses } from "../packages/mcp/src/project";
 
 const prod = "postgresql://u:p@localhost:5432/prod";
 
@@ -41,5 +42,16 @@ describe("guardTestDatabase", () => {
       );
       expect(r.ok).toBe(true);
     }
+  });
+});
+
+describe("latestVercelStatuses", () => {
+  it("keeps only the newest status per context", () => {
+    const rows = [
+      { context: "Vercel", state: "success", description: "done" },
+      { context: "ci/other", state: "success", description: "" },
+      { context: "Vercel", state: "pending", description: "deploying" },
+    ];
+    expect(latestVercelStatuses(rows)).toEqual([rows[0]!]);
   });
 });
