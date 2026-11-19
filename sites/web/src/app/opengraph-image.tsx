@@ -20,9 +20,17 @@ async function archivo(axes: string) {
   try {
     const css = await fetch(
       `https://fonts.googleapis.com/css2?family=Archivo:${axes}`,
-    ).then((res) => res.text());
+    ).then((res) => {
+      if (!res.ok) throw new Error(String(res.status));
+      return res.text();
+    });
     const url = /url\((https:[^)]+\.ttf)\)/.exec(css)?.[1];
-    return url ? await fetch(url).then((res) => res.arrayBuffer()) : null;
+    return url
+      ? await fetch(url).then((res) => {
+          if (!res.ok) throw new Error(String(res.status));
+          return res.arrayBuffer();
+        })
+      : null;
   } catch {
     return null;
   }
