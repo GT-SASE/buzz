@@ -2,17 +2,20 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { toast } from "sonner";
 
 import { Action, Field, inputClass } from "~/app/portal/_components/controls";
 import { ConfirmDialog } from "~/app/portal/_components/confirm-dialog";
-import { Markdown } from "~/components/site/markdown";
 import { Skeleton } from "~/components/ui/skeleton";
 import { cn } from "~/lib/utils";
 import { api, type RouterOutputs } from "~/trpc/react";
 import { pageSlugProblem, slugFromTitle } from "@buzz/api/page-slug";
 import { revalidatePages } from "./revalidate-pages";
+
+const Markdown = lazy(() =>
+  import("~/components/site/markdown").then((m) => ({ default: m.Markdown })),
+);
 
 type Draft = {
   title: string;
@@ -215,7 +218,13 @@ function PageForm({ saved }: { saved: RouterOutputs["page"]["byId"] | null }) {
           {draft.description && (
             <p className="text-lead text-ink-muted mt-3">{draft.description}</p>
           )}
-          <Markdown className="mt-8">{draft.body}</Markdown>
+          {draft.body === "" ? (
+            <div className="mt-8" />
+          ) : (
+            <Suspense fallback={<div className="mt-8" />}>
+              <Markdown className="mt-8">{draft.body}</Markdown>
+            </Suspense>
+          )}
         </div>
       </section>
     </form>
