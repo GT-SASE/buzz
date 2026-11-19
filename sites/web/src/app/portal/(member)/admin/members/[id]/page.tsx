@@ -44,8 +44,10 @@ export default async function AdminMemberPage({
 }) {
   const { id } = await params;
   if (!id) notFound();
-  const { member } = await orNotFound(memberForPage(id));
-  const session = await auth();
+  const [{ member }, session] = await Promise.all([
+    orNotFound(memberForPage(id)),
+    auth(),
+  ]);
 
   return (
     <HydrateClient>
