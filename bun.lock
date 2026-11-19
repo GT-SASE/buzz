@@ -71,7 +71,7 @@
       "name": "@buzz/db",
       "version": "0.0.0",
       "dependencies": {
-        "@vercel/functions": "^3.11.1",
+        "@vercel/functions": "^3.11.3",
         "drizzle-orm": "^0.45.4",
         "next-auth": "5.0.0-beta.32",
         "pg": "^8.23.1",
@@ -795,7 +795,7 @@
 
     "@vercel/cli-exec": ["@vercel/cli-exec@1.0.1", "", { "dependencies": { "execa": "5.1.1" } }, "sha512-g9XerViJ/paZujufXYcu5XYI2vU2rtB4sgdpjUHde5RnOkdmpu0ngH46LCFGHoPXO/C+qDPSczIHIRN+8Q2YKQ=="],
 
-    "@vercel/functions": ["@vercel/functions@3.11.2", "", { "dependencies": { "@vercel/oidc": "4.0.9" }, "peerDependencies": { "@aws-sdk/credential-provider-web-identity": "*", "ws": ">=8" }, "optionalPeers": ["@aws-sdk/credential-provider-web-identity", "ws"] }, "sha512-SFC8w2S9p39HMe3EFWjH2wY3IJUOTxPI7Ypn9MzPShqTbpUE2arV+AkklE90chi+2s3tda3nDMiy7CkGaPMVSg=="],
+    "@vercel/functions": ["@vercel/functions@3.11.3", "", { "dependencies": { "@vercel/oidc": "4.0.9" }, "peerDependencies": { "@aws-sdk/credential-provider-web-identity": "*", "ws": ">=8" }, "optionalPeers": ["@aws-sdk/credential-provider-web-identity", "ws"] }, "sha512-WOOYeJXbA1CeqQzCu9JLCJQnNdisrGpNgS3K5qSTyMPsXlfs4y47S3EiRCyDPYw6vajPoqQffbFI05zgjYIJcQ=="],
 
     "@vercel/oidc": ["@vercel/oidc@4.0.9", "", { "dependencies": { "@vercel/cli-config": "0.4.0", "@vercel/cli-exec": "1.0.1", "jose": "^5.9.6" } }, "sha512-LBNEPlKHv3ZAhOX2Dcj1hrxdmqYrdzxukGltouKbyjU8IeJvAFSuOHn5X0ZWg0qG2huANcgrHAb03giWeUyubQ=="],
 
