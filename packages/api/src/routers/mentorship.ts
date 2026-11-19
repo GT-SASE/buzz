@@ -360,36 +360,45 @@ export const mentorshipRouter = createTRPCRouter({
 
   /** The caller's group this semester and everyone in it, or null. */
   myGroup: protectedProcedure.query(async ({ ctx }) => {
-    const seat = await ctx.db.query.kinMemberships.findFirst({
-      where: seatOf(ctx.session.user.id),
-    });
-    if (!seat) return null;
-
-    const [group] = await ctx.db
-      .select()
-      .from(kinGroups)
-      .where(eq(kinGroups.id, seat.groupId));
-    if (!group) return null;
-
-    const members = await ctx.db
-      .select({
-        userId: kinMemberships.userId,
-        role: mentorshipEnrollments.role,
-        points: kinMemberships.points,
-        name: users.name,
-        email: users.email,
-      })
+    // Two independent reads in one round trip: the caller's seat names the
+    // group, and the roster is every seat in whichever group that is. Looking
+    // the seat up first, then the group, then the roster was three round trips.
+    const mySeat = ctx.db
+      .select({ groupId: kinMemberships.groupId })
       .from(kinMemberships)
-      .innerJoin(users, eq(users.id, kinMemberships.userId))
-      .innerJoin(
-        mentorshipEnrollments,
-        and(
-          eq(mentorshipEnrollments.userId, kinMemberships.userId),
-          eq(mentorshipEnrollments.year, group.year),
-        ),
-      )
-      .where(eq(kinMemberships.groupId, group.id))
-      .orderBy(desc(mentorshipEnrollments.role), asc(users.name));
+      .where(seatOf(ctx.session.user.id));
+    const [[group], members] = await Promise.all([
+      ctx.db
+        .select({
+          id: kinGroups.id,
+          name: kinGroups.name,
+          description: kinGroups.description,
+        })
+        .from(kinMemberships)
+        .innerJoin(kinGroups, eq(kinGroups.id, kinMemberships.groupId))
+        .where(seatOf(ctx.session.user.id)),
+      ctx.db
+        .select({
+          userId: kinMemberships.userId,
+          role: mentorshipEnrollments.role,
+          points: kinMemberships.points,
+          name: users.name,
+          email: users.email,
+        })
+        .from(kinMemberships)
+        .innerJoin(kinGroups, eq(kinGroups.id, kinMemberships.groupId))
+        .innerJoin(users, eq(users.id, kinMemberships.userId))
+        .innerJoin(
+          mentorshipEnrollments,
+          and(
+            eq(mentorshipEnrollments.userId, kinMemberships.userId),
+            eq(mentorshipEnrollments.year, kinGroups.year),
+          ),
+        )
+        .where(inArray(kinMemberships.groupId, mySeat))
+        .orderBy(desc(mentorshipEnrollments.role), asc(users.name)),
+    ]);
+    if (!group) return null;
 
     return {
       id: group.id,
