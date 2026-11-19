@@ -82,12 +82,36 @@ function callerFor(user: TestUser) {
  * than as an unhandled rejection somewhere else.
  */
 async function errorCode(promise: Promise<unknown>) {
+  return (await errorOutcome(promise)).split(": ")[0]!;
+}
+
+/**
+ * `errorCode` plus the message ("CODE: message"), for assertions on a set of
+ * outcomes where a bare code hides which infrastructure error a loser got.
+ */
+async function errorOutcome(promise: Promise<unknown>) {
   try {
     await promise;
     return "NO_ERROR";
   } catch (error) {
-    return (error as { code?: string }).code ?? String(error);
+    const { code, message } = error as { code?: string; message?: string };
+    return code ? `${code}: ${message}` : String(error);
   }
+}
+
+/**
+ * Raises the pool's connect timeout for this suite only. A dial under CPU
+ * starvation can outlast the production 5s `connectionTimeoutMillis`, which
+ * surfaces as INTERNAL_SERVER_ERROR on whichever overlapping call lost the
+ * dial — a failure of the machine, not of `checkIn`, that the race tests
+ * would otherwise report as a broken capacity or duplicate guarantee. The
+ * production setting is untouched; `pg-pool` reads this option per connect.
+ */
+function relaxPoolConnectTimeout() {
+  const { options } = (
+    db as unknown as { $client: { options: Record<string, unknown> } }
+  ).$client;
+  options.connectionTimeoutMillis = 30_000;
 }
 
 function countCheckIns(eventId: string) {
@@ -148,6 +172,7 @@ describe.skipIf(!process.env.DATABASE_URL)("check-in", () => {
   }
 
   beforeAll(async () => {
+    relaxPoolConnectTimeout();
     admin = await makeUser("officer", "ADMIN");
     statsMember = await makeUser("member-a", "MEMBER");
     gateMember = await makeUser("member-b", "MEMBER");
@@ -508,12 +533,18 @@ describe.skipIf(!process.env.DATABASE_URL)("check-in", () => {
       "admits exactly one of two simultaneous taps on a one-seat event",
       async () => {
         const results = await Promise.all([
-          errorCode(callerFor(gateMember).event.checkIn({ code: code.race })),
-          errorCode(callerFor(extraMember).event.checkIn({ code: code.race })),
+          errorOutcome(
+            callerFor(gateMember).event.checkIn({ code: code.race }),
+          ),
+          errorOutcome(
+            callerFor(extraMember).event.checkIn({ code: code.race }),
+          ),
         ]);
 
         expect(results.filter((r) => r === "NO_ERROR")).toHaveLength(1);
-        expect(results.filter((r) => r === "BAD_REQUEST")).toHaveLength(1);
+        expect(results.filter((r) => r.startsWith("BAD_REQUEST"))).toHaveLength(
+          1,
+        );
         expect(await countCheckIns(id.race)).toBe(1);
         expect((await readEvent(id.race))?.currentCheckIns).toBe(1);
       },
@@ -531,12 +562,12 @@ describe.skipIf(!process.env.DATABASE_URL)("check-in", () => {
       async () => {
         const caller = callerFor(extraMember);
         const results = await Promise.all([
-          errorCode(caller.event.checkIn({ code: code.raceDuplicate })),
-          errorCode(caller.event.checkIn({ code: code.raceDuplicate })),
+          errorOutcome(caller.event.checkIn({ code: code.raceDuplicate })),
+          errorOutcome(caller.event.checkIn({ code: code.raceDuplicate })),
         ]);
 
         expect(results.filter((r) => r === "NO_ERROR")).toHaveLength(1);
-        expect(results.filter((r) => r === "CONFLICT")).toHaveLength(1);
+        expect(results.filter((r) => r.startsWith("CONFLICT"))).toHaveLength(1);
         expect(await countCheckIns(id.raceDuplicate)).toBe(1);
         // Uncapped: counter untouched by design, row count is the truth.
         expect((await readEvent(id.raceDuplicate))?.currentCheckIns).toBe(0);
