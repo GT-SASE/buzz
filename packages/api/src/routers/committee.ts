@@ -113,19 +113,22 @@ export const committeeRouter = createTRPCRouter({
   mine: protectedProcedure.query(async ({ ctx }) => {
     const now = new Date();
     const cycleId = semester(now);
-    const cycle = await findCycle(ctx.db, cycleId);
-    let row;
-    try {
-      row = await ctx.db.query.committeeApplications.findFirst({
-        where: and(
-          eq(committeeApplications.userId, ctx.session.user.id),
-          eq(committeeApplications.cycle, cycleId),
-        ),
-      });
-    } catch (error) {
-      if (!isUndefinedTable(error)) throw error;
-      row = undefined;
-    }
+    // Independent reads, one round trip: the application is keyed by user and
+    // cycle id, not by the cycle row.
+    const [cycle, row] = await Promise.all([
+      findCycle(ctx.db, cycleId),
+      ctx.db.query.committeeApplications
+        .findFirst({
+          where: and(
+            eq(committeeApplications.userId, ctx.session.user.id),
+            eq(committeeApplications.cycle, cycleId),
+          ),
+        })
+        .catch((error: unknown) => {
+          if (!isUndefinedTable(error)) throw error;
+          return undefined;
+        }),
+    ]);
 
     const application = row
       ? (({ officerNotes: _notes, ...safe }) => safe)(row)
