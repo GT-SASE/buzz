@@ -32,6 +32,7 @@ async function MentorshipBody() {
     <HydrateClient>
       <MentorshipSignup
         name={session.user.name ?? session.user.email ?? "Member"}
+        // react-doctor-disable-next-line react-doctor/rendering-hydration-mismatch-time -- server component, the school year is computed once on the server
         term={semesterLabel(semester(new Date()))}
       />
       <Toaster position="bottom-center" />
