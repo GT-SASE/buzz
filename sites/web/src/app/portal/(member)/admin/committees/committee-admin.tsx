@@ -56,6 +56,7 @@ function CommitteePicker({
   onChange: (next: PublicCommitteeId[]) => void;
   disabled?: boolean;
 }) {
+  const chosen = new Set(value);
   return (
     <fieldset className="grid gap-2 sm:col-span-2">
       <legend className="mb-1 text-sm font-medium">
@@ -70,14 +71,12 @@ function CommitteePicker({
             <input
               type="checkbox"
               name={name}
-              checked={value.includes(committee.id)}
+              checked={chosen.has(committee.id)}
               disabled={disabled}
               onChange={(event) =>
                 onChange(
                   allCommittees.filter((id) =>
-                    id === committee.id
-                      ? event.target.checked
-                      : value.includes(id),
+                    id === committee.id ? event.target.checked : chosen.has(id),
                   ),
                 )
               }
@@ -298,6 +297,7 @@ export function CommitteeAdmin() {
 
       {selected && (
         <div className="mb-8">
+          {/* react-doctor-disable-next-line react-doctor/no-random-key -- key is the cycle id plus its closesAt timestamp, stable per render */}
           <CycleSettings
             key={`${selected.id}:${new Date(selected.closesAt).getTime()}`}
             cycle={selected}

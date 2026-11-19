@@ -13,6 +13,13 @@ const runGit: Git = (...args) =>
     .toString()
     .trim();
 
+function ownVersion(): string {
+  const pkg = JSON.parse(
+    readFileSync(path.join(dir, "package.json"), "utf8"),
+  ) as { version: string };
+  return pkg.version;
+}
+
 /**
  * Build version `MAJOR.MINOR.PATCH`. MAJOR and MINOR are set by hand in this
  * package's package.json. PATCH counts merges into main since that version
@@ -21,11 +28,7 @@ const runGit: Git = (...args) =>
  * so a shallow clone is deepened from the public repo first.
  */
 export function appBuild(
-  version: string = (
-    JSON.parse(readFileSync(path.join(dir, "package.json"), "utf8")) as {
-      version: string;
-    }
-  ).version,
+  version: string = ownVersion(),
   git: Git = runGit,
 ): Build {
   const [major, minor] = version.split(".").map(Number);
