@@ -110,6 +110,9 @@ export function SiteFooter({ dino = true }: { dino?: boolean } = {}) {
           >
             Join SASE
           </Link>
+          <p title={process.env.NEXT_PUBLIC_APP_COMMIT}>
+            v{process.env.NEXT_PUBLIC_APP_VERSION}
+          </p>
         </div>
       </div>
     </footer>

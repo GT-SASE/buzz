@@ -82,6 +82,20 @@ flowchart LR
 
 Each part is broken down in [docs/site-structure.md](docs/site-structure.md).
 
+## Version
+
+The site is stamped with `MAJOR.MINOR.PATCH`, shown in the footer and returned with the commit SHA by `/api/health`. `MAJOR.MINOR` comes from `version` in `sites/web/package.json`; `PATCH` is the number of merges into `main` since that line last changed, and rolls into `MINOR` at 100. Bump `MAJOR.MINOR` by hand for a release worth naming; patch moves on its own with every merge. Vercel clones shallow, so the build deepens the clone from the public repo to count, and a build with no git reports the `package.json` version as is.
+
+| Version | Since | What changed |
+| --- | --- | --- |
+| 1.0 | 2026-08 | Public site launch |
+| 2.0 | 2026-09 | Member portal: SASE KIN groups, semesters, committee cycles, officer elections, check-in |
+| 2.1 | 2026-10 | Event RSVPs with calendar invites, officer turnout charts, Website Team page |
+| 2.2 | 2026-10 | Portal sidebar, points rework, dino redesign |
+| 2.3 | 2026-10 | /status uptime page, self-hosted fonts, Turborepo |
+| 2.4 | 2026-11 | Bun and parallel CI |
+| 2.5 | 2026-11 | Admin page builder |
+
 ## Setup
 
 The public site needs no environment at all — it builds and deploys with an
