@@ -1,16 +1,25 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  beforeEach,
+  describe,
+  expect,
+  it,
+  mock,
+  setSystemTime,
+  vi,
+} from "bun:test";
+import { stubEnv, unstubAllEnvs } from "./helpers/env";
 
-vi.mock("../packages/auth/src/index.ts", () => ({
+mock.module("../packages/auth/src/index.ts", () => ({
   auth: () => Promise.resolve(null),
   handlers: {},
   signIn: () => Promise.resolve(undefined),
   signOut: () => Promise.resolve(undefined),
 }));
 
-vi.stubEnv("NODE_ENV", "production");
+stubEnv("NODE_ENV", "production");
 const { createCaller } = await import("../packages/api/src/root");
 const { resetRateLimits } = await import("../packages/api/src/rate-limit");
-vi.unstubAllEnvs();
+unstubAllEnvs();
 
 type Ctx = Parameters<typeof createCaller>[0];
 
@@ -147,7 +156,7 @@ describe("committee.mine", () => {
 describe("committee.submit", () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    vi.setSystemTime(CLOSES_AT.getTime() - 24 * 60 * 60 * 1000);
+    setSystemTime(CLOSES_AT.getTime() - 24 * 60 * 60 * 1000);
   });
 
   it("inserts a first-time treasury application", async () => {
@@ -235,7 +244,7 @@ describe("committee.submit", () => {
   });
 
   it("refuses after the cycle closes", async () => {
-    vi.setSystemTime(CLOSES_AT);
+    setSystemTime(CLOSES_AT);
     const db = {
       select: cycleSelect([
         { id: "fall-2026", closesAt: CLOSES_AT, committees: ALL },

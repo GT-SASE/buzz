@@ -1,11 +1,11 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, mock } from "bun:test";
 
 const period = { current: "semester" as "30d" | "90d" | "semester" | "all" };
 
-vi.mock("next/link", () => ({
+mock.module("next/link", () => ({
   default: ({
     href,
     children,
@@ -20,7 +20,7 @@ vi.mock("next/link", () => ({
   ),
 }));
 
-vi.mock("~/trpc/react", () => ({
+mock.module("~/trpc/react", () => ({
   api: {
     chapter: {
       attendance: {

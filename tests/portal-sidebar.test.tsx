@@ -1,9 +1,9 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, mock, vi } from "bun:test";
 
-vi.mock("next/link", () => ({
+mock.module("next/link", () => ({
   default: ({
     href,
     children,
@@ -55,37 +55,53 @@ describe("portal sidebar", () => {
 
   it("marks the exact route with aria-current=page", () => {
     const nav = renderAt("/portal", false);
-    expect(nav.getByRole("link", { name: "My card" }).ariaCurrent).toBe("page");
-    expect(nav.getByRole("link", { name: "Events" }).ariaCurrent).toBeNull();
+    expect(
+      nav.getByRole("link", { name: "My card" }).getAttribute("aria-current"),
+    ).toBe("page");
+    expect(
+      nav.getByRole("link", { name: "Events" }).getAttribute("aria-current"),
+    ).toBeNull();
   });
 
   it("puts an officer on a nested admin route in the officer view", () => {
     const nav = renderAt("/portal/admin/members/abc", true);
     const view = within(screen.getByRole("group", { name: "View" }));
-    expect(view.getByRole("link", { name: "Officer" }).ariaCurrent).toBe(
-      "true",
-    );
-    expect(view.getByRole("link", { name: "Member" }).ariaCurrent).toBeNull();
+    expect(
+      view.getByRole("link", { name: "Officer" }).getAttribute("aria-current"),
+    ).toBe("true");
+    expect(
+      view.getByRole("link", { name: "Member" }).getAttribute("aria-current"),
+    ).toBeNull();
     expect(labels(nav)).toEqual(adminNav.map((link) => link.label));
-    expect(nav.getByRole("link", { name: "Members" }).ariaCurrent).toBe("true");
-    expect(nav.getByRole("link", { name: "Events" }).ariaCurrent).toBeNull();
+    expect(
+      nav.getByRole("link", { name: "Members" }).getAttribute("aria-current"),
+    ).toBe("true");
+    expect(
+      nav.getByRole("link", { name: "Events" }).getAttribute("aria-current"),
+    ).toBeNull();
   });
 
   it("puts an officer off the admin routes in the member view", () => {
     const nav = renderAt("/portal", true);
     const view = within(screen.getByRole("group", { name: "View" }));
-    expect(view.getByRole("link", { name: "Member" }).ariaCurrent).toBe("true");
-    expect(view.getByRole("link", { name: "Officer" }).ariaCurrent).toBeNull();
+    expect(
+      view.getByRole("link", { name: "Member" }).getAttribute("aria-current"),
+    ).toBe("true");
+    expect(
+      view.getByRole("link", { name: "Officer" }).getAttribute("aria-current"),
+    ).toBeNull();
     expect(labels(nav)).toEqual(portalNav.map((link) => link.label));
   });
 
   it("keeps an officer scanning in at the door in the member view", () => {
     const nav = renderAt("/portal/check-in", true);
     const view = within(screen.getByRole("group", { name: "View" }));
-    expect(view.getByRole("link", { name: "Member" }).ariaCurrent).toBe("true");
-    expect(nav.getByRole("link", { name: "Check in" }).ariaCurrent).toBe(
-      "page",
-    );
+    expect(
+      view.getByRole("link", { name: "Member" }).getAttribute("aria-current"),
+    ).toBe("true");
+    expect(
+      nav.getByRole("link", { name: "Check in" }).getAttribute("aria-current"),
+    ).toBe("page");
   });
 
   it("closes the menu on any link, the page already open included", async () => {

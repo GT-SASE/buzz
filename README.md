@@ -28,9 +28,12 @@ data/              chapter copy and constants
 Run everything from the repo root: `bun run dev`, `bun run build`,
 `bun run check`, `bun run db:migrate`. Each delegates to the workspace that owns
 it. Spell out `bun run`: bare `bun test` and `bun build` are Bun's own test
-runner and bundler, not these scripts. Bun installs dependencies and runs the
-scripts; vitest, eslint, prettier and the TypeScript CLIs still run on Node 24
-(`.nvmrc`). Schema changes go through Drizzle Kit (`bun run db:generate` →
+runner and bundler, not these scripts (bare `bun test` skips the DOM setup the
+`.tsx` suites need, so use `bun run test`). Bun installs dependencies and runs
+the scripts and the tests; eslint, prettier and the TypeScript CLIs still run on
+Node 24 (`.nvmrc`). `bun run check`, `typecheck` and `typecheck:tsc` go
+through Turborepo, which caches each task by its inputs: a second run with no
+changes replays the logs instead of re-running. Schema changes go through Drizzle Kit (`bun run db:generate` →
 commit SQL → `bun run db:migrate`).
 
 Deploying on Vercel: set **Root Directory** to `sites/web`. Vercel installs from
@@ -123,7 +126,11 @@ Everything below is what turns the **portal** on.
 
 ### Running the tests
 
-`bun run test` reads **`TEST_DATABASE_URL`**, never `DATABASE_URL`. The integration
+`bun run test` runs Bun's native test runner twice: `test:node` for
+`tests/**/*.test.ts` and `test:dom` for the React `*.test.tsx` suites, which
+preload happy-dom (`tests/setup/dom.ts`). Each file gets a fresh global
+(`--isolate`), so `mock.module` in one file can't leak into the
+next. It reads **`TEST_DATABASE_URL`**, never `DATABASE_URL`. The integration
 and load suites create users, events and check-ins and delete them again, which
 is fine against a scratch database and not fine against the one serving members
 — so the app's database is deliberately unreachable from the suite. With

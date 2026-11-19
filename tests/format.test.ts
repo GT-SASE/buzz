@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "bun:test";
 
 /**
  * The module is imported *after* the process time zone is moved off Atlanta,

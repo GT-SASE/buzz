@@ -1,12 +1,10 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, mock } from "bun:test";
 
-const session = vi.hoisted(() => ({
-  current: null as {
-    user: { role: "ADMIN" | "SUPER_ADMIN" | "MEMBER" };
-  } | null,
-}));
+const session: {
+  current: { user: { role: "ADMIN" | "SUPER_ADMIN" | "MEMBER" } } | null;
+} = { current: null };
 
-vi.mock("../packages/auth/src/index.ts", () => ({
+mock.module("../packages/auth/src/index.ts", () => ({
   auth: async () => session.current,
   handlers: {},
   signIn: async () => undefined,

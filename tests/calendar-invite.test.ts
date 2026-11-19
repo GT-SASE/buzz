@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "bun:test";
+import { stubEnv, unstubAllEnvs } from "./helpers/env";
 
 import {
   inviteIcs,
@@ -53,19 +54,19 @@ describe("calendar invite", () => {
   });
 
   describe("sending", () => {
-    afterEach(() => vi.unstubAllEnvs());
+    afterEach(() => unstubAllEnvs());
 
     it("skips quietly when Gmail is not configured", async () => {
-      vi.stubEnv("GMAIL_USER", "");
-      vi.stubEnv("GMAIL_APP_PASSWORD", "");
+      stubEnv("GMAIL_USER", "");
+      stubEnv("GMAIL_APP_PASSWORD", "");
       expect(
         await sendCalendarInvite("REQUEST", event, "member@example.com"),
       ).toBe(false);
     });
 
     it("returns false instead of throwing when Gmail rejects the login", async () => {
-      vi.stubEnv("GMAIL_USER", "not-a-real-account@example.invalid");
-      vi.stubEnv("GMAIL_APP_PASSWORD", "wrong");
+      stubEnv("GMAIL_USER", "not-a-real-account@example.invalid");
+      stubEnv("GMAIL_APP_PASSWORD", "wrong");
       vi.spyOn(console, "error").mockImplementation(() => undefined);
       expect(
         await sendCalendarInvite("CANCEL", event, "member@example.com"),
