@@ -75,10 +75,10 @@ function ResumeFields({ row }: { row: Mine }) {
         method: "POST",
         body,
       });
-      const payload = (await response.json().catch(() => null)) as {
-        error?: string;
-      } | null;
       if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as {
+          error?: string;
+        } | null;
         throw new Error(payload?.error ?? "Could not upload that resume.");
       }
       toast.success("Resume saved.");

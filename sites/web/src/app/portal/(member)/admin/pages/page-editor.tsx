@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { lazy, Suspense, useState } from "react";
+import { lazy, Suspense, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Action, Field, inputClass } from "~/app/portal/_components/controls";
@@ -55,7 +55,7 @@ function PageForm({ saved }: { saved: RouterOutputs["page"]["byId"] | null }) {
   const router = useRouter();
   const utils = api.useUtils();
   const [draft, setDraft] = useState<Draft>(saved ?? blank);
-  const [slugEdited, setSlugEdited] = useState(saved !== null);
+  const slugEdited = useRef(saved !== null);
 
   const set = <K extends keyof Draft>(key: K, value: Draft[K]) =>
     setDraft((current) => ({ ...current, [key]: value }));
@@ -121,7 +121,7 @@ function PageForm({ saved }: { saved: RouterOutputs["page"]["byId"] | null }) {
               setDraft((current) => ({
                 ...current,
                 title,
-                slug: slugEdited ? current.slug : slugFromTitle(title),
+                slug: slugEdited.current ? current.slug : slugFromTitle(title),
               }));
             }}
             className={inputClass}
@@ -138,7 +138,7 @@ function PageForm({ saved }: { saved: RouterOutputs["page"]["byId"] | null }) {
             value={draft.slug}
             aria-invalid={problem !== null}
             onChange={(event) => {
-              setSlugEdited(true);
+              slugEdited.current = true;
               set("slug", event.target.value);
             }}
             className={cn(inputClass, problem && "border-destructive")}

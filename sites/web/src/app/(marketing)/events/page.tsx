@@ -77,13 +77,14 @@ function ArchiveRow({ event }: { event: PublicEvent }) {
   );
 }
 
+const yearOf = new Intl.DateTimeFormat("en-US", {
+  year: "numeric",
+  timeZone: "America/New_York",
+});
+
 /** Past rows arrive newest-first, so years come out newest-first too. */
 function groupByYear(events: PublicEvent[]) {
   const groups: { year: string; events: PublicEvent[] }[] = [];
-  const yearOf = new Intl.DateTimeFormat("en-US", {
-    year: "numeric",
-    timeZone: "America/New_York",
-  });
   for (const event of events) {
     const year = yearOf.format(event.startsAt);
     const last = groups[groups.length - 1];

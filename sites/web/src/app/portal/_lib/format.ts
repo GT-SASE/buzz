@@ -86,17 +86,19 @@ export function formatMonth(value: Date | string | number) {
   return date ? monthAndYear.format(date) : "—";
 }
 
+const localInput = new Intl.DateTimeFormat("en-CA", {
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+  timeZone: ZONE,
+});
+
 /** For a datetime-local input, which wants "YYYY-MM-DDTHH:mm" in Atlanta time. */
 export function toLocalInputValue(value: Date) {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-    timeZone: ZONE,
-  }).formatToParts(value);
+  const parts = localInput.formatToParts(value);
 
   const get = (type: Intl.DateTimeFormatPartTypes) =>
     parts.find((part) => part.type === type)?.value ?? "00";
@@ -104,18 +106,20 @@ export function toLocalInputValue(value: Date) {
   return `${get("year")}-${get("month")}-${get("day")}T${get("hour")}:${get("minute")}`;
 }
 
+const zoneParts = new Intl.DateTimeFormat("en-US", {
+  timeZone: ZONE,
+  hour12: false,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+});
+
 /** How far ahead of UTC the zone was at a given instant, in milliseconds. */
 function zoneOffsetMs(at: Date) {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: ZONE,
-    hour12: false,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  }).formatToParts(at);
+  const parts = zoneParts.formatToParts(at);
 
   const get = (type: Intl.DateTimeFormatPartTypes) =>
     Number(parts.find((part) => part.type === type)?.value ?? 0);
