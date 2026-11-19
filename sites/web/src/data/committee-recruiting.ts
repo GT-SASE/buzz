@@ -18,31 +18,22 @@ const closesFormat = new Intl.DateTimeFormat("en-US", {
   timeZone: "America/New_York",
 });
 
+// Throws on a database error: unstable_cache does not store a throw, so one
+// transient failure is not served for the whole revalidate window.
 async function fetchCycle(
   id: string,
 ): Promise<{ closesAt: string; committees: string[] } | null> {
   if (!process.env.DATABASE_URL) return null;
-  try {
-    const [row] = await db
-      .select({
-        closesAt: committeeCycles.closesAt,
-        committees: committeeCycles.committees,
-      })
-      .from(committeeCycles)
-      .where(eq(committeeCycles.id, id));
-    return row
-      ? { closesAt: row.closesAt.toISOString(), committees: row.committees }
-      : null;
-  } catch (error) {
-    console.error(
-      JSON.stringify({
-        level: "error",
-        event: "committee.recruiting",
-        message: error instanceof Error ? error.message : String(error),
-      }),
-    );
-    return null;
-  }
+  const [row] = await db
+    .select({
+      closesAt: committeeCycles.closesAt,
+      committees: committeeCycles.committees,
+    })
+    .from(committeeCycles)
+    .where(eq(committeeCycles.id, id));
+  return row
+    ? { closesAt: row.closesAt.toISOString(), committees: row.committees }
+    : null;
 }
 
 const loadCycle = unstable_cache(fetchCycle, [COMMITTEE_RECRUITING_TAG, "v2"], {
@@ -63,7 +54,19 @@ export function listNames(names: readonly string[]) {
  */
 export async function getCommitteeRecruiting(now = new Date()) {
   const id = semester(now);
-  const cycle = await loadCycle(id);
+  let cycle: Awaited<ReturnType<typeof fetchCycle>>;
+  try {
+    cycle = await loadCycle(id);
+  } catch (error) {
+    console.error(
+      JSON.stringify({
+        level: "error",
+        event: "committee.recruiting",
+        message: error instanceof Error ? error.message : String(error),
+      }),
+    );
+    return null;
+  }
   if (!cycle) return null;
   const closesAt = new Date(cycle.closesAt);
   const open = committees.filter((committee) =>

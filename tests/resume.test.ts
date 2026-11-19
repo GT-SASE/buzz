@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 
 import {
   parseResumeUpload,
+  resumeDownloadHeaders,
   RESUME_MAX_BYTES,
   sanitizeResumeFileName,
 } from "../packages/api/src/resume";
@@ -87,4 +88,20 @@ describe("parseResumeUpload", () => {
       }),
     ).toEqual({ error: "The file is empty." });
   });
+});
+
+describe("resumeDownloadHeaders", () => {
+  it.each(["履歴書.pdf", "cv 🚀.pdf"])(
+    "builds a valid Response for %s",
+    (name) => {
+      const headers = resumeDownloadHeaders(name);
+      expect(() => new Response("x", { headers })).not.toThrow();
+      const disposition = new Response("x", { headers }).headers.get(
+        "Content-Disposition",
+      );
+      expect(disposition).toMatch(/^attachment; filename="[\x20-\x7e]+\.pdf";/);
+      const encoded = /filename\*=UTF-8''(.+)$/.exec(disposition ?? "")?.[1];
+      expect(decodeURIComponent(encoded ?? "")).toBe(name);
+    },
+  );
 });

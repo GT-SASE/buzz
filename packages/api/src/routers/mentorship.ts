@@ -1,5 +1,14 @@
 import { TRPCError } from "@trpc/server";
-import { and, asc, count, desc, eq, inArray } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  inArray,
+  notExists,
+  sql,
+} from "drizzle-orm";
 import { z } from "zod";
 
 import { notFound } from "../errors";
@@ -546,6 +555,8 @@ export const mentorshipRouter = createTRPCRouter({
           .where(eq(kinMemberships.groupId, input.id))
           .returning({ userId: kinMemberships.userId });
         if (seats.length > 0) {
+          // Seats are per semester, enrollment is per school year: someone
+          // still seated in another semester's group of this year stays enrolled.
           await tx
             .update(mentorshipEnrollments)
             .set({ status: "interested", enrolledAt: null })
@@ -555,6 +566,21 @@ export const mentorshipRouter = createTRPCRouter({
                 inArray(
                   mentorshipEnrollments.userId,
                   seats.map((seat) => seat.userId),
+                ),
+                notExists(
+                  tx
+                    .select({ one: sql`1` })
+                    .from(kinMemberships)
+                    .innerJoin(
+                      kinGroups,
+                      eq(kinGroups.id, kinMemberships.groupId),
+                    )
+                    .where(
+                      and(
+                        eq(kinMemberships.userId, mentorshipEnrollments.userId),
+                        eq(kinGroups.year, group.year),
+                      ),
+                    ),
                 ),
               ),
             );
