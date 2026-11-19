@@ -18,8 +18,8 @@ db.sqlite
 .next/
 out/
 next-env.d.ts
-AGENTS.md
-CLAUDE.md
+sites/web/AGENTS.md
+sites/web/CLAUDE.md
 
 # cursor
 .cursor/
