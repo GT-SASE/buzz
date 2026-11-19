@@ -178,6 +178,7 @@ describe("the commands as registered", () => {
       "delete",
       "done",
       "edit",
+      "reopen",
     ]);
     expect(optionNames("task", "assign")).toEqual([
       "person",
@@ -192,5 +193,6 @@ describe("the commands as registered", () => {
       "person",
     ]);
     expect(optionNames("task", "done")).toEqual(["task"]);
+    expect(optionNames("task", "reopen")).toEqual(["task"]);
   });
 });
