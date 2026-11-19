@@ -1,8 +1,9 @@
 /**
- * The per-event workflow: Budget Sheet, Engage post, Budget approved and Food pickup, the
- * people on each, the one-time ping that follows a finished step, and the claim cycle of
- * the event reminders. Every write is a database function, which locks the step, checks
- * the event and enforces the limits, so nothing here can be raced past.
+ * The per-event workflow: Budget Sheet, Engage post, Engage picture added, Budget
+ * approved, Slides and Food pickup, the people on each, the one-time ping that follows a
+ * finished step, the undo of one, and the claim cycle of the event reminders. Every write
+ * is a database function, which locks the step, checks the event and enforces the limits,
+ * so nothing here can be raced past.
  *
  * A write on an event that is unknown, in another guild or deleted fails as `not_found`,
  * and on a closed event as `parent_unavailable`. Who may make a write is decided before
@@ -33,6 +34,7 @@ import {
   type EventStatus,
   type EventStep,
   type EventWorkflow,
+  type HandoffStepKind,
   type ReminderState,
   type StepAssignee,
   type TaskStatus,
@@ -53,13 +55,15 @@ const STEPS_OF_EVENT = sql`coalesce((
   select json_agg(json_build_object('event_id', s.event_id, 'kind', s.kind,
     'status', s.status, 'completed_at', s.completed_at,
     'completed_by', s.completed_by, 'handoff_claimed_at', s.handoff_claimed_at,
-    'handoff_sent_at', s.handoff_sent_at))
+    'handoff_sent_at', s.handoff_sent_at, 'not_needed_at', s.not_needed_at,
+    'not_needed_by', s.not_needed_by))
   from event_steps s where s.event_id = e.id and s.guild_id = e.guild_id
 ), '[]'::json)`;
 
-/** The kind and status of each of an event's steps, as a JSON array. */
+/** The kind, status and done time of each of an event's steps, as a JSON array. */
 const STEP_STATUSES_OF_EVENT = sql`coalesce((
-  select json_agg(json_build_object('kind', s.kind, 'status', s.status))
+  select json_agg(json_build_object('kind', s.kind, 'status', s.status,
+    'completed_at', s.completed_at, 'not_needed', s.not_needed_at is not null))
   from event_steps s where s.event_id = e.id and s.guild_id = e.guild_id
 ), '[]'::json)`;
 
@@ -161,17 +165,18 @@ export interface StepAssignment extends EventStepKey {
 }
 
 /**
- * Puts a member on Budget Sheet, Engage post or Food pickup. True if this call added them,
- * false if they were on it already. Fails as `step_assignee_limit` once the step has
- * `MAX_ASSIGNEES_PER_STEP` people (`MAX_FOOD_PICKUP_ASSIGNEES` for Food pickup). Food pickup
- * can be set up at any time: it does not wait for the budget.
+ * Puts a member on a step. `added` if this call added them, `needed_again` if it also
+ * undid No slides needed, `already_on` if they were on it already. Fails as
+ * `step_assignee_limit` once the step has `MAX_ASSIGNEES_PER_STEP` people
+ * (`MAX_FOOD_PICKUP_ASSIGNEES` for Food pickup). Food pickup can be set up at any time: it
+ * does not wait for the budget.
  */
 export async function assignEventStep(
   db: DbClient,
   input: StepAssignment,
-): Promise<DbResult<boolean>> {
-  return liveEventBoolean(
-    await callFunction<boolean | null>(
+): Promise<DbResult<"added" | "needed_again" | "already_on">> {
+  return nullAsNotFound(
+    await callFunction<"added" | "needed_again" | "already_on" | null>(
       db,
       sql`select public.assign_event_step(p_event_id => ${input.eventId},
         p_guild_id => ${input.guildId},
@@ -204,8 +209,10 @@ export async function unassignEventStep(
 }
 
 /**
- * Marks Budget Sheet, Engage post or Budget approved done. True if this call did it, and
- * only then should the caller go on to `claimStepHandoff`. False if it was done already.
+ * Marks a step done. True if this call did it, and only then should the caller go on to
+ * `claimStepHandoff` for a step that has one. False if it was done already. Engage picture
+ * added fails as `step_not_ready` while Engage post is open. Slides marked not needed
+ * stops being so.
  */
 export async function completeEventStep(
   db: DbClient,
@@ -222,7 +229,7 @@ export async function completeEventStep(
   );
 }
 
-export type HandoffKey = EventStepKey & { kind: CompletableStepKind };
+export type HandoffKey = EventStepKey & { kind: HandoffStepKind };
 
 /**
  * The right to send the message that follows a finished step. True for exactly one caller
@@ -256,6 +263,44 @@ export async function markStepHandoffSent(
 }
 
 /**
+ * Undoes a done step: it is open again, and its hand-off can be claimed again, so doing
+ * it again pings as the first time did. Reopening Engage post also reopens Engage picture
+ * added. True if this call reopened it, false if it was open.
+ */
+export async function reopenEventStep(
+  db: DbClient,
+  input: EventStepKey & { kind: CompletableStepKind },
+): Promise<DbResult<boolean>> {
+  return liveEventBoolean(
+    await callFunction<boolean | null>(
+      db,
+      sql`select public.reopen_event_step(p_event_id => ${input.eventId},
+        p_guild_id => ${input.guildId},
+        p_kind => ${input.kind}) as value`,
+    ),
+  );
+}
+
+/**
+ * Marks Slides not needed, or with `notNeeded` false undoes that. True if this call
+ * changed it, false if it was already so or Slides is done.
+ */
+export async function setSlidesNotNeeded(
+  db: DbClient,
+  input: EventStepKey & { notNeeded: boolean; actorId: string },
+): Promise<DbResult<boolean>> {
+  return liveEventBoolean(
+    await callFunction<boolean | null>(
+      db,
+      sql`select public.set_slides_not_needed(p_event_id => ${input.eventId},
+        p_guild_id => ${input.guildId},
+        p_not_needed => ${input.notNeeded},
+        p_actor_id => ${input.actorId}) as value`,
+    ),
+  );
+}
+
+/**
  * Sets the pickup time, as `HH:MM` on a 24-hour clock, local to the guild on the event's
  * date, at any time. Returns whether Food pickup is now done, which also needs at least one
  * person on it.
@@ -281,9 +326,10 @@ export async function setEventPickupTime(
 const KIND_ORDER: readonly AssignableStepKind[] = ASSIGNABLE_STEP_KINDS;
 
 /**
- * For /mytasks: a member's open Budget Sheet and Engage post steps, and their Food pickups
- * from `today` on, on live active events in one guild. Events from `today` on come first,
- * soonest first, then the open steps of events already past, most recent first.
+ * For /mytasks: a member's open Budget Sheet, Engage post and Slides steps, Slides only
+ * while it is needed, and their Food pickups from `today` on, on live active events in
+ * one guild. Events from `today` on come first, soonest first, then the open steps of
+ * events already past, most recent first.
  *
  * Done steps and past pickups are left out by the query, and the cap keeps the events from
  * `today` on before any that are past, so a member with many old assignments still sees
@@ -321,7 +367,8 @@ export async function listOpenStepsForUser(
         and e.status = 'active' and e.deleted_at is null
         and (
           (a.kind = 'food_pickup' and e.event_date >= ${today})
-          or (a.kind <> 'food_pickup' and s.status = 'open')
+          or (a.kind <> 'food_pickup' and s.status = 'open'
+            and s.not_needed_at is null)
         )
       order by e.event_date < ${today}, abs(e.event_date - ${today}::date), a.kind,
         e.id, a.id
@@ -379,8 +426,8 @@ export async function listEventReminderCandidates(
       db,
       sql`select e.id, e.guild_id, e.name, e.event_date, e.thread_id, e.thread_status,
         e.created_by, e.pickup_time, g.timezone,
-        g.officer_role_id as events_director_role_id,
-        ${STEP_STATUSES_OF_EVENT} as steps,
+        g.officer_role_id as events_director_role_id, g.marketing_role_id,
+        g.events_committee_role_id, ${STEP_STATUSES_OF_EVENT} as steps,
         coalesce((
           select json_agg(json_build_object('kind', a.kind, 'user_id', a.user_id)
             order by a.created_at, a.id)
@@ -443,10 +490,9 @@ export async function listStaleEventReminderClaims(
 }
 
 /**
- * One event reminder. `reminderDate` is the local date the message is for: the day itself
- * for `daily_steps`, `PICKUP_REMINDER_DAYS_BEFORE` days before the event for
- * `pickup_before`, and the event's date for `pickup_day`. The claim refuses a date after
- * the event, or other than today or yesterday in the guild's zone.
+ * One event reminder. `reminderDate` is the local date the message is for, such as
+ * `PICKUP_REMINDER_DAYS_BEFORE` days before the event for `pickup_before`. The claim
+ * refuses a date after the event, or other than today or yesterday in the guild's zone.
  */
 export interface EventReminderKey {
   eventId: string;

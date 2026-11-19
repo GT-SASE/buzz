@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
-import type {
-  EventReminderCandidate,
-  EventReminderKind,
-  EventStepKind,
+import {
+  EVENT_STEP_KINDS,
+  type EventReminderCandidate,
+  type EventReminderKind,
 } from "../db/types.ts";
 import { parseIsoDate, todayInZone, type DateOnly } from "../lib/dates.ts";
 import { fakeId } from "../../test/support/ids.ts";
@@ -396,24 +396,13 @@ describe("slotToday", () => {
   });
 });
 
-// The event step and Food pickup reminders.
+// The event countdown and Food pickup reminders.
 const DAY = date(TODAY);
-const ALICE = fakeId(10);
-const ALL_DONE: EventStepKind[] = [
-  "budget_sheet",
-  "engage_post",
-  "budget_approved",
-  "food_pickup",
-];
-const ONLY_PICKUP_OPEN: EventStepKind[] = [
-  "budget_sheet",
-  "engage_post",
-  "budget_approved",
-];
+const SATURDAY = date("2026-11-14");
 
+/** An event in five days with every step open and nobody on any. */
 function candidate(
   overrides: Partial<EventReminderCandidate> = {},
-  done: readonly EventStepKind[] = [],
 ): EventReminderCandidate {
   return {
     id: EVENT_ID,
@@ -424,11 +413,15 @@ function candidate(
     thread_status: "active",
     created_by: fakeId(2),
     pickup_time: null,
-    timezone: "America/New_York",
+    timezone: NEW_YORK,
     events_director_role_id: fakeId(3),
-    steps: ALL_DONE.map((kind) => ({
+    marketing_role_id: null,
+    events_committee_role_id: null,
+    steps: EVENT_STEP_KINDS.map((kind) => ({
       kind,
-      status: done.includes(kind) ? "done" : "open",
+      status: "open",
+      completed_at: null,
+      not_needed: false,
     })),
     assignees: [],
     log: [],
@@ -436,49 +429,56 @@ function candidate(
   };
 }
 
-/** Everything done and Food pickup set up with Alice at 17:30. */
-function pickupReady(eventDate: string): EventReminderCandidate {
-  return candidate(
-    {
-      event_date: date(eventDate),
-      pickup_time: "17:30",
-      assignees: [{ kind: "food_pickup", user_id: ALICE }],
-    },
-    ALL_DONE,
-  );
-}
-
 describe("kindsDueToday", () => {
   it.each<[string, EventReminderKind[]]>([
-    ["2026-11-14", []],
-    ["2026-11-15", ["pickup_day"]],
-    ["2026-11-16", []],
-    ["2026-11-17", ["pickup_before"]],
-    ["2026-11-18", []],
-  ])("for a ready event on %s gives %j", (eventDate, kinds) => {
-    expect(kindsDueToday(pickupReady(eventDate), DAY)).toEqual(kinds);
+    ["2026-11-14", ["event_today"]],
+    ["2026-11-15", ["marketing_saturday"]],
+    ["2026-11-20", ["marketing_saturday"]],
+  ])("on a Saturday, for an event on %s gives %j", (eventDate, kinds) => {
+    expect(
+      kindsDueToday(candidate({ event_date: date(eventDate) }), SATURDAY),
+    ).toEqual(kinds);
   });
 
-  it("gives the step list while a step is open, up to the event's day", () => {
-    expect(
-      kindsDueToday(candidate({ event_date: date("2026-11-15") }), DAY),
-    ).toEqual(["daily_steps"]);
-    expect(
-      kindsDueToday(candidate({ event_date: date("2026-11-14") }), DAY),
-    ).toEqual([]);
-    expect(
-      kindsDueToday(
-        candidate({ event_date: date("2026-11-15") }, ONLY_PICKUP_OPEN),
-        DAY,
-      ),
-    ).toEqual([]);
-  });
-
-  it("gives no pickup reminder until Food pickup is set up", () => {
-    expect(
-      kindsDueToday(candidate({ event_date: date("2026-11-17") }), DAY),
-    ).toEqual(["daily_steps"]);
-  });
+  // Engage post done a week before `today` in the guild's zone, whatever the UTC date.
+  it.each<[string, string, string, EventReminderKind[]]>([
+    [
+      "late at night",
+      "2026-11-15",
+      "2026-11-09T03:00:00Z",
+      ["engage_picture_late"],
+    ],
+    [
+      "just before midnight, a day earlier",
+      "2026-11-15",
+      "2026-11-08T04:30:00Z",
+      [],
+    ],
+    [
+      "the night daylight saving ends",
+      "2026-11-08",
+      "2026-11-02T04:30:00Z",
+      ["engage_picture_late"],
+    ],
+  ])(
+    "sends the Engage picture ping for a post done %s",
+    (_label, today, doneAt, kinds) => {
+      const engageDone = candidate({ event_date: date("2026-12-31") });
+      expect(
+        kindsDueToday(
+          {
+            ...engageDone,
+            steps: engageDone.steps.map((step) =>
+              step.kind === "engage_post"
+                ? { ...step, status: "done", completed_at: doneAt }
+                : step,
+            ),
+          },
+          date(today),
+        ),
+      ).toEqual(kinds);
+    },
+  );
 });
 
 describe("planEventReminders", () => {
@@ -486,10 +486,10 @@ describe("planEventReminders", () => {
     planEventReminders({ today: DAY, now: NOW, events });
 
   it("sends today's reminders to the event's thread", () => {
-    expect(planEvents([candidate()])).toEqual({
+    expect(planEvents([candidate({ event_date: DAY })])).toEqual({
       sends: [
         {
-          ref: { eventId: EVENT_ID, kind: "daily_steps", reminderDate: DAY },
+          ref: { eventId: EVENT_ID, kind: "event_today", reminderDate: DAY },
           threadId: THREAD_ID,
         },
       ],
@@ -501,15 +501,20 @@ describe("planEventReminders", () => {
 
   it("names an event whose post is gone only if something is due, and sends to no pending post", () => {
     expect(
-      planEvents([candidate({ thread_status: "missing", thread_id: null })])
-        .missingThreadEventIds,
+      planEvents([
+        candidate({
+          event_date: DAY,
+          thread_status: "missing",
+          thread_id: null,
+        }),
+      ]).missingThreadEventIds,
     ).toEqual([EVENT_ID]);
     expect(
-      planEvents([candidate({ thread_status: "missing" }, ALL_DONE)])
+      planEvents([candidate({ thread_status: "missing" })])
         .missingThreadEventIds,
     ).toEqual([]);
     const pending = planEvents([
-      candidate({ thread_status: "pending", thread_id: null }),
+      candidate({ event_date: DAY, thread_status: "pending", thread_id: null }),
     ]);
     expect(pending.sends).toEqual([]);
     expect(pending.missingThreadEventIds).toEqual([]);

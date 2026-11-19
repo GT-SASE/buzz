@@ -264,7 +264,12 @@ function shown(
         : [
             workflow.workflow.pickup_time,
             [...workflow.workflow.steps]
-              .map((step) => [step.kind, step.status, step.completed_by])
+              .map((step) => [
+                step.kind,
+                step.status,
+                step.completed_by,
+                step.not_needed_at !== null,
+              ])
               .sort(),
             workflow.workflow.assignees
               .map((assignee) => [assignee.kind, assignee.user_id])

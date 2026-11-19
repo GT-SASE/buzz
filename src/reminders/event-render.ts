@@ -1,11 +1,12 @@
 /**
  * The messages for the event workflow reminders. Stored text reaches a message only
  * through `SafeText`, people and roles are shown only as mentions of their IDs, and the
- * only role ever pinged is the guild's own Events Directors role from its config row.
+ * only roles ever pinged are the guild's own, from its config row. A role that is not
+ * set up is named in the message instead, and nobody is pinged for it.
  *
  * Each reminder is one message. Its size is bounded: an event name of at most 200
- * characters, at most 10 people on each of two steps, or at most 15 on
- * Food pickup, which is well inside a message.
+ * characters, at most 15 people on one step and two roles, which is well inside a
+ * message.
  */
 
 import {
@@ -21,8 +22,16 @@ import {
 } from "../discord/safe-text.ts";
 import type { EventReminderCandidate, EventReminderKind } from "../db/types.ts";
 import { daysBetween, type DateOnly } from "../lib/dates.ts";
-import { pickupTimeText } from "../events/steps.ts";
-import { openSteps, pickupPeople, type OpenStep } from "./event-plan.ts";
+import { pickupTimeText, stepName } from "../events/steps.ts";
+import {
+  chooseRoleToPingText,
+  EVENTS_COMMITTEE_ROLE,
+  EVENTS_DIRECTORS_ROLE,
+  MARKETING_ROLE,
+  type ClubRole,
+} from "../handlers/club-roles.ts";
+import { usableRoleId } from "../lib/permissions.ts";
+import { assigneesOf, pickupPeople, unassignedSteps } from "./event-plan.ts";
 
 const MAX_EVENT_NAME = 200;
 
@@ -40,7 +49,7 @@ class EventRenderError extends Error {
 export interface RenderedEventReminder {
   readonly content: SafeText;
   readonly mentionUserIds: readonly string[];
-  /** Only ever the guild's Events Directors role, for a step nobody is on. */
+  /** Only ever roles from the guild's config row. */
   readonly mentionRoleIds: readonly string[];
 }
 
@@ -77,54 +86,11 @@ function mentions(userIds: readonly string[]): SafeText {
   );
 }
 
-function stepLine(step: OpenStep, rolePing: SafeText): SafeText {
-  switch (step.kind) {
-    case "budget_sheet":
-    case "engage_post": {
-      const label =
-        step.kind === "budget_sheet" ? safe`Budget Sheet` : safe`Engage post`;
-      return step.assigneeIds.length === 0
-        ? safe`- ${label}: nobody is on it yet, ${rolePing} please assign someone with /event assign`
-        : safe`- ${label}: ${mentions(step.assigneeIds)}`;
-    }
-    case "budget_approved":
-      return safe`- Budget approved: waiting for approval`;
-  }
-}
-
 function checked(rendered: RenderedEventReminder): RenderedEventReminder {
   if (!isWithinLimit(safeTextValue(rendered.content), DISCORD_LIMITS.content)) {
     throw new EventRenderError("Reminder too long for one message");
   }
   return rendered;
-}
-
-/** The daily list of unfinished steps. Throws if every step is done. */
-export function renderDailySteps(
-  event: EventReminderCandidate,
-  today: DateOnly,
-): RenderedEventReminder {
-  const steps = openSteps(event);
-  if (steps.length === 0) {
-    throw new EventRenderError("Nothing left to do");
-  }
-  const roleId = event.events_director_role_id;
-  const rolePing = roleMention(roleId);
-  const lines = steps.map((step) => stepLine(step, rolePing));
-  const users = new Set<string>();
-  let pingsRole = false;
-  for (const step of steps) {
-    if (step.kind === "budget_sheet" || step.kind === "engage_post") {
-      step.assigneeIds.forEach((userId) => users.add(userId));
-      pingsRole ||= step.assigneeIds.length === 0;
-    }
-  }
-  const body = lines.reduce((text, line) => safe`${text}\n${line}`);
-  return checked({
-    content: safe`**Still to do for ${eventName(event.name)}** (${renderEventDay(today, event.event_date)})\n${body}`,
-    mentionUserIds: [...users],
-    mentionRoleIds: pingsRole ? [roleId] : [],
-  });
 }
 
 /** A Food pickup reminder. Throws if Food pickup is not set up. */
@@ -148,12 +114,145 @@ export function renderPickup(
   });
 }
 
+/** A role to ping, with its ID from the guild's config row. */
+type Pinged = readonly [ClubRole, string | null];
+
+/** The text, after a mention of each person and role it pings. */
+function ping(
+  event: EventReminderCandidate,
+  text: SafeText,
+  userIds: readonly string[],
+  roles: readonly Pinged[] = [],
+): RenderedEventReminder {
+  const roleIds: string[] = [];
+  let content = safe`${text}`;
+  for (const [role, bound] of roles) {
+    const roleId = usableRoleId(event.guild_id, bound);
+    if (roleId === null) {
+      content = safe`${content} ${chooseRoleToPingText(role)}`;
+    } else {
+      roleIds.push(roleId);
+    }
+  }
+  const who = [
+    ...userIds.map((userId) => userMention(userId)),
+    ...roleIds.map((roleId) => roleMention(roleId)),
+  ];
+  return checked({
+    content: who.reduceRight(
+      (rest, mention) => safe`${mention} ${rest}`,
+      content,
+    ),
+    mentionUserIds: userIds,
+    mentionRoleIds: roleIds,
+  });
+}
+
+/** What is missing from Food pickup. */
+function pickupGap(event: EventReminderCandidate): SafeText {
+  const nobody = assigneesOf(event, "food_pickup").length === 0;
+  const noTime = event.pickup_time === null;
+  if (nobody && noTime) {
+    return safe`nobody is on it and no time is set`;
+  }
+  return nobody ? safe`nobody is on it` : safe`no time is set`;
+}
+
+/** Throws for a kind that is not set to go out for this event. */
 export function renderEventReminder(
   kind: EventReminderKind,
   event: EventReminderCandidate,
   today: DateOnly,
 ): RenderedEventReminder {
-  return kind === "daily_steps"
-    ? renderDailySteps(event, today)
-    : renderPickup(event, today);
+  const name = eventName(event.name);
+  const when = renderEventDay(today, event.event_date);
+  const directors: Pinged = [
+    EVENTS_DIRECTORS_ROLE,
+    event.events_director_role_id,
+  ];
+  const marketing: Pinged = [MARKETING_ROLE, event.marketing_role_id];
+  switch (kind) {
+    case "pickup_before":
+    case "pickup_day":
+      return renderPickup(event, today);
+    case "steps_unassigned": {
+      const steps = unassignedSteps(event).map(stepName);
+      if (steps.length === 0) {
+        throw new EventRenderError("Every step has someone");
+      }
+      const list = steps.reduce((text, step) => safe`${text} or ${step}`);
+      return ping(
+        event,
+        safe`Nobody is on ${list} for **${name}**.`,
+        [],
+        [directors],
+      );
+    }
+    case "budget_due":
+      return ping(
+        event,
+        safe`Budget Sheet for **${name}** is due.`,
+        assigneesOf(event, "budget_sheet"),
+      );
+    case "engage_due":
+      return ping(
+        event,
+        safe`Engage post for **${name}** is due.`,
+        assigneesOf(event, "engage_post"),
+      );
+    case "budget_overdue":
+      return ping(
+        event,
+        safe`Budget Sheet for **${name}** is overdue.`,
+        assigneesOf(event, "budget_sheet"),
+        [directors],
+      );
+    case "engage_overdue":
+      return ping(
+        event,
+        safe`Engage post for **${name}** is overdue.`,
+        assigneesOf(event, "engage_post"),
+        [directors],
+      );
+    case "engage_picture_late":
+      return ping(
+        event,
+        safe`Engage picture for **${name}** hasn't been added yet.`,
+        [],
+        [marketing],
+      );
+    case "marketing_week":
+    case "marketing_saturday":
+      return ping(event, safe`**${name}** is ${when}.`, [], [marketing]);
+    case "slides_unassigned":
+      return ping(
+        event,
+        safe`Nobody is on Slides for **${name}**.`,
+        [],
+        [directors],
+      );
+    case "pickup_unset":
+      return ping(
+        event,
+        safe`Food pickup for **${name}** isn't set up: ${pickupGap(event)}.`,
+        [],
+        [directors],
+      );
+    case "slides_due":
+    case "slides_tomorrow":
+      return ping(
+        event,
+        safe`Slides for **${name}** are due ${when}.`,
+        assigneesOf(event, "slides"),
+      );
+    case "event_today":
+      return ping(
+        event,
+        safe`**${name}** is ${when}.`,
+        [],
+        [directors, [EVENTS_COMMITTEE_ROLE, event.events_committee_role_id]],
+      );
+    case "daily_steps":
+      throw new EventRenderError("The daily list is no longer sent");
+  }
 }

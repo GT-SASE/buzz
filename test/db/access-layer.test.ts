@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import type { DbClient } from "../../src/db/client.ts";
 import type { DbResult } from "../../src/db/errors.ts";
+import type { CompletableStepKind, EventStepKind } from "../../src/db/types.ts";
 import {
   attachEventPost,
   claimEventPostAttempt,
@@ -27,7 +28,9 @@ import {
   markStepHandoffSent,
   MAX_ASSIGNEES_PER_STEP,
   MAX_FOOD_PICKUP_ASSIGNEES,
+  reopenEventStep,
   setEventPickupTime,
+  setSlidesNotNeeded,
   unassignEventStep,
 } from "../../src/db/event-steps.ts";
 import {
@@ -1080,9 +1083,19 @@ describe("database layer against the real schema", () => {
     ) => unassignEventStep(db, { ...key(eventId), kind, userId, actorId });
     const complete = (
       eventId: string,
-      kind: "budget_sheet" | "engage_post" | "budget_approved",
+      kind: CompletableStepKind,
       actorId: string = fakeId(),
     ) => completeEventStep(db, { ...key(eventId), kind, actorId });
+    const reopen = (eventId: string, kind: CompletableStepKind) =>
+      reopenEventStep(db, { ...key(eventId), kind });
+    const slidesNotNeeded = (eventId: string, notNeeded: boolean) =>
+      setSlidesNotNeeded(db, {
+        ...key(eventId),
+        notNeeded,
+        actorId: guild.officerRoleId,
+      });
+    const stepOf = async (eventId: string, kind: EventStepKind) =>
+      (await workflow(eventId))?.steps.find((step) => step.kind === kind);
     const workflow = (eventId: string) =>
       ok(getEventWorkflow(db, key(eventId)));
 
@@ -1102,8 +1115,10 @@ describe("database layer against the real schema", () => {
       it("adds a person once, and takes them off again without losing the row", async () => {
         const eventId = await insertEvent(pg, guild);
         const user = fakeId();
-        expect(await ok(assign(eventId, "budget_sheet", user))).toBe(true);
-        expect(await ok(assign(eventId, "budget_sheet", user))).toBe(false);
+        expect(await ok(assign(eventId, "budget_sheet", user))).toBe("added");
+        expect(await ok(assign(eventId, "budget_sheet", user))).toBe(
+          "already_on",
+        );
         const remove = () =>
           ok(unassign(eventId, "budget_sheet", user, guild.adminRoleId));
         expect(await remove()).toBe(true);
@@ -1119,7 +1134,7 @@ describe("database layer against the real schema", () => {
         ]);
 
         // A removed person can be put back on.
-        expect(await ok(assign(eventId, "budget_sheet", user))).toBe(true);
+        expect(await ok(assign(eventId, "budget_sheet", user))).toBe("added");
       });
 
       it.each([
@@ -1130,14 +1145,14 @@ describe("database layer against the real schema", () => {
         async (kind, limit, otherKind) => {
           const eventId = await insertEvent(pg, guild);
           for (let index = 0; index < limit; index += 1) {
-            expect(await ok(assign(eventId, kind))).toBe(true);
+            expect(await ok(assign(eventId, kind))).toBe("added");
           }
           expect(await assign(eventId, kind)).toEqual({
             ok: false,
             error: { category: "step_assignee_limit", code: "CF431" },
           });
           expect((await workflow(eventId))?.assignees).toHaveLength(limit);
-          expect(await ok(assign(eventId, otherKind))).toBe(true);
+          expect(await ok(assign(eventId, otherKind))).toBe("added");
         },
       );
 
@@ -1181,6 +1196,53 @@ describe("database layer against the real schema", () => {
       expect(await ok(claim())).toBe(false);
     });
 
+    it("takes Engage picture added only after Engage post, and undoes both with the post", async () => {
+      const eventId = await insertEvent(pg, guild);
+      expect(await complete(eventId, "engage_picture")).toEqual({
+        ok: false,
+        error: { category: "step_not_ready", code: "CF425" },
+      });
+      const handoff = { ...key(eventId), kind: "engage_post" as const };
+      expect(await ok(complete(eventId, "engage_post"))).toBe(true);
+      expect(await ok(claimStepHandoff(db, handoff))).toBe(true);
+      await ok(markStepHandoffSent(db, handoff));
+      expect(await ok(complete(eventId, "engage_picture"))).toBe(true);
+
+      expect(await ok(reopen(eventId, "engage_post"))).toBe(true);
+      expect(await ok(reopen(eventId, "engage_post"))).toBe(false);
+      for (const kind of ["engage_post", "engage_picture"] as const) {
+        expect(await stepOf(eventId, kind)).toMatchObject({
+          status: "open",
+          completed_at: null,
+          completed_by: null,
+          handoff_claimed_at: null,
+          handoff_sent_at: null,
+        });
+      }
+      expect(await complete(eventId, "engage_picture")).toMatchObject({
+        ok: false,
+      });
+
+      // Done again, it is owed its message again.
+      expect(await ok(complete(eventId, "engage_post"))).toBe(true);
+      expect(await ok(claimStepHandoff(db, handoff))).toBe(true);
+    });
+
+    it("refuses an undo or Slides change on a closed event, and treats a foreign one as unknown", async () => {
+      const eventId = await insertEvent(pg, guild);
+      await ok(complete(eventId, "budget_sheet"));
+      await ok(closeEvent(db, key(eventId)));
+      expect(await reopen(eventId, "budget_sheet")).toEqual(UNAVAILABLE);
+      expect(await slidesNotNeeded(eventId, true)).toEqual(UNAVAILABLE);
+      expect(await stepOf(eventId, "budget_sheet")).toMatchObject({
+        status: "done",
+      });
+
+      const foreign = await insertEvent(pg, await insertGuild(pg));
+      expect(await reopen(foreign, "budget_sheet")).toEqual(NOT_FOUND);
+      expect(await slidesNotNeeded(foreign, true)).toEqual(NOT_FOUND);
+    });
+
     it("marks Food pickup done once it has a time and a person, and reopens it with no one on it", async () => {
       const eventId = await insertEvent(pg, guild);
       const actor = fakeId();
@@ -1198,7 +1260,7 @@ describe("database layer against the real schema", () => {
       await ok(assign(eventId, "food_pickup", user));
       let current = await workflow(eventId);
       expect(current?.pickup_time).toBe("17:30");
-      expect(current?.steps[3]).toMatchObject({
+      expect(current?.steps[5]).toMatchObject({
         kind: "food_pickup",
         status: "done",
         completed_by: guild.officerRoleId,
@@ -1208,7 +1270,7 @@ describe("database layer against the real schema", () => {
       await ok(unassign(eventId, "food_pickup", user, actor));
       current = await workflow(eventId);
       expect(current?.pickup_time).toBe("09:05");
-      expect(current?.steps[3]).toMatchObject({
+      expect(current?.steps[5]).toMatchObject({
         status: "open",
         completed_at: null,
         completed_by: null,
@@ -1288,7 +1350,7 @@ describe("database layer against the real schema", () => {
             { kind: "daily_steps", reminder_date: eventDate, state: "claimed" },
           ],
         });
-        expect(candidate?.steps).toHaveLength(4);
+        expect(candidate?.steps).toHaveLength(6);
 
         // A later start leaves the event out, and a closed event is never listed.
         expect(await listed(dayAfter(eventDate))).toBeUndefined();
