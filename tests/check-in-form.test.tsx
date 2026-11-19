@@ -1,45 +1,48 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  mock,
+  vi,
+} from "bun:test";
 
 import { push } from "./mocks/next-navigation";
 
-const { mutate, toastError, mutation, cameraFail, peek } = vi.hoisted(() => {
-  const mutation: {
-    isPending: boolean;
-    data: unknown;
-    error: { message: string; data?: { code: string } } | undefined;
-    onError:
-      | ((
-          error: { message: string; data?: { code: string } },
-          variables: { code: string },
-        ) => void)
-      | undefined;
-  } = {
-    isPending: false,
-    data: undefined,
-    error: undefined,
-    onError: undefined,
-  };
+const mutation: {
+  isPending: boolean;
+  data: unknown;
+  error: { message: string; data?: { code: string } } | undefined;
+  onError:
+    | ((
+        error: { message: string; data?: { code: string } },
+        variables: { code: string },
+      ) => void)
+    | undefined;
+} = {
+  isPending: false,
+  data: undefined,
+  error: undefined,
+  onError: undefined,
+};
 
-  return {
-    mutate: vi.fn(),
-    toastError: vi.fn(),
-    mutation,
-    cameraFail: { current: false },
-    peek: { data: undefined as unknown },
-  };
-});
+const mutate = vi.fn();
+const toastError = vi.fn();
+const cameraFail = { current: false };
+const peek = { data: undefined as unknown };
 
-vi.mock("sonner", () => ({
+mock.module("sonner", () => ({
   toast: {
     success: vi.fn(),
     error: (...args: unknown[]) => toastError(...args),
   },
 }));
 
-vi.mock("next/link", () => ({
+mock.module("next/link", () => ({
   default: ({
     href,
     children,
@@ -54,7 +57,7 @@ vi.mock("next/link", () => ({
   ),
 }));
 
-vi.mock("~/trpc/react", () => ({
+mock.module("~/trpc/react", () => ({
   api: {
     useUtils: () => ({
       event: {
@@ -88,11 +91,15 @@ vi.mock("~/trpc/react", () => ({
   },
 }));
 
-vi.mock("~/app/portal/(member)/check-in/scanner", async (importOriginal) => {
-  const actual = (await importOriginal()) as Record<string, unknown>;
-  const { useEffect } = await import("react");
+const { useEffect } = await import("react");
+const actualScanner =
+  (await import("~/app/portal/(member)/check-in/scanner")) as Record<
+    string,
+    unknown
+  >;
+mock.module("~/app/portal/(member)/check-in/scanner", () => {
   return {
-    ...actual,
+    ...actualScanner,
     Scanner: ({
       onUnavailable,
     }: {

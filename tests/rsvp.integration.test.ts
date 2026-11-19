@@ -5,11 +5,12 @@ import {
   describe,
   expect,
   it,
-  vi,
-} from "vitest";
+  mock,
+} from "bun:test";
+import { stubEnv, unstubAllEnvs } from "./helpers/env";
 
 // Same harness as check-in.integration.test.ts: stub next-auth, import by path.
-vi.mock("../packages/auth/src/index.ts", () => ({
+mock.module("../packages/auth/src/index.ts", () => ({
   auth: async () => null,
   handlers: {},
   signIn: async () => undefined,
@@ -17,10 +18,8 @@ vi.mock("../packages/auth/src/index.ts", () => ({
 }));
 
 /** Captures what would be emailed instead of talking to Gmail. */
-const sent = vi.hoisted(
-  () => [] as { to: string; method: string; content: string }[],
-);
-vi.mock("nodemailer", () => ({
+const sent: { to: string; method: string; content: string }[] = [];
+mock.module("nodemailer", () => ({
   default: {
     createTransport: () => ({
       sendMail: async (message: {
@@ -166,11 +165,11 @@ describe.skipIf(!process.env.DATABASE_URL)("event RSVP", () => {
   });
 
   describe("calendar emails", () => {
-    afterEach(() => vi.unstubAllEnvs());
+    afterEach(() => unstubAllEnvs());
 
     it("sends an invite on RSVP and a cancellation for the same entry on cancel, once each", async () => {
-      vi.stubEnv("GMAIL_USER", "chapter@example.com");
-      vi.stubEnv("GMAIL_APP_PASSWORD", "app-password");
+      stubEnv("GMAIL_USER", "chapter@example.com");
+      stubEnv("GMAIL_APP_PASSWORD", "app-password");
       sent.length = 0;
       const caller = callerFor(member);
 
@@ -191,8 +190,8 @@ describe.skipIf(!process.env.DATABASE_URL)("event RSVP", () => {
     });
 
     it("still saves the RSVP when Gmail is not configured", async () => {
-      vi.stubEnv("GMAIL_USER", "");
-      vi.stubEnv("GMAIL_APP_PASSWORD", "");
+      stubEnv("GMAIL_USER", "");
+      stubEnv("GMAIL_APP_PASSWORD", "");
       sent.length = 0;
       const caller = callerFor(member);
       const result = await caller.event.rsvp({ eventId: id.future });

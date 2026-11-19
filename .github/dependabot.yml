@@ -37,9 +37,8 @@ updates:
           - typescript-eslint
           - prettier
           - "prettier-plugin-*"
-          - vitest
           - "@testing-library/*"
-          - jsdom
+          - "@happy-dom/*"
     ignore:
       - dependency-name: next-auth
       - dependency-name: typescript

@@ -72,7 +72,23 @@ export default tseslint.config(
     },
   },
   {
-    // React Vitest files are not in the root tsconfig (importing them would
+    // bun-types declares `mock.module` as `void | Promise<void>` and types
+    // `expect(...).rejects` as void, so these rules flag correct test code.
+    files: ["tests/**/*.ts"],
+    rules: {
+      "@typescript-eslint/await-thenable": "off",
+      "@typescript-eslint/no-floating-promises": [
+        "error",
+        {
+          allowForKnownSafeCalls: [
+            { from: "package", package: "bun-types", name: "module" },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    // React test files are not in the root tsconfig (importing them would
     // pull the Next app into root `tsc` without image-module decls).
     files: ["tests/**/*.tsx"],
     extends: [tseslint.configs.disableTypeChecked],

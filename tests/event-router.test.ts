@@ -1,4 +1,5 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, mock, vi } from "bun:test";
+import { stubEnv, unstubAllEnvs } from "./helpers/env";
 
 /**
  * Unit coverage for the helpers inside packages/api/src/routers/event.ts. None
@@ -17,17 +18,17 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
  * reaches for `next/server` and does not resolve outside the Next bundler.
  * Stubbed so the router can be imported at all; nothing here authenticates.
  */
-vi.mock("../packages/auth/src/index.ts", () => ({
+mock.module("../packages/auth/src/index.ts", () => ({
   auth: () => Promise.resolve(null),
   handlers: {},
   signIn: () => Promise.resolve(undefined),
   signOut: () => Promise.resolve(undefined),
 }));
 
-vi.stubEnv("NODE_ENV", "production");
+stubEnv("NODE_ENV", "production");
 const { createCaller } = await import("../packages/api/src/root");
 const { resetRateLimits } = await import("../packages/api/src/rate-limit");
-vi.unstubAllEnvs();
+unstubAllEnvs();
 
 type Ctx = Parameters<typeof createCaller>[0];
 
@@ -498,10 +499,8 @@ describe("event.update", () => {
     expect(written).toHaveProperty("maxCheckIns", null);
     // toHaveProperty passes on an inherited or undefined value; these are the
     // assertions that fail if the key is present but undefined.
-    expect(Object.keys(written)).toEqual(
-      expect.arrayContaining(["description", "location", "maxCheckIns"]),
-    );
     for (const key of ["description", "location", "maxCheckIns"]) {
+      expect(Object.keys(written)).toContain(key);
       expect(written[key]).not.toBeUndefined();
     }
   });
