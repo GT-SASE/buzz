@@ -1,6 +1,7 @@
 /**
- * Tells an assignee about a task, in the event's post. The send goes through the
- * client's checked path, and only this user can be pinged, whatever the text says.
+ * Messages in the event's post, such as telling an assignee about a task. The send goes
+ * through the client's checked path, and only the users a message names can be pinged,
+ * whatever the text says.
  *
  * The task is saved before this runs, so a failed send loses nothing. It only changes
  * what the officer is told, because the assignee has not heard and someone must tell them.
@@ -32,32 +33,41 @@ function noticeFor(content: SafeText, task: TaskRow): MessageInput {
   };
 }
 
+/** Posts a message in the event's post, pinging only whom it names. */
+export async function postInEvent(
+  ctx: FinishContext,
+  event: EventRow,
+  input: MessageInput,
+): Promise<NoticeOutcome> {
+  if (event.thread_id === null || event.thread_status !== "active") {
+    return "no_post";
+  }
+  try {
+    await ctx.discord.sendMessage(
+      { kind: "thread", guildId: event.guild_id, threadId: event.thread_id },
+      channelMessage(input),
+    );
+    return "posted";
+  } catch (error) {
+    console.error(
+      `Event post message failed: ${error instanceof Error ? error.name : "unknown error"}`,
+    );
+    return error instanceof DiscordClientError && mayHaveLanded(error.failure)
+      ? "unknown"
+      : "failed";
+  }
+}
+
 export async function postNotice(
   ctx: FinishContext,
   event: EventRow,
   task: TaskRow,
   opening: SafeText,
 ): Promise<NoticeOutcome> {
-  if (event.thread_id === null || event.thread_status !== "active") {
-    return "no_post";
-  }
   const content = safe`${opening}
 ${taskText(task.description)}
 Due ${shownDate(task.due_date)}. Task ${shownId(task.id)}, given by ${userMention(ctx.actor.userId)}.`;
-  try {
-    await ctx.discord.sendMessage(
-      { kind: "thread", guildId: event.guild_id, threadId: event.thread_id },
-      channelMessage(noticeFor(content, task)),
-    );
-    return "posted";
-  } catch (error) {
-    console.error(
-      `Task notice failed: ${error instanceof Error ? error.name : "unknown error"}`,
-    );
-    return error instanceof DiscordClientError && mayHaveLanded(error.failure)
-      ? "unknown"
-      : "failed";
-  }
+  return postInEvent(ctx, event, noticeFor(content, task));
 }
 
 /**

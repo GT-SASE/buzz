@@ -57,6 +57,7 @@ import {
   listOpenTasksForAssignee,
   markOwnTaskDone,
   markTaskDoneAsOfficer,
+  reopenTask,
   searchOpenTasks,
   softDeleteTask,
 } from "../../src/db/tasks.ts";
@@ -570,6 +571,34 @@ describe("database layer against the real schema", () => {
       );
       expect(await stamped()).toEqual(deletedAt);
       expect(await ok(getTask(db, key))).toBeNull();
+    });
+
+    it("reopens a done task once, and not on a closed event", async () => {
+      const { taskId } = await newTask();
+      const key = { guildId: guild.guildId, taskId };
+      expect(await reopenTask(db, key)).toEqual(NOT_FOUND);
+      await ok(markTaskDoneAsOfficer(db, { ...key, now: NOW }));
+      expect(await ok(reopenTask(db, key))).toMatchObject({
+        status: "open",
+        completed_at: null,
+      });
+      expect(await reopenTask(db, key)).toEqual(NOT_FOUND);
+
+      const closed = await insertEvent(pg, guild);
+      const task = await ok(
+        createTask(db, {
+          guildId: guild.guildId,
+          eventId: closed,
+          assigneeId: fakeId(),
+          actorId: fakeId(),
+          description: "Book the room",
+          dueDate: DUE,
+        }),
+      );
+      const closedKey = { guildId: guild.guildId, taskId: task.id };
+      await ok(markTaskDoneAsOfficer(db, { ...closedKey, now: NOW }));
+      await ok(closeEvent(db, { guildId: guild.guildId, eventId: closed }));
+      expect(await reopenTask(db, closedKey)).toEqual(UNAVAILABLE);
     });
 
     it("answers the same for another guild's task as for an unknown one", async () => {

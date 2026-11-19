@@ -66,7 +66,10 @@ export async function taskChoices(
   return merged(byId, byText).map(taskChoice);
 }
 
-/** For /task delete, where done tasks can be picked too. Only officers can reach it. */
+/**
+ * For /task delete and /task reopen, where done tasks can be picked too. Only officers
+ * can reach it.
+ */
 export async function deletableTaskChoices(
   ctx: RouteContext,
   scope: AutocompleteScope,

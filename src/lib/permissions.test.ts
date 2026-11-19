@@ -85,6 +85,7 @@ const EXPECTED_ACTIONS: readonly (readonly [string, Tier, Scope])[] = [
   ["task.edit", "officer", "task"],
   ["task.delete", "officer", "task"],
   ["task.done", "self", "task"],
+  ["task.reopen", "officer", "task"],
   ["ping", "public", "none"],
   ["mytasks", "self", "none"],
 ];

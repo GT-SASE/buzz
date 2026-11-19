@@ -472,4 +472,55 @@ describe("marking tasks done and reading them, on the real schema", () => {
       }
     });
   });
+
+  describe("/task reopen", () => {
+    const reopen = (taskId: string, member: Record<string, unknown>) =>
+      subcommand("reopen", stringOptions({ task: taskId }), { member });
+
+    it("lets an officer reopen a done task, noting it in the post without a ping", async () => {
+      const { eventId } = await eventWithPost();
+      const task = await newTask(eventId, fakeId());
+      const { client, edits, notices } = fakeClient();
+      const dependencies = dependenciesFor(world.db(), client);
+      const who = fakeId();
+      await run(world.router, reopen(task.id, officer(who)), dependencies);
+      expect(edits[0]?.content).toContain("isn't done");
+
+      await world.backend.connection.query(
+        `UPDATE public.tasks SET status = 'done', completed_at = now() WHERE id = $1`,
+        [task.id],
+      );
+      await run(world.router, reopen(task.id, officer(who)), dependencies);
+
+      expect((await row(task.id))?.status).toBe("open");
+      expect(edits[1]?.content).toContain("Reopened:");
+      expect(notices).toMatchObject([
+        {
+          content: `Task ${task.id.slice(0, 8)} reopened by <@${who}>.`,
+          allowed_mentions: { parse: [], users: [] },
+        },
+      ]);
+      expect(refreshOverview).toHaveBeenCalledTimes(1);
+    });
+
+    it("refuses a member, even the assignee", async () => {
+      const { eventId } = await eventWithPost();
+      const assignee = fakeId();
+      const task = await newTask(eventId, assignee);
+      await world.backend.connection.query(
+        `UPDATE public.tasks SET status = 'done', completed_at = now() WHERE id = $1`,
+        [task.id],
+      );
+      const { client, edits } = fakeClient();
+
+      const ran = await run(
+        world.router,
+        reopen(task.id, plainMember(assignee)),
+        dependenciesFor(world.db(), client),
+      );
+
+      expect(refusedWith(ran, edits)).toBe(FIXED_REFUSAL);
+      expect((await row(task.id))?.status).toBe("done");
+    });
+  });
 });

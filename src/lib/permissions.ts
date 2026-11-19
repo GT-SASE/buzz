@@ -53,6 +53,7 @@ const COMMAND_TIERS = [
   ["task.edit", "officer", "task"],
   ["task.delete", "officer", "task"],
   ["task.done", "self", "task"],
+  ["task.reopen", "officer", "task"],
   ["mytasks", "self", "none"],
 ] as const satisfies readonly (readonly [string, Tier, Scope])[];
 
@@ -123,6 +124,7 @@ const AUTOCOMPLETE_COMMANDS = [
   "task.edit",
   "task.delete",
   "task.done",
+  "task.reopen",
 ] as const satisfies readonly Action[];
 
 export type AutocompleteCommand = (typeof AUTOCOMPLETE_COMMANDS)[number];
