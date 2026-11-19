@@ -61,9 +61,6 @@
     "typescript-7": "npm:typescript@^7.0.0",
     "typescript-eslint": "^8.72.2"
   },
-  "ct3aMetadata": {
-    "initVersion": "7.40.0"
-  },
   "engines": {
     "node": ">=24.0.0 <25"
   },

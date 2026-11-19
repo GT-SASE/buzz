@@ -1,8 +1,9 @@
 "use client";
 
+// Local edit of vendored Watermelon UI: framer-motion replaced with CSS (data-state + tw-animate-css) to keep it out of the client bundle.
+
 import * as React from "react";
 import { Progress as ProgressPrime } from "radix-ui";
-import { motion } from "motion/react";
 import { cn } from "~/lib/utils";
 
 type ProgressProps = ProgressPrimitiveProps;
@@ -40,23 +41,25 @@ function ProgressPrimitive(props: ProgressPrimitiveProps) {
   );
 }
 
-const MotionProgressIndicator = motion.create(ProgressPrime.Indicator);
-
 type ProgressIndicatorProps = React.ComponentProps<
-  typeof MotionProgressIndicator
+  typeof ProgressPrime.Indicator
 >;
 
 function ProgressIndicatorPrimitive({
-  transition = { type: "spring", stiffness: 100, damping: 30 },
+  className,
+  style,
   ...props
 }: ProgressIndicatorProps) {
   const { value } = useProgress();
 
   return (
-    <MotionProgressIndicator
+    <ProgressPrime.Indicator
       data-slot="progress-indicator"
-      animate={{ x: `-${100 - (value || 0)}%` }}
-      transition={transition}
+      className={cn(
+        "transition-transform duration-500 ease-out motion-reduce:transition-none",
+        className,
+      )}
+      style={{ transform: `translateX(-${100 - (value || 0)}%)`, ...style }}
       {...props}
     />
   );

@@ -42,8 +42,6 @@ export function ConfirmDialog({
       {opened && (
         <Suspense fallback={null}>
           <ConfirmDialogContent
-            open={open}
-            onOpenChange={setOpen}
             title={title}
             body={body}
             action={action}
