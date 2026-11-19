@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: typecheck, lint, format, test and build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      VERCEL_CLI_VERSION: 65.4.0
+      VERCEL_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Bun installs, runs every script and tool, builds, and runs the deployed
+      # functions on Vercel. The version is packageManager in package.json.
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+      - run: bun install --frozen-lockfile
+      # check runs every check even if one fails, one at a time, because test:db has
+      # failed under CPU contention. With TURBO_TOKEN and TURBO_TEAM set, a check whose
+      # inputs are unchanged replays from Vercel's Remote Cache. Without them every
+      # check runs.
+      - name: Checks
+        run: bun run check
+        env:
+          TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+          TURBO_TEAM: ${{ vars.TURBO_TEAM }}
+          TURBO_TELEMETRY_DISABLED: "1"
+      # Installed outside the repository, so it cannot touch the project's
+      # dependencies or lockfile, and with no install scripts. Its own package.json
+      # stops bun add from using one in a parent folder. The build itself installs
+      # from bun.lock, as Vercel does.
+      - name: Install the Vercel CLI
+        if: ${{ !cancelled() }}
+        run: |
+          mkdir -p "${RUNNER_TEMP}/vercel-cli"
+          echo '{}' > "${RUNNER_TEMP}/vercel-cli/package.json"
+          bun add --cwd "${RUNNER_TEMP}/vercel-cli" --ignore-scripts --exact --no-summary "vercel@${VERCEL_CLI_VERSION}"
+      # A placeholder lets the build run with no account and no token. Nothing
+      # here deploys or contacts a project.
+      - name: Add a placeholder project
+        run: |
+          mkdir -p .vercel
+          printf '{"projectId":"prj_placeholder","orgId":"team_placeholder","settings":{"framework":null}}' > .vercel/project.json
+      - name: Build
+        run: bun --bun "${RUNNER_TEMP}/vercel-cli/node_modules/.bin/vercel" build --yes
+      # An engines.node in package.json silently overrides bunVersion in vercel.json.
+      - name: Check the functions run on Bun
+        run: |
+          for config in .vercel/output/functions/api/*.func/.vc-config.json .vercel/output/functions/api/*/*.func/.vc-config.json; do
+            grep -q '"runtime": "bun1\.4\.x"' "${config}" || { echo "${config} is not on the Bun runtime" >&2; exit 1; }
+          done
+
+  secret-history:
+    name: gitleaks full history
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - run: bash scripts/install-gitleaks.sh
+      - name: Refuse a .gitleaksignore file
+        run: test ! -e .gitleaksignore
+      - name: Scan every commit on every ref
+        run: .tools/gitleaks git . --config .gitleaks.toml --redact --ignore-gitleaks-allow --no-banner --log-opts="--all -m --text --no-color"
