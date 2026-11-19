@@ -26,34 +26,68 @@ export interface CappedList<T> {
   readonly truncated: boolean;
 }
 
+/** In the order the checklist shows them. */
 export const EVENT_STEP_KINDS = [
   "budget_sheet",
   "engage_post",
+  "engage_picture",
   "budget_approved",
+  "slides",
   "food_pickup",
 ] as const;
 export type EventStepKind = (typeof EVENT_STEP_KINDS)[number];
 
-/** The steps people can be assigned to. Budget approved is marked by a role instead. */
+/**
+ * The steps people can be assigned to. Budget approved and Engage picture added are
+ * marked by a role instead.
+ */
 export const ASSIGNABLE_STEP_KINDS = [
   "budget_sheet",
   "engage_post",
+  "slides",
   "food_pickup",
 ] as const satisfies readonly EventStepKind[];
 export type AssignableStepKind = (typeof ASSIGNABLE_STEP_KINDS)[number];
 
-/** The steps marked done by hand. Food pickup is done once it has a time and people. */
+/**
+ * The steps marked done by hand, and reopened by an undo. Food pickup is done once it has
+ * a time and people.
+ */
 export const COMPLETABLE_STEP_KINDS = [
   "budget_sheet",
   "engage_post",
+  "engage_picture",
   "budget_approved",
+  "slides",
 ] as const satisfies readonly EventStepKind[];
 export type CompletableStepKind = (typeof COMPLETABLE_STEP_KINDS)[number];
 
+/** The steps followed by a message in the event's post once done. */
+export const HANDOFF_STEP_KINDS = [
+  "budget_sheet",
+  "engage_post",
+  "budget_approved",
+] as const satisfies readonly CompletableStepKind[];
+export type HandoffStepKind = (typeof HANDOFF_STEP_KINDS)[number];
+
+/** `daily_steps` is no longer sent, and stays for the rows logged under it. */
 export const EVENT_REMINDER_KINDS = [
   "daily_steps",
   "pickup_before",
   "pickup_day",
+  "steps_unassigned",
+  "budget_due",
+  "engage_due",
+  "budget_overdue",
+  "engage_overdue",
+  "engage_picture_late",
+  "marketing_week",
+  "slides_unassigned",
+  "pickup_unset",
+  "marketing_saturday",
+  "slides_due",
+  "slides_tomorrow",
+  "event_today",
 ] as const;
 export type EventReminderKind = (typeof EVENT_REMINDER_KINDS)[number];
 
@@ -206,6 +240,9 @@ export interface EventStep {
   completed_by: string | null;
   handoff_claimed_at: string | null;
   handoff_sent_at: string | null;
+  /** Slides alone: set while it is marked not needed, which leaves it open. */
+  not_needed_at: string | null;
+  not_needed_by: string | null;
 }
 
 /** A live assignment. Removed ones are never returned. */
@@ -267,7 +304,17 @@ export interface EventReminderCandidate {
   timezone: string;
   /** The Events Directors role, pinged for a step nobody is assigned to. */
   events_director_role_id: string;
-  steps: { kind: EventStepKind; status: TaskStatus }[];
+  /** Null until /setup sets them. */
+  marketing_role_id: string | null;
+  events_committee_role_id: string | null;
+  steps: {
+    kind: EventStepKind;
+    status: TaskStatus;
+    /** When it was done, such as Engage post for the picture reminder. */
+    completed_at: string | null;
+    /** Slides alone: whether it is marked not needed. */
+    not_needed: boolean;
+  }[];
   /** Live assignments only, oldest first. */
   assignees: { kind: AssignableStepKind; user_id: string }[];
   /** Log rows dated on or after the date asked for. */

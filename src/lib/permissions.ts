@@ -13,21 +13,22 @@ import type { Actor } from "./actor.ts";
  * Administrator can grant themselves any role anyway, and refusing them would add
  * no security. The officer tier is the Events Directors role (officer_role_id), the
  * E-board role, or admin. Budget is the officer tier or the Treasury role, for
- * approving an event's budget. Bindings stands apart. It needs the Administrator bit,
- * so holding admin_role_id does not reach it. Public is for an action that reveals
- * nothing and changes nothing, and is the only tier that works before setup besides
- * bindings.
+ * approving an event's budget. Marketing is the officer tier or the Marketing role, for
+ * marking an event's Engage picture added. Bindings stands apart. It needs the
+ * Administrator bit, so holding admin_role_id does not reach it. Public is for an action
+ * that reveals nothing and changes nothing, and is the only tier that works before setup
+ * besides bindings.
  */
 export type Tier =
-  "public" | "self" | "officer" | "budget" | "admin" | "bindings";
+  "public" | "self" | "officer" | "budget" | "marketing" | "admin" | "bindings";
 
 /**
  * What row an action needs. "event" is the row named, or the parent of a new task.
  * event.link is "none": it can create a row from an existing thread, so there may be no
  * row to check, and its handler must confirm the thread's guild and parent, and read any
  * row named in its event option within the signed guild. event.step_done is "none" too:
- * who may mark Budget Sheet or Engage post done depends on the step's assignees, so its
- * handler loads the event and its steps within the signed guild and calls
+ * who may mark Budget Sheet, Engage post or Slides done depends on the step's assignees,
+ * so its handler loads the event and its steps within the signed guild and calls
  * `canCompleteStep` on them.
  */
 export type Scope = "none" | "event" | "task";
@@ -47,7 +48,10 @@ const COMMAND_TIERS = [
   ["event.assign", "officer", "event"],
   ["event.unassign", "officer", "event"],
   ["event.pickup", "officer", "event"],
+  ["event.undo", "officer", "event"],
   ["event.approve_budget", "budget", "event"],
+  ["event.picture_done", "marketing", "event"],
+  ["event.slides_off", "officer", "event"],
   ["event.step_done", "self", "none"],
   ["task.assign", "officer", "event"],
   ["task.edit", "officer", "task"],
@@ -121,6 +125,7 @@ const AUTOCOMPLETE_COMMANDS = [
   "event.assign",
   "event.unassign",
   "event.pickup",
+  "event.undo",
   "task.edit",
   "task.delete",
   "task.done",
@@ -147,8 +152,9 @@ export interface AutocompleteScope {
 }
 
 /**
- * The columns of a guild_config row that decide access. The E-board and Treasury roles
- * are null until /setup has chosen them, and a null role is held by nobody.
+ * The columns of a guild_config row that decide access. The E-board, Treasury and
+ * Marketing roles are null until /setup has chosen them, and a null role is held by
+ * nobody.
  */
 export interface AuthorizationConfig {
   readonly guild_id: string;
@@ -157,6 +163,7 @@ export interface AuthorizationConfig {
   readonly admin_role_id: string;
   readonly eboard_role_id: string | null;
   readonly treasury_role_id: string | null;
+  readonly marketing_role_id: string | null;
 }
 
 /** The columns of an events row that decide access. */
@@ -198,13 +205,20 @@ export const REFUSED = Object.freeze({
 } as const);
 
 /**
- * The @everyone role's ID equals the guild ID. The database refuses that binding,
- * and a role bound that way never counts here either, since it would cover everyone.
+ * A bound role's ID, or null when it is unset or the guild's own ID, which is @everyone.
+ * The database refuses that binding, and a role bound that way never counts or is pinged,
+ * since it would cover everyone.
  */
+export function usableRoleId(
+  guildId: string,
+  roleId: string | null,
+): string | null {
+  return roleId === null || roleId === guildId ? null : roleId;
+}
+
 function holdsBoundRole(actor: Actor, roleId: string | null): boolean {
-  return (
-    roleId !== null && roleId !== actor.guildId && actor.roleIds.has(roleId)
-  );
+  const usable = usableRoleId(actor.guildId, roleId);
+  return usable !== null && actor.roleIds.has(usable);
 }
 
 function isAdmin(actor: Actor, config: AuthorizationConfig): boolean {
@@ -228,7 +242,7 @@ export function isOfficer(
 }
 
 /** True for the officer tier and the Treasury role, in the actor's guild. */
-export function canApproveBudget(
+function canApproveBudget(
   actor: Actor,
   config: AuthorizationConfig | null | undefined,
 ): boolean {
@@ -238,10 +252,22 @@ export function canApproveBudget(
   );
 }
 
+/** True for the officer tier and the Marketing role, in the actor's guild. */
+function canAddPicture(
+  actor: Actor,
+  config: AuthorizationConfig | null | undefined,
+): boolean {
+  return (
+    config?.guild_id === actor.guildId &&
+    (holdsBoundRole(actor, config.marketing_role_id) ||
+      isOfficer(actor, config))
+  );
+}
+
 /**
- * Whether the actor may mark Budget Sheet or Engage post done: someone assigned to that
- * step, or the officer tier. Pass the step's live assignees as loaded for this event in
- * the actor's guild.
+ * Whether the actor may mark Budget Sheet, Engage post or Slides done: someone assigned
+ * to that step, or the officer tier. Pass the step's live assignees as loaded for this
+ * event in the actor's guild.
  */
 export function canCompleteStep(
   actor: Actor,
@@ -267,6 +293,8 @@ function holdsTier(
       return isOfficer(actor, config);
     case "budget":
       return canApproveBudget(actor, config);
+    case "marketing":
+      return canAddPicture(actor, config);
     case "admin":
       return isAdmin(actor, config);
     case "bindings":

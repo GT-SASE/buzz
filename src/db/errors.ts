@@ -21,6 +21,8 @@ export type DbErrorCategory =
   | "actor_task_limit"
   /** The step already has as many people as it may. */
   | "step_assignee_limit"
+  /** The step waits on another: Engage picture added on Engage post. */
+  | "step_not_ready"
   | "conflict"
   | "constraint"
   | "forbidden"
@@ -45,6 +47,7 @@ const CATEGORY_BY_CODE = new Map<string, DbErrorCategory>([
   ["CF412", "task_changed"],
   ["CF429", "event_task_limit"],
   ["CF430", "actor_task_limit"],
+  ["CF425", "step_not_ready"],
   ["CF431", "step_assignee_limit"],
   ["23505", "conflict"],
   ["23502", "constraint"],

@@ -96,6 +96,8 @@ function workflow(
       completed_by: done.includes(kind) ? APPROVER : null,
       handoff_claimed_at: null,
       handoff_sent_at: null,
+      not_needed_at: null,
+      not_needed_by: null,
     })),
     assignees: assignees.map((assignee, index) => ({
       id: `33333333-3333-4333-8333-${String(index).padStart(12, "0")}`,
@@ -164,11 +166,46 @@ describe("the checklist", () => {
       `✅ Budget Sheet: <@${first}>, <@${second}>`,
       "⬜ Engage post: nobody assigned",
       `✅ Budget approved by <@${APPROVER}>`,
+      "⬜ Slides: nobody assigned",
       `⬜ Food pickup: at ${at("2026-11-03T22:30:00Z")}, <@${picker}>`,
     ]);
     expect(text(stepLine(workflow(), "food_pickup"))).toBe(
       "⬜ Food pickup: time not set, nobody assigned",
     );
+  });
+
+  it("shows Engage picture added once Engage post is done, and Slides not needed", () => {
+    const shown = (flow: EventWorkflow) =>
+      checklistLines(flow)
+        .map(text)
+        .filter((line) => /Engage|Slides/.test(line));
+    const maker = fakeId();
+
+    expect(shown(workflow([], [{ kind: "slides", user_id: maker }]))).toEqual([
+      "⬜ Engage post: nobody assigned",
+      `⬜ Slides: <@${maker}>`,
+    ]);
+    expect(shown(workflow(["engage_post"]))).toEqual([
+      "✅ Engage post: nobody assigned",
+      "⬜ Engage picture added",
+      "⬜ Slides: nobody assigned",
+    ]);
+
+    const notNeeded = workflow(["engage_post", "engage_picture"]);
+    notNeeded.steps = notNeeded.steps.map((step) =>
+      step.kind === "slides"
+        ? {
+            ...step,
+            not_needed_at: "2026-01-01T00:00:00Z",
+            not_needed_by: APPROVER,
+          }
+        : step,
+    );
+    expect(shown(notNeeded)).toEqual([
+      "✅ Engage post: nobody assigned",
+      `✅ Engage picture added by <@${APPROVER}>`,
+      "➖ Slides: not needed",
+    ]);
   });
 
   it("offers a button for each open step but Food pickup, and none once done", () => {
@@ -183,14 +220,35 @@ describe("the checklist", () => {
       `event.sheet-done:${EVENT_ID}`,
       `event.engage-done:${EVENT_ID}`,
       `event.budget-ok:${EVENT_ID}`,
+      `event.slides-done:${EVENT_ID}`,
+      `event.slides-off:${EVENT_ID}`,
     ]);
-    expect(ids(workflow(["engage_post"]))).toEqual([
+    // Engage picture added appears once Engage post is done.
+    expect(ids(workflow(["engage_post", "slides"]))).toEqual([
       `event.sheet-done:${EVENT_ID}`,
+      `event.picture-done:${EVENT_ID}`,
       `event.budget-ok:${EVENT_ID}`,
     ]);
+    const notNeeded = workflow(["budget_sheet", "budget_approved"]);
+    notNeeded.steps = notNeeded.steps.map((step) =>
+      step.kind === "slides"
+        ? {
+            ...step,
+            not_needed_at: "2026-01-01T00:00:00Z",
+            not_needed_by: APPROVER,
+          }
+        : step,
+    );
+    expect(ids(notNeeded)).toEqual([`event.engage-done:${EVENT_ID}`]);
     expect(
       stepButtonRows(
-        workflow(["budget_sheet", "engage_post", "budget_approved"]),
+        workflow([
+          "budget_sheet",
+          "engage_post",
+          "engage_picture",
+          "budget_approved",
+          "slides",
+        ]),
       ),
     ).toEqual([]);
   });
@@ -228,7 +286,7 @@ describe("renderOverview", () => {
       shown.indexOf("No tasks yet."),
     );
     expect(input.mentionUserIds).toEqual([]);
-    expect(buttonIds(input)).toHaveLength(3);
+    expect(buttonIds(input)).toHaveLength(5);
     expect(
       renderOverview(eventRow({ status: "closed" }), NO_TASKS, [], flow)
         .components,

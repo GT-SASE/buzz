@@ -63,7 +63,7 @@ async function eventWithThread(
     [guild.guildId, guild.channelId, name, fakeId(), threadId],
   );
   const eventId = present(rows[0]).id;
-  // These tests are about task reminders, so the event's step list has nothing to say.
+  // These tests are about task reminders, so the event's own reminders have nothing to say.
   await finishEventSteps(w.database, eventId);
   return { eventId, threadId };
 }
