@@ -166,12 +166,31 @@ function command(
   );
 }
 
+let pingable: { users: string[]; roles: string[] };
+
+/** Lets this test's messages ping these too, on top of those allowed already. */
+function allow({
+  users = [],
+  roles = [],
+}: {
+  users?: string[];
+  roles?: string[];
+}) {
+  pingable = {
+    users: [...pingable.users, ...users],
+    roles: [...pingable.roles, ...roles],
+  };
+  world.allowPings(pingable);
+}
+
+/** Puts someone on a step, which pings them in the post. */
 function assign(
   event: Seeded,
   step: string,
   userId: string,
   who: Record<string, unknown> = officer(),
 ) {
+  allow({ users: [userId] });
   return world.send(
     command("assign", { event: event.id, step }, { user: userId }, who),
   );
@@ -254,11 +273,12 @@ async function approve(event: Seeded): Promise<void> {
 }
 
 beforeEach(async () => {
+  pingable = { users: [], roles: [] };
   await bindRoles(TREASURY_ROLE, MARKETING_ROLE);
 });
 
 describe("/event assign and unassign", () => {
-  it("puts a member on Budget Sheet and redraws the checklist without pinging", async () => {
+  it("puts a member on Budget Sheet, pings only them in the post, and redraws", async () => {
     const event = await seed();
     const person = fakeId();
 
@@ -279,8 +299,15 @@ describe("/event assign and unassign", () => {
       `event.sheet-done:${event.id}`,
       `event.engage-done:${event.id}`,
       `event.budget-ok:${event.id}`,
+      `event.slides-done:${event.id}`,
+      `event.slides-off:${event.id}`,
     ]);
-    expect(postedIn(event)).toEqual([]);
+    expect(postedIn(event).map((post) => post.body)).toMatchObject([
+      {
+        content: `<@${person}> you're on Budget Sheet for **Fall Social**.`,
+        allowed_mentions: { parse: [], users: [person] },
+      },
+    ]);
   });
 
   it.each([
@@ -367,10 +394,11 @@ describe("/event pickup", () => {
   });
 });
 
-it("/event create puts the people picked on their steps before drawing the post", async () => {
+it("/event create puts the people picked on their steps, and pings each in the post", async () => {
   await world.addManagedForum();
   const budget = fakeId();
   const engage = fakeId();
+  allow({ users: [budget, engage] });
 
   await world.send(
     command(
@@ -391,7 +419,16 @@ it("/event create puts the people picked on their steps before drawing the post"
   expect(message.content).toContain(`⬜ Budget Sheet: <@${budget}>`);
   expect(message.content).toContain(`⬜ Engage post: <@${engage}>`);
   expect(message.allowed_mentions).toEqual({ parse: [], users: [] });
-  expect(buttonIds(message)).toHaveLength(3);
+  expect(buttonIds(message)).toHaveLength(5);
+  expect(
+    world.discord
+      .posts()
+      .slice(1)
+      .map((post) => post.body?.allowed_mentions),
+  ).toEqual([
+    { parse: [], users: [budget] },
+    { parse: [], users: [engage] },
+  ]);
 });
 
 describe("the overview's buttons", () => {
@@ -403,14 +440,15 @@ describe("the overview's buttons", () => {
 
     expect(world.discord.lastReply()).toBe(REFUSAL);
     expect((await steps(event.id)).budget_sheet?.status).toBe("open");
-    expect(postedIn(event)).toEqual([]);
+    // Only the assign's ping.
+    expect(postedIn(event)).toHaveLength(1);
   });
 
   it("lets the assignee finish Budget Sheet, pings Treasury once and hides the button", async () => {
     const event = await seed();
     const person = fakeId();
     await assign(event, "budget_sheet", person);
-    world.allowPings({ roles: [TREASURY_ROLE] });
+    allow({ roles: [TREASURY_ROLE] });
 
     const first = click("event.sheet-done", event, plain(person));
     const ran = await world.send(first);
@@ -424,7 +462,7 @@ describe("the overview's buttons", () => {
       completed_by: person,
       handoff_sent: true,
     });
-    const pings = postedIn(event);
+    const pings = postedIn(event).slice(1);
     expect(pings).toHaveLength(1);
     expect(pings[0]?.body).toMatchObject({
       content: `<@&${TREASURY_ROLE}> Budget Sheet for **Fall Social** is done.`,
@@ -438,13 +476,15 @@ describe("the overview's buttons", () => {
     expect(buttonIds(edit?.body)).toEqual([
       `event.engage-done:${event.id}`,
       `event.budget-ok:${event.id}`,
+      `event.slides-done:${event.id}`,
+      `event.slides-off:${event.id}`,
     ]);
   });
 
   it("loses the ping rather than sending it twice when the post can't be reached", async () => {
     const event = await seed();
     const path = `/channels/${event.threadId}/messages`;
-    world.allowPings({ roles: [TREASURY_ROLE] });
+    allow({ roles: [TREASURY_ROLE] });
     world.discord.fail(
       "POST",
       new RegExp(`^${path}$`),
@@ -466,7 +506,7 @@ describe("the overview's buttons", () => {
 
   it("lets an officer finish Engage post with nobody assigned, and pings Marketing", async () => {
     const event = await seed();
-    world.allowPings({ roles: [MARKETING_ROLE] });
+    allow({ roles: [MARKETING_ROLE] });
 
     await world.send(click("event.engage-done", event, officer()));
 
@@ -551,6 +591,177 @@ describe("the overview's buttons", () => {
   });
 });
 
+describe("Engage picture added, Slides and No slides needed", () => {
+  it("shows Engage picture added once Engage post is done, for Marketing and not a member", async () => {
+    const event = await seed();
+    await assign(event, "engage_post", fakeId());
+    const pictureButton = `event.picture-done:${event.id}`;
+    expect(buttonIds(lastOverviewEdit(event)?.body)).not.toContain(
+      pictureButton,
+    );
+    allow({ roles: [MARKETING_ROLE] });
+    await world.send(click("event.engage-done", event, officer()));
+    expect(buttonIds(lastOverviewEdit(event)?.body)).toContain(pictureButton);
+
+    const refused = await world.send(
+      click("event.picture-done", event, plain()),
+    );
+    expect(refused.reply.data?.content).toBe(REFUSAL);
+    const posts = postedIn(event).length;
+    const adder = fakeId();
+    await world.send(click("event.picture-done", event, marketer(adder)));
+
+    expect((await steps(event.id)).engage_picture).toMatchObject({
+      status: "done",
+      completed_by: adder,
+    });
+    expect(postedIn(event)).toHaveLength(posts);
+    expect(lastOverviewEdit(event)?.body?.content).toContain(
+      `✅ Engage picture added by <@${adder}>`,
+    );
+  });
+
+  it("lets a Slides assignee mark Slides done, pinging nobody", async () => {
+    const event = await seed();
+    const person = fakeId();
+    await assign(event, "slides", person);
+
+    await world.send(click("event.slides-done", event, plain(person)));
+
+    expect((await steps(event.id)).slides?.status).toBe("done");
+    expect(world.discord.lastReply()).toContain(
+      "Marked Slides done for **Fall Social**.",
+    );
+    // Only the assign's ping.
+    expect(postedIn(event)).toHaveLength(1);
+  });
+
+  it("lets an officer mark Slides not needed, refuses a member, and assigning undoes it", async () => {
+    const event = await seed();
+
+    const refused = await world.send(click("event.slides-off", event, plain()));
+    expect(refused.reply.data?.content).toBe(REFUSAL);
+    await world.send(click("event.slides-off", event, officer()));
+
+    const edit = lastOverviewEdit(event);
+    expect(edit?.body?.content).toContain("➖ Slides: not needed");
+    expect(buttonIds(edit?.body)).not.toContain(
+      `event.slides-done:${event.id}`,
+    );
+    expect(postedIn(event)).toEqual([]);
+
+    const person = fakeId();
+    const who = fakeId();
+    await assign(event, "slides", person, officer(who));
+    expect(lastOverviewEdit(event)?.body?.content).toContain(
+      `⬜ Slides: <@${person}>`,
+    );
+    expect(postedIn(event).map((post) => post.body)).toMatchObject([
+      { allowed_mentions: { users: [person] } },
+      {
+        content: `No slides needed undone by <@${who}>.`,
+        allowed_mentions: { parse: [], users: [] },
+      },
+    ]);
+  });
+});
+
+describe("/event undo", () => {
+  const undo = (event: Seeded, step: string, who = officer()) =>
+    world.send(command("undo", { event: event.id, step }, {}, who));
+
+  const finish = async (
+    event: Seeded,
+    kind: "engage_post" | "engage_picture",
+  ) => {
+    const done = await completeEventStep(world.db, {
+      guildId: GUILD_ID,
+      eventId: event.id,
+      kind,
+      actorId: fakeId(),
+    });
+    expect(done).toEqual({ ok: true, value: true });
+  };
+
+  it("reopens a step, notes who did it without a ping, and redraws", async () => {
+    const event = await seed();
+    await approve(event);
+    const who = fakeId();
+
+    await undo(event, "budget_approved", officer(who));
+
+    expect((await steps(event.id)).budget_approved?.status).toBe("open");
+    expect(postedIn(event).map((post) => post.body)).toMatchObject([
+      {
+        content: `Budget approved reopened by <@${who}>.`,
+        allowed_mentions: { parse: [], users: [] },
+      },
+    ]);
+    expect(buttonIds(lastOverviewEdit(event)?.body)).toContain(
+      `event.budget-ok:${event.id}`,
+    );
+
+    await undo(event, "budget_approved");
+    expect(world.discord.lastReply()).toContain(
+      "Budget approved for **Fall Social** isn't done, so there's nothing to undo.",
+    );
+  });
+
+  it("reopens Engage picture added along with Engage post", async () => {
+    const event = await seed();
+    await finish(event, "engage_post");
+    await finish(event, "engage_picture");
+
+    const who = fakeId();
+
+    await undo(event, "engage_post", officer(who));
+
+    const after = await steps(event.id);
+    expect(after.engage_post?.status).toBe("open");
+    expect(after.engage_picture?.status).toBe("open");
+    expect(postedIn(event).at(-1)?.body).toMatchObject({
+      content: `Engage post reopened by <@${who}>. This also reopened Engage picture added.`,
+      allowed_mentions: { parse: [], users: [] },
+    });
+
+    // Without the picture added, the line is the plain one.
+    await finish(event, "engage_post");
+    await undo(event, "engage_post", officer(who));
+    expect(postedIn(event).at(-1)?.body).toMatchObject({
+      content: `Engage post reopened by <@${who}>.`,
+      allowed_mentions: { parse: [], users: [] },
+    });
+  });
+
+  it("undoes No slides needed", async () => {
+    const event = await seed();
+    await world.send(click("event.slides-off", event, officer()));
+    const who = fakeId();
+
+    await undo(event, "slides_needed", officer(who));
+
+    expect(postedIn(event).map((post) => post.body)).toMatchObject([
+      {
+        content: `No slides needed undone by <@${who}>.`,
+        allowed_mentions: { parse: [], users: [] },
+      },
+    ]);
+    expect(lastOverviewEdit(event)?.body?.content).toContain(
+      "⬜ Slides: nobody assigned",
+    );
+  });
+
+  it("refuses a member who is not an officer", async () => {
+    const event = await seed();
+    await approve(event);
+
+    const ran = await undo(event, "budget_approved", treasurer());
+
+    expect(ran.reply.data?.content).toBe(REFUSAL);
+    expect((await steps(event.id)).budget_approved?.status).toBe("done");
+  });
+});
+
 /**
  * The workflow functions at the SQL level: what the access layer cannot reach, such as
  * the functions the bot's role may not call and refusals a well-behaved caller never
@@ -587,9 +798,14 @@ describe("the event workflow functions", () => {
       [eventId],
     );
     expect(rows).toEqual(
-      ["budget_sheet", "engage_post", "budget_approved", "food_pickup"].map(
-        (kind) => ({ kind, status: "open" }),
-      ),
+      [
+        "budget_sheet",
+        "engage_post",
+        "engage_picture",
+        "budget_approved",
+        "slides",
+        "food_pickup",
+      ].map((kind) => ({ kind, status: "open" })),
     );
   });
 
@@ -607,6 +823,18 @@ describe("the event workflow functions", () => {
     const eventId = await insertEvent(db, guild);
     expect(
       await errorCodeOf(value(sql, [eventId, guild.guildId, fakeId()])),
+    ).toBe("22023");
+  });
+
+  it("refuses to reopen Food pickup", async () => {
+    const eventId = await insertEvent(db, guild);
+    expect(
+      await errorCodeOf(
+        value(`public.reopen_event_step($1, $2, 'food_pickup')`, [
+          eventId,
+          guild.guildId,
+        ]),
+      ),
     ).toBe("22023");
   });
 

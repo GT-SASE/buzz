@@ -4,6 +4,7 @@ import { assignRoutes, assignSubcommand } from "../tasks/assign.ts";
 import { deleteRoutes, deleteSubcommand } from "../tasks/delete.ts";
 import { doneRoutes, doneSubcommand } from "../tasks/done.ts";
 import { editRoutes, editSubcommand } from "../tasks/edit.ts";
+import { reopenRoutes, reopenSubcommand } from "../tasks/reopen.ts";
 import { refreshOverview } from "../events/overview.ts";
 import type { TaskDependencies } from "../tasks/shared.ts";
 import type { Handler } from "./router.ts";
@@ -20,6 +21,7 @@ export function createTaskHandler(dependencies: TaskDependencies): Handler {
           editSubcommand,
           deleteSubcommand,
           doneSubcommand,
+          reopenSubcommand,
         ],
       },
     ],
@@ -28,6 +30,7 @@ export function createTaskHandler(dependencies: TaskDependencies): Handler {
       ...editRoutes(dependencies),
       ...deleteRoutes(dependencies),
       ...doneRoutes(dependencies),
+      ...reopenRoutes(dependencies),
     ],
   };
 }

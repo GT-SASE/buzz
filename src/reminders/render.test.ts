@@ -1,12 +1,16 @@
 import { describe, expect, it } from "bun:test";
-import type { EventReminderCandidate, EventStepKind } from "../db/types.ts";
+import {
+  EVENT_STEP_KINDS,
+  type EventReminderCandidate,
+  type EventStepKind,
+} from "../db/types.ts";
 import { HOSTILE_TEXT } from "../../test/support/hostile-text.ts";
 import { safe, safeTextValue, type ChunkLine } from "../discord/safe-text.ts";
 import { channelMessage } from "../discord/outbound.ts";
 import { parseIsoDate, type DateOnly } from "../lib/dates.ts";
 import {
-  renderDailySteps,
   renderEventDay,
+  renderEventReminder,
   renderPickup,
 } from "./event-render.ts";
 import {
@@ -198,18 +202,14 @@ describe("the Mark done button", () => {
   });
 });
 
-// The event step and Food pickup reminders.
+// The event countdown and Food pickup reminders.
 const DAY = date("2026-11-15");
 const CREATOR = fakeId(2);
 const ROLE = fakeId(3);
 const ALICE = fakeId(10);
 const BOB = fakeId(11);
-const ALL_DONE: EventStepKind[] = [
-  "budget_sheet",
-  "engage_post",
-  "budget_approved",
-  "food_pickup",
-];
+const MARKETING = fakeId(5);
+const COMMITTEE = fakeId(6);
 
 function candidate(
   overrides: Partial<EventReminderCandidate> = {},
@@ -226,9 +226,13 @@ function candidate(
     pickup_time: null,
     timezone: "America/New_York",
     events_director_role_id: ROLE,
-    steps: ALL_DONE.map((kind) => ({
+    marketing_role_id: MARKETING,
+    events_committee_role_id: COMMITTEE,
+    steps: EVENT_STEP_KINDS.map((kind) => ({
       kind,
       status: done.includes(kind) ? "done" : "open",
+      completed_at: null,
+      not_needed: false,
     })),
     assignees: [],
     log: [],
@@ -249,51 +253,27 @@ describe("renderEventDay", () => {
   });
 });
 
-describe("renderDailySteps", () => {
-  it("pings each step's people, and lists approval without a ping", () => {
-    const rendered = renderDailySteps(
-      candidate({
-        assignees: [
-          { kind: "budget_sheet", user_id: ALICE },
-          { kind: "budget_sheet", user_id: BOB },
-          { kind: "engage_post", user_id: BOB },
-        ],
-      }),
+describe("renderEventReminder", () => {
+  it("says so for a role that is not set up, and pings nobody for it", () => {
+    const rendered = renderEventReminder(
+      "event_today",
+      // A role set to the server itself would be @everyone.
+      candidate({ event_date: DAY, events_committee_role_id: fakeId(1) }),
       DAY,
     );
     expect(safeTextValue(rendered.content)).toBe(
-      [
-        "**Still to do for Spring social** (on Fri, Nov 20, in 5 days)",
-        `- Budget Sheet: <@${ALICE}> <@${BOB}>`,
-        `- Engage post: <@${BOB}>`,
-        "- Budget approved: waiting for approval",
-      ].join("\n"),
-    );
-    expect(rendered.mentionUserIds).toEqual([ALICE, BOB]);
-    expect(rendered.mentionRoleIds).toEqual([]);
-  });
-
-  it("pings the Events Directors role only for a step nobody is on", () => {
-    const rendered = renderDailySteps(
-      candidate({ assignees: [{ kind: "engage_post", user_id: ALICE }] }),
-      DAY,
-    );
-    expect(safeTextValue(rendered.content)).toContain(
-      `- Budget Sheet: nobody is on it yet, <@&${ROLE}> please assign someone`,
+      `<@&${ROLE}> **Spring social** is today, Sun, Nov 15. Run /setup to choose the Events Committee role, so the next one pings it.`,
     );
     expect(rendered.mentionRoleIds).toEqual([ROLE]);
-  });
-
-  it("never mentions Food pickup or pings the creator", () => {
-    const rendered = renderDailySteps(
-      candidate({}, ["budget_sheet", "engage_post"]),
+    const unset = renderEventReminder(
+      "engage_picture_late",
+      candidate({ marketing_role_id: null }),
       DAY,
     );
-    const content = safeTextValue(rendered.content);
-    expect(content).not.toMatch(/food pickup/i);
-    expect(content).not.toContain(CREATOR);
-    expect(rendered.mentionUserIds).toEqual([]);
-    expect(rendered.mentionRoleIds).toEqual([]);
+    expect(safeTextValue(unset.content)).toBe(
+      "Engage picture for **Spring social** hasn't been added yet. Run /setup to choose the Marketing Committee role, so the next one pings it.",
+    );
+    expect(unset.mentionRoleIds).toEqual([]);
   });
 });
 
@@ -310,7 +290,7 @@ describe("renderPickup", () => {
         ],
         ...overrides,
       },
-      ALL_DONE,
+      ["food_pickup"],
     );
 
   it("pings every pickup person with the time and the day", () => {

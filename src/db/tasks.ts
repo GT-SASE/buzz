@@ -342,6 +342,26 @@ export async function markTaskDoneAsOfficer(
 }
 
 /**
+ * Reopens a done task, for an officer's undo. Its reminders follow the due date again,
+ * as for any open task. Fails as `not_found` if it is open or deleted, and as
+ * `parent_unavailable` on a closed event.
+ */
+export async function reopenTask(
+  db: DbClient,
+  key: TaskKey,
+): Promise<DbResult<TaskRow>> {
+  return changedRow(
+    await query<TaskRow>(
+      db,
+      sql`update tasks set status = 'open', completed_at = null
+      where id = ${key.taskId} and guild_id = ${key.guildId} and status = 'done'
+        and deleted_at is null
+      returning ${TASK_COLUMNS}`,
+    ),
+  );
+}
+
+/**
  * Sets all three editable fields in one write, so an edit of several either lands
  * whole or not at all. The caller passes the values it read for any left unchanged,
  * which is safe because the write only matches that version of the row. A new person

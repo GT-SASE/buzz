@@ -8,11 +8,14 @@ import { describe, expect, it } from "bun:test";
 import {
   assignEventStep,
   completeEventStep,
+  reopenEventStep,
   setEventPickupTime,
+  setSlidesNotNeeded,
 } from "../../src/db/event-steps.ts";
 import type {
   AssignableStepKind,
   CompletableStepKind,
+  EventReminderKind,
 } from "../../src/db/types.ts";
 import type { WorkflowGuildFixture } from "./fixtures.ts";
 import { fakeId, present, queryAs } from "./harness.ts";
@@ -64,7 +67,9 @@ async function assign(
   kind: AssignableStepKind,
   userId = fakeId(),
 ): Promise<string> {
-  await ok(assignEventStep(w.db, { ...stepOf(made), kind, userId }));
+  expect(
+    await assignEventStep(w.db, { ...stepOf(made), kind, userId }),
+  ).toEqual({ ok: true, value: "added" });
   return userId;
 }
 
@@ -112,7 +117,7 @@ async function jobResults(): Promise<Record<string, unknown>> {
   return (await w.jobRow()).results;
 }
 
-/** A daily step list claim on the given date, left by a run that crashed. */
+/** An "is today" claim on the given date, left by a run that crashed. */
 async function claimAgo(
   eventId: string,
   reminderDate: string,
@@ -120,8 +125,36 @@ async function claimAgo(
 ): Promise<void> {
   await w.database.query(
     `INSERT INTO public.event_reminder_log (event_id, kind, reminder_date, claimed_at)
-     VALUES ($1, 'daily_steps', $2, now() - make_interval(mins => $3))`,
+     VALUES ($1, 'event_today', $2, now() - make_interval(mins => $3))`,
     [eventId, reminderDate, minutes],
+  );
+}
+
+async function slidesNotNeeded(made: EventFixture): Promise<void> {
+  await ok(setSlidesNotNeeded(w.db, { ...stepOf(made), notNeeded: true }));
+}
+
+/** Engage post done at noon on the given date. */
+async function engageDoneOn(made: EventFixture, day: string): Promise<void> {
+  await complete(made, "engage_post");
+  await w.database.query(
+    `UPDATE public.event_steps SET completed_at = $2
+     WHERE event_id = $1 AND kind = 'engage_post'`,
+    [made.eventId, `${day}T12:00:00Z`],
+  );
+}
+
+/**
+ * The Saturday ping goes by the calendar, so an event a few days out gets one on some
+ * days and not others. These leave it out.
+ */
+function besidesSaturday<Row extends { kind: string }>(rows: Row[]): Row[] {
+  return rows.filter((row) => row.kind !== "marketing_saturday");
+}
+
+function sentBesidesSaturday(guild: WorkflowGuildFixture) {
+  return w.sent.filter(
+    (message) => !message.roles.includes(guild.marketingRoleId),
   );
 }
 
@@ -164,69 +197,245 @@ function failPost(threadId: string, status: number, code: number) {
       : undefined;
 }
 
-describe("the daily step list", () => {
-  it("pings each open step's people, lists approval without a ping, and marks sent", async () => {
+type Setup = (
+  made: EventFixture,
+  guild: WorkflowGuildFixture,
+) => Promise<{ users: string[]; roles: string[] }>;
+
+describe("countdown pings", () => {
+  it.each<[EventReminderKind, number, Setup, string]>([
+    [
+      "steps_unassigned",
+      35,
+      async (made, guild) => {
+        await assign(made, "budget_sheet");
+        return { users: [], roles: [guild.officerRoleId] };
+      },
+      "Nobody is on Engage post for **Spring social**.",
+    ],
+    [
+      "budget_due",
+      28,
+      async (made) => ({
+        users: [await assign(made, "budget_sheet")],
+        roles: [],
+      }),
+      "Budget Sheet for **Spring social** is due.",
+    ],
+    [
+      "engage_due",
+      28,
+      async (made) => ({
+        users: [await assign(made, "engage_post")],
+        roles: [],
+      }),
+      "Engage post for **Spring social** is due.",
+    ],
+    [
+      "budget_overdue",
+      21,
+      async (made, guild) => ({
+        users: [await assign(made, "budget_sheet")],
+        roles: [guild.officerRoleId],
+      }),
+      "Budget Sheet for **Spring social** is overdue.",
+    ],
+    [
+      "engage_overdue",
+      21,
+      async (made, guild) => ({
+        users: [await assign(made, "engage_post")],
+        roles: [guild.officerRoleId],
+      }),
+      "Engage post for **Spring social** is overdue.",
+    ],
+    [
+      "engage_picture_late",
+      30,
+      async (made, guild) => {
+        await engageDoneOn(made, dateOffset(-7));
+        return { users: [], roles: [guild.marketingRoleId] };
+      },
+      "Engage picture for **Spring social** hasn't been added yet.",
+    ],
+    [
+      "marketing_week",
+      7,
+      (_made, guild) =>
+        Promise.resolve({ users: [], roles: [guild.marketingRoleId] }),
+      "in 7 days.",
+    ],
+    [
+      "slides_unassigned",
+      7,
+      (_made, guild) =>
+        Promise.resolve({ users: [], roles: [guild.officerRoleId] }),
+      "Nobody is on Slides for **Spring social**.",
+    ],
+    [
+      "pickup_unset",
+      7,
+      async (made, guild) => {
+        expect(
+          await setEventPickupTime(w.db, {
+            ...stepOf(made),
+            pickupTime: "17:30",
+          }),
+        ).toEqual({ ok: true, value: false });
+        return { users: [], roles: [guild.officerRoleId] };
+      },
+      "Food pickup for **Spring social** isn't set up: nobody is on it.",
+    ],
+    [
+      "slides_due",
+      2,
+      async (made) => ({ users: [await assign(made, "slides")], roles: [] }),
+      "Slides for **Spring social** are needed for the event on",
+    ],
+    [
+      "slides_tomorrow",
+      1,
+      async (made) => ({ users: [await assign(made, "slides")], roles: [] }),
+      "Slides for **Spring social** are needed for the event tomorrow",
+    ],
+    [
+      "event_today",
+      0,
+      (_made, guild) =>
+        Promise.resolve({
+          users: [],
+          roles: [guild.officerRoleId, guild.eventsCommitteeRoleId],
+        }),
+      "**Spring social** is today",
+    ],
+  ])("sends %s on its day", async (kind, days, setup, text) => {
     const guild = await w.guildInZone();
-    const made = await event(guild, 5);
-    const budget = [
-      await assign(made, "budget_sheet"),
-      await assign(made, "budget_sheet"),
-    ];
-    const engage = await assign(made, "engage_post");
+    const made = await event(guild, days);
+    const who = await setup(made, guild);
 
     expect((await w.run([guild])).status).toBe("succeeded");
 
-    expect(w.sent).toHaveLength(1);
-    const message = present(w.sent[0]);
+    const message = present(w.sent.find((sent) => sent.content.includes(text)));
     expect(message.threadId).toBe(made.threadId);
     expect(message.parse).toEqual([]);
-    expect(message.roles).toEqual([]);
-    expect(message.users.sort()).toEqual([...budget, engage].sort());
-    expect(message.content).toContain("Spring social");
-    expect(message.content).toContain(
-      `Budget Sheet: ${budget.map((user) => `<@${user}>`).join(" ")}`,
-    );
-    expect(message.content).toContain(`Engage post: <@${engage}>`);
-    expect(message.content).toContain("Budget approved: waiting for approval");
-    expect(message.content).not.toMatch(/food pickup/i);
-    expect(message.content).toContain("in 5 days");
-    expect(await logRows(made.eventId)).toMatchObject([
-      { kind: "daily_steps", reminder_date: dateOffset(0), state: "sent" },
-    ]);
+    expect(message.users).toEqual(who.users);
+    expect(message.roles.sort()).toEqual(who.roles.sort());
+    expect(
+      (await logRows(made.eventId)).filter((row) => row.kind === kind),
+    ).toMatchObject([{ reminder_date: dateOffset(0), state: "sent" }]);
   });
 
-  it("leaves out finished steps and pings the Events Directors for one nobody is on", async () => {
+  it.each<[EventReminderKind, number, (made: EventFixture) => Promise<void>]>([
+    [
+      "steps_unassigned",
+      35,
+      async (made) => {
+        await assign(made, "budget_sheet");
+        await assign(made, "engage_post");
+      },
+    ],
+    [
+      "budget_due",
+      28,
+      async (made) => {
+        await assign(made, "budget_sheet");
+        await complete(made, "budget_sheet");
+      },
+    ],
+    ["budget_due", 28, () => Promise.resolve()],
+    ["engage_due", 28, () => Promise.resolve()],
+    ["budget_overdue", 21, (made) => complete(made, "budget_sheet")],
+    ["engage_overdue", 21, (made) => complete(made, "engage_post")],
+    [
+      "engage_picture_late",
+      30,
+      async (made) => {
+        await engageDoneOn(made, dateOffset(-7));
+        await complete(made, "engage_picture");
+      },
+    ],
+    ["slides_unassigned", 7, slidesNotNeeded],
+    [
+      "pickup_unset",
+      7,
+      async (made) => {
+        await assign(made, "food_pickup");
+        await pickupAt(made, "17:30");
+      },
+    ],
+    ["slides_due", 2, () => Promise.resolve()],
+    [
+      "slides_tomorrow",
+      1,
+      async (made) => {
+        await assign(made, "slides");
+        await slidesNotNeeded(made);
+      },
+    ],
+  ])("skips %s when it is not needed", async (kind, days, setup) => {
     const guild = await w.guildInZone();
-    const made = await event(guild, 3);
-    await assign(made, "budget_sheet");
+    const made = await event(guild, days);
+    await setup(made);
+
+    expect((await w.run([guild])).status).toBe("succeeded");
+
+    expect((await logRows(made.eventId)).map((row) => row.kind)).not.toContain(
+      kind,
+    );
+  });
+
+  it("sends a due ping again once the step is undone", async () => {
+    const guild = await w.guildInZone();
+    const made = await event(guild, 28);
+    const user = await assign(made, "budget_sheet");
     await complete(made, "budget_sheet");
+    await ok(reopenEventStep(w.db, { ...stepOf(made), kind: "budget_sheet" }));
 
-    await w.run([guild]);
+    expect((await w.run([guild])).status).toBe("succeeded");
 
-    const message = present(w.sent[0]);
-    expect(message.content).not.toContain("Budget Sheet");
-    expect(message.content).toContain(
-      `Engage post: nobody is on it yet, <@&${guild.officerRoleId}>`,
+    const message = present(
+      w.sent.find((sent) => sent.content.includes("Budget Sheet")),
     );
-    expect(message.users).toEqual([]);
-    expect(message.roles).toEqual([guild.officerRoleId]);
+    expect(message.users).toEqual([user]);
   });
 
-  it("goes out on the event's day, and not after it", async () => {
+  it("sends nothing for a closed event", async () => {
     const guild = await w.guildInZone();
-    const today = await event(guild, 0);
-    const past = await event(guild, -1);
+    const events = [await event(guild, 0), await event(guild, 7)];
+    await w.database.query(
+      `UPDATE public.events SET status = 'closed' WHERE id = ANY($1)`,
+      [events.map((made) => made.eventId)],
+    );
 
     await w.run([guild]);
 
-    expect(w.sent.map((message) => message.threadId)).toEqual([today.threadId]);
-    expect(present(w.sent[0]).content).toContain("today");
-    expect(await logRows(past.eventId)).toEqual([]);
+    expect(w.posts()).toEqual([]);
+    for (const made of events) {
+      expect(await logRows(made.eventId)).toEqual([]);
+    }
+  });
+
+  it("sends no daily list, and does not catch up a day already past", async () => {
+    const guild = await w.guildInZone();
+    // Every step open and nobody on any, 3 to 6 days out: past the week-before pings.
+    const events = [
+      await event(guild, 3),
+      await event(guild, 4),
+      await event(guild, 5),
+      await event(guild, 6),
+    ];
+
+    expect((await w.run([guild])).status).toBe("succeeded");
+
+    expect(sentBesidesSaturday(guild)).toEqual([]);
+    for (const made of events) {
+      expect(besidesSaturday(await logRows(made.eventId))).toEqual([]);
+    }
   });
 
   it("makes no second post, nor any request, on a rerun the same day", async () => {
     const guild = await w.guildInZone();
-    await event(guild, 5);
+    await event(guild, 0);
 
     expect((await w.run([guild])).status).toBe("succeeded");
     w.requests = [];
@@ -244,8 +453,8 @@ describe("Food pickup reminders", () => {
 
     await w.run([guild]);
 
-    expect(w.sent).toHaveLength(1);
-    const message = present(w.sent[0]);
+    expect(sentBesidesSaturday(guild)).toHaveLength(1);
+    const message = present(sentBesidesSaturday(guild)[0]);
     expect(message.threadId).toBe(made.threadId);
     expect(message.users.sort()).toEqual([...people].sort());
     expect(message.roles).toEqual([]);
@@ -254,12 +463,12 @@ describe("Food pickup reminders", () => {
       `at <t:${String(Date.parse(`${dateOffset(2)}T17:30:00Z`) / 1000)}:t>`,
     );
     expect(message.content).toContain("in 2 days");
-    expect(await logRows(made.eventId)).toMatchObject([
+    expect(besidesSaturday(await logRows(made.eventId))).toMatchObject([
       { kind: "pickup_before", reminder_date: dateOffset(0), state: "sent" },
     ]);
   });
 
-  it("pings them again on the day, apart from the step list, before the budget is approved", async () => {
+  it("pings them again on the day, apart from the event-day ping, before the budget is approved", async () => {
     const guild = await w.guildInZone();
     const made = await event(guild, 0);
     await complete(made, "budget_sheet", "engage_post");
@@ -278,8 +487,8 @@ describe("Food pickup reminders", () => {
     expect(pickup.users).toEqual([person]);
     expect(pickup.content).toContain("today");
     expect((await logRows(made.eventId)).map((row) => row.kind)).toEqual([
-      "daily_steps",
       "pickup_day",
+      "event_today",
     ]);
   });
 
@@ -292,8 +501,8 @@ describe("Food pickup reminders", () => {
 
       await w.run([guild]);
 
-      expect(w.posts()).toEqual([]);
-      expect(await logRows(made.eventId)).toEqual([]);
+      expect(sentBesidesSaturday(guild)).toEqual([]);
+      expect(besidesSaturday(await logRows(made.eventId))).toEqual([]);
     },
   );
 });
@@ -301,8 +510,8 @@ describe("Food pickup reminders", () => {
 describe("claims left by an earlier run", () => {
   it("takes over a stale claim and sends it once, but waits on a fresh one", async () => {
     const guild = await w.guildInZone();
-    const stale = await event(guild, 4);
-    const fresh = await event(guild, 4);
+    const stale = await event(guild, 0);
+    const fresh = await event(guild, 0);
     await claimAgo(stale.eventId, dateOffset(0), 90);
     await claimAgo(fresh.eventId, dateOffset(0), 1);
 
@@ -318,7 +527,7 @@ describe("claims left by an earlier run", () => {
 
   it("closes yesterday's stale claim as skipped, and sends today's", async () => {
     const guild = await w.guildInZone();
-    const made = await event(guild, 4);
+    const made = await event(guild, 0);
     await claimAgo(made.eventId, dateOffset(-1), 24 * 60);
 
     await w.run([guild]);
@@ -334,7 +543,7 @@ describe("claims left by an earlier run", () => {
     "keeps a stale claim while %s, and sends it once that is undone",
     async (_label, pause) => {
       const guild = await w.guildInZone();
-      const made = await event(guild, 4);
+      const made = await event(guild, 0);
       await claimAgo(made.eventId, dateOffset(0), 90);
       await pause(guild, false);
 
@@ -358,8 +567,7 @@ describe("claims left by an earlier run", () => {
 
   it("sends without pings from the third attempt", async () => {
     const guild = await w.guildInZone();
-    const made = await event(guild, 4);
-    const person = await assign(made, "budget_sheet");
+    const made = await event(guild, 0);
     await claimAgo(made.eventId, dateOffset(0), 90);
     await w.database.query(
       `UPDATE public.event_reminder_log SET attempts = 2 WHERE event_id = $1`,
@@ -371,14 +579,14 @@ describe("claims left by an earlier run", () => {
     const message = present(w.sent[0]);
     expect(message.users).toEqual([]);
     expect(message.roles).toEqual([]);
-    expect(message.content).toContain(`<@${person}>`);
+    expect(message.content).toContain(`<@&${guild.officerRoleId}>`);
   });
 });
 
 describe("what stops event reminders", () => {
   it("sends nothing to a guild no longer allowed", async () => {
     const guild = await w.guildInZone();
-    const made = await event(guild, 4);
+    const made = await event(guild, 0);
     await w.run([]);
     expect(w.requests).toEqual([]);
     expect(await logRows(made.eventId)).toEqual([]);
@@ -390,7 +598,7 @@ describe("what stops event reminders", () => {
 
   it("names an event whose post is gone, and sends nothing", async () => {
     const guild = await w.guildInZone();
-    const made = await event(guild, 4);
+    const made = await event(guild, 0);
     await w.database.query(
       `UPDATE public.events SET thread_status = 'missing' WHERE id = $1`,
       [made.eventId],
@@ -411,8 +619,8 @@ describe("what stops event reminders", () => {
     "when a thread %s, goes on to the others and leaves the claim %s",
     async (_label, state, status, code, runStatus) => {
       const guild = await w.guildInZone();
-      const made = await event(guild, 4);
-      const other = await event(guild, 5);
+      const made = await event(guild, 0);
+      const other = await event(guild, 0);
       w.discordGate = failPost(made.threadId, status, code);
 
       expect<string>((await w.run([guild])).status).toBe(runStatus);

@@ -6,7 +6,6 @@ import {
   assertPublicRowsUnscoped,
   authorize,
   autocompleteScope,
-  canApproveBudget,
   canCompleteStep,
   COMMAND_POLICY,
   holdsTierFor,
@@ -33,6 +32,7 @@ const USER = "6".repeat(18);
 const OTHER_USER = "7".repeat(18);
 const EBOARD_ROLE = "8".repeat(18);
 const TREASURY_ROLE = "9".repeat(18);
+const MARKETING_ROLE = "12".repeat(9);
 const DELETED_AT = "2026-01-01T00:00:00Z";
 
 const CONFIG: AuthorizationConfig = {
@@ -41,6 +41,7 @@ const CONFIG: AuthorizationConfig = {
   admin_role_id: ADMIN_ROLE,
   eboard_role_id: EBOARD_ROLE,
   treasury_role_id: TREASURY_ROLE,
+  marketing_role_id: MARKETING_ROLE,
 };
 
 const EVENT: EventResource = { guild_id: GUILD, deleted_at: null };
@@ -63,7 +64,16 @@ const ADMIN = actor({ roleIds: new Set([ADMIN_ROLE]) });
 const ADMINISTRATOR = actor({ isAdministrator: true });
 const EBOARD = actor({ roleIds: new Set([EBOARD_ROLE]) });
 const TREASURY = actor({ roleIds: new Set([TREASURY_ROLE]) });
-const EVERY_KIND = [MEMBER, OFFICER, EBOARD, TREASURY, ADMIN, ADMINISTRATOR];
+const MARKETING = actor({ roleIds: new Set([MARKETING_ROLE]) });
+const EVERY_KIND = [
+  MEMBER,
+  OFFICER,
+  EBOARD,
+  TREASURY,
+  MARKETING,
+  ADMIN,
+  ADMINISTRATOR,
+];
 
 /** Written out by hand, so a slip in the policy would have to be made twice. */
 const EXPECTED_ACTIONS: readonly (readonly [string, Tier, Scope])[] = [
@@ -79,12 +89,16 @@ const EXPECTED_ACTIONS: readonly (readonly [string, Tier, Scope])[] = [
   ["event.assign", "officer", "event"],
   ["event.unassign", "officer", "event"],
   ["event.pickup", "officer", "event"],
+  ["event.undo", "officer", "event"],
   ["event.approve_budget", "budget", "event"],
+  ["event.picture_done", "marketing", "event"],
+  ["event.slides_off", "officer", "event"],
   ["event.step_done", "self", "none"],
   ["task.assign", "officer", "event"],
   ["task.edit", "officer", "task"],
   ["task.delete", "officer", "task"],
   ["task.done", "self", "task"],
+  ["task.reopen", "officer", "task"],
   ["ping", "public", "none"],
   ["mytasks", "self", "none"],
 ];
@@ -100,7 +114,7 @@ function actionsInScope(...scopes: Scope[]): string[] {
 }
 
 const EVENT_SCOPED = actionsInScope("event");
-const OFFICER_TASK_SCOPED = ["task.edit", "task.delete"];
+const OFFICER_TASK_SCOPED = ["task.edit", "task.delete", "task.reopen"];
 
 /**
  * For input the types refuse: names that are not actions, rows missing a column,
@@ -203,6 +217,7 @@ describe("tiers", () => {
     self: EVERY_KIND,
     officer: [OFFICER, EBOARD, ADMIN, ADMINISTRATOR],
     budget: [OFFICER, EBOARD, TREASURY, ADMIN, ADMINISTRATOR],
+    marketing: [OFFICER, EBOARD, MARKETING, ADMIN, ADMINISTRATOR],
     admin: [ADMIN, ADMINISTRATOR],
     bindings: [ADMINISTRATOR],
   };
@@ -214,6 +229,7 @@ describe("tiers", () => {
     ["mytasks", "self"],
     ["event.close", "officer"],
     ["event.approve_budget", "budget"],
+    ["event.picture_done", "marketing"],
     ["config.change", "admin"],
     ["setup", "bindings"],
   ] as const)("%s allows only tier %s", (action, tier) => {
@@ -305,7 +321,7 @@ describe("the event workflow", () => {
     ["Treasury", TREASURY, true],
     ["the Administrator bit", ADMINISTRATOR, true],
   ] as const)("budget approval for %s is %s", (_label, who, expected) => {
-    expect(canApproveBudget(who, CONFIG)).toBe(expected);
+    expect(holdsTierFor("event.approve_budget", who, CONFIG)).toBe(expected);
   });
 
   it("lets an assignee or the officer tier complete a step, and no one else", () => {
@@ -320,7 +336,7 @@ describe("the event workflow", () => {
   it("refuses with no config, or another guild's", () => {
     for (const check of [
       (config: AuthorizationConfig | null) =>
-        canApproveBudget(TREASURY, config),
+        holdsTierFor("event.approve_budget", TREASURY, config),
       (config: AuthorizationConfig | null) =>
         canCompleteStep(OFFICER, config, [USER]),
       (config: AuthorizationConfig | null) => isOfficer(ADMINISTRATOR, config),
@@ -376,11 +392,17 @@ describe("a bound role that equals the guild ID", () => {
     admin_role_id: GUILD,
     eboard_role_id: GUILD,
     treasury_role_id: GUILD,
+    marketing_role_id: GUILD,
   };
 
   it("does not give anyone a tier", () => {
     expect(isOfficer(holdsGuildId, allBound)).toBe(false);
-    expect(canApproveBudget(holdsGuildId, allBound)).toBe(false);
+    expect(holdsTierFor("event.approve_budget", holdsGuildId, allBound)).toBe(
+      false,
+    );
+    expect(holdsTierFor("event.picture_done", holdsGuildId, allBound)).toBe(
+      false,
+    );
     expect(authorize("config.view", holdsGuildId, allBound)).toBe(REFUSED);
     expect(
       autocompleteScope("event.close", holdsGuildId, allBound),

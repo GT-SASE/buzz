@@ -21,12 +21,23 @@ Due 2026-11-20. Task 1a2b3c4d, given by @Alex.
 
 The bot then reminds the person 3 days before, 1 day before, on the due day and once when overdue. After a missed run, only the most urgent reminder goes out. Each reminder has a Mark done button too, labelled with the start of the task.
 
-Each event's workflow steps get reminders in the event's post from the same daily run:
+Each event also gets countdown pings in its post from the same morning run. E is the event's day:
 
-- **Step list**, once a day up to and including the event's day, while any step is open. Budget Sheet and Engage post ping the people on them, or the Events Directors role if nobody is. Budget approved is listed without a ping. Food pickup is never on this list. Nothing is sent once Budget Sheet, Engage post and Budget approved are all done.
-- **Food pickup**, two days before the event and on the day, pinging everyone on Food pickup with the time, which Discord shows in each reader's own time zone. These need Food pickup set up, which can be done at any time, before or after the budget is approved.
+| When                 | Who                                       | Only if                                           |
+| -------------------- | ----------------------------------------- | ------------------------------------------------- |
+| E−35                 | Events Directors                          | nobody is on an open Budget Sheet or Engage post  |
+| E−28                 | the people on Budget Sheet or Engage post | someone is on it and it is not done               |
+| E−21                 | those people and Events Directors         | not done                                          |
+| Engage done + 7 days | Marketing Committee                       | Engage picture not added                          |
+| E−7                  | Marketing Committee                       | always                                            |
+| E−7                  | Events Directors                          | nobody on Slides, and it is not marked not needed |
+| E−7                  | Events Directors                          | Food pickup has no time or nobody on it           |
+| Saturday before E    | Marketing Committee                       | E is not a Saturday                               |
+| E−2 and E−1          | the people on Slides                      | someone is on Slides and it is still open         |
+| E−2 and E            | the people on Food pickup, with the time  | Food pickup has a time and a person               |
+| E                    | Events Directors and Events Committee     | always                                            |
 
-None of these go out late: a day's message is sent on that day or not at all.
+Closed events get none. None of these go out late: a day's ping is sent on that day or not at all, so an event made after a ping's day skips it.
 
 Members see their own open tasks with `/mytasks`, privately:
 
@@ -35,18 +46,19 @@ Your open tasks, soonest first
 - 1a2b3c4d, due 2026-11-20, Spring Social: Book the room
 ```
 
-Each event also follows the club's own steps, shown as a checklist in its overview: Budget Sheet, Engage post, Budget approved and Food pickup. Officers put people on steps with `/event assign`, or with the `budget` and `engage` options of `/event create`. The checklist shows who is on each step, without pinging them, and has a button for each step still open:
+Each event also follows the club's own steps, shown as a checklist in its overview: Budget Sheet, Engage post, Engage picture added, Budget approved, Slides and Food pickup. Engage picture added shows once Engage post is done. Officers put people on steps with `/event assign`, or with the `budget` and `engage` options of `/event create`, and the bot pings each person in the post. The checklist shows who is on each step and has a button for each step still open:
 
 ```text
 Checklist
 ✅ Budget Sheet: @Sam
 ⬜ Engage post: @Lee
 ⬜ Budget approved
+⬜ Slides: nobody assigned
 ⬜ Food pickup: time not set, nobody assigned
-[Engage post done] [Budget approved]
+[Engage post done] [Budget approved] [Slides done] [No slides needed]
 ```
 
-When Budget Sheet is marked done, the bot pings the Treasury Committee role once in the post. When the Engage post is marked done, it pings the Marketing Committee role. An officer or the Treasury Committee marks the budget approved, and the bot notes in the post that the budget is approved, without pinging anyone. Food pickup can be set up at any time: a time with `/event pickup`, and people with `/event assign step:Food pickup`. `/mytasks` lists your open steps and food pickups too, upcoming events soonest first, then any step still open on an event that has passed.
+When Budget Sheet is marked done, the bot pings the Treasury Committee role once in the post. When the Engage post is marked done, it pings the Marketing Committee role. An officer or the Treasury Committee marks the budget approved, and the bot notes in the post that the budget is approved, without pinging anyone. Engage picture added, Slides done and No slides needed ping nobody. An officer can reopen a step with `/event undo`, which notes it in the post. Putting someone on Slides undoes No slides needed, and notes that too. Food pickup can be set up at any time: a time with `/event pickup`, and people with `/event assign step:Food pickup`. `/mytasks` lists your open steps and food pickups too, upcoming events soonest first, then any step still open on an event that has passed.
 
 The names, dates and ID above are made up.
 
@@ -104,6 +116,7 @@ Tiers come from the signed request each time, and nothing is cached. Every comma
 | `/task assign`  | Officer                       | Creates a task and pings the person in the post.          |
 | `/task edit`    | Officer                       | Changes the description, due date or person.              |
 | `/task delete`  | Officer                       | Soft-deletes a task, after a Confirm click.               |
+| `/task reopen`  | Officer                       | Reopens a task marked done.                               |
 | `/event create` | Officer                       | Creates an event and its forum post.                      |
 | `/event link`   | Officer                       | Makes the post you are in the home of an event.           |
 | `/event status` | Officer                       | Shows an event and its tasks.                             |
@@ -117,14 +130,18 @@ Tiers come from the signed request each time, and nothing is cached. Every comma
 
 The event's steps have their own commands and buttons:
 
-| Command or button                           | Who can use it                         | What it does                                              |
-| ------------------------------------------- | -------------------------------------- | --------------------------------------------------------- |
-| `/event create` `budget:` `engage:`         | Officer                                | Puts one person each on Budget Sheet and Engage post.     |
-| `/event assign`                             | Officer                                | Puts someone on Budget Sheet, Engage post or Food pickup. |
-| `/event unassign`                           | Officer                                | Takes someone off one of an event's steps.                |
-| `/event pickup`                             | Officer                                | Sets the food pickup time.                                |
-| **Budget Sheet done**, **Engage post done** | The people on that step, or an officer | Ticks the step and pings Treasury or Marketing once.      |
-| **Budget approved**                         | Officer or Treasury Committee          | Ticks the step and notes it in the post, pinging nobody.  |
+| Command or button                           | Who can use it                         | What it does                                             |
+| ------------------------------------------- | -------------------------------------- | -------------------------------------------------------- |
+| `/event create` `budget:` `engage:`         | Officer                                | Puts one person each on Budget Sheet and Engage post.    |
+| `/event assign`                             | Officer                                | Puts someone on a step and pings them in the post.       |
+| `/event unassign`                           | Officer                                | Takes someone off one of an event's steps.               |
+| `/event pickup`                             | Officer                                | Sets the food pickup time.                               |
+| `/event undo`                               | Officer                                | Reopens a done step, or undoes No slides needed.         |
+| **Budget Sheet done**, **Engage post done** | The people on that step, or an officer | Ticks the step and pings Treasury or Marketing once.     |
+| **Budget approved**                         | Officer or Treasury Committee          | Ticks the step and notes it in the post, pinging nobody. |
+| **Engage picture added**                    | Officer or Marketing Committee         | Ticks the step, pinging nobody.                          |
+| **Slides done**                             | The people on Slides, or an officer    | Ticks the step, pinging nobody.                          |
+| **No slides needed**                        | Officer                                | Marks Slides not needed, pinging nobody.                 |
 
 The buttons are on the event's overview. Anyone else who clicks one gets the refusal privately, and the post stays as it is. Food pickup is done once it has a time and at least one person.
 
@@ -183,7 +200,7 @@ These stay true with every control working:
 - **Who did it.** Officer edits, completions and deletes record no actor, so after a stolen officer account they may not be traceable to it. [SECURITY.md](SECURITY.md#what-can-be-attributed) says what can be.
 - **Autocomplete replay.** Discord takes autocomplete choices only in the HTTP response, so they cannot be deferred. Someone holding a captured signed request can replay it for 5 minutes and read current task or event text. Getting one needs a compromised host or proxy.
 - **Floods.** A flood of requests can use up Vercel Hobby's limits and take the bot offline, in most cases for 30 days. It costs availability, not money. Hobby's firewall rules reduce this, and do not stop it.
-- **Missed runs.** Vercel Cron is best effort with no retries. A second cron reduces this, but a reminder can be late or, after a crash, sent twice. An event's step list or Food pickup reminder is never late: if both crons of its day miss, it is not sent.
+- **Missed runs.** Vercel Cron is best effort with no retries. A second cron reduces this, but a reminder can be late or, after a crash, sent twice. An event's countdown pings, Food pickup included, are never late: if both crons of its day miss, they are not sent.
 - **A refused post.** A locked post, or a bot that lost its permissions or was removed, fails the daily run every day until someone fixes it. Nothing alerts on a failed run, so [the runbook](docs/RUNBOOK.md#where-to-look) says what to check each week.
 - **Dependencies.** A compromised dependency would run with full access to the secrets. Pinning and cooldowns lower the odds only.
 - **Backups.** How far back Neon can restore depends on its plan. A former member's text stays in that history and in exports until they expire or are deleted.

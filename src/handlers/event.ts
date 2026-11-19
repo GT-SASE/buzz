@@ -109,7 +109,9 @@ import {
   retryHandoffs,
   STARTING_OWNER_OPTIONS,
   startingOwners,
+  tellStartingOwners,
   unassignSubcommand,
+  undoSubcommand,
   workflowRoutes,
   type StartingOwners,
 } from "../events/workflow.ts";
@@ -556,8 +558,8 @@ async function finishCreate(ctx: FinishContext): Promise<MessageInput> {
 }
 
 /**
- * Puts the people picked on /event create on their steps before the post is drawn, and
- * adds what happened to the reply.
+ * Puts the people picked on /event create on their steps before the post is drawn, pings
+ * them in it once it is, and adds what happened to the reply.
  */
 async function withOwners(
   ctx: FinishContext,
@@ -565,8 +567,9 @@ async function withOwners(
   owners: StartingOwners,
   next: () => Promise<MessageInput>,
 ): Promise<MessageInput> {
-  const notes = await assignStartingOwners(ctx, event, owners);
+  const { notes, started } = await assignStartingOwners(ctx, event, owners);
   const reply = await next();
+  notes.push(...(await tellStartingOwners(ctx, event, started)));
   return notes.length === 0
     ? reply
     : { ...reply, content: lines([reply.content, ...notes]) ?? reply.content };
@@ -1368,6 +1371,7 @@ export const handler: Handler = {
         assignSubcommand,
         unassignSubcommand,
         pickupSubcommand,
+        undoSubcommand,
       ],
     },
   ],
@@ -1469,6 +1473,11 @@ export const handler: Handler = {
     autocompleteRoute({
       path: "event pickup",
       action: "event.pickup",
+      choices: eventChoices,
+    }),
+    autocompleteRoute({
+      path: "event undo",
+      action: "event.undo",
       choices: eventChoices,
     }),
   ],
