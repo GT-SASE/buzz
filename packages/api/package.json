@@ -19,7 +19,7 @@
   "dependencies": {
     "@buzz/auth": "workspace:*",
     "@buzz/db": "workspace:*",
-    "@trpc/server": "^11.28.0",
+    "@trpc/server": "^11.28.3",
     "drizzle-orm": "^0.45.4",
     "nodemailer": "^10.3.1",
     "superjson": "^2.2.6",
