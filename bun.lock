@@ -33,7 +33,7 @@
     },
     "packages/api": {
       "name": "@buzz/api",
-      "version": "0.0.0",
+      "version": "2.5.0",
       "dependencies": {
         "@buzz/auth": "workspace:*",
         "@buzz/db": "workspace:*",
@@ -52,7 +52,7 @@
     },
     "packages/auth": {
       "name": "@buzz/auth",
-      "version": "0.0.0",
+      "version": "2.5.0",
       "dependencies": {
         "@auth/core": "^0.41.3",
         "@auth/drizzle-adapter": "^1.11.3",
@@ -70,7 +70,7 @@
     },
     "packages/db": {
       "name": "@buzz/db",
-      "version": "0.0.0",
+      "version": "2.5.0",
       "dependencies": {
         "@vercel/functions": "^3.11.3",
         "drizzle-orm": "^0.45.4",
@@ -88,7 +88,7 @@
     },
     "packages/mcp": {
       "name": "@buzz/mcp",
-      "version": "0.0.0",
+      "version": "2.5.0",
       "dependencies": {
         "@buzz/db": "workspace:*",
         "@modelcontextprotocol/sdk": "^1.32.2",

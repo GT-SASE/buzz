@@ -85,7 +85,7 @@ Production migrates during the Vercel production build (`scripts/vercel-build.mj
 
 ## Versioning
 
-Footer shows `vX.Y.Z`. `MAJOR.MINOR` is `version` in `sites/web/package.json`; PATCH is first-parent commits since that line last changed and rolls into MINOR at 100. For a feature release worth naming, bump MAJOR.MINOR and add a row to the README version table. Use `buzz_version`.
+One version for the whole repo, shown as `vX.Y.Z` in the footer, the MCP server version and every workspace `package.json`. The site's MAJOR.MINOR is `version` in `sites/web/package.json`; PATCH is first-parent commits since that line last changed and rolls into MINOR at 100. For a feature release worth naming, edit the `version` of every workspace package.json (root, `packages/*`, `sites/*`) to the same new `X.Y.0` (`tests/versions.test.ts` enforces it) and add a row to the README version table. Never change `sites/web/package.json`'s version line otherwise: that resets the footer patch. Use `buzz_version`, which lists each workspace and flags mismatches.
 
 ## How-to
 
