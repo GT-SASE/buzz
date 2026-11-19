@@ -1,0 +1,108 @@
+# AGENTS.md
+
+Guide for coding agents working on buzz, the GT SASE chapter site plus member portal.
+Bun monorepo: Next.js 16, NextAuth, tRPC, Drizzle on Postgres. README.md has the full
+narrative and `docs/site-structure.md` has diagrams. This file is the short, verified version.
+
+## MCP server
+
+`.mcp.json` registers a stdio MCP server (`packages/mcp`, run with `bun packages/mcp/src/index.ts`
+from the repo root). It derives everything from the source at call time, so prefer it over
+trusting any list in prose, including this file:
+
+- `buzz_guide` this file (also the resource `buzz://AGENTS.md`)
+- `buzz_trpc_procedures [filter]` every tRPC procedure: access, query/mutation, file:line
+- `buzz_db_schema [table]` tables, columns, keys, indexes
+- `buzz_migrations` SQL files, latest number, process
+- `buzz_routes` Next routes tagged marketing / portal member / portal admin / api
+- `buzz_version` footer version rule, computed build, README table
+- `buzz_run_checks tasks=[lint|typecheck|format|test|typecheck:tsc] [force]` runs turbo; `test` is refused unless the server env has `TEST_DATABASE_URL` on a local scratch DB
+- `buzz_deploy_status` latest main commit, its Vercel status, live footer version
+
+## Layout
+
+```
+packages/api/src/root.ts        appRouter; every router must be added here by hand
+packages/api/src/routers/*.ts   tRPC routers (chapter committee election event member mentorship page resume)
+packages/api/src/trpc.ts        context and procedure builders (protected, admin, superAdmin)
+packages/api/src/*.ts           pure helpers (page-slug, terms, rate-limit, ...) with unit tests
+packages/db/src/schema.ts       Drizzle schema; all tables are prefixed buzz_
+packages/db/drizzle/            generated SQL migrations + meta; commit them
+packages/db/scripts/            seeds
+packages/auth/src/              NextAuth config and auth()
+packages/mcp/src/               this MCP server
+sites/web/src/app/(marketing)/  public pages, prerendered; [slug] serves CMS pages
+sites/web/src/app/portal/(member)/        member portal pages (needs a session)
+sites/web/src/app/portal/(member)/admin/  officer pages; adminNav lives in sites/web/src/data/portal.ts
+sites/web/src/app/api/          route handlers (trpc, auth, health, resume)
+sites/web/src/components/ui/    vendored Watermelon UI (do not hand-fix; `bun run ui:add`)
+sites/web/src/components/site/  editorial components built on ui
+sites/web/src/data/             content constants and cached loaders (chapter-events.ts, pages.ts)
+sites/web/src/trpc/             tRPC client/server glue for the app
+tests/                          all tests (bun test); tests/setup, tests/helpers, tests/mocks
+scripts/                        vercel-build.mjs, smoke.mjs, ci-test.mjs
+```
+
+## Commands (run from repo root, Bun only)
+
+Use `bun`, `bun run`, `bun x`. Never npm, pnpm, npx, bunx. Spell out `bun run test`: bare `bun test` skips the DOM setup.
+
+- `bun run dev`, `bun run build`, `bun run vercel-build` (migrates when `DATABASE_URL` is set, then builds)
+- `bun run check` = turbo `//#lint typecheck //#typecheck:self //#format:check //#test`
+- `bun run test` = `test:node` (`--isolate`, ignores `*.tsx`) then `test:dom` (`.test.tsx`, happy-dom preload in `tests/setup/dom.ts`)
+- `bun run typecheck` (tsrs, fast) and `bun run typecheck:tsc` (tsc, the deciding check)
+- `bun run format:write`, `bun run lint:fix`
+- `bun run db:generate | db:migrate | db:push | db:seed | db:studio`
+- `bun run smoke` = `bun scripts/smoke.mjs` against the live site
+
+## Tests
+
+- bun test. Mock modules with `mock.module(...)` (see `tests/page-router.test.ts`: mock `packages/auth`, then `await import` the router).
+- Router tests use a fake `db`; `*.integration.test.ts` use a real Postgres through `TEST_DATABASE_URL` only and wrap the suite in `describe.skipIf(!process.env.DATABASE_URL)`.
+- `tests/setup/env.ts` (bunfig preload) copies `TEST_DATABASE_URL` into `DATABASE_URL` and deletes it when unset, so unset means DB suites skip.
+- `.tsx` tests need the happy-dom preload; they only run in `test:dom`.
+
+## Turbo
+
+`check`, `typecheck`, `typecheck:tsc` are cached by input. The cache is shared across git worktrees, so a second worktree can replay green logs without running anything: add `--force` for independent verification. In Git Bash prefix with `MSYS_NO_PATHCONV=1` or `//#lint` is rewritten into a path. `SKIP_ENV_VALIDATION=1` skips portal env validation.
+
+## Safety
+
+- The repo-root `.env` is the PRODUCTION database. Never run tests, migrations or scripts against it. `bunfig.toml` sets `env = false` so Bun does not auto-load it.
+- Test against a disposable Postgres and export both `DATABASE_URL` and `TEST_DATABASE_URL` to it before `db:migrate` and `check`.
+- Never probe `/api/health` or any DB-backed route for uptime or liveness; it wakes and loads the production database. Check the footer version on `/` instead (`buzz_deploy_status`).
+- Do not paste secrets into commits, PRs or logs.
+
+## Workflow
+
+1. Branch from `origin/main` (`feat/...`, `fix/...`); use a git worktree for parallel work.
+2. Commit, push, open a PR to `main`. Commits and PRs carry no AI co-author or attribution lines.
+3. Run CI locally on a disposable Postgres in a clean tree: `bun run check` (use `--force`).
+4. Merge with `gh pr merge N --merge`.
+5. Check the Vercel commit status on the merge commit (`buzz_deploy_status`), then `bun scripts/smoke.mjs`.
+
+Production migrates during the Vercel production build (`scripts/vercel-build.mjs`); previews skip migrations because they share the production DB.
+
+## Versioning
+
+Footer shows `vX.Y.Z`. `MAJOR.MINOR` is `version` in `sites/web/package.json`; PATCH is first-parent commits since that line last changed and rolls into MINOR at 100. For a feature release worth naming, bump MAJOR.MINOR and add a row to the README version table. Use `buzz_version`.
+
+## How-to
+
+Add a tRPC procedure
+1. In `packages/api/src/routers/<name>.ts` add a key to the router: `adminProcedure` for officers, `protectedProcedure` for signed-in members, `superAdminProcedure` for role changes. Validate with `.input(z.object(...))`, then `.query` or `.mutation`.
+2. New router file: export it with `createTRPCRouter` and add it to `appRouter` in `packages/api/src/root.ts`.
+3. Test it in `tests/<name>-router.test.ts` (fake db) and, for SQL behavior, an `*.integration.test.ts`.
+
+Add a table + migration
+1. Define it in `packages/db/src/schema.ts` with `createTable("name", ...)` and index/constraint names through `idx("...")` (prefix `buzz_`).
+2. `bun run db:generate`, commit the new SQL and `drizzle/meta`, then `bun run db:migrate` on a disposable DB.
+3. Never edit an applied migration; add a new one.
+
+Add a portal admin page
+1. Create `sites/web/src/app/portal/(member)/admin/<name>/page.tsx`; prefetch with `api.<router>.<proc>.prefetch()` and wrap in `HydrateClient` like `admin/pages/page.tsx`.
+2. Add an entry to `adminNav` in `sites/web/src/data/portal.ts`.
+3. The real gate is the `adminProcedure` it calls, not the layout redirect.
+
+Add a public CMS page
+No code: an officer opens `/portal/admin/pages`, writes Markdown, sets a slug and publishes; it is served at `/{slug}` by `(marketing)/[slug]/page.tsx` (loader `sites/web/src/data/pages.ts`, cached, tag `pages`). Slugs that collide with a static route are rejected: when you add a top-level route folder, add its name to `RESERVED_PAGE_SLUGS` in `packages/api/src/page-slug.ts` (a test enforces this). For a coded page add `(marketing)/<name>/page.tsx`.

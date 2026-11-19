@@ -99,6 +99,10 @@ The site is stamped with `MAJOR.MINOR.PATCH`, shown in the footer and returned w
 | 2.4 | 2026-11 | Bun and parallel CI |
 | 2.5 | 2026-11 | Admin page builder |
 
+## Agent tooling
+
+Coding agents should start with [AGENTS.md](AGENTS.md) (`CLAUDE.md` imports it). The repo also ships an MCP server, `packages/mcp`, registered in `.mcp.json` for Claude Code and runnable by any MCP client with `bun packages/mcp/src/index.ts`. It reads the source at call time and exposes the tRPC procedures, DB schema, migrations, routes, version, a guarded check runner and deploy status.
+
 ## Setup
 
 The public site needs no environment at all — it builds and deploys with an
