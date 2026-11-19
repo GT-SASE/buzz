@@ -1,8 +1,9 @@
 "use client";
 
+// Local edit of vendored Watermelon UI: framer-motion replaced with CSS (data-state + tw-animate-css) to keep it out of the client bundle.
+
 import * as React from "react";
 import { AlertDialog as AlertDialogPrime } from "radix-ui";
-import { AnimatePresence, motion, type HTMLMotionProps } from "motion/react";
 import { cn } from "~/lib/utils";
 import { cva } from "class-variance-authority";
 
@@ -130,7 +131,6 @@ function AlertDialogCancel({
 
 export {
   AlertDialog,
-  AlertDialogProvider,
   AlertDialogTrigger,
   AlertDialogContent,
   AlertDialogHeader,
@@ -184,34 +184,12 @@ const buttonVariants = cva(
   },
 );
 
-type AlertDialogContextType = {
-  isOpen: boolean;
-  setIsOpen: AlertDialogProps["onOpenChange"];
-};
-
-const [AlertDialogProvider, useAlertDialog] =
-  getStrictContext<AlertDialogContextType>("AlertDialogContext");
-
 type AlertDialogPrimitiveProps = React.ComponentProps<
   typeof AlertDialogPrime.Root
 >;
 
 function AlertDialogPrimitive(props: AlertDialogPrimitiveProps) {
-  const [isOpen, setIsOpen] = useControlledState({
-    value: props?.open,
-    defaultValue: props?.defaultOpen,
-    onChange: props?.onOpenChange,
-  });
-
-  return (
-    <AlertDialogProvider value={{ isOpen, setIsOpen }}>
-      <AlertDialogPrime.Root
-        data-slot="alert-dialog"
-        {...props}
-        onOpenChange={setIsOpen}
-      />
-    </AlertDialogProvider>
-  );
+  return <AlertDialogPrime.Root data-slot="alert-dialog" {...props} />;
 }
 
 type AlertDialogTriggerPrimitiveProps = React.ComponentProps<
@@ -230,46 +208,27 @@ type AlertDialogPortalPrimitiveProps = Omit<
 >;
 
 function AlertDialogPortalPrimitive(props: AlertDialogPortalPrimitiveProps) {
-  const { isOpen } = useAlertDialog();
-
-  return (
-    <AnimatePresence>
-      {isOpen && (
-        <AlertDialogPrime.Portal
-          data-slot="alert-dialog-portal"
-          forceMount
-          {...props}
-        />
-      )}
-    </AnimatePresence>
-  );
+  return <AlertDialogPrime.Portal data-slot="alert-dialog-portal" {...props} />;
 }
 
 type AlertDialogOverlayPrimitiveProps = Omit<
   React.ComponentProps<typeof AlertDialogPrime.Overlay>,
   "forceMount" | "asChild"
-> &
-  HTMLMotionProps<"div">;
+>;
 
 function AlertDialogOverlayPrimitive({
-  transition = { duration: 0.2, ease: "easeInOut" },
+  className,
   ...props
 }: AlertDialogOverlayPrimitiveProps) {
   return (
     <AlertDialogPrime.Overlay
       data-slot="alert-dialog-overlay"
-      asChild
-      forceMount
-    >
-      <motion.div
-        key="alert-dialog-overlay"
-        initial={{ opacity: 0, filter: "blur(4px)" }}
-        animate={{ opacity: 1, filter: "blur(0px)" }}
-        exit={{ opacity: 0, filter: "blur(4px)" }}
-        transition={transition}
-        {...props}
-      />
-    </AlertDialogPrime.Overlay>
+      className={cn(
+        "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 duration-200 motion-reduce:animate-none",
+        className,
+      )}
+      {...props}
+    />
   );
 }
 
@@ -278,53 +237,34 @@ type AlertDialogFlipDirection = "top" | "bottom" | "left" | "right";
 type AlertDialogContentPrimitiveProps = Omit<
   React.ComponentProps<typeof AlertDialogPrime.Content>,
   "forceMount" | "asChild"
-> &
-  HTMLMotionProps<"div"> & {
-    from?: AlertDialogFlipDirection;
-  };
+> & {
+  from?: AlertDialogFlipDirection;
+};
+
+const alertDialogSlideFrom: Record<AlertDialogFlipDirection, string> = {
+  top: "data-[state=open]:slide-in-from-top-4 data-[state=closed]:slide-out-to-top-4",
+  bottom:
+    "data-[state=open]:slide-in-from-bottom-4 data-[state=closed]:slide-out-to-bottom-4",
+  left: "data-[state=open]:slide-in-from-left-4 data-[state=closed]:slide-out-to-left-4",
+  right:
+    "data-[state=open]:slide-in-from-right-4 data-[state=closed]:slide-out-to-right-4",
+};
 
 function AlertDialogContentPrimitive({
   from = "top",
-  onOpenAutoFocus,
-  onCloseAutoFocus,
-  onEscapeKeyDown,
-  transition = { type: "spring", stiffness: 150, damping: 25 },
+  className,
   ...props
 }: AlertDialogContentPrimitiveProps) {
-  const initialRotation =
-    from === "bottom" || from === "left" ? "20deg" : "-20deg";
-  const isVertical = from === "top" || from === "bottom";
-  const rotateAxis = isVertical ? "rotateX" : "rotateY";
-
   return (
     <AlertDialogPrime.Content
-      forceMount
-      onOpenAutoFocus={onOpenAutoFocus}
-      onCloseAutoFocus={onCloseAutoFocus}
-      onEscapeKeyDown={onEscapeKeyDown}
-    >
-      <motion.div
-        key="alert-dialog-content"
-        data-slot="alert-dialog-content"
-        initial={{
-          opacity: 0,
-          filter: "blur(4px)",
-          transform: `perspective(500px) ${rotateAxis}(${initialRotation}) scale(0.8)`,
-        }}
-        animate={{
-          opacity: 1,
-          filter: "blur(0px)",
-          transform: `perspective(500px) ${rotateAxis}(0deg) scale(1)`,
-        }}
-        exit={{
-          opacity: 0,
-          filter: "blur(4px)",
-          transform: `perspective(500px) ${rotateAxis}(${initialRotation}) scale(0.8)`,
-        }}
-        transition={transition}
-        {...props}
-      />
-    </AlertDialogPrime.Content>
+      data-slot="alert-dialog-content"
+      className={cn(
+        "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 data-[state=open]:zoom-in-95 data-[state=closed]:zoom-out-95 duration-300 motion-reduce:animate-none",
+        alertDialogSlideFrom[from],
+        className,
+      )}
+      {...props}
+    />
   );
 }
 
@@ -407,38 +347,3 @@ export function useControlledState<T, Rest extends any[] = []>(
 
   return [state, setState] as const;
 }
-
-function getStrictContext<T>(
-  name?: string,
-): readonly [
-  ({
-    value,
-    children,
-  }: {
-    value: T;
-    children?: React.ReactNode;
-  }) => React.JSX.Element,
-  () => T,
-] {
-  const Context = React.createContext<T | undefined>(undefined);
-
-  const Provider = ({
-    value,
-    children,
-  }: {
-    value: T;
-    children?: React.ReactNode;
-  }) => <Context.Provider value={value}>{children}</Context.Provider>;
-
-  const useSafeContext = () => {
-    const ctx = React.useContext(Context);
-    if (ctx === undefined) {
-      throw new Error(`useContext must be used within ${name ?? "a Provider"}`);
-    }
-    return ctx;
-  };
-
-  return [Provider, useSafeContext] as const;
-}
-
-export { getStrictContext };
