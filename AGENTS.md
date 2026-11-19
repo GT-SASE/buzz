@@ -31,6 +31,7 @@ packages/db/drizzle/            generated SQL migrations + meta; commit them
 packages/db/scripts/            seeds
 packages/auth/src/              NextAuth config and auth()
 packages/mcp/src/               this MCP server
+sites/discord-bot/              the events Discord bot: api/ (Vercel functions), src/, db/migrations (dbmate), its own README and docs/
 sites/web/src/app/(marketing)/  public pages, prerendered; [slug] serves CMS pages
 sites/web/src/app/portal/(member)/        member portal pages (needs a session)
 sites/web/src/app/portal/(member)/admin/  officer pages; adminNav lives in sites/web/src/data/portal.ts
@@ -48,15 +49,18 @@ scripts/                        vercel-build.mjs, smoke.mjs, ci-test.mjs
 Use `bun`, `bun run`, `bun x`. Never npm, pnpm, npx, bunx. Spell out `bun run test`: bare `bun test` skips the DOM setup.
 
 - `bun run dev`, `bun run build`, `bun run vercel-build` (migrates when `DATABASE_URL` is set, then builds)
-- `bun run check` = turbo `//#lint typecheck //#typecheck:self //#format:check //#test`
+- `bun run check` = turbo `//#lint typecheck //#typecheck:self //#format:check //#test test test:db` (the last two are the Discord bot's unit and PGlite tests)
 - `bun run test` = `test:node` (`--isolate`, ignores `*.tsx`) then `test:dom` (`.test.tsx`, happy-dom preload in `tests/setup/dom.ts`)
 - `bun run typecheck` (tsrs, fast) and `bun run typecheck:tsc` (tsc, the deciding check)
 - `bun run format:write`, `bun run lint:fix`
 - `bun run db:generate | db:migrate | db:push | db:seed | db:studio`
 - `bun run smoke` = `bun scripts/smoke.mjs` against the live site
+- Discord bot (`sites/discord-bot`, `bun run --cwd sites/discord-bot <script>`): `build` (Vercel Build Output in `.vercel/output`), `smoke` (loads the built functions from a temp folder, expects 401s), `test`, `test:db`, `test:db:concurrency` (needs `CONCURRENCY_DATABASE_URL` and `BOT_APP_PASSWORD`, see its README), `db:migrate` (dbmate; `DATABASE_URL` of a disposable DB only)
+- `bun run hooks:install` and `bun run gitleaks:install`: pre-push secret scan, rules in `sites/discord-bot/.gitleaks.toml`
 
 ## Tests
 
+- The bot's tests are excluded from root `test:node` because they need their own preload (`sites/discord-bot/test/support/setup.ts`); they run as the turbo tasks `test` and `test:db` from that folder.
 - bun test. Mock modules with `mock.module(...)` (see `tests/page-router.test.ts`: mock `packages/auth`, then `await import` the router).
 - Router tests use a fake `db`; `*.integration.test.ts` use a real Postgres through `TEST_DATABASE_URL` only and wrap the suite in `describe.skipIf(!process.env.DATABASE_URL)`.
 - `tests/setup/env.ts` (bunfig preload) copies `TEST_DATABASE_URL` into `DATABASE_URL` and deletes it when unset, so unset means DB suites skip.

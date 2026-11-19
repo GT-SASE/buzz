@@ -1,12 +1,14 @@
 // Lives outside api/ because Vercel turns every file in that directory into a
 // function.
 
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
 import * as endpoint from "../../api/cron/reminders.ts";
+import {
+  CRONS,
+  FUNCTIONS,
+  MAX_DURATION_SECONDS,
+} from "../../scripts/deployment.ts";
 import { fakeId } from "../../test/support/ids.ts";
-import { vercelConfig } from "../../test/support/json.ts";
 import { testDatabaseUrl } from "../../test/support/sql-client.ts";
 import { asFetch, stubEnv } from "../../test/support/stubs.ts";
 import {
@@ -17,7 +19,6 @@ import {
 
 const SECRET = "c".repeat(40);
 const URL_BASE = "https://bot.example.test/api/cron/reminders";
-const ROOT = join(import.meta.dirname, "..", "..");
 
 function get(
   headers: Record<string, string> = {},
@@ -88,12 +89,11 @@ describe("refusals", () => {
 });
 
 describe("deployment settings", () => {
-  const vercel = vercelConfig(readFileSync(join(ROOT, "vercel.json"), "utf8"));
   const RECOVERY_HOUR_UTC = SLOT_START_HOUR_UTC + 2;
   const HOUR_MS = 3_600_000;
 
   it("schedules a morning run and a recovery run of this endpoint", () => {
-    expect(vercel.crons).toEqual([
+    expect(CRONS).toEqual([
       {
         path: "/api/cron/reminders",
         schedule: `0 ${String(SLOT_START_HOUR_UTC)} * * *`,
@@ -105,14 +105,13 @@ describe("deployment settings", () => {
     ]);
   });
 
-  it.each(["api/cron/reminders.ts", "api/interactions.ts"])(
-    "gives %s the time limit the code is built for",
-    (path) => {
-      expect((vercel.functions[path]?.maxDuration ?? 0) * 1000).toBe(
-        FUNCTION_MAX_MS,
-      );
-    },
-  );
+  it("gives the functions the time limit the code is built for", () => {
+    expect(FUNCTIONS.map(({ route }) => route).sort()).toEqual([
+      "api/cron/reminders",
+      "api/interactions",
+    ]);
+    expect(MAX_DURATION_SECONDS * 1000).toBe(FUNCTION_MAX_MS);
+  });
 
   it("leaves time for a morning run's claims to go stale before the recovery run", () => {
     // Hobby fires anywhere in the hour, so the morning run may start at 15:59 and the

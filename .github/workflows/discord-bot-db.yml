@@ -1,20 +1,20 @@
-name: Database
+name: Discord bot database
 
-# Skips changes to prose alone. A skipped check never reports, so drop these filters
-# before making this check required in branch protection.
+# Runs only when the bot or the lockfile changes. A skipped check never reports, so
+# drop these filters before making this check required in branch protection.
 on:
   pull_request:
     branches: [main]
-    paths-ignore:
-      - "docs/**"
-      - "README.md"
-      - "SECURITY.md"
+    paths:
+      - "sites/discord-bot/**"
+      - "bun.lock"
+      - ".github/workflows/discord-bot-db.yml"
   push:
     branches: [main]
-    paths-ignore:
-      - "docs/**"
-      - "README.md"
-      - "SECURITY.md"
+    paths:
+      - "sites/discord-bot/**"
+      - "bun.lock"
+      - ".github/workflows/discord-bot-db.yml"
 
 permissions:
   contents: read
@@ -28,6 +28,9 @@ jobs:
     name: The bot's role and concurrent writes on Postgres 17
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: sites/discord-bot
     # Throwaway passwords for a database that lives only as long as this job.
     env:
       PGHOST: localhost
@@ -52,12 +55,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # Bun installs and runs every script and tool. The version is packageManager in
-      # package.json.
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version-file: package.json
       - run: bun install --frozen-lockfile
+        working-directory: .
       # As on Neon: an owner that may create roles and owns its database, but is not a
       # superuser.
       - name: Make the owner and its database
@@ -71,7 +73,7 @@ jobs:
         run: |
           export DATABASE_URL="postgres://migration_owner:${OWNER_PASSWORD}@localhost:5432/bot?sslmode=disable"
           bun run db:migrate
-          bunx --bun --no-install dbmate --migrations-dir db/migrations status --exit-code
+          bun x --bun --no-install dbmate --migrations-dir db/migrations status --exit-code
       # The owner may do this only because it made bot_app, which gave it ADMIN on the
       # role, so this also checks that grant.
       - name: Set bot_app's password as the owner

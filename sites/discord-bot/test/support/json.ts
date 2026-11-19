@@ -66,15 +66,3 @@ export type MessageBody = z.output<typeof MessageBodySchema>;
 export function messageBody(text: unknown): MessageBody {
   return parseJson(MessageBodySchema, text, "the message body");
 }
-
-/** The parts of vercel.json the tests check. */
-const VercelConfigSchema = z.object({
-  crons: z.array(z.object({ path: z.string(), schedule: z.string() })),
-  functions: z.record(z.string(), z.object({ maxDuration: z.number() })),
-});
-
-export type VercelConfig = z.output<typeof VercelConfigSchema>;
-
-export function vercelConfig(text: string): VercelConfig {
-  return parseJson(VercelConfigSchema, text, "vercel.json");
-}

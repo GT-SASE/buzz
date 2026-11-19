@@ -1,16 +1,9 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
-  "bunVersion": "1.4.x",
-  "outputDirectory": "public",
-  "crons": [
-    { "path": "/api/cron/reminders", "schedule": "0 15 * * *" },
-    { "path": "/api/cron/reminders", "schedule": "0 17 * * *" }
-  ],
-  "functions": {
-    "api/cron/reminders.ts": { "maxDuration": 60 },
-    "api/interactions.ts": { "maxDuration": 60 }
-  },
+  "installCommand": "cd ../.. && bun install --frozen-lockfile",
+  "buildCommand": "bun run build",
+  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- . ../../bun.lock",
   "git": {
     "deploymentEnabled": {
       "**": false,

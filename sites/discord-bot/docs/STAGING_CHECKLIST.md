@@ -96,7 +96,7 @@ Clear the terminal's values with `unset BOT_URL CRON` when you finish.
 - [ ] Deployment Protection is Standard Protection, no Protection Bypass for Automation exists, and Discord's endpoint is the production domain.
 - [ ] Only `main` deploys: a pushed branch makes no deployment.
 - [ ] Settings > Cron Jobs lists `/api/cron/reminders` twice, the firewall rules are active, and usage notifications are on.
-- [ ] The build log shows Bun installing from `bun.lock` with no changes to it.
+- [ ] The build log shows Bun installing from the repository's `bun.lock` with no changes to it, then `bun run build` writing `.vercel/output`.
 - [ ] In Neon, only the owner and `bot_app` can log in, and the Data API and Neon Auth are off. `psql "$BOT_URL&sslrootcert=system" -c 'TRUNCATE public.job_runs;'`, with `psql` 16 or later, says `permission denied`.
 - [ ] The Discord app has Public Bot off, User Install off and Install Link set to None.
 - [ ] Few people hold Administrator, Manage Roles or the five bound roles.
