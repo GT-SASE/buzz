@@ -844,6 +844,24 @@ async function markSlidesNotNeeded(
   return withNotes(reply, await redraw(ctx, event));
 }
 
+/** Whether Engage picture added is done, which undoing Engage post reopens too. */
+async function pictureAdded(
+  ctx: FinishContext,
+  event: EventRow,
+): Promise<boolean> {
+  const workflow = valueOf(
+    await getEventWorkflow(ctx.db, {
+      guildId: ctx.actor.guildId,
+      eventId: event.id,
+    }),
+  );
+  return (
+    workflow?.steps.some(
+      (step) => step.kind === "engage_picture" && step.status === "done",
+    ) ?? false
+  );
+}
+
 /** The /event undo choice that turns No slides needed off. */
 const SLIDES_NEEDED = "slides_needed";
 
@@ -879,9 +897,13 @@ async function undo(
     };
     notDone = safe`Slides for **${title}** isn't marked not needed, so there's nothing to undo.`;
   } else if (isCompletableKind(choice)) {
+    const pictureToo =
+      choice === "engage_post" && (await pictureAdded(ctx, event));
     written = await reopenEventStep(ctx.db, { ...key, kind: choice });
     done = {
-      line: safe`${stepName(choice)} reopened by ${by}.`,
+      line: pictureToo
+        ? safe`Engage post reopened by ${by}. This also reopened Engage picture added.`
+        : safe`${stepName(choice)} reopened by ${by}.`,
       reply: safe`Reopened ${stepName(choice)} for **${title}**.`,
     };
     notDone = safe`${stepName(choice)} for **${title}** isn't done, so there's nothing to undo.`;
