@@ -130,14 +130,12 @@ export function SiteNav() {
                     {group.label}
                     <ChevronDown className="size-3 transition-transform duration-200 group-open:rotate-180" />
                   </summary>
-                  <div
-                    onClick={() => closeMenus(menusRef.current)}
-                    className="border-gold ring-hairline bg-paper group-open:animate-in group-open:fade-in-0 group-open:zoom-in-95 absolute top-full left-0 z-50 mt-3.5 w-56 origin-top-left overflow-hidden rounded-xl border-t-2 shadow-md ring-1 duration-200"
-                  >
+                  <div className="border-gold ring-hairline bg-paper group-open:animate-in group-open:fade-in-0 group-open:zoom-in-95 absolute top-full left-0 z-50 mt-3.5 w-56 origin-top-left overflow-hidden rounded-xl border-t-2 shadow-md ring-1 duration-200">
                     {group.items.map((item) => (
                       <Link
                         key={item.href}
                         href={item.href}
+                        onClick={() => closeMenus(menusRef.current)}
                         aria-current={
                           toPath(item.href) === pathname &&
                           !item.href.includes("#")
