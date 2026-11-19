@@ -1,6 +1,6 @@
 # 5. Task commands
 
-Status: Accepted. Implemented for `/task assign`, `edit`, `delete` and `done`, the Mark done button on task notices and reminders, `/mytasks` and the overview refresh.
+Status: Accepted. Implemented for `/task assign`, `edit`, `delete`, `done` and `reopen`, the Mark done button on task notices and reminders, `/mytasks` and the overview refresh.
 
 ## Context
 
@@ -24,6 +24,8 @@ A busy event has a few dozen tasks and a busy officer sets up a few at a time, s
 **Editing.** All three fields are written at once and the write names the `updated_at` the gate read, so an edit lands whole or is refused. A changed due date restarts the task's reminders because the log is keyed by date, and the reply says so.
 
 **Deleting.** Confirm carries a short fingerprint of the `updated_at` it showed. If the task has changed since, nothing is deleted and the officer is asked to run it again, so nobody deletes text they never saw.
+
+**Reopening.** An officer can reopen a done task with `/task reopen`. Its reminders follow the due date again, as for any open task, and the post gets a line saying who reopened it, which pings nobody.
 
 **The button.** It sits on task notices and on reminders, with one per task, and a reminder message holds at most 5 tasks for that reason. A reminder split across messages has its buttons on the last. Anyone can click it, and it answers in a new private reply rather than touching the public message. The router allows this only for a route that asks for it with `onPublicMessage`. Its `custom_id` is a prefix and a task ID: the row is loaded and the clicker checked from that click's payload, and the write repeats the assignee check in its filters.
 
