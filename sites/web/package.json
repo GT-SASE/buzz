@@ -23,9 +23,9 @@
     "@radix-ui/react-slot": "^1.5.0",
     "@t3-oss/env-nextjs": "^0.13.11",
     "@tanstack/react-query": "^5.107.1",
-    "@trpc/client": "^11.28.0",
-    "@trpc/react-query": "^11.28.0",
-    "@trpc/server": "^11.28.0",
+    "@trpc/client": "^11.28.3",
+    "@trpc/react-query": "^11.28.3",
+    "@trpc/server": "^11.28.3",
     "@vercel/analytics": "^2.0.1",
     "@vercel/speed-insights": "^2.1.0",
     "class-variance-authority": "^0.7.1",
@@ -50,14 +50,14 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4.3.3",
+    "@tailwindcss/postcss": "^4.3.5",
     "@types/node": "^26.6.6",
     "@types/qrcode": "^1.5.6",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "postcss": "^8.5.32",
     "shadcn": "^4.23.0",
-    "tailwindcss": "^4.3.3",
+    "tailwindcss": "^4.3.5",
     "tsrs": "0.20.1-ts7.1.0-beta",
     "typescript": "^7.0.2"
   }
