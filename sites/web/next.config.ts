@@ -4,11 +4,18 @@ import "./src/server/auth-env";
 
 import type { NextConfig } from "next";
 
+import { appBuild } from "./build-version";
+
 const isProd = process.env.NODE_ENV === "production";
+const build = appBuild();
 
 const config: NextConfig = {
   transpilePackages: ["@buzz/api", "@buzz/auth", "@buzz/db"],
   poweredByHeader: false,
+  env: {
+    NEXT_PUBLIC_APP_VERSION: build.version,
+    NEXT_PUBLIC_APP_COMMIT: build.commit,
+  },
   agentRules: false,
   async headers() {
     const base = [
