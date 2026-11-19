@@ -1,0 +1,21 @@
+# Bun loads no .env file by itself, so a local .env never reaches the tests.
+# commands:register names its file with --env-file.
+env = false
+
+[install]
+# Runs no install script, the project's or any dependency's, even one on Bun's
+# default trusted list.
+ignoreScripts = true
+# New dependencies are pinned to exact versions.
+exact = true
+# A flat node_modules, which Vercel's function file tracing copies whole.
+linker = "hoisted"
+
+[run]
+# Scripts and tools with a node shebang run on Bun, even where Node is installed.
+bun = true
+
+[test]
+# Pins the time zone, undoes stubs after each test, and checks every sent body
+# for live mentions and masked links.
+preload = ["./test/support/setup.ts"]
