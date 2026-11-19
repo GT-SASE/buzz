@@ -5,17 +5,20 @@ import {
   describe,
   expect,
   it,
+  mock,
+  setSystemTime,
   vi,
-} from "vitest";
+} from "bun:test";
+import { stubEnv, unstubAllEnvs } from "./helpers/env";
 
-vi.mock("../packages/auth/src/index.ts", () => ({
+mock.module("../packages/auth/src/index.ts", () => ({
   auth: () => Promise.resolve(null),
   handlers: {},
   signIn: () => Promise.resolve(undefined),
   signOut: () => Promise.resolve(undefined),
 }));
 
-vi.stubEnv("NODE_ENV", "production");
+stubEnv("NODE_ENV", "production");
 const { createCaller } = await import("../packages/api/src/root");
 const {
   EXPORT_ATTENDANCE_LIMIT,
@@ -23,7 +26,7 @@ const {
   resetRateLimits,
   takeToken,
 } = await import("../packages/api/src/rate-limit");
-vi.unstubAllEnvs();
+unstubAllEnvs();
 
 type Ctx = Parameters<typeof createCaller>[0];
 
@@ -593,7 +596,7 @@ describe("token bucket", () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
-    vi.setSystemTime(T0);
+    setSystemTime(T0);
     resetRateLimits();
   });
 
@@ -610,10 +613,10 @@ describe("token bucket", () => {
     for (let call = 0; call < OPTIONS.limit; call++) takeToken("k", OPTIONS);
     expect(takeToken("k", OPTIONS)).toBe(false);
 
-    vi.setSystemTime(T0 + 59_999);
+    setSystemTime(T0 + 59_999);
     expect(takeToken("k", OPTIONS)).toBe(false);
 
-    vi.setSystemTime(T0 + 60_000);
+    setSystemTime(T0 + 60_000);
     expect(takeToken("k", OPTIONS)).toBe(true);
     expect(takeToken("k", OPTIONS)).toBe(false);
   });
@@ -628,7 +631,7 @@ describe("token bucket", () => {
     takeToken("a", OPTIONS);
     expect(rateLimitBucketCount()).toBe(1);
 
-    vi.setSystemTime(T0 + 61_000);
+    setSystemTime(T0 + 61_000);
     takeToken("b", OPTIONS);
 
     expect(rateLimitBucketCount()).toBe(1);
@@ -640,7 +643,7 @@ describe("token bucket", () => {
     for (let call = 0; call < slow.limit; call++) takeToken("heavy", slow);
     expect(takeToken("heavy", slow)).toBe(false);
 
-    vi.setSystemTime(T0 + 61_000);
+    setSystemTime(T0 + 61_000);
     takeToken("other", slow);
 
     expect(takeToken("heavy", slow)).toBe(false);

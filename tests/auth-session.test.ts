@@ -1,13 +1,16 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, mock } from "bun:test";
 
 import { authConfig } from "../packages/auth/src/config";
 
 // next-auth reaches for `next/server`, which only resolves inside Next. The
 // paths point into @buzz/auth because the repo root does not depend on it.
-vi.mock("../packages/auth/node_modules/next-auth/index.js", () => ({}));
-vi.mock("../packages/auth/node_modules/next-auth/providers/google.js", () => ({
-  default: () => ({}),
-}));
+mock.module("../packages/auth/node_modules/next-auth/index.js", () => ({}));
+mock.module(
+  "../packages/auth/node_modules/next-auth/providers/google.js",
+  () => ({
+    default: () => ({}),
+  }),
+);
 
 describe("session callback", () => {
   it("keeps the session token out of what the browser can read", () => {
@@ -36,7 +39,7 @@ describe("session callback", () => {
         email: "ada@example.com",
         role: "ADMIN",
       },
-    });
+    } as never);
     expect(JSON.stringify(session)).not.toContain("secret-token");
   });
 });

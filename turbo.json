@@ -1,18 +1,130 @@
 {
   "$schema": "https://turborepo.dev/schema.json",
   "globalPassThroughEnv": ["SKIP_ENV_VALIDATION"],
+  "globalDependencies": ["tsconfig.base.json"],
   "tasks": {
-    "//#lint": {
+    "typecheck": {
+      "dependsOn": ["^typecheck"],
       "tags": ["ci"]
     },
-    "//#typecheck": {
+    "typecheck:tsc": {
+      "dependsOn": ["^typecheck:tsc"],
+      "tags": ["ci"]
+    },
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": [".next/**", "!.next/cache/**"],
+      "env": [
+        "NEXT_PUBLIC_*",
+        "AUTH_URL",
+        "AUTH_REDIRECT_PROXY_URL",
+        "VERCEL_ENV",
+        "VERCEL_GIT_COMMIT_SHA"
+      ],
+      "passThroughEnv": [
+        "AUTH_SECRET",
+        "AUTH_GOOGLE_ID",
+        "AUTH_GOOGLE_SECRET",
+        "DATABASE_URL",
+        "GMAIL_USER",
+        "GMAIL_APP_PASSWORD",
+        "MAIL_REPLY_TO"
+      ]
+    },
+    "//#lint": {
+      "inputs": [
+        "$TURBO_ROOT$/sites/web/src/**",
+        "$TURBO_ROOT$/sites/web/*.{ts,js,json}",
+        "$TURBO_ROOT$/packages/*/src/**",
+        "$TURBO_ROOT$/packages/*/*.{ts,json}",
+        "$TURBO_ROOT$/packages/db/drizzle/**",
+        "$TURBO_ROOT$/packages/db/scripts/**",
+        "$TURBO_ROOT$/tests/**",
+        "$TURBO_ROOT$/scripts/**",
+        "$TURBO_ROOT$/*.{ts,json,mjs,toml}",
+        "$TURBO_ROOT$/bun.lock",
+        "!**/*.tsbuildinfo",
+        "!**/next-env.d.ts",
+        "!.bench-check-in.json"
+      ],
       "tags": ["ci"]
     },
     "//#format:check": {
+      "inputs": [
+        "$TURBO_ROOT$/sites/web/src/**",
+        "$TURBO_ROOT$/sites/web/*.{ts,js,json}",
+        "$TURBO_ROOT$/packages/*/src/**",
+        "$TURBO_ROOT$/packages/*/*.{ts,json}",
+        "$TURBO_ROOT$/packages/db/drizzle/**",
+        "$TURBO_ROOT$/packages/db/scripts/**",
+        "$TURBO_ROOT$/tests/**",
+        "$TURBO_ROOT$/scripts/**",
+        "$TURBO_ROOT$/*.{ts,json,mjs,toml}",
+        "$TURBO_ROOT$/bun.lock",
+        "!**/*.tsbuildinfo",
+        "!**/next-env.d.ts",
+        "!.bench-check-in.json"
+      ],
+      "tags": ["ci"]
+    },
+    "//#typecheck:self": {
+      "inputs": [
+        "$TURBO_ROOT$/sites/web/src/**",
+        "$TURBO_ROOT$/sites/web/*.{ts,js,json}",
+        "$TURBO_ROOT$/packages/*/src/**",
+        "$TURBO_ROOT$/packages/*/*.{ts,json}",
+        "$TURBO_ROOT$/packages/db/drizzle/**",
+        "$TURBO_ROOT$/packages/db/scripts/**",
+        "$TURBO_ROOT$/tests/**",
+        "$TURBO_ROOT$/scripts/**",
+        "$TURBO_ROOT$/*.{ts,json,mjs,toml}",
+        "$TURBO_ROOT$/bun.lock",
+        "!**/*.tsbuildinfo",
+        "!**/next-env.d.ts",
+        "!.bench-check-in.json"
+      ],
+      "tags": ["ci"]
+    },
+    "//#typecheck:tsc:self": {
+      "inputs": [
+        "$TURBO_ROOT$/sites/web/src/**",
+        "$TURBO_ROOT$/sites/web/*.{ts,js,json}",
+        "$TURBO_ROOT$/packages/*/src/**",
+        "$TURBO_ROOT$/packages/*/*.{ts,json}",
+        "$TURBO_ROOT$/packages/db/drizzle/**",
+        "$TURBO_ROOT$/packages/db/scripts/**",
+        "$TURBO_ROOT$/tests/**",
+        "$TURBO_ROOT$/scripts/**",
+        "$TURBO_ROOT$/*.{ts,json,mjs,toml}",
+        "$TURBO_ROOT$/bun.lock",
+        "!**/*.tsbuildinfo",
+        "!**/next-env.d.ts",
+        "!.bench-check-in.json"
+      ],
+      "tags": ["ci"]
+    },
+    "//#test": {
+      "inputs": [
+        "$TURBO_ROOT$/sites/web/src/**",
+        "$TURBO_ROOT$/sites/web/*.{ts,js,json}",
+        "$TURBO_ROOT$/packages/*/src/**",
+        "$TURBO_ROOT$/packages/*/*.{ts,json}",
+        "$TURBO_ROOT$/packages/db/drizzle/**",
+        "$TURBO_ROOT$/packages/db/scripts/**",
+        "$TURBO_ROOT$/tests/**",
+        "$TURBO_ROOT$/scripts/**",
+        "$TURBO_ROOT$/*.{ts,json,mjs,toml}",
+        "$TURBO_ROOT$/bun.lock",
+        "!**/*.tsbuildinfo",
+        "!**/next-env.d.ts",
+        "!.bench-check-in.json"
+      ],
+      "env": ["TEST_DATABASE_URL"],
       "tags": ["ci"]
     },
     "//#test:ci": {
       "with": ["@buzz/db#postgres"],
+      "cache": false,
       "tags": ["ci", "ci:cpus:4"]
     }
   }

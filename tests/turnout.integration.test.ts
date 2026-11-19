@@ -1,7 +1,7 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, mock } from "bun:test";
 
 // Same harness as check-in.integration.test.ts: stub next-auth, import by path.
-vi.mock("../packages/auth/src/index.ts", () => ({
+mock.module("../packages/auth/src/index.ts", () => ({
   auth: async () => null,
   handlers: {},
   signIn: async () => undefined,

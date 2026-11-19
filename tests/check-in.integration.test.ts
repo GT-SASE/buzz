@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, mock } from "bun:test";
 
 /**
  * `@buzz/auth` is stubbed before anything imports the router.
@@ -10,7 +10,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
  * changing a line of what is under test: the procedures, their guards, and the
  * SQL they run are all the real ones.
  */
-vi.mock("../packages/auth/src/index.ts", () => ({
+mock.module("../packages/auth/src/index.ts", () => ({
   auth: async () => null,
   handlers: {},
   signIn: async () => undefined,

@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 
 /**
  * The check has to grow, and nothing else. Assigning SUPER_ADMIN is a manual

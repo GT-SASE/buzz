@@ -7,7 +7,8 @@ import {
   StringChunk,
   Table,
 } from "drizzle-orm";
-import { afterAll, describe, expect, it, vi } from "vitest";
+import { afterAll, describe, expect, it, mock, vi } from "bun:test";
+import { stubEnv, unstubAllEnvs } from "./helpers/env";
 
 import { eventCheckIns, events, users } from "../packages/db/src/schema";
 
@@ -24,19 +25,19 @@ import { eventCheckIns, events, users } from "../packages/db/src/schema";
  * Same import dance as tests/event-router.test.ts: tRPC config is frozen when
  * `@buzz/api/trpc` is first evaluated, so tests pin `NODE_ENV` to production.
  */
-vi.mock("../packages/auth/src/index.ts", () => ({
+mock.module("../packages/auth/src/index.ts", () => ({
   auth: () => Promise.resolve(null),
   handlers: {},
   signIn: () => Promise.resolve(undefined),
   signOut: () => Promise.resolve(undefined),
 }));
 
-vi.stubEnv("NODE_ENV", "production");
+stubEnv("NODE_ENV", "production");
 const { createCaller } = await import("../packages/api/src/root");
 const { escapeLikePattern } =
   await import("../packages/api/src/routers/member");
 const { resetRateLimits } = await import("../packages/api/src/rate-limit");
-vi.unstubAllEnvs();
+unstubAllEnvs();
 
 type Ctx = Parameters<typeof createCaller>[0];
 

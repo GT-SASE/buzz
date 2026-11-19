@@ -1,6 +1,14 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import {
+  afterAll,
+  beforeAll,
+  describe,
+  expect,
+  it,
+  mock,
+  setSystemTime,
+} from "bun:test";
 
-vi.mock("../packages/auth/src/index.ts", () => ({
+mock.module("../packages/auth/src/index.ts", () => ({
   auth: async () => null,
   handlers: {},
   signIn: async () => undefined,
@@ -65,15 +73,14 @@ describe.skipIf(!process.env.DATABASE_URL)("committee cycles", () => {
 
   beforeAll(async () => {
     resetRateLimits();
-    vi.useFakeTimers({ toFake: ["Date"] });
-    vi.setSystemTime(NOW);
+    setSystemTime(NOW);
     await db.delete(committeeCycles).where(eq(committeeCycles.id, CYCLE));
     officer = await makeUser("officer", "ADMIN");
     member = await makeUser("member", "MEMBER");
   });
 
   afterAll(async () => {
-    vi.useRealTimers();
+    setSystemTime();
     await db
       .delete(committeeApplications)
       .where(inArray(committeeApplications.userId, userIds));

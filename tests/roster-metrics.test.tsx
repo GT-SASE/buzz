@@ -1,5 +1,5 @@
 import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, mock } from "bun:test";
 
 type Metrics = {
   total: number;
@@ -20,7 +20,7 @@ const answer: { data: Metrics | null; sent: number[] } = {
   sent: [],
 };
 
-vi.mock("~/trpc/react", () => ({
+mock.module("~/trpc/react", () => ({
   api: {
     member: {
       metrics: {

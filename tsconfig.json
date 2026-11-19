@@ -5,7 +5,7 @@
   // guarding the app were themselves unchecked.
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
-    "types": ["node"],
+    "types": ["node", "bun"],
     "rootDir": ".",
     "paths": {
       "~/*": ["./sites/web/src/*"],
@@ -19,11 +19,6 @@
   // found by the project service" and tsc never checks them at all.
   // React component tests (*.tsx) stay out: importing them would pull the
   // Next app into this program without Next's image-module declarations.
-  "include": [
-    "tests/**/*.ts",
-    "vitest.config.ts",
-    "eslint.config.ts",
-    "prettier.config.ts"
-  ],
+  "include": ["tests/**/*.ts", "eslint.config.ts", "prettier.config.ts"],
   "exclude": ["node_modules"]
 }

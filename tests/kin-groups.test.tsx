@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, mock, vi } from "bun:test";
 
 const group = (over: Record<string, unknown>) => ({
   id: "g1",
@@ -22,8 +22,8 @@ const state = {
 
 const idle = { isPending: false, mutate: () => undefined };
 
-vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
-vi.mock("~/trpc/react", () => ({
+mock.module("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+mock.module("~/trpc/react", () => ({
   api: {
     useUtils: () => ({
       mentorship: {
