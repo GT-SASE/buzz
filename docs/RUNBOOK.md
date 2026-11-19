@@ -29,15 +29,15 @@ LIMIT 7;
 - `deferred_halted` counts reminders left when a run stopped. The recovery run or the next day takes them.
 - `deferred_cap`, `threads_missing` and `events_stopped` are copied into the health check row as `reminders_<key>`, with a log line `Latest reminder run needs a look`.
 
-## Event step and Food pickup reminders
+## Event countdown and Food pickup reminders
 
 The same `reminders` run sends these after the task reminders, under the same lock, message cap and deadlines. Each is one message in the event's post, recorded in `event_reminder_log` under the guild's local date it is for.
 
-- `daily_steps` goes out each day up to the event's date while Budget Sheet, Engage post or Budget approved is open. It never mentions Food pickup. It pings the Events Directors role for a Budget Sheet or Engage post with nobody on it.
+- The countdown pings go out on their day, counted back from the event's date: `steps_unassigned` at 35 days, `budget_due` and `engage_due` at 28, `budget_overdue` and `engage_overdue` at 21, `marketing_week`, `slides_unassigned` and `pickup_unset` at 7, `marketing_saturday` on the Saturday before, `slides_due` at 2, `slides_tomorrow` at 1, and `event_today` on the day. `engage_picture_late` goes out 7 days after Engage post was done. Each is skipped when its condition does not hold, such as a step already done. [The README](../README.md#what-it-does) has the table. `daily_steps` is no longer sent and remains only for old log rows.
 - `pickup_before` and `pickup_day` go out two days before and on the event's date, only once Food pickup has a time and at least one person on it. The database refuses a claim after the event's date, or for a day other than today or yesterday in the guild's zone; the planner picks the day for each kind. Neither waits for the budget to be approved.
 - None is sent late. A claim left from a day that has passed is closed as `skipped` by a later run.
 
-Their counts in `results` start with `event_`, such as `event_reminders_sent` and one `event_<kind>_sent` per kind. `event_render_failed` means an event's reminder could not be written, and the logs name the event. `event_items_refused` means Discord refused the text itself: the reminder is recorded as `skipped`, and the next day brings a new one.
+Their counts in `results` start with `event_`, such as `event_reminders_sent` and one `event_<kind>_sent` per kind. `event_render_failed` means an event's reminder could not be written, and the logs name the event. `event_items_refused` means Discord refused the text itself: the reminder is recorded as `skipped` and not sent again.
 
 To see what went out for an event:
 
@@ -132,6 +132,8 @@ Check the size on the project's usage page in the Neon console. `history.row_ver
 - A rollback undoes that version's fixes. Never roll back past a security fix.
 - To undo a schema change, write a new forward migration. Never change the schema by hand or in the dashboard.
 - A deployment deleted after a secret rotation is no longer a rollback target, as [SECURITY.md](../SECURITY.md) explains.
+
+**The Slides and Engage picture release.** Apply `20261119000100_slides_engage_picture_and_undo.sql`, then merge right away, and run `bun run commands:register <guild-id>` for `/event undo` and `/task reopen`. Once it is applied, don't roll back to code from before this release: that code can't draw an event's post with the new steps. If the code goes live after that day's morning reminder run, that day's new countdown pings are skipped.
 
 **Restoring to an earlier point is the opposite case:** new code on an old schema. Follow [RECOVERY.md](RECOVERY.md), and bring the schema up to date before the bot takes traffic.
 

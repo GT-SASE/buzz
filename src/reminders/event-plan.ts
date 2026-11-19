@@ -1,25 +1,25 @@
 /**
- * Plans the event workflow reminders: the daily list of an event's unfinished steps, and
- * the two Food pickup reminders. Each is one message in the event's post, claimed in
+ * Plans the event workflow reminders: the countdown pings before an event, and the two
+ * Food pickup reminders. Each is one message in the event's post, claimed in
  * `event_reminder_log` under the guild's local date it is for.
  *
- * Unlike task reminders, nothing here goes out late. A day's list is only worth sending on
- * that day, and a pickup reminder only on its own day, so a reminder whose day has passed
- * is never sent. A claim on one that was left by a crashed run is closed as skipped.
+ * Unlike task reminders, nothing here goes out late. Each ping is only worth sending on
+ * its own day, so one whose day has passed is never sent, even for an event made after
+ * it. A claim on one that was left by a crashed run is closed as skipped.
  */
 
-import type { EventReminderCandidate, EventReminderKind } from "../db/types.ts";
-import { daysBetween, parseIsoDate, type DateOnly } from "../lib/dates.ts";
+import type {
+  EventReminderCandidate,
+  EventReminderKind,
+  EventStepKind,
+} from "../db/types.ts";
+import {
+  daysBetween,
+  parseIsoDate,
+  todayInZone,
+  type DateOnly,
+} from "../lib/dates.ts";
 import { STALE_CLAIM_MS } from "./plan.ts";
-
-/** One unfinished step, as the daily list shows it. */
-export type OpenStep =
-  | {
-      readonly kind: "budget_sheet" | "engage_post";
-      /** Empty when nobody is on the step, and the Events Directors role is asked instead. */
-      readonly assigneeIds: readonly string[];
-    }
-  | { readonly kind: "budget_approved" };
 
 export interface EventReminderRef {
   readonly eventId: string;
@@ -37,7 +37,7 @@ export interface EventReminderPlan {
   readonly sends: PlannedEventReminder[];
   /**
    * Stale claims on reminders that will not go out, to be recorded as skipped: an earlier
-   * day's, one whose list has since been finished, or any on an event with no post.
+   * day's, one whose condition no longer holds, or any on an event with no post.
    */
   readonly skips: EventReminderRef[];
   /** Reminders due today held by a claim too recent to take over. */
@@ -55,13 +55,18 @@ export interface EventPlanInput {
   readonly events: readonly EventReminderCandidate[];
 }
 
-function stepDone(event: EventReminderCandidate, kind: string): boolean {
-  return event.steps.some(
-    (step) => step.kind === kind && step.status === "done",
-  );
+function stepOf(event: EventReminderCandidate, kind: EventStepKind) {
+  return event.steps.find((step) => step.kind === kind);
 }
 
-function assigneesOf(event: EventReminderCandidate, kind: string): string[] {
+function stepDone(event: EventReminderCandidate, kind: EventStepKind): boolean {
+  return stepOf(event, kind)?.status === "done";
+}
+
+export function assigneesOf(
+  event: EventReminderCandidate,
+  kind: EventStepKind,
+): string[] {
   return [
     ...new Set(
       event.assignees
@@ -69,23 +74,6 @@ function assigneesOf(event: EventReminderCandidate, kind: string): string[] {
         .map((assignee) => assignee.user_id),
     ),
   ];
-}
-
-/**
- * The event's unfinished steps, in the club's order. Food pickup is never listed: it has
- * its own reminders once it is set up. Empty when everything else is done.
- */
-export function openSteps(event: EventReminderCandidate): OpenStep[] {
-  const steps: OpenStep[] = [];
-  for (const kind of ["budget_sheet", "engage_post"] as const) {
-    if (!stepDone(event, kind)) {
-      steps.push({ kind, assigneeIds: assigneesOf(event, kind) });
-    }
-  }
-  if (!stepDone(event, "budget_approved")) {
-    steps.push({ kind: "budget_approved" });
-  }
-  return steps;
 }
 
 /** The people on Food pickup, or null if it is not set up. */
@@ -96,6 +84,43 @@ export function pickupPeople(event: EventReminderCandidate): string[] | null {
     people.length > 0
     ? people
     : null;
+}
+
+/** Budget Sheet and Engage post, where they are open and nobody is on them. */
+export function unassignedSteps(
+  event: EventReminderCandidate,
+): ("budget_sheet" | "engage_post")[] {
+  return (["budget_sheet", "engage_post"] as const).filter(
+    (kind) => !stepDone(event, kind) && assigneesOf(event, kind).length === 0,
+  );
+}
+
+/** Whether Slides still needs doing: open and not marked not needed. */
+function slidesWanted(event: EventReminderCandidate): boolean {
+  const slides = stepOf(event, "slides");
+  return slides !== undefined && slides.status !== "done" && !slides.not_needed;
+}
+
+/** Days from the Saturday before the event to the event: 1 for Sunday, 0 for Saturday. */
+function daysAfterSaturday(eventDate: DateOnly): number {
+  return (new Date(eventDate).getUTCDay() + 1) % 7;
+}
+
+/** Whether today is a week after Engage post was done, in the guild's zone. */
+function engagePictureLate(
+  event: EventReminderCandidate,
+  today: DateOnly,
+): boolean {
+  const engage = stepOf(event, "engage_post");
+  if (
+    engage?.status !== "done" ||
+    engage.completed_at === null ||
+    stepDone(event, "engage_picture")
+  ) {
+    return false;
+  }
+  const doneOn = todayInZone(new Date(engage.completed_at), event.timezone);
+  return daysBetween(doneOn, today) === 7;
 }
 
 /** Days before the event that the first Food pickup reminder goes out. */
@@ -110,18 +135,44 @@ export function kindsDueToday(
   if (daysLeft < 0) {
     return [];
   }
-  const kinds: EventReminderKind[] = [];
-  if (openSteps(event).length > 0) {
-    kinds.push("daily_steps");
-  }
-  if (pickupPeople(event) !== null) {
-    if (daysLeft === PICKUP_REMINDER_DAYS_BEFORE) {
-      kinds.push("pickup_before");
-    } else if (daysLeft === 0) {
-      kinds.push("pickup_day");
-    }
-  }
-  return kinds;
+  const budgetOpen = !stepDone(event, "budget_sheet");
+  const engageOpen = !stepDone(event, "engage_post");
+  const budgetPeople = assigneesOf(event, "budget_sheet").length;
+  const engagePeople = assigneesOf(event, "engage_post").length;
+  const slidesPeople = assigneesOf(event, "slides").length;
+  const saturday = daysAfterSaturday(event.event_date);
+  const due: [EventReminderKind, boolean][] = [
+    ["steps_unassigned", daysLeft === 35 && unassignedSteps(event).length > 0],
+    ["budget_due", daysLeft === 28 && budgetOpen && budgetPeople > 0],
+    ["engage_due", daysLeft === 28 && engageOpen && engagePeople > 0],
+    ["budget_overdue", daysLeft === 21 && budgetOpen],
+    ["engage_overdue", daysLeft === 21 && engageOpen],
+    ["engage_picture_late", engagePictureLate(event, today)],
+    ["marketing_week", daysLeft === 7],
+    [
+      "slides_unassigned",
+      daysLeft === 7 && slidesWanted(event) && slidesPeople === 0,
+    ],
+    [
+      "pickup_unset",
+      daysLeft === 7 &&
+        (event.pickup_time === null ||
+          assigneesOf(event, "food_pickup").length === 0),
+    ],
+    ["marketing_saturday", saturday !== 0 && daysLeft === saturday],
+    ["slides_due", daysLeft === 2 && slidesWanted(event) && slidesPeople > 0],
+    [
+      "slides_tomorrow",
+      daysLeft === 1 && slidesWanted(event) && slidesPeople > 0,
+    ],
+    [
+      "pickup_before",
+      daysLeft === PICKUP_REMINDER_DAYS_BEFORE && pickupPeople(event) !== null,
+    ],
+    ["pickup_day", daysLeft === 0 && pickupPeople(event) !== null],
+    ["event_today", daysLeft === 0],
+  ];
+  return due.filter(([, send]) => send).map(([kind]) => kind);
 }
 
 /**
@@ -181,7 +232,7 @@ export function planEventReminders(input: EventPlanInput): EventReminderPlan {
       }
     }
     // A stale claim on anything not going out today: an earlier day's, or today's for a
-    // list that has since been finished.
+    // ping whose condition no longer holds.
     for (const entry of event.log) {
       const sending = entry.reminder_date === today && due.includes(entry.kind);
       if (entry.state === "claimed" && !sending && isStale(entry.claimed_at)) {

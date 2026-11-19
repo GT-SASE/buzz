@@ -179,6 +179,7 @@ const SUBS_WITH_PICKER = [
   "assign",
   "unassign",
   "pickup",
+  "undo",
 ];
 
 /** Requests to the events table made since `before`. */

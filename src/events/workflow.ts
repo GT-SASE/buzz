@@ -1,12 +1,16 @@
 /**
- * The event workflow's commands and buttons: /event assign, /event unassign and
- * /event pickup, the people picked on /event create, and the overview's Budget Sheet
- * done, Engage post done and Budget approved buttons with the ping that follows each.
+ * The event workflow's commands and buttons: /event assign, /event unassign,
+ * /event pickup and /event undo, the people picked on /event create, and the overview's
+ * buttons that mark a step done or Slides not needed, with the message that follows
+ * Budget Sheet, Engage post and Budget approved. Putting someone on a step pings them in
+ * the event's post. Nothing else here pings a person.
  *
  * Every value from a payload only names a row, which is loaded by ID and the signed
  * guild, and the actor is checked against what was loaded. A button can sit on the
- * public overview, so anyone can click it: Budget Sheet and Engage post take an assignee
- * of that step or an officer, and Budget approved takes an officer or the Treasury role.
+ * public overview, so anyone can click it: Budget Sheet, Engage post and Slides take an
+ * assignee of that step or an officer, Budget approved takes an officer or the Treasury
+ * role, Engage picture added an officer or the Marketing role, and No slides needed an
+ * officer.
  *
  * The router claims each interaction first, so a replay changes nothing. A step is done
  * by one call only, but every click on a done step tries the ping that follows, which the
@@ -28,7 +32,7 @@ import {
 } from "../discord/safe-text.ts";
 import type { SafeText } from "../discord/safe-text.ts";
 import { isThreadChannelType } from "../discord/verify.ts";
-import { errorSummary } from "../db/errors.ts";
+import { errorSummary, type DbResult } from "../db/errors.ts";
 import {
   assignEventStep,
   claimStepHandoff,
@@ -37,7 +41,9 @@ import {
   markStepHandoffSent,
   MAX_ASSIGNEES_PER_STEP,
   MAX_FOOD_PICKUP_ASSIGNEES,
+  reopenEventStep,
   setEventPickupTime,
+  setSlidesNotNeeded,
   unassignEventStep,
 } from "../db/event-steps.ts";
 import { getEvent } from "../db/events.ts";
@@ -48,14 +54,24 @@ import type {
   CompletableStepKind,
   EventRow,
   GuildConfig,
+  HandoffStepKind,
 } from "../db/types.ts";
-import { ASSIGNABLE_STEP_KINDS } from "../db/types.ts";
+import {
+  ASSIGNABLE_STEP_KINDS,
+  COMPLETABLE_STEP_KINDS,
+  HANDOFF_STEP_KINDS,
+} from "../db/types.ts";
 import {
   authorize,
-  canApproveBudget,
   canCompleteStep,
+  usableRoleId,
   type EventScopedAction,
 } from "../lib/permissions.ts";
+import {
+  chooseRoleToPingText,
+  MARKETING_ROLE,
+  TREASURY_ROLE,
+} from "../handlers/club-roles.ts";
 import {
   commandRoute,
   componentRoute,
@@ -73,7 +89,7 @@ import {
   REFUSED_TEXT,
   stringOption,
 } from "../tasks/shared.ts";
-import { reachWarning } from "../tasks/notify.ts";
+import { postInEvent, reachWarning } from "../tasks/notify.ts";
 import { MAX_PICKUP_INPUT_LENGTH, parsePickupTime } from "./input.ts";
 import {
   dateText,
@@ -83,6 +99,7 @@ import {
 } from "./overview.ts";
 import {
   pickupTimeText,
+  SLIDES_OFF_PREFIX,
   STEP_BUTTON_PREFIX,
   stepName,
   stepOwnerIds,
@@ -221,7 +238,7 @@ function stepOption(ctx: FinishContext): AssignableStepKind | undefined {
   return isAssignableKind(value) ? value : undefined;
 }
 
-const PICK_STEP = safe`Choose Budget Sheet, Engage post or Food pickup from the step option's list.`;
+const PICK_STEP = safe`Choose Budget Sheet, Engage post, Slides or Food pickup from the step option's list.`;
 
 function capText(kind: AssignableStepKind): SafeText {
   return safe`${stepName(kind)} already has ${escapeUserText(String(capOf(kind)))} people, the most it can have. Unassign someone first. Nothing was changed.`;
@@ -257,16 +274,42 @@ async function assign(
     }
   }
   const title = eventTitle(event);
-  if (!valueOf(written)) {
+  const outcome = valueOf(written);
+  if (outcome === "already_on") {
     return message(
       safe`${userMention(person.id)} is already on ${stepName(kind)} for **${title}**, so nothing was changed.`,
     );
   }
   const reply = safe`Put ${userMention(person.id)} on ${stepName(kind)} for **${title}**.`;
+  const told = await tellAssignee(ctx, event, kind, person.id);
+  if (outcome === "needed_again") {
+    await postInEvent(ctx, event, message(slidesNeededLine(ctx)));
+  }
   const hint =
     kind === "food_pickup" ? await pickupHint(ctx, event) : undefined;
   const reach = await reachWarning(ctx, event, person.id, "step");
-  return withNotes(reply, hint, reach, await redraw(ctx, event));
+  return withNotes(reply, told, hint, reach, await redraw(ctx, event));
+}
+
+/** The line in the event's post when No slides needed is undone, which pings nobody. */
+function slidesNeededLine(ctx: FinishContext): SafeText {
+  return safe`No slides needed undone by ${userMention(ctx.actor.userId)}.`;
+}
+
+/** Pings the person in the event's post, and no one else. Says if that failed. */
+async function tellAssignee(
+  ctx: FinishContext,
+  event: EventRow,
+  kind: AssignableStepKind,
+  userId: string,
+): Promise<SafeText | undefined> {
+  const told = await postInEvent(ctx, event, {
+    content: safe`${userMention(userId)} you're on ${stepName(kind)} for **${eventTitle(event)}**.`,
+    mentionUserIds: [userId],
+  });
+  return told === "posted"
+    ? undefined
+    : safe`I couldn't tell ${userMention(userId)} in the event's post, so let them know yourself.`;
 }
 
 /** After a person is put on Food pickup, says if the time is still missing. */
@@ -376,21 +419,26 @@ export function startingOwners(
   };
 }
 
+/** The people /event create has just put on a step, to be told once the post exists. */
+type StartedOwners = readonly (readonly [AssignableStepKind, string])[];
+
 /**
  * Puts the people picked on /event create on their steps, before the post is drawn.
- * Says what happened as reply lines. A failure here leaves the event made, so it is a
- * line telling the officer to use /event assign rather than a failed command.
+ * Says what happened as reply lines, and who is newly on a step. A failure here leaves
+ * the event made, so it is a line telling the officer to use /event assign rather than a
+ * failed command.
  */
 export async function assignStartingOwners(
   ctx: FinishContext,
   event: EventRow,
   owners: StartingOwners,
-): Promise<SafeText[]> {
+): Promise<{ notes: SafeText[]; started: StartedOwners }> {
   const picks: [AssignableStepKind, string | undefined][] = [
     ["budget_sheet", owners.budget],
     ["engage_post", owners.engage],
   ];
   const notes: SafeText[] = [];
+  const started: [AssignableStepKind, string][] = [];
   for (const [kind, userId] of picks) {
     if (userId === undefined) {
       continue;
@@ -404,6 +452,9 @@ export async function assignStartingOwners(
     });
     if (written.ok) {
       notes.push(safe`${stepName(kind)}: ${userMention(userId)}.`);
+      if (written.value !== "already_on") {
+        started.push([kind, userId]);
+      }
     } else {
       logFailure("starting owner", errorSummary(written.error));
       notes.push(
@@ -411,20 +462,42 @@ export async function assignStartingOwners(
       );
     }
   }
+  return { notes, started };
+}
+
+/**
+ * Pings the people /event create put on a step, in the post it has drawn since. The event
+ * is read again for its post. Says as reply lines whom it couldn't tell.
+ */
+export async function tellStartingOwners(
+  ctx: FinishContext,
+  event: EventRow,
+  started: StartedOwners,
+): Promise<SafeText[]> {
+  if (started.length === 0) {
+    return [];
+  }
+  const read = await getEvent(ctx.db, {
+    guildId: event.guild_id,
+    eventId: event.id,
+  });
+  const current = read.ok && read.value !== null ? read.value : event;
+  const notes: SafeText[] = [];
+  for (const [kind, userId] of started) {
+    const note = await tellAssignee(ctx, current, kind, userId);
+    if (note !== undefined) {
+      notes.push(note);
+    }
+  }
   return notes;
 }
 
-const ROLE_NAMES: Readonly<
-  Record<Exclude<CompletableStepKind, "budget_approved">, SafeText>
-> = {
-  budget_sheet: safe`Treasury Committee`,
-  engage_post: safe`Marketing Committee`,
-};
+const HANDOFF_ROLES = {
+  budget_sheet: TREASURY_ROLE,
+  engage_post: MARKETING_ROLE,
+} as const;
 
-/**
- * The role a finished step's hand-off pings, or null when none may be pinged: unset, or
- * the guild's own ID, which is @everyone.
- */
+/** The role a finished step's hand-off pings, or null when none may be pinged. */
 function handoffRole(
   config: Pick<
     GuildConfig,
@@ -432,11 +505,12 @@ function handoffRole(
   >,
   kind: "budget_sheet" | "engage_post",
 ): string | null {
-  const roleId =
+  return usableRoleId(
+    config.guild_id,
     kind === "budget_sheet"
       ? config.treasury_role_id
-      : config.marketing_role_id;
-  return roleId === null || roleId === config.guild_id ? null : roleId;
+      : config.marketing_role_id,
+  );
 }
 
 /**
@@ -450,7 +524,7 @@ export function handoffMessage(
     "guild_id" | "treasury_role_id" | "marketing_role_id"
   >,
   event: Pick<EventRow, "name">,
-  kind: CompletableStepKind,
+  kind: HandoffStepKind,
 ): MessageInput {
   const title = eventTitle(event);
   if (kind === "budget_approved") {
@@ -462,9 +536,7 @@ export function handoffMessage(
       ? safe`Budget Sheet for **${title}** is done.`
       : safe`Engage post for **${title}** is up.`;
   if (roleId === null) {
-    return message(
-      safe`${done} Run /setup to choose the ${ROLE_NAMES[kind]} role, so the next one pings it.`,
-    );
+    return message(safe`${done} ${chooseRoleToPingText(HANDOFF_ROLES[kind])}`);
   }
   return {
     content: safe`${roleMention(roleId)} ${done}`,
@@ -479,7 +551,7 @@ export function handoffMessage(
  * role was pinged.
  */
 export function toldText(
-  kind: CompletableStepKind,
+  kind: HandoffStepKind,
   config: Pick<
     GuildConfig,
     "guild_id" | "treasury_role_id" | "marketing_role_id"
@@ -566,7 +638,7 @@ async function budgetApproved(
 async function handOff(
   ctx: FinishContext,
   given: EventRow,
-  kind: CompletableStepKind,
+  kind: HandoffStepKind,
   fresh: boolean,
 ): Promise<SafeText | undefined> {
   const config = ctx.config;
@@ -630,12 +702,13 @@ export async function retryHandoffs(
     return;
   }
   for (const step of workflow.value.steps) {
+    const kind = HANDOFF_STEP_KINDS.find((handoff) => handoff === step.kind);
     if (
-      step.kind !== "food_pickup" &&
+      kind !== undefined &&
       step.status === "done" &&
       step.handoff_claimed_at === null
     ) {
-      await handOff(ctx, event, step.kind, false);
+      await handOff(ctx, event, kind, false);
     }
   }
 }
@@ -650,33 +723,11 @@ async function markStep(
   kind: ButtonStepKind,
   eventId: string,
 ): Promise<MessageInput> {
-  const { actor, config } = ctx;
+  const { actor } = ctx;
   const guildId = actor.guildId;
-  const read = await getEvent(ctx.db, { guildId, eventId });
-  if (!read.ok && read.error.category === "invalid_input") {
+  const event = await clickedEvent(ctx, eventId);
+  if (event === null || !(await mayMark(ctx, event, kind))) {
     return message(REFUSED_TEXT);
-  }
-  const event = valueOf(read);
-  if (event === null) {
-    return message(REFUSED_TEXT);
-  }
-  if (kind === "budget_approved") {
-    if (
-      !authorize("event.approve_budget", actor, config, event).allowed ||
-      !canApproveBudget(actor, config)
-    ) {
-      return message(REFUSED_TEXT);
-    }
-  } else {
-    const workflow = valueOf(
-      await getEventWorkflow(ctx.db, { guildId, eventId: event.id }),
-    );
-    if (
-      workflow === null ||
-      !canCompleteStep(actor, config, stepOwnerIds(workflow, kind))
-    ) {
-      return message(REFUSED_TEXT);
-    }
   }
   if (event.status !== "active") {
     return message(EVENT_CLOSED);
@@ -694,16 +745,188 @@ async function markStep(
   if (!written.ok && written.error.category === "not_found") {
     return message(REFUSED_TEXT);
   }
+  if (!written.ok && written.error.category === "step_not_ready") {
+    return message(
+      safe`Engage post for **${title}** isn't done yet, so the picture can't be marked added.`,
+    );
+  }
   // Done by this click or an earlier one, the step is owed its hand-off and a current
   // overview: the earlier click may have crashed, or drawn before this step was done.
   const fresh = valueOf(written);
-  const told = await handOff(ctx, event, kind, fresh);
+  const handoff = HANDOFF_STEP_KINDS.find((candidate) => candidate === kind);
+  const told =
+    handoff === undefined
+      ? undefined
+      : await handOff(ctx, event, handoff, fresh);
   const reply = !fresh
     ? safe`${stepName(kind)} for **${title}** is already done, so nothing was changed.`
     : kind === "budget_approved"
       ? safe`Marked the budget for **${title}** approved.`
-      : safe`Marked ${stepName(kind)} done for **${title}**.`;
+      : kind === "engage_picture"
+        ? safe`Marked the Engage picture added for **${title}**.`
+        : safe`Marked ${stepName(kind)} done for **${title}**.`;
   return withNotes(reply, told, await redraw(ctx, event));
+}
+
+/** The event a button's custom_id names, in the signed guild, or null. */
+async function clickedEvent(
+  ctx: FinishContext,
+  eventId: string,
+): Promise<EventRow | null> {
+  const read = await getEvent(ctx.db, { guildId: ctx.actor.guildId, eventId });
+  if (!read.ok && read.error.category === "invalid_input") {
+    return null;
+  }
+  return valueOf(read);
+}
+
+/** Whether the clicker may mark this step done on this event. */
+async function mayMark(
+  ctx: FinishContext,
+  event: EventRow,
+  kind: ButtonStepKind,
+): Promise<boolean> {
+  const { actor, config } = ctx;
+  switch (kind) {
+    case "budget_approved":
+      return authorize("event.approve_budget", actor, config, event).allowed;
+    case "engage_picture":
+      return authorize("event.picture_done", actor, config, event).allowed;
+    case "budget_sheet":
+    case "engage_post":
+    case "slides": {
+      const workflow = valueOf(
+        await getEventWorkflow(ctx.db, {
+          guildId: actor.guildId,
+          eventId: event.id,
+        }),
+      );
+      return (
+        workflow !== null &&
+        canCompleteStep(actor, config, stepOwnerIds(workflow, kind))
+      );
+    }
+  }
+}
+
+/** A click on No slides needed, which takes an officer. */
+async function markSlidesNotNeeded(
+  ctx: FinishContext,
+  eventId: string,
+): Promise<MessageInput> {
+  const { actor, config } = ctx;
+  const event = await clickedEvent(ctx, eventId);
+  if (
+    event === null ||
+    !authorize("event.slides_off", actor, config, event).allowed
+  ) {
+    return message(REFUSED_TEXT);
+  }
+  if (event.status !== "active") {
+    return message(EVENT_CLOSED);
+  }
+  const written = await setSlidesNotNeeded(ctx.db, {
+    guildId: actor.guildId,
+    eventId: event.id,
+    notNeeded: true,
+    actorId: actor.userId,
+  });
+  if (!written.ok && written.error.category === "parent_unavailable") {
+    return message(EVENT_CLOSED);
+  }
+  if (!written.ok && written.error.category === "not_found") {
+    return message(REFUSED_TEXT);
+  }
+  const title = eventTitle(event);
+  const reply = valueOf(written)
+    ? safe`Marked Slides not needed for **${title}**.`
+    : safe`Slides for **${title}** is already done or not needed, so nothing was changed.`;
+  return withNotes(reply, await redraw(ctx, event));
+}
+
+/** Whether Engage picture added is done, which undoing Engage post reopens too. */
+async function pictureAdded(
+  ctx: FinishContext,
+  event: EventRow,
+): Promise<boolean> {
+  const workflow = valueOf(
+    await getEventWorkflow(ctx.db, {
+      guildId: ctx.actor.guildId,
+      eventId: event.id,
+    }),
+  );
+  return (
+    workflow?.steps.some(
+      (step) => step.kind === "engage_picture" && step.status === "done",
+    ) ?? false
+  );
+}
+
+/** The /event undo choice that turns No slides needed off. */
+const SLIDES_NEEDED = "slides_needed";
+
+function isCompletableKind(value: unknown): value is CompletableStepKind {
+  return COMPLETABLE_STEP_KINDS.some((kind) => kind === value);
+}
+
+/**
+ * /event undo: reopens a done step, or turns No slides needed off. Everything then
+ * follows the usual rules again, so marking the step done again sends its ping again.
+ * The post gets a line saying who did it, which pings nobody.
+ */
+async function undo(
+  ctx: FinishContext,
+  event: EventRow,
+): Promise<MessageInput> {
+  const choice = stringOption(ctx.payload, "step");
+  const key = { guildId: ctx.actor.guildId, eventId: event.id };
+  const by = userMention(ctx.actor.userId);
+  const title = eventTitle(event);
+  let written: DbResult<boolean>;
+  let done: { readonly line: SafeText; readonly reply: SafeText };
+  let notDone: SafeText;
+  if (choice === SLIDES_NEEDED) {
+    written = await setSlidesNotNeeded(ctx.db, {
+      ...key,
+      notNeeded: false,
+      actorId: ctx.actor.userId,
+    });
+    done = {
+      line: slidesNeededLine(ctx),
+      reply: safe`Slides for **${title}** is needed again.`,
+    };
+    notDone = safe`Slides for **${title}** isn't marked not needed, so there's nothing to undo.`;
+  } else if (isCompletableKind(choice)) {
+    const pictureToo =
+      choice === "engage_post" && (await pictureAdded(ctx, event));
+    written = await reopenEventStep(ctx.db, { ...key, kind: choice });
+    done = {
+      line: pictureToo
+        ? safe`Engage post reopened by ${by}. This also reopened Engage picture added.`
+        : safe`${stepName(choice)} reopened by ${by}.`,
+      reply: safe`Reopened ${stepName(choice)} for **${title}**.`,
+    };
+    notDone = safe`${stepName(choice)} for **${title}** isn't done, so there's nothing to undo.`;
+  } else {
+    return message(safe`Choose a step from the step option's list.`);
+  }
+  if (!written.ok && written.error.category === "parent_unavailable") {
+    return message(EVENT_CLOSED);
+  }
+  if (!written.ok && written.error.category === "not_found") {
+    return message(REFUSED_TEXT);
+  }
+  if (!valueOf(written)) {
+    return message(notDone);
+  }
+  const posted = await postInEvent(ctx, event, message(done.line));
+  return withNotes(
+    done.reply,
+    posted === "posted"
+      ? undefined
+      : safe`I couldn't note it in the event's post.`,
+    await redraw(ctx, event),
+  );
 }
 
 const SUBCOMMAND = ApplicationCommandOptionType.Subcommand;
@@ -725,6 +948,7 @@ const STEP_OPTION: CommandOption = {
   choices: [
     { name: "Budget Sheet", value: "budget_sheet" },
     { name: "Engage post", value: "engage_post" },
+    { name: "Slides", value: "slides" },
     { name: "Food pickup", value: "food_pickup" },
   ],
 };
@@ -733,7 +957,7 @@ export const assignSubcommand: CommandOption = {
   type: SUBCOMMAND,
   name: "assign",
   description:
-    "Put someone on an event's Budget Sheet, Engage post or Food pickup",
+    "Put someone on an event's Budget Sheet, Engage post, Slides or Food pickup",
   options: [
     STEP_OPTION,
     { type: USER, name: "user", description: "Who", required: true },
@@ -768,6 +992,29 @@ export const pickupSubcommand: CommandOption = {
   ],
 };
 
+export const undoSubcommand: CommandOption = {
+  type: SUBCOMMAND,
+  name: "undo",
+  description: "Reopen a done step, or undo No slides needed",
+  options: [
+    {
+      type: STRING,
+      name: "step",
+      description: "Which step",
+      required: true,
+      choices: [
+        { name: "Budget Sheet", value: "budget_sheet" },
+        { name: "Engage post", value: "engage_post" },
+        { name: "Engage picture added", value: "engage_picture" },
+        { name: "Budget approved", value: "budget_approved" },
+        { name: "Slides", value: "slides" },
+        { name: "No slides needed", value: SLIDES_NEEDED },
+      ],
+    },
+    EVENT_OPTION,
+  ],
+};
+
 /** The options /event create takes to put people on steps up front. */
 export const STARTING_OWNER_OPTIONS: readonly CommandOption[] = [
   {
@@ -791,7 +1038,9 @@ function stepButtonRoute(kind: ButtonStepKind): Route {
     gate:
       kind === "budget_approved"
         ? tierOnly("event.approve_budget")
-        : noRow("event.step_done"),
+        : kind === "engage_picture"
+          ? tierOnly("event.picture_done")
+          : noRow("event.step_done"),
     changesState: true,
     finish: (ctx, _resource, [eventId]: readonly [string]) =>
       markStep(ctx, kind, eventId),
@@ -818,7 +1067,24 @@ export const workflowRoutes: readonly Route[] = [
     changesState: true,
     finish: onEvent("event.pickup", pickup),
   }),
+  commandRoute({
+    path: "event undo",
+    gate: tierOnly("event.undo"),
+    changesState: true,
+    finish: onEvent("event.undo", undo),
+  }),
   stepButtonRoute("budget_sheet"),
   stepButtonRoute("engage_post"),
+  stepButtonRoute("engage_picture"),
   stepButtonRoute("budget_approved"),
+  stepButtonRoute("slides"),
+  componentRoute({
+    prefix: SLIDES_OFF_PREFIX,
+    fields: ["uuid"],
+    onPublicMessage: true,
+    gate: tierOnly("event.slides_off"),
+    changesState: true,
+    finish: (ctx, _resource, [eventId]: readonly [string]) =>
+      markSlidesNotNeeded(ctx, eventId),
+  }),
 ];
