@@ -1,5 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import { and, count, desc, eq } from "drizzle-orm";
+import { and, count, desc, eq, notInArray } from "drizzle-orm";
 import { z } from "zod";
 
 import {
@@ -10,6 +10,7 @@ import {
   closedCommitteePicks,
   isCommitteeApplicationLocked,
   isCommitteeCycleOpen,
+  LOCKED_COMMITTEE_STATUSES,
 } from "../committee-cycle";
 import { notFound } from "../errors";
 import { isUndefinedTable, isUniqueViolation } from "../pg-errors";
@@ -207,8 +208,19 @@ export const committeeRouter = createTRPCRouter({
           ...answers,
           status: "submitted",
         })
-        .where(eq(committeeApplications.id, existing.id))
+        // The lock was read earlier; an officer may have decided since.
+        .where(
+          and(
+            eq(committeeApplications.id, existing.id),
+            notInArray(committeeApplications.status, [
+              ...LOCKED_COMMITTEE_STATUSES,
+            ]),
+          ),
+        )
         .returning(applicationSelect);
+      if (!updated) {
+        answersLocked();
+      }
       return updated;
     }),
 
@@ -236,8 +248,18 @@ export const committeeRouter = createTRPCRouter({
     const [updated] = await ctx.db
       .update(committeeApplications)
       .set({ status: "withdrawn" })
-      .where(eq(committeeApplications.id, existing.id))
+      .where(
+        and(
+          eq(committeeApplications.id, existing.id),
+          notInArray(committeeApplications.status, [
+            ...LOCKED_COMMITTEE_STATUSES,
+          ]),
+        ),
+      )
       .returning(applicationSelect);
+    if (!updated) {
+      answersLocked();
+    }
     return updated;
   }),
 

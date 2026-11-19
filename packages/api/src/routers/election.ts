@@ -316,10 +316,22 @@ export const electionRouter = createTRPCRouter({
       }
 
       try {
-        await ctx.db.insert(electionVotes).values({
-          positionId: input.positionId,
-          voterId: ctx.session.user.id,
-          candidateId: input.candidateId,
+        // A shared lock on the election row: ballots do not block each other,
+        // but setPhase (FOR UPDATE) waits for them and they see its result.
+        await ctx.db.transaction(async (tx) => {
+          const [locked] = await tx
+            .select({ phase: elections.phase })
+            .from(elections)
+            .where(eq(elections.id, position.electionId))
+            .for("share");
+          if (locked?.phase !== "voting") {
+            badRequest("Voting is not open for this election.");
+          }
+          await tx.insert(electionVotes).values({
+            positionId: input.positionId,
+            voterId: ctx.session.user.id,
+            candidateId: input.candidateId,
+          });
         });
       } catch (error) {
         if (isUniqueViolation(error)) {
@@ -486,58 +498,67 @@ export const electionRouter = createTRPCRouter({
         phase: z.enum(phases),
       }),
     )
-    .mutation(async ({ ctx, input }) => {
-      const election = await loadElection(ctx.db, input.electionId);
-      const forward = nextPhase[election.phase] === input.phase;
-      const back = election.phase === "voting" && input.phase === "nominating";
-      if (!forward && !back) {
-        badRequest(
-          `An election cannot go from ${election.phase} to ${input.phase}.`,
-        );
-      }
-
-      if (back) {
-        const [cast] = await ctx.db
-          .select({ n: count() })
-          .from(electionVotes)
-          .innerJoin(
-            electionPositions,
-            eq(electionPositions.id, electionVotes.positionId),
-          )
-          .where(eq(electionPositions.electionId, election.id));
-        if ((cast?.n ?? 0) > 0) {
+    .mutation(async ({ ctx, input }) =>
+      // FOR UPDATE: no ballot can land between the vote count and the update.
+      ctx.db.transaction(async (tx) => {
+        const [election] = await tx
+          .select()
+          .from(elections)
+          .where(eq(elections.id, input.electionId))
+          .for("update");
+        if (!election) notFound("Election");
+        const forward = nextPhase[election.phase] === input.phase;
+        const back =
+          election.phase === "voting" && input.phase === "nominating";
+        if (!forward && !back) {
           badRequest(
-            "Votes have been cast, so voting cannot be reopened for nominations.",
+            `An election cannot go from ${election.phase} to ${input.phase}.`,
           );
         }
-      }
 
-      if (input.phase === "voting") {
-        const [approved] = await ctx.db
-          .select({ n: count() })
-          .from(electionCandidates)
-          .innerJoin(
-            electionPositions,
-            eq(electionPositions.id, electionCandidates.positionId),
-          )
-          .where(
-            and(
-              eq(electionPositions.electionId, election.id),
-              eq(electionCandidates.status, "approved"),
-            ),
-          );
-        if ((approved?.n ?? 0) === 0) {
-          badRequest("Approve at least one candidate before opening voting.");
+        if (back) {
+          const [cast] = await tx
+            .select({ n: count() })
+            .from(electionVotes)
+            .innerJoin(
+              electionPositions,
+              eq(electionPositions.id, electionVotes.positionId),
+            )
+            .where(eq(electionPositions.electionId, election.id));
+          if ((cast?.n ?? 0) > 0) {
+            badRequest(
+              "Votes have been cast, so voting cannot be reopened for nominations.",
+            );
+          }
         }
-      }
 
-      const [updated] = await ctx.db
-        .update(elections)
-        .set({ phase: input.phase })
-        .where(eq(elections.id, election.id))
-        .returning({ id: elections.id, phase: elections.phase });
-      return updated;
-    }),
+        if (input.phase === "voting") {
+          const [approved] = await tx
+            .select({ n: count() })
+            .from(electionCandidates)
+            .innerJoin(
+              electionPositions,
+              eq(electionPositions.id, electionCandidates.positionId),
+            )
+            .where(
+              and(
+                eq(electionPositions.electionId, election.id),
+                eq(electionCandidates.status, "approved"),
+              ),
+            );
+          if ((approved?.n ?? 0) === 0) {
+            badRequest("Approve at least one candidate before opening voting.");
+          }
+        }
+
+        const [updated] = await tx
+          .update(elections)
+          .set({ phase: input.phase })
+          .where(eq(elections.id, election.id))
+          .returning({ id: elections.id, phase: elections.phase });
+        return updated;
+      }),
+    ),
 
   delete: adminProcedure
     .input(z.object({ electionId: z.string().min(1) }))

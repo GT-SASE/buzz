@@ -94,42 +94,32 @@ const revive = (row: StoredEvent): PublicEvent => ({
 
 type CalendarPayload = { upcoming: StoredEvent[]; past: StoredEvent[] };
 
+// Throws on a database error: unstable_cache does not store a throw, so one
+// transient failure is not served for the whole revalidate window.
 async function fetchChapterEvents(): Promise<CalendarPayload> {
   if (!process.env.DATABASE_URL) return { upcoming: [], past: [] };
 
   const cutoff = new Date(Date.now() - SETTLE_MS);
 
-  try {
-    const [upcoming, past] = await Promise.all([
-      db
-        .select(columns)
-        .from(events)
-        .where(and(isNull(events.archivedAt), gte(events.startsAt, cutoff)))
-        .orderBy(asc(events.startsAt))
-        .limit(80),
-      db
-        .select(columns)
-        .from(events)
-        .where(and(isNull(events.archivedAt), lt(events.startsAt, cutoff)))
-        .orderBy(desc(events.startsAt))
-        .limit(200),
-    ]);
+  const [upcoming, past] = await Promise.all([
+    db
+      .select(columns)
+      .from(events)
+      .where(and(isNull(events.archivedAt), gte(events.startsAt, cutoff)))
+      .orderBy(asc(events.startsAt))
+      .limit(80),
+    db
+      .select(columns)
+      .from(events)
+      .where(and(isNull(events.archivedAt), lt(events.startsAt, cutoff)))
+      .orderBy(desc(events.startsAt))
+      .limit(200),
+  ]);
 
-    return {
-      upcoming: upcoming.map(toStored),
-      past: past.map(toStored),
-    };
-  } catch (error) {
-    console.error(
-      JSON.stringify({
-        level: "error",
-        event: "chapter.calendar",
-        message: error instanceof Error ? error.message : String(error),
-        stack: error instanceof Error ? error.stack : undefined,
-      }),
-    );
-    return { upcoming: [], past: [] };
-  }
+  return {
+    upcoming: upcoming.map(toStored),
+    past: past.map(toStored),
+  };
 }
 
 /** Matches the homepage/events ISR in production. `next dev` ignores page
@@ -144,7 +134,20 @@ const loadChapterEvents = unstable_cache(
 );
 
 export async function getChapterEvents() {
-  const payload = await loadChapterEvents();
+  let payload: CalendarPayload;
+  try {
+    payload = await loadChapterEvents();
+  } catch (error) {
+    console.error(
+      JSON.stringify({
+        level: "error",
+        event: "chapter.calendar",
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      }),
+    );
+    payload = { upcoming: [], past: [] };
+  }
   return {
     upcoming: payload.upcoming.map(revive),
     past: payload.past.map(revive),
