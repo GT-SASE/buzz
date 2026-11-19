@@ -87,7 +87,7 @@ Each part is broken down in [docs/site-structure.md](docs/site-structure.md).
 
 ## Version
 
-The site is stamped with `MAJOR.MINOR.PATCH`, shown in the footer and returned with the commit SHA by `/api/health`. `MAJOR.MINOR` comes from `version` in `sites/web/package.json`; `PATCH` is the number of merges into `main` since that line last changed, and rolls into `MINOR` at 100. Bump `MAJOR.MINOR` by hand for a release worth naming; patch moves on its own with every merge. Vercel clones shallow, so the build deepens the clone from the public repo to count, and a build with no git reports the `package.json` version as is.
+The site is stamped with `MAJOR.MINOR.PATCH`, shown in the footer and returned with the commit SHA by `/api/health`. `MAJOR.MINOR` comes from `version` in `sites/web/package.json`; `PATCH` is the number of merges into `main` since that line last changed, and rolls into `MINOR` at 100. The whole repo shares that version: the MCP server reports it and every workspace `package.json` carries the same `X.Y.0` (`tests/versions.test.ts` checks). Bump `MAJOR.MINOR` by hand in all of them for a release worth naming; patch moves on its own with every merge. Vercel clones shallow, so the build deepens the clone from the public repo to count, and a build with no git reports the `package.json` version as is.
 
 | Version | Since | What changed |
 | --- | --- | --- |
@@ -98,6 +98,10 @@ The site is stamped with `MAJOR.MINOR.PATCH`, shown in the footer and returned w
 | 2.3 | 2026-10 | /status uptime page, self-hosted fonts, Turborepo |
 | 2.4 | 2026-11 | Bun and parallel CI |
 | 2.5 | 2026-11 | Admin page builder |
+
+## Agent tooling
+
+Coding agents should start with [AGENTS.md](AGENTS.md) (`CLAUDE.md` imports it). The repo also ships an MCP server, `packages/mcp`, registered in `.mcp.json` for Claude Code and runnable by any MCP client with `bun packages/mcp/src/index.ts`. It reads the source at call time and exposes the tRPC procedures, DB schema, migrations, routes, version, a guarded check runner and deploy status.
 
 ## Setup
 
