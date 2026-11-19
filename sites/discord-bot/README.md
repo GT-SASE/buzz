@@ -2,6 +2,8 @@
 
 A Discord bot for the SASE at Georgia Tech events team. It stores events, tasks and deadlines, creates a forum post for each event, and reminds each person about their own tasks.
 
+This is the `sites/discord-bot` workspace of the buzz monorepo (`@buzz/discord-bot`), imported from GT-SASE/discordBot with its history. It shares buzz's lockfile, tooling and CI, and deploys as its own Vercel project. Run the commands below from the repository root with `bun run --cwd sites/discord-bot <script>`, or from this folder.
+
 It runs on free tiers: TypeScript functions on Vercel Hobby and Postgres 17 on Neon. It has no always-on server and no website.
 
 **Status: v2, before launch.** It is set up fresh on the club's own accounts with [docs/SETUP.md](docs/SETUP.md), and [docs/STAGING_CHECKLIST.md](docs/STAGING_CHECKLIST.md) lists the smoke checks to pass before it joins the club's server.
@@ -182,7 +184,7 @@ No system is unhackable, and this one makes no such claim. The aim is to keep th
 **Secrets and supply chain**
 
 - Nothing logs a request body or interaction token. Logs hold fixed text, IDs and error codes.
-- Gitleaks scans every commit in CI and the pushed commits in a pre-push hook, with the default rules plus three project rules in `.gitleaks.toml`. `bun.lock` is committed and CI installs with `bun install --frozen-lockfile`. Direct dependencies are pinned to exact versions, install scripts are off, Actions are pinned by SHA, and Dependabot has a 7-day cooldown with no auto-merge.
+- Gitleaks scans every commit in CI and the pushed commits in a pre-push hook, with the default rules plus three project rules in `.gitleaks.toml`. `bun.lock` (the repository's) is committed and CI installs with `bun install --frozen-lockfile`. The bot's own dependencies are pinned to exact versions, Actions are pinned by SHA, and Dependabot has a 7-day cooldown with no auto-merge.
 
 **Backups**
 
@@ -209,11 +211,9 @@ These stay true with every control working:
 
 ## Local development
 
-You need the Bun version in `package.json` (`packageManager`), Git, Bash and curl, on macOS or Linux. Bun installs packages and runs every script, test and CI step.
+You need the Bun version in the root `package.json` (`packageManager`), Node 24, Git, Bash and curl, on macOS or Linux. Bun installs packages and runs every script, test and CI step.
 
-The functions run on Vercel's Bun runtime, in beta, set by `bunVersion` in `vercel.json`. It has no automatic source maps or bytecode caching yet.
-
-The code type-checks with TypeScript 7, installed as `typescript-7`, and with [tsrs](https://github.com/oxc-project/tsrs), its Rust port, as buzz does. tsrs is a beta, so it is pinned exactly and `bun run check` runs both. `typescript` stays on 6.0, because typescript-eslint and Vercel's build read it and typescript-eslint supports only versions below 6.1.
+The code type-checks with TypeScript 7, installed as `typescript-7`, and with [tsrs](https://github.com/oxc-project/tsrs), its Rust port, as buzz does. tsrs is a beta, so it is pinned exactly and `bun run check` runs both. `typescript` stays on 6.x at the root, because typescript-eslint supports only versions below 6.1.
 
 ```sh
 bun install --frozen-lockfile
@@ -221,7 +221,7 @@ bun run gitleaks:install
 bun run hooks:install
 ```
 
-Settings are in `bunfig.toml`. `hooks:install` turns on a pre-push hook that runs gitleaks over the commits being pushed and blocks the push on a finding. [SECURITY.md](SECURITY.md) lists its limits.
+Those last two run from the repository root. `bunfig.toml` here holds the test preload and applies to scripts run from this folder. `hooks:install` turns on a pre-push hook that runs gitleaks over the commits being pushed and blocks the push on a finding. [SECURITY.md](SECURITY.md) lists its limits.
 
 There is no local bot. Discord needs a public HTTPS URL, so tests stand in for it, and real runs happen on the deployment, on a private test server. `.env.example` lists every setting. Copy it to `.env` only when you need to register commands.
 
@@ -229,7 +229,7 @@ There is no local bot. Discord needs a public HTTPS URL, so tests stand in for i
 
 | Command                       | What it does                                                                                                                                                                            | Needs                                                                         |
 | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| `bun run check`               | Typecheck, lint, format, unit and PGlite tests through Turborepo, replaying any whose inputs are unchanged                                                                              | Nothing                                                                       |
+| `bun run check`               | At the repository root: lint, typecheck, format, and the unit and PGlite tests of every workspace, through Turborepo, replaying any whose inputs are unchanged                                                                              | Nothing                                                                       |
 | `bun run typecheck`           | Type check with tsrs, the Rust port of TypeScript 7                                                                                                                                     | Nothing                                                                       |
 | `bun run typecheck:tsc`       | Type check with TypeScript 7's `tsc`, the deciding check while tsrs is a beta                                                                                                           | Nothing                                                                       |
 | `bun run lint`                | ESLint (only the clients may call `fetch`)                                                                                                                                              | Nothing                                                                       |
@@ -255,7 +255,7 @@ test ! -e .gitleaksignore
 .tools/gitleaks git . --config .gitleaks.toml --redact --ignore-gitleaks-allow --no-banner --log-opts="--all -m --text --no-color"
 ```
 
-[CI](.github/workflows/ci.yml) runs on each pull request and on pushes to `main`, and ends with a Vercel build of the functions. It runs the checks with `bun run check`, which uses Vercel Remote Cache when the repository has a `TURBO_TOKEN` secret and a `TURBO_TEAM` variable. [Database](.github/workflows/db.yml) runs only for pull requests into `main` and pushes to `main`, and skips a change to `docs/`, `README.md` or `SECURITY.md` alone. A newer run on the same branch cancels the older one.
+The repository's [CI](../../.github/workflows/ci.yml) lints, type checks and formats the bot with the rest of buzz, runs its unit and PGlite tests, builds its functions and loads them from outside the repository, and scans every commit with gitleaks. [Discord bot database](../../.github/workflows/discord-bot-db.yml) runs the concurrency tests on Postgres 17, only when `sites/discord-bot/**` or `bun.lock` changes.
 
 ### Commits
 
@@ -277,15 +277,16 @@ To add a command, write a file in `src/handlers/` that exports `handler`, add on
 
 [docs/SETUP.md](docs/SETUP.md) has every step, from the Neon project and the migrations to the Vercel project and its settings.
 
+`bun run build` (`scripts/build.ts`) bundles each function with `bun build`, every dependency inlined, and writes Vercel's Build Output API layout to `.vercel/output`: `config.json` with the crons, one `.func` folder per function on the Node.js runtime with a 60 second limit, and `public/` as the static files. Vercel then runs no file tracing and ships no `node_modules`, which is why the bot can be a workspace of a repository that installs with Bun's isolated linker. `bun run smoke` copies the built functions out of the repository and checks that an unsigned request and a cron call without the secret are both refused with 401.
+
 These settings in the repo are easy to break:
 
-- `bunVersion` in `vercel.json` selects the Bun runtime. Do not add `engines.node` to `package.json`: it silently switches the functions back to Node. CI checks this.
-- Keep `outputDirectory` set to `public`, and keep `public/robots.txt`, because Vercel refuses an empty output directory. Without a `public` directory, Vercel publishes the repository's files.
+- Functions and crons are listed in `scripts/deployment.ts`, not in `vercel.json`. Keep `public/robots.txt`.
+- `vercel.json` sets the install command (from the repository root, so the root lockfile is used), the build command and the ignored build step.
 - Do not add tests or helpers under `api/`.
 - `git.deploymentEnabled` deploys `main` and nothing else. The rule is `**`, because `*` does not match a branch name containing a slash.
-- Vercel installs with Bun from `bun.lock`, and `bunfig.toml` keeps install scripts off.
 - `.vercelignore` keeps local `.env` files out of a deployment made with the Vercel CLI.
-- The first cron schedule must stay in step with `SLOT_START_HOUR_UTC`, which `cron-endpoint.test.ts` checks. The second cron only recovers a failed first run.
+- The first cron schedule in `scripts/deployment.ts` must stay in step with `SLOT_START_HOUR_UTC`, which `cron-endpoint.test.ts` checks. The second cron only recovers a failed first run.
 
 ## Documentation
 
@@ -294,6 +295,5 @@ These settings in the repo are easy to break:
 - [docs/RECOVERY.md](docs/RECOVERY.md): undoing a change, Neon's point-in-time restore and manual exports
 - [docs/RUNBOOK.md](docs/RUNBOOK.md): when the runs happen, a failing run, the bot removed from a server, a full database, deploy order and data retention
 - [docs/HANDOFF.md](docs/HANDOFF.md): passing the bot to the next maintainer
-- [docs/MERGE_INTO_BUZZ.md](docs/MERGE_INTO_BUZZ.md): moving the bot into the buzz repository
 - [docs/adr/](docs/adr/): decision records
 - [SECURITY.md](SECURITY.md): reporting a problem and handling a leak

@@ -16,12 +16,12 @@ You need:
 Get the code and check it:
 
 ```sh
-git clone <repository-url>
-cd <repository-folder>
+git clone git@github.com:GT-SASE/buzz.git
+cd buzz
 bun install --frozen-lockfile
 bun run gitleaks:install
 bun run hooks:install
-bun run typecheck && bun run lint && bun run test
+bun run check
 ```
 
 **Expect:** the checks pass.
@@ -106,7 +106,7 @@ unset OWNER_URL BOT_URL
 
 1. Choose **Add New** > **Project** and import the GitHub repository, giving Vercel access to this repository only.
 2. Choose a name. It becomes the public URL `<name>.vercel.app`.
-3. Leave the framework as Other and the root directory as it is. `vercel.json` sets the rest, and deploys `main` only.
+3. Set **Root Directory** to `sites/discord-bot`, and leave "Include files outside of the Root Directory" on, because the install runs at the repository root. Leave the framework as Other and the install, build and ignored-build settings empty. `vercel.json` sets them, and deploys `main` only.
 4. Deploy. With no settings yet, every request fails. That is fine.
 5. Check that Settings > Environments > Production > Branch Tracking says `main`.
 

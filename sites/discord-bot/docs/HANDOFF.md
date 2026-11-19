@@ -26,7 +26,7 @@ The outgoing maintainer takes a manual export, as in [RECOVERY.md](RECOVERY.md#a
 ### GitHub
 
 1. Move the main repo under Settings > General > Danger Zone > Transfer ownership. The new owner accepts by email. Check this in the dashboard.
-2. The incoming maintainer clones the repo, then runs `bun install --frozen-lockfile`, `bun run gitleaks:install` and `bun run hooks:install`. Confirm `git config user.email` shows their noreply address.
+2. The incoming maintainer clones the repo, then runs `bun install --frozen-lockfile`, `bun run gitleaks:install` and `bun run hooks:install` at the root of the buzz repository. Confirm `git config user.email` shows their noreply address.
 3. They also set up the clone's local excludes, as in "Before you start" in [SETUP.md](SETUP.md). The list belongs to one clone, so the outgoing maintainer passes on theirs privately, and it should not go in this repo. They can print it with `cat "$(git rev-parse --git-path info/exclude)"`.
 
 The repository is public, so Vercel Hobby can deploy it from a personal account or an organisation. Check this in the dashboard before moving it to an organisation.

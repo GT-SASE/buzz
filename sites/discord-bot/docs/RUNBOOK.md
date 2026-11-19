@@ -6,7 +6,7 @@ Behaviour stated here was read from the code or run in tests with Discord mocked
 
 ## When it runs
 
-- The daily job runs from two Vercel Cron schedules in `vercel.json`: the morning run at 15:00 UTC, which is 10 AM Eastern in winter and 11 AM in summer, and the recovery run at 17:00 UTC. Each can fire any time in its hour. The recovery run does nothing after a good morning run, and carries on after a failed one.
+- The daily job runs from two Vercel Cron schedules in `scripts/deployment.ts`: the morning run at 15:00 UTC, which is 10 AM Eastern in winter and 11 AM in summer, and the recovery run at 17:00 UTC. Each can fire any time in its hour. The recovery run does nothing after a good morning run, and carries on after a failed one.
 - A Discord failure that is not about one event's post, such as an outage, a rate limit or a refused token, stops the run, and the recovery run carries on. If both runs of a day stop, that day's remaining reminders are skipped, and the next day's go out as usual.
 - A locked or inaccessible post makes the reminder run fail until someone fixes the post or closes the event. Logs say `Thread refused the bot for event <id>`, and the other events' reminders still go out.
 
@@ -82,7 +82,7 @@ Check the size on the project's usage page in the Neon console. `history.row_ver
 
 ## Deploy order
 
-**Migrations go first, then code.** A merge to `main` deploys by itself, because `vercel.json` turns on deployments for `main` only. No workflow applies migrations, so nothing keeps the two in step except doing them in this order.
+**Migrations go first, then code.** A merge to `main` deploys by itself, because `vercel.json` turns on deployments for `main` only, and only when a commit touches `sites/discord-bot` or `bun.lock`. No workflow applies migrations, so nothing keeps the two in step except doing them in this order.
 
 1. Check that the branch is up to date with `main`. In a throwaway checkout:
 
@@ -117,7 +117,7 @@ Check the size on the project's usage page in the Neon console. `history.row_ver
    ```sh
    read -rs OWNER_URL
    DATABASE_URL="$OWNER_URL" bun run db:migrate
-   DATABASE_URL="$OWNER_URL" bunx --bun --no-install dbmate --migrations-dir db/migrations status
+   DATABASE_URL="$OWNER_URL" bun x --bun --no-install dbmate --migrations-dir db/migrations status
    ```
 
    The first lists the files it applied, and the second should show nothing pending.

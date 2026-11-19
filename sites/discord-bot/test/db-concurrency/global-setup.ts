@@ -5,13 +5,13 @@ import pg from "pg";
  * database with dbmate, as an operator does, and given bot_app a password. Each file
  * copies that database into one of its own, which writes nothing cluster-wide.
  *
- * Needs CONCURRENCY_DATABASE_URL, a Postgres 17 superuser connection to the migrated
+ * Needs CONCURRENCY_DATABASE_URL, a Postgres 17 or newer superuser connection to the migrated
  * database, and BOT_APP_PASSWORD, the password CI gave bot_app. The tests log in as
  * bot_app with it, as the bot does. A missing setting or a wrong server fails the run:
  * these tests must never skip.
  */
 
-const EXPECTED_MAJOR_VERSION = "17";
+const MINIMUM_MAJOR_VERSION = 17;
 
 /** What every file needs to reach the cluster and copy the template. */
 interface ConcurrencyContext {
@@ -78,10 +78,10 @@ async function setup(): Promise<ConcurrencyContext> {
     const version = await cluster.query<{ server_version_num: string }>(
       "SHOW server_version_num",
     );
-    const major = version.rows[0]?.server_version_num.slice(0, 2);
-    if (major !== EXPECTED_MAJOR_VERSION) {
+    const major = Number(version.rows[0]?.server_version_num.slice(0, 2));
+    if (!(major >= MINIMUM_MAJOR_VERSION)) {
       fail(
-        `the server must be Postgres ${EXPECTED_MAJOR_VERSION}, not ${String(major)}`,
+        `the server must be Postgres ${String(MINIMUM_MAJOR_VERSION)} or newer, not ${String(major)}`,
       );
     }
   });

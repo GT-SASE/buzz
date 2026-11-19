@@ -50,6 +50,22 @@ updates:
       - dependency-name: eslint
         update-types: ["version-update:semver-major"]
 
+  # The Discord bot. Its dependencies are pinned exactly, and the lockfile is the root one.
+  - package-ecosystem: bun
+    directory: /sites/discord-bot
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      discord-bot:
+        patterns: ["*"]
+        update-types: [minor, patch]
+    ignore:
+      # Newer majors add many runtime packages for one function, waitUntil.
+      - dependency-name: "@vercel/functions"
+        update-types: ["version-update:semver-major"]
+
   - package-ecosystem: github-actions
     directory: /
     schedule:

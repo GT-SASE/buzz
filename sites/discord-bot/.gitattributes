@@ -1,3 +1,0 @@
-# Checked out with LF on every platform. Prettier expects LF, and shell scripts fail
-# under bash with CRLF.
-* text=auto eol=lf
