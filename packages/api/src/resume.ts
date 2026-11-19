@@ -61,9 +61,12 @@ export function parseResumeUpload(input: {
 export function resumeDownloadHeaders(fileName: string) {
   const safe = sanitizeResumeFileName(fileName);
   const encoded = encodeURIComponent(safe);
+  // Header values must be Latin-1; the quoted form is an ASCII fallback and
+  // the full name travels in filename*.
+  const ascii = safe.replace(/[^ -~]/g, "_");
   return {
     "Content-Type": RESUME_MIME,
-    "Content-Disposition": `attachment; filename="${safe}"; filename*=UTF-8''${encoded}`,
+    "Content-Disposition": `attachment; filename="${ascii}"; filename*=UTF-8''${encoded}`,
     "Cache-Control": "private, no-store",
     "X-Content-Type-Options": "nosniff",
   };
