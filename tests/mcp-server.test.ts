@@ -1,4 +1,6 @@
 import { describe, expect, it } from "bun:test";
+import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -14,6 +16,26 @@ describe("buzz mcp server over stdio", () => {
     for (const [k, v] of Object.entries(process.env)) {
       if (v !== undefined && k !== "DATABASE_URL") env[k] = v;
     }
+    // Shallow clones (GitHub CI): server returns MAJOR.MINOR.0 instead of the computed build.
+    const webDir = path.join(root, "sites/web");
+    const shallow = execFileSync(
+      "git",
+      ["rev-parse", "--is-shallow-repository"],
+      {
+        cwd: webDir,
+        encoding: "utf8",
+      },
+    ).trim();
+    let expected: string;
+    if (shallow === "true") {
+      const pkg = JSON.parse(
+        readFileSync(path.join(webDir, "package.json"), "utf8"),
+      );
+      const [major, minor] = String(pkg.version).split(".");
+      expected = `${major}.${minor}.0`;
+    } else {
+      expected = appBuild().version;
+    }
     const client = new Client({ name: "test", version: "0.0.0" });
     await client.connect(
       new StdioClientTransport({
@@ -26,7 +48,7 @@ describe("buzz mcp server over stdio", () => {
     try {
       const serverVersion = client.getServerVersion()?.version;
       expect(serverVersion).toMatch(/^\d+\.\d+\.\d+$/);
-      expect(serverVersion).toBe(appBuild().version);
+      expect(serverVersion).toBe(expected);
 
       const { tools } = await client.listTools();
       expect(tools.map((t) => t.name).sort()).toEqual([
