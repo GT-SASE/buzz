@@ -64,6 +64,7 @@ export default function PortalError({
               className="border-hairline text-navy hover:bg-cream min-h-11 w-full rounded-md font-semibold sm:w-auto"
             >
               {/* A real navigation, not a soft one: the tree that threw is discarded. */}
+              {/* react-doctor-disable-next-line react-doctor/nextjs-no-a-element -- full reload on purpose, see above */}
               <a href="/">Back to the site</a>
             </Button>
           </div>

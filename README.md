@@ -13,6 +13,7 @@ packages/db     @buzz/db     drizzle schema, the client, drizzle-kit config
 packages/auth   @buzz/auth   NextAuth config and the auth() helper
 packages/api    @buzz/api    tRPC context, procedures, routers
 sites/web       @buzz/web    the Next.js app
+sites/discord-bot  @buzz/discord-bot  the events team Discord bot (Vercel functions, its own `discord_bot` schema in the same Postgres)
 ```
 
 Inside `sites/web/src`:
@@ -33,10 +34,14 @@ runner and bundler, not these scripts (bare `bun test` skips the DOM setup the
 the scripts and the tests; eslint, prettier and the TypeScript CLIs still run on
 Node 24 (`.nvmrc`). `bun run check`, `typecheck` and `typecheck:tsc` go
 through Turborepo, which caches each task by its inputs: a second run with no
-changes replays the logs instead of re-running. Schema changes go through Drizzle Kit (`bun run db:generate` →
+changes replays the logs instead of re-running. To share results across machines
+and CI, enable the Vercel Remote Cache: `bun x turbo login` then `bun x turbo link`
+(team `sasegt`); CI uses the `TURBO_TOKEN` secret and `TURBO_TEAM` variable. Schema changes go through Drizzle Kit (`bun run db:generate` →
 commit SQL → `bun run db:migrate`).
 
-Deploying on Vercel: set **Root Directory** to `sites/web`. Vercel installs from
+`sites/discord-bot` is a separate Vercel project and has its own README. It bundles its functions with `bun build` into Vercel Build Output, so it deploys with no `node_modules` tracing even though the repo installs with the isolated linker. Its tests run through `bun run check`; `bun run hooks:install` and `bun run gitleaks:install` set up the pre-push secret scan (`.githooks`, `.gitleaks.toml`) for the whole repo.
+
+Deploying the site on Vercel: set **Root Directory** to `sites/web`. Vercel installs from
 the repo root, so the workspace packages resolve normally. `sites/web/vercel.json`
 installs and builds with Bun and sets `bunVersion`, so functions run on the Bun
 runtime.

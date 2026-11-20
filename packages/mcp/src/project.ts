@@ -4,6 +4,7 @@ import { promisify } from "node:util";
 
 import { readdirSync } from "node:fs";
 
+import { BOT_MIGRATIONS_DIR } from "./bot";
 import { listDir, readRepoFile, repoPath } from "./repo";
 
 const run = promisify(execFile);
@@ -29,7 +30,11 @@ export function migrations(): string {
   );
   const latest = files.at(-1);
   const n = Number(latest?.slice(0, 4));
+  const botFiles = listDir(BOT_MIGRATIONS_DIR).filter((f) =>
+    f.endsWith(".sql"),
+  );
   return [
+    "== buzz database (Drizzle, packages/db/drizzle) ==",
     ...files.map((f) => `packages/db/drizzle/${f}`),
     "",
     `latest: ${latest ?? "none"}; next number: ${String(n + 1).padStart(4, "0")}`,
@@ -40,6 +45,18 @@ export function migrations(): string {
     "3. Commit the generated SQL and meta with the schema change.",
     "4. bun run db:migrate (against a disposable DB, never the repo .env one).",
     "Production migrates during the Vercel production build via scripts/vercel-build.mjs (previews skip it).",
+    "",
+    `== bot database (dbmate, ${BOT_MIGRATIONS_DIR}) ==`,
+    ...botFiles.map((f) => `${BOT_MIGRATIONS_DIR}/${f}`),
+    "",
+    `latest: ${botFiles.at(-1) ?? "none"}; next file: a new \`<UTC YYYYMMDDHHMMSS>_<name>.sql\` made by dbmate`,
+    "",
+    "Process:",
+    "1. From sites/discord-bot: bun x --bun --no-install dbmate --migrations-dir db/migrations new <name>. Write SQL under '-- migrate:up'. An applied file never changes; there are no down migrations.",
+    "2. Keep bot_app grants and SECURITY DEFINER / empty search_path on any new function.",
+    "3. bun run --cwd sites/discord-bot db:migrate against a disposable DB (DATABASE_URL of its owner role, never the repo .env one, never bot_app).",
+    "4. bun run --cwd sites/discord-bot test:db (PGlite) pins the schema.",
+    "Production is a manual owner step: no build or workflow applies these. Apply migrations first with the owner's direct connection string, then merge the code (sites/discord-bot/docs/RUNBOOK.md, 'Migrations go first, then code').",
   ].join("\n");
 }
 
@@ -114,9 +131,57 @@ export function latestVercelStatuses(statuses: CommitStatus[]): CommitStatus[] {
   });
 }
 
+export type CiRun = {
+  conclusion: string | null;
+  status: string;
+  headSha: string;
+  url: string;
+  displayTitle?: string;
+};
+
+/** One line for the newest CI run on main; `mainSha` flags a run for an older commit. */
+export function formatCiRun(runs: CiRun[], mainSha?: string): string {
+  const r = runs[0];
+  if (!r) return "github CI (main): no runs found";
+  const state = r.conclusion ?? r.status;
+  const stale =
+    mainSha && r.headSha !== mainSha
+      ? ` (run is for ${r.headSha.slice(0, 7)}, not main's ${mainSha.slice(0, 7)})`
+      : "";
+  const warn = state === "success" ? "" : "  NOT GREEN";
+  return `github CI (main): ${state} ${r.headSha.slice(0, 7)}${stale} ${r.url}${warn}`;
+}
+
+/** Latest CI conclusion for main. Degrades to a message when gh is missing or fails. */
+export async function ciStatus(
+  runGh: (...args: string[]) => Promise<string> = gh,
+  mainSha?: string,
+): Promise<string> {
+  try {
+    const out = await runGh(
+      "run",
+      "list",
+      "--repo",
+      REPO,
+      "--workflow",
+      "CI",
+      "--branch",
+      "main",
+      "--limit",
+      "1",
+      "--json",
+      "conclusion,status,headSha,url,displayTitle",
+    );
+    return formatCiRun(JSON.parse(out) as CiRun[], mainSha);
+  } catch (e) {
+    return `github CI (main) unavailable (gh missing or not authed): ${(e as Error).message.split("\n")[0]}`;
+  }
+}
+
 /** Never touches /api/health or any route that reads the database. */
 export async function deployStatus(): Promise<string> {
   const lines: string[] = [];
+  let mainSha: string | undefined;
   try {
     const sha = await gh("api", `repos/${REPO}/commits/main`, "--jq", ".sha");
     const msg = await gh(
@@ -125,6 +190,7 @@ export async function deployStatus(): Promise<string> {
       "--jq",
       '.commit.message | split("\\n")[0]',
     );
+    mainSha = sha;
     lines.push(`main: ${sha.slice(0, 7)} ${msg}`);
     const statuses = JSON.parse(
       await gh("api", `repos/${REPO}/commits/${sha}/statuses`),
@@ -139,6 +205,7 @@ export async function deployStatus(): Promise<string> {
       `github unavailable (gh missing or not authed): ${(e as Error).message.split("\n")[0]}`,
     );
   }
+  lines.push(await ciStatus(gh, mainSha));
   try {
     const res = await fetch("https://buzzsase.vercel.app/", {
       signal: AbortSignal.timeout(15_000),

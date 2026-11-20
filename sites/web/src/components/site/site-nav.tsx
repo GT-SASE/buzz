@@ -130,6 +130,7 @@ export function SiteNav() {
                     {group.label}
                     <ChevronDown className="size-3 transition-transform duration-200 group-open:rotate-180" />
                   </summary>
+                  {/* react-doctor-disable-next-line react-doctor/no-transition-all -- no transition-all here; only the native details animate-in utilities */}
                   <div className="border-gold ring-hairline bg-paper group-open:animate-in group-open:fade-in-0 group-open:zoom-in-95 absolute top-full left-0 z-50 mt-3.5 w-56 origin-top-left overflow-hidden rounded-xl border-t-2 shadow-md ring-1 duration-200">
                     {group.items.map((item) => (
                       <Link
@@ -183,6 +184,7 @@ export function SiteNav() {
             and closes on Escape. A press on the backdrop lands on the dialog
             itself, which has no padding of its own, so that is the only way
             the target can be the dialog. */}
+        {/* react-doctor-disable-next-line react-doctor/no-noninteractive-element-interactions -- backdrop tap on a native modal dialog; Escape and the close button are the keyboard paths */}
         <dialog
           ref={sheetRef}
           aria-labelledby={titleId}

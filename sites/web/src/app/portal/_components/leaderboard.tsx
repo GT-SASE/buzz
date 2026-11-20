@@ -119,9 +119,9 @@ export function Leaderboard() {
   return (
     <Board>
       <ul className="mt-4 grid gap-3 md:hidden">
-        {top.map((row, index) => (
+        {top.map((row) => (
           <li
-            key={index}
+            key={row.rank}
             className={cn(
               "border-hairline flex items-baseline justify-between gap-3 rounded-lg border px-4 py-3",
               row.isYou && "bg-cream",
@@ -181,9 +181,9 @@ export function Leaderboard() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {top.map((row, index) => (
+            {top.map((row) => (
               <Standing
-                key={index}
+                key={row.rank}
                 rank={row.rank}
                 name={row.name}
                 totalPoints={row.totalPoints}

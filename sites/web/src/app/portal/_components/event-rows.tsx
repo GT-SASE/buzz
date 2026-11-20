@@ -53,6 +53,7 @@ export function EventRows({
         <h2 className="text-eyebrow tracking-caps text-ink-muted font-semibold uppercase">
           {title}
         </h2>
+        {/* react-doctor-disable-next-line react-doctor/rendering-conditional-render -- count is a string, not a number */}
         {count && (
           <p className="text-ink-muted text-body-sm tabular-nums">{count}</p>
         )}

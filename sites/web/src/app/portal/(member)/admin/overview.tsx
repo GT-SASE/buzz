@@ -17,7 +17,7 @@ function Figure({
   note: string;
 }) {
   return (
-    <div className="border-hairline bg-paper/80 hover:border-gold-ink/30 flex flex-col rounded-xl border p-4 shadow-xs transition-all sm:p-5">
+    <div className="border-hairline bg-paper/80 hover:border-gold-ink/30 flex flex-col rounded-xl border p-4 shadow-xs transition-colors sm:p-5">
       <Eyebrow
         as="dt"
         tone="muted"
