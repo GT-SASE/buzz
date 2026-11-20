@@ -54,6 +54,7 @@ import {
   resolveStaleClaim,
 } from "../../src/db/reminders.ts";
 import {
+  countOpenTasksInChannel,
   createTask,
   editTask,
   getTask,
@@ -768,6 +769,20 @@ describe("database layer against the real schema", () => {
       expect(ids).toContain(open);
       expect(ids).not.toContain(closed);
       expect(ids).not.toContain(foreign);
+    });
+
+    it("counts only the open tasks of active events when a forum is removed", async () => {
+      const forum = await insertGuild(pg);
+      const active = await insertEvent(pg, forum);
+      const closed = await insertEvent(pg, forum);
+      await insertTask(pg, forum, active);
+      await insertTask(pg, forum, closed);
+      await ok(closeEvent(db, { ...forum, eventId: closed }));
+
+      expect(await ok(countOpenTasksInChannel(db, forum))).toEqual({
+        count: 1,
+        truncated: false,
+      });
     });
 
     it("refuses every change of work on a closed event's task, but lets it be deleted", async () => {
