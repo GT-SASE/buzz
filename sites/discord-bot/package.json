@@ -13,7 +13,7 @@
     "test": "bun test --isolate ./src ./scripts",
     "test:db": "bun test --isolate --parallel --timeout 30000 ./test/db/",
     "test:db:concurrency": "bun test --timeout 30000 --preload ./test/db-concurrency/preload.ts ./test/db-concurrency/",
-    "db:migrate": "dbmate --migrations-dir db/migrations --no-dump-schema up",
+    "db:migrate": "dbmate --migrations-dir db/migrations --migrations-table discord_bot.schema_migrations --no-dump-schema up",
     "commands:register": "bun --env-file=.env scripts/register-commands.ts"
   },
   "dependencies": {

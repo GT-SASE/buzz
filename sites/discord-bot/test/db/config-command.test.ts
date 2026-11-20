@@ -713,7 +713,7 @@ describe("removing a forum", () => {
     expect(edits[0]?.content).toContain(`Removed <#${FORUM}>.`);
     expect(edits[0]?.content).toContain("adding it again resumes");
     const tasks = await w.pg.query(
-      "SELECT 1 FROM public.tasks WHERE status = 'open' AND deleted_at IS NULL",
+      "SELECT 1 FROM discord_bot.tasks WHERE status = 'open' AND deleted_at IS NULL",
     );
     expect(tasks.rows).toHaveLength(2);
   });

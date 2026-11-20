@@ -76,11 +76,11 @@ async function seed({
     world.discord.messageIds.add(overviewId);
   }
   const { rows } = await world.pg.query<{ id: string }>(
-    `INSERT INTO public.events
+    `INSERT INTO discord_bot.events
        (guild_id, channel_id, name, event_date, created_by, thread_id,
         overview_message_id, status, thread_status, deleted_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8::public.event_status,
-       $9::public.thread_status, CASE WHEN $10::boolean THEN now() END)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8::discord_bot.event_status,
+       $9::discord_bot.thread_status, CASE WHEN $10::boolean THEN now() END)
      RETURNING id`,
     [
       guildId,
@@ -251,7 +251,7 @@ describe("the event picker", () => {
 
   it("reports a database failure as no choices", async () => {
     await seed();
-    world.failDb(/^SQL select .* from events/);
+    world.failDb(/^SQL select .* from discord_bot.events/);
 
     expect(await choices("status", "")).toEqual([]);
   });
@@ -531,7 +531,7 @@ describe("/event delete", () => {
       expect(ran.reply.type).toBe(6);
       expect((await world.events())[0]?.deleted_at).not.toBeNull();
       const { rows } = await world.pg.query<{ deleted: boolean }>(
-        `SELECT deleted_at IS NOT NULL AS deleted FROM public.tasks`,
+        `SELECT deleted_at IS NOT NULL AS deleted FROM discord_bot.tasks`,
       );
       expect(rows).toEqual([{ deleted: true }]);
       const [line, ...others] = world.discord.posts();

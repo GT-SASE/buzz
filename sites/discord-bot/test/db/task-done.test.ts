@@ -183,7 +183,7 @@ describe("marking tasks done and reading them, on the real schema", () => {
           const rows = await queryAs<{ id: string }>(
             world.backend.connection,
             "bot_app",
-            `INSERT INTO public.tasks (event_id, guild_id, assignee_id, description, due_date, created_by)
+            `INSERT INTO discord_bot.tasks (event_id, guild_id, assignee_id, description, due_date, created_by)
              VALUES ($1, $2, $3, 'Foreign', '2040-01-01', $3) RETURNING id`,
             [world.foreignEventId, world.foreign.guildId, assignee],
           );
@@ -240,12 +240,12 @@ describe("marking tasks done and reading them, on the real schema", () => {
       await queryAs(
         world.backend.connection,
         "bot_app",
-        `INSERT INTO public.tasks (event_id, guild_id, assignee_id, description, due_date, created_by)
+        `INSERT INTO discord_bot.tasks (event_id, guild_id, assignee_id, description, due_date, created_by)
          VALUES ($1, $2, $3, 'In another guild', '2040-01-01', $3)`,
         [world.foreignEventId, world.foreign.guildId, me],
       );
       await world.backend.connection.query(
-        `UPDATE public.tasks SET status = 'done', completed_at = now() WHERE id = $1`,
+        `UPDATE discord_bot.tasks SET status = 'done', completed_at = now() WHERE id = $1`,
         [finished.id],
       );
       unwrap(
@@ -307,7 +307,7 @@ describe("marking tasks done and reading them, on the real schema", () => {
         world.fixture,
       );
       await world.backend.connection.query(
-        `UPDATE public.events SET name = $1 WHERE id = $2`,
+        `UPDATE discord_bot.events SET name = $1 WHERE id = $2`,
         [`@everyone <@&${fakeId()}> [login](https://evil.example)`, eventId],
       );
       await newTask(eventId, me, "# fake\n@here ||x|| \u202Eabc");
@@ -487,7 +487,7 @@ describe("marking tasks done and reading them, on the real schema", () => {
       expect(edits[0]?.content).toContain("isn't done");
 
       await world.backend.connection.query(
-        `UPDATE public.tasks SET status = 'done', completed_at = now() WHERE id = $1`,
+        `UPDATE discord_bot.tasks SET status = 'done', completed_at = now() WHERE id = $1`,
         [task.id],
       );
       await run(world.router, reopen(task.id, officer(who)), dependencies);
@@ -508,7 +508,7 @@ describe("marking tasks done and reading them, on the real schema", () => {
       const assignee = fakeId();
       const task = await newTask(eventId, assignee);
       await world.backend.connection.query(
-        `UPDATE public.tasks SET status = 'done', completed_at = now() WHERE id = $1`,
+        `UPDATE discord_bot.tasks SET status = 'done', completed_at = now() WHERE id = $1`,
         [task.id],
       );
       const { client, edits } = fakeClient();

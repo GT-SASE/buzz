@@ -110,13 +110,13 @@ export async function listReminderCandidates(
         coalesce((
           select json_agg(json_build_object('kind', l.kind, 'due_date', l.due_date,
             'state', l.state, 'claimed_at', l.claimed_at))
-          from reminder_log l where l.task_id = t.id
+          from discord_bot.reminder_log l where l.task_id = t.id
         ), '[]'::json) as log
-      from tasks t
-      join events e on e.id = t.event_id and e.guild_id = t.guild_id
-      join managed_channels c
+      from discord_bot.tasks t
+      join discord_bot.events e on e.id = t.event_id and e.guild_id = t.guild_id
+      join discord_bot.managed_channels c
         on c.guild_id = e.guild_id and c.channel_id = e.channel_id
-      join guild_config g on g.guild_id = e.guild_id
+      join discord_bot.guild_config g on g.guild_id = e.guild_id
       where t.status = 'open' and t.deleted_at is null
         and t.due_date <= ${lastDueDate}
         and e.status = 'active' and e.deleted_at is null
@@ -147,7 +147,7 @@ export async function listStaleClaims(
       db,
       sql`select task_id, kind, due_date, claim_token, attempts, refused_attempts,
         claimed_at
-      from reminder_log
+      from discord_bot.reminder_log
       where state = 'claimed' and claimed_at < ${claimedBefore.toISOString()}
       order by claimed_at, task_id, kind, due_date
       limit ${MAX_STALE_CLAIMS + 1}`,
@@ -184,7 +184,7 @@ export async function claimReminder(
   }
   return callFunction<string | null>(
     db,
-    sql`select public.claim_reminder(p_task_id => ${key.taskId},
+    sql`select discord_bot.claim_reminder(p_task_id => ${key.taskId},
       p_kind => ${key.kind},
       p_due_date => ${key.dueDate},
       p_assignee_id => ${key.asRead?.assigneeId ?? null},
@@ -202,7 +202,7 @@ export async function reclaimReminder(
   }
   return callFunction<string | null>(
     db,
-    sql`select public.reclaim_reminder(p_task_id => ${key.taskId},
+    sql`select discord_bot.reclaim_reminder(p_task_id => ${key.taskId},
       p_kind => ${key.kind},
       p_due_date => ${key.dueDate},
       p_claim_token => ${key.claimToken},
@@ -264,7 +264,7 @@ export async function closeStaleClaim(
   const claim = firstRow(
     await query<{ state: ReminderState; claim_token: string }>(
       db,
-      sql`select state, claim_token from reminder_log
+      sql`select state, claim_token from discord_bot.reminder_log
       where task_id = ${key.taskId} and kind = ${key.kind}
         and due_date = ${key.dueDate}
       limit 1`,
@@ -293,9 +293,9 @@ export async function closeStaleClaim(
       db,
       sql`select t.due_date, t.status, t.deleted_at, e.status as event_status,
         e.deleted_at as event_deleted_at, e.thread_status, c.status as forum_status
-      from tasks t
-      left join events e on e.id = t.event_id and e.guild_id = t.guild_id
-      left join managed_channels c
+      from discord_bot.tasks t
+      left join discord_bot.events e on e.id = t.event_id and e.guild_id = t.guild_id
+      left join discord_bot.managed_channels c
         on c.guild_id = e.guild_id and c.channel_id = e.channel_id
       where t.id = ${key.taskId} limit 1`,
     ),
@@ -334,7 +334,7 @@ export async function markReminderSent(
   }
   return callFunction<boolean>(
     db,
-    sql`select public.mark_reminder_sent(p_task_id => ${key.taskId},
+    sql`select discord_bot.mark_reminder_sent(p_task_id => ${key.taskId},
       p_kind => ${key.kind},
       p_due_date => ${key.dueDate},
       p_claim_token => ${key.claimToken},
@@ -352,7 +352,7 @@ export async function markReminderSkipped(
   }
   return callFunction<boolean>(
     db,
-    sql`select public.mark_reminder_skipped(p_task_id => ${key.taskId},
+    sql`select discord_bot.mark_reminder_skipped(p_task_id => ${key.taskId},
       p_kind => ${key.kind},
       p_due_date => ${key.dueDate},
       p_claim_token => ${key.claimToken}) as value`,
@@ -373,7 +373,7 @@ export async function recordReminderRefused(
   }
   return callFunction<boolean>(
     db,
-    sql`select public.record_reminder_refused(p_task_id => ${key.taskId},
+    sql`select discord_bot.record_reminder_refused(p_task_id => ${key.taskId},
       p_kind => ${key.kind},
       p_due_date => ${key.dueDate},
       p_claim_token => ${key.claimToken}) as value`,

@@ -62,7 +62,7 @@ export async function createEvent(
   return changedRow(
     await query<EventRow>(
       db,
-      sql`insert into events (guild_id, channel_id, name, event_date, created_by)
+      sql`insert into discord_bot.events (guild_id, channel_id, name, event_date, created_by)
       values (${guildId}, ${channelId}, ${name}, ${eventDate}, ${actorId})
       returning ${EVENT_COLUMNS}`,
     ),
@@ -88,7 +88,7 @@ export async function createLinkedEvent(
   return changedRow(
     await query<EventRow>(
       db,
-      sql`insert into events
+      sql`insert into discord_bot.events
         (guild_id, channel_id, name, event_date, created_by, thread_id, thread_status)
       values (${guildId}, ${channelId}, ${name}, ${eventDate}, ${actorId}, ${threadId},
         'active')
@@ -108,7 +108,7 @@ export async function getEvent(
   return firstRow(
     await query<EventRow>(
       db,
-      sql`select ${EVENT_COLUMNS} from events
+      sql`select ${EVENT_COLUMNS} from discord_bot.events
       where id = ${key.eventId} and guild_id = ${key.guildId} and deleted_at is null
       limit 1`,
     ),
@@ -125,7 +125,7 @@ export async function listEventsNamed(
   }
   return await query<EventRow>(
     db,
-    sql`select ${EVENT_COLUMNS} from events
+    sql`select ${EVENT_COLUMNS} from discord_bot.events
       where guild_id = ${guildId} and channel_id = ${channelId} and name = ${name}
         and event_date = ${eventDate} and deleted_at is null
       order by id limit ${DISCORD_LIMITS.autocompleteChoices}`,
@@ -143,7 +143,7 @@ export async function listEvents(
   return capped(
     await query<EventRow>(
       db,
-      sql`select ${EVENT_COLUMNS} from events
+      sql`select ${EVENT_COLUMNS} from discord_bot.events
       where guild_id = ${guildId} and deleted_at is null
       order by status, event_date desc, id limit ${MAX_EVENTS + 1}`,
     ),
@@ -165,7 +165,7 @@ export async function searchEvents(
   }
   return await query<EventChoice>(
     db,
-    sql`select ${EVENT_CHOICE_COLUMNS} from events
+    sql`select ${EVENT_CHOICE_COLUMNS} from discord_bot.events
       where guild_id = ${guildId} and deleted_at is null
         and name ilike ${searchPattern(term)}
       order by status, event_date desc, id limit ${DISCORD_LIMITS.autocompleteChoices}`,
@@ -183,7 +183,7 @@ export async function setEventThread(
   return changedRow(
     await query<EventRow>(
       db,
-      sql`update events set thread_id = ${key.threadId}, thread_status = 'active'
+      sql`update discord_bot.events set thread_id = ${key.threadId}, thread_status = 'active'
       where id = ${key.eventId} and guild_id = ${key.guildId} and deleted_at is null
         and thread_status <> 'active'
       returning ${EVENT_COLUMNS}`,
@@ -203,7 +203,7 @@ export async function attachEventPost(
   return changedRow(
     await query<EventRow>(
       db,
-      sql`update events set thread_id = ${key.threadId},
+      sql`update discord_bot.events set thread_id = ${key.threadId},
         overview_message_id = ${key.overviewMessageId}, thread_status = 'active'
       where id = ${key.eventId} and guild_id = ${key.guildId} and deleted_at is null
         and thread_status = 'pending'
@@ -219,7 +219,7 @@ export async function markEventThreadMissing(
   return changedRow(
     await query<EventRow>(
       db,
-      sql`update events set thread_status = 'missing'
+      sql`update discord_bot.events set thread_status = 'missing'
       where id = ${key.eventId} and guild_id = ${key.guildId} and deleted_at is null
         and thread_status = 'active'
       returning ${EVENT_COLUMNS}`,
@@ -234,7 +234,7 @@ export async function setEventOverviewMessage(
   return changedRow(
     await query<EventRow>(
       db,
-      sql`update events set overview_message_id = ${key.messageId}
+      sql`update discord_bot.events set overview_message_id = ${key.messageId}
       where id = ${key.eventId} and guild_id = ${key.guildId} and deleted_at is null
       returning ${EVENT_COLUMNS}`,
     ),
@@ -249,7 +249,7 @@ export async function closeEvent(
   return changedRow(
     await query<EventRow>(
       db,
-      sql`update events set status = 'closed'
+      sql`update discord_bot.events set status = 'closed'
       where id = ${key.eventId} and guild_id = ${key.guildId} and deleted_at is null
         and status = 'active'
       returning ${EVENT_COLUMNS}`,
@@ -268,7 +268,7 @@ export async function claimEventPostAttempt(
 ): Promise<DbResult<boolean>> {
   return callFunction<boolean>(
     db,
-    sql`select public.claim_event_post_attempt(p_event_id => ${key.eventId},
+    sql`select discord_bot.claim_event_post_attempt(p_event_id => ${key.eventId},
       p_guild_id => ${key.guildId}) as value`,
   );
 }
@@ -280,7 +280,7 @@ export async function releaseEventPostAttempt(
 ): Promise<DbResult<boolean>> {
   return callFunction<boolean>(
     db,
-    sql`select public.release_event_post_attempt(p_event_id => ${key.eventId},
+    sql`select discord_bot.release_event_post_attempt(p_event_id => ${key.eventId},
       p_guild_id => ${key.guildId}) as value`,
   );
 }
@@ -294,7 +294,7 @@ export async function softDeleteEvent(
   return nullAsNotFound(
     await callFunction<number | null>(
       db,
-      sql`select public.soft_delete_event(p_event_id => ${key.eventId},
+      sql`select discord_bot.soft_delete_event(p_event_id => ${key.eventId},
         p_guild_id => ${key.guildId}) as value`,
     ),
   );

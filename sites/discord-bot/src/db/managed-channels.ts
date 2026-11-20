@@ -13,7 +13,7 @@ export async function getManagedChannel(
   return firstRow(
     await query<ManagedChannel>(
       db,
-      sql`select guild_id, channel_id, status from managed_channels
+      sql`select guild_id, channel_id, status from discord_bot.managed_channels
       where guild_id = ${guildId} and channel_id = ${channelId} limit 1`,
     ),
   );
@@ -26,7 +26,7 @@ export async function listManagedChannels(
   return capped(
     await query<ManagedChannel>(
       db,
-      sql`select guild_id, channel_id, status from managed_channels
+      sql`select guild_id, channel_id, status from discord_bot.managed_channels
       where guild_id = ${guildId}
       order by channel_id limit ${MAX_CHANNELS + 1}`,
     ),
@@ -41,7 +41,7 @@ export async function listActiveManagedChannels(
   return capped(
     await query<ManagedChannel>(
       db,
-      sql`select guild_id, channel_id, status from managed_channels
+      sql`select guild_id, channel_id, status from discord_bot.managed_channels
       where status = 'active'
       order by guild_id, channel_id limit ${MAX_CHANNELS + 1}`,
     ),
@@ -64,7 +64,7 @@ export async function listRecentEventsInChannel(
   return capped(
     await query<EventRow>(
       db,
-      sql`select ${EVENT_COLUMNS} from events
+      sql`select ${EVENT_COLUMNS} from discord_bot.events
       where guild_id = ${guildId} and channel_id = ${channelId}
         and thread_status = 'active' and deleted_at is null
       order by updated_at desc, id limit ${limit + 1}`,
@@ -80,7 +80,7 @@ export async function markChannelUnavailable(
 ): Promise<DbResult<boolean>> {
   return callFunction<boolean>(
     db,
-    sql`select public.mark_channel_unavailable(p_guild_id => ${guildId},
+    sql`select discord_bot.mark_channel_unavailable(p_guild_id => ${guildId},
       p_channel_id => ${channelId}) as value`,
   );
 }

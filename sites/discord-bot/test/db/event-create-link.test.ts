@@ -217,7 +217,7 @@ describe("/event create", () => {
   it("refuses everything before setup, even for an officer's roles", async () => {
     const replica = "SET session_replication_role = replica";
     await world.pg.exec(
-      `${replica}; DELETE FROM public.guild_config WHERE officer_role_id = '${OFFICER_ROLE}'; RESET session_replication_role`,
+      `${replica}; DELETE FROM discord_bot.guild_config WHERE officer_role_id = '${OFFICER_ROLE}'; RESET session_replication_role`,
     );
     try {
       const ran = await world.send(create());
@@ -226,7 +226,7 @@ describe("/event create", () => {
       expect(await world.events()).toEqual([]);
     } finally {
       await world.pg.exec(
-        `${replica}; INSERT INTO public.guild_config (guild_id, officer_role_id, admin_role_id, version) VALUES ('${GUILD_ID}', '${OFFICER_ROLE}', '${ADMIN_ROLE}', 1); RESET session_replication_role`,
+        `${replica}; INSERT INTO discord_bot.guild_config (guild_id, officer_role_id, admin_role_id, version) VALUES ('${GUILD_ID}', '${OFFICER_ROLE}', '${ADMIN_ROLE}', 1); RESET session_replication_role`,
       );
     }
   });
@@ -286,7 +286,7 @@ describe("/event create", () => {
   describe("when the database fails", () => {
     it("names and logs a post it can't save, and /event link in it attaches it", async () => {
       const forum = await world.addManagedForum();
-      world.failDb(/^SQL update events/, 500, 1);
+      world.failDb(/^SQL update discord_bot.events/, 500, 1);
 
       await world.send(create());
 
@@ -517,7 +517,7 @@ describe("an event whose post was deleted", () => {
       parent_id: fakeId(),
     });
     await world.pg.query(
-      `UPDATE public.events SET thread_status = 'missing' WHERE id = $1`,
+      `UPDATE discord_bot.events SET thread_status = 'missing' WHERE id = $1`,
       [id],
     );
     const before = world.discord.requests.length;
@@ -633,10 +633,10 @@ describe("an event whose post was deleted", () => {
 
     it("refuses a deleted event and another guild's event", async () => {
       const { forum, id } = await lostEvent();
-      await world.pg.query(`UPDATE public.events SET deleted_at = now()`);
+      await world.pg.query(`UPDATE discord_bot.events SET deleted_at = now()`);
       const otherForum = await world.addManagedForum(OTHER_GUILD);
       const { rows } = await world.pg.query<{ id: string }>(
-        `INSERT INTO public.events
+        `INSERT INTO discord_bot.events
            (guild_id, channel_id, name, event_date, created_by, thread_id, thread_status)
          VALUES ($1, $2, 'Theirs', '2099-01-15', $3, $4, 'missing') RETURNING id`,
         [OTHER_GUILD, otherForum, MEMBER_ID, fakeId()],

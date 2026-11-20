@@ -235,7 +235,7 @@ export function useTaskWorld(): TaskWorld {
       insert: /^insert into tasks/,
       update: /^update tasks/,
       // A change of text, date or person goes through this one function.
-      edit: /^select public\.edit_task\(/,
+      edit: /^select discord_bot.edit_task\(/,
     }[write];
     const db = world.backend.dbWith(async (text) => {
       if (!staged && statement.test(text)) {
@@ -272,7 +272,7 @@ export function useTaskWorld(): TaskWorld {
     const { rows } = await world.backend.connection.query<TaskState>(
       `SELECT event_id, guild_id, assignee_id, description, due_date::text AS due_date,
               status, created_by, deleted_at IS NOT NULL AS deleted
-       FROM public.tasks WHERE id = $1`,
+       FROM discord_bot.tasks WHERE id = $1`,
       [id],
     );
     return rows[0];
@@ -280,7 +280,7 @@ export function useTaskWorld(): TaskWorld {
   world.tasksOn = async (eventId) => {
     const { rows } = await world.backend.connection.query<TaskListing>(
       `SELECT id, assignee_id, description, due_date::text AS due_date, created_by
-       FROM public.tasks WHERE event_id = $1`,
+       FROM discord_bot.tasks WHERE event_id = $1`,
       [eventId],
     );
     return rows;
@@ -292,13 +292,13 @@ export function useTaskWorld(): TaskWorld {
     await queryAs(
       world.backend.connection,
       "bot_app",
-      `SELECT public.apply_role_bindings($1, 0, $2, $3, $4, NULL, NULL, NULL, NULL)`,
+      `SELECT discord_bot.apply_role_bindings($1, 0, $2, $3, $4, NULL, NULL, NULL, NULL)`,
       [GUILD_ID, fakeId(), OFFICER_ROLE, ADMIN_ROLE],
     );
     await queryAs(
       world.backend.connection,
       "bot_app",
-      `SELECT public.apply_config_change($1, 1, $2, NULL, ARRAY[$3]::text[])`,
+      `SELECT discord_bot.apply_config_change($1, 1, $2, NULL, ARRAY[$3]::text[])`,
       [GUILD_ID, fakeId(), forum],
     );
     world.fixture = {

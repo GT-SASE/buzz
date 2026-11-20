@@ -77,7 +77,7 @@ export async function query<T = Row>(
 }
 
 /**
- * The value of `select public.f(...) as value`. Write the whole statement, with each
+ * The value of `select discord_bot.f(...) as value`. Write the whole statement, with each
  * argument named, so it reads on its own.
  */
 export async function callFunction<T>(

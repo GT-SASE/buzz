@@ -117,7 +117,7 @@ export function useReminderWorld(): ReminderWorld {
     async guildInZone(timezone = "UTC") {
       const guild = await insertGuild(world.database);
       await world.database.query(
-        `UPDATE public.guild_config SET timezone = $2 WHERE guild_id = $1`,
+        `UPDATE discord_bot.guild_config SET timezone = $2 WHERE guild_id = $1`,
         [guild.guildId, timezone],
       );
       world.channels.set(guild.channelId, {
@@ -143,7 +143,7 @@ export function useReminderWorld(): ReminderWorld {
         results: Record<string, unknown>;
         error: string | null;
       }>(
-        `SELECT status, results, error FROM public.job_runs
+        `SELECT status, results, error FROM discord_bot.job_runs
          WHERE job_name = $1 ORDER BY started_at DESC LIMIT 1`,
         [jobName],
       );
@@ -196,11 +196,11 @@ export function useReminderWorld(): ReminderWorld {
     world.logLines = [];
     spyOn(globalThis, "fetch").mockImplementation(asFetch(answer));
     await world.database.exec(`
-      UPDATE public.tasks SET deleted_at = now() WHERE deleted_at IS NULL;
-      UPDATE public.managed_channels SET status = 'removed';
-      DELETE FROM public.reminder_log;
-      DELETE FROM public.event_reminder_log;
-      DELETE FROM public.job_runs;
+      UPDATE discord_bot.tasks SET deleted_at = now() WHERE deleted_at IS NULL;
+      UPDATE discord_bot.managed_channels SET status = 'removed';
+      DELETE FROM discord_bot.reminder_log;
+      DELETE FROM discord_bot.event_reminder_log;
+      DELETE FROM discord_bot.job_runs;
     `);
   });
 
