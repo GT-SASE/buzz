@@ -239,6 +239,7 @@ describe("verifiedInteractionFrom", () => {
     ) => SignedPayload;
 
     // @ts-expect-error A plain object must not be accepted as signed.
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-class-instance-assignment -- the test forges an instance on purpose to prove the brand check rejects it
     expect(verifiedInteractionFrom(forged)).toBeUndefined();
     expect(
       interactionToken({ ...PAYLOAD, token: () => TOKEN } as never),

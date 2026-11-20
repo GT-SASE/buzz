@@ -240,6 +240,7 @@ describe("the safe tag and mentions", () => {
     // @ts-expect-error A plain string must not reach message text.
     expect(() => safe`Due: ${hostile}`).toThrow(SafeTextError);
     // @ts-expect-error A label is not message text.
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-class-instance-assignment -- the test forges an instance on purpose to prove the brand check rejects it
     expect(() => safeTextValue(plain`Label`)).toThrow(SafeTextError);
     expect(() => new Forge(Symbol("SafeText"), hostile)).toThrow(SafeTextError);
     expect(JSON.stringify(text)).toBe("{}");
