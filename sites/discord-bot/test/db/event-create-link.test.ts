@@ -8,11 +8,9 @@ import {
 } from "../support/event-world.ts";
 import { HOSTILE_TEXT, INVISIBLE_TEXT } from "../support/hostile-text.ts";
 import {
-  ADMIN_ROLE,
   GUILD_ID,
   MEMBER_ID,
   OFFICER,
-  OFFICER_ROLE,
   PLAIN_MEMBER,
 } from "../support/interactions.ts";
 import {
@@ -216,8 +214,13 @@ describe("/event create", () => {
 
   it("refuses everything before setup, even for an officer's roles", async () => {
     const replica = "SET session_replication_role = replica";
+    const { rows } = await world.pg.query<{ saved: string }>(
+      `SELECT row_to_json(guild_config)::text AS saved FROM discord_bot.guild_config WHERE guild_id = $1`,
+      [GUILD_ID],
+    );
+    const saved = rows[0]?.saved ?? "";
     await world.pg.exec(
-      `${replica}; DELETE FROM discord_bot.guild_config WHERE officer_role_id = '${OFFICER_ROLE}'; RESET session_replication_role`,
+      `${replica}; DELETE FROM discord_bot.guild_config WHERE guild_id = '${GUILD_ID}'; RESET session_replication_role`,
     );
     try {
       const ran = await world.send(create());
@@ -225,9 +228,12 @@ describe("/event create", () => {
       expect(ran.reply.data?.content).toBe(REFUSED.message);
       expect(await world.events()).toEqual([]);
     } finally {
-      await world.pg.exec(
-        `${replica}; INSERT INTO discord_bot.guild_config (guild_id, officer_role_id, admin_role_id, version) VALUES ('${GUILD_ID}', '${OFFICER_ROLE}', '${ADMIN_ROLE}', 1); RESET session_replication_role`,
+      await world.pg.exec(replica);
+      await world.pg.query(
+        `INSERT INTO discord_bot.guild_config SELECT * FROM jsonb_populate_record(null::discord_bot.guild_config, $1::jsonb)`,
+        [saved],
       );
+      await world.pg.exec("RESET session_replication_role");
     }
   });
 

@@ -618,13 +618,9 @@ describe("failures", () => {
       editEphemeralReply: () => Promise.reject(new Error("thrown")),
     };
 
-    expect(
-      await run(
-        router,
-        commandPayload("config.boom"),
-        dependenciesFor(db, rejected),
-      ),
-    ).toBeDefined();
+    await expect(
+      run(router, commandPayload("config.boom"), dependenciesFor(db, rejected)),
+    ).resolves.toHaveProperty("reply");
   });
 });
 
