@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import { stubEnv } from "../../test/support/stubs.ts";
-import { ConfigError } from "./config-error.ts";
 import { isCronAuthorized } from "./cron-auth.ts";
 import {
+  ConfigError,
   getAllowedGuildIds,
   getDatabaseUrl,
   getDiscordAppId,

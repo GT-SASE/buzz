@@ -20,8 +20,8 @@ import {
 } from "discord-api-types/v10";
 import { USER_AGENT } from "../src/discord/client.ts";
 import { COMMANDS } from "../src/handlers/registry.ts";
-import { ConfigError } from "../src/lib/config-error.ts";
 import {
+  ConfigError,
   getAllowedGuildIds,
   getDiscordAppId,
   getDiscordBotToken,

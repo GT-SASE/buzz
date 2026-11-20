@@ -7,9 +7,8 @@ import { getDb, withDeadline, type DbClient } from "../db/client.ts";
 import { errorSummary } from "../db/errors.ts";
 import { expireInteractionClaims } from "../db/interaction-claims.ts";
 import { createDiscordClient, type DiscordClient } from "../discord/client.ts";
-import { ConfigError } from "../lib/config-error.ts";
 import { managedChannelCheck } from "../handlers/dependencies.ts";
-import { getAllowedGuildIds } from "../lib/env.ts";
+import { ConfigError, getAllowedGuildIds } from "../lib/env.ts";
 import { jobFreshness, runHealthCheck } from "./health.ts";
 import {
   DATABASE_CALL_MS,
