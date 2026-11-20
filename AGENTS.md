@@ -12,7 +12,7 @@ trusting any list in prose, including this file:
 
 - `buzz_guide` this file (also the resource `buzz://AGENTS.md`)
 - `buzz_trpc_procedures [filter]` every tRPC procedure: access, query/mutation, file:line
-- `buzz_db_schema [table] [database=all|buzz|bot]` buzz Drizzle tables (columns, keys, indexes) and the bot's tables, enums, domains and functions with signatures, replayed from `sites/discord-bot/db/migrations` and labeled with the schema each is declared in
+- `buzz_db_schema [table] [database=all|buzz|bot]` buzz Drizzle tables (columns, keys, indexes) and the bot's tables, enums, domains and functions with signatures, read from the catalogs of an in-memory PGlite after applying `sites/discord-bot/db/migrations`, grouped by schema; a failing migration is returned as the error
 - `buzz_migrations` buzz Drizzle SQL and the bot's dbmate files, latest of each, and each process (bot production migrations are a manual owner step)
 - `buzz_routes` Next routes tagged marketing / portal member / portal admin / api, plus the bot's Vercel functions and crons
 - `buzz_bot_commands [filter]` the bot's slash commands, subcommands and options, from the definitions `register-commands.ts` sends

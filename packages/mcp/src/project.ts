@@ -4,7 +4,7 @@ import { promisify } from "node:util";
 
 import { readdirSync } from "node:fs";
 
-import { BOT_MIGRATIONS_DIR } from "./bot-sql";
+import { BOT_MIGRATIONS_DIR } from "./bot";
 import { listDir, readRepoFile, repoPath } from "./repo";
 
 const run = promisify(execFile);

@@ -1,7 +1,8 @@
 import { is } from "drizzle-orm";
 import { getTableConfig, PgTable } from "drizzle-orm/pg-core";
 
-import { BOT_MIGRATIONS_DIR, formatBotDatabase } from "./bot-sql";
+import { BOT_MIGRATIONS_DIR } from "./bot";
+import { formatBotDatabase } from "./bot-db";
 import { readRepoFile } from "./repo";
 
 const SCHEMA_FILE = "packages/db/src/schema.ts";
@@ -14,7 +15,7 @@ export async function describeSchema(
   filter?: string,
   database: "all" | "buzz" | "bot" = "all",
 ): Promise<string> {
-  const bot = database === "buzz" ? "" : formatBotDatabase(filter);
+  const bot = database === "buzz" ? "" : await formatBotDatabase(filter);
   if (database === "bot") return bot;
   const schema = (await import("@buzz/db/schema")) as Record<string, unknown>;
   const source = readRepoFile(SCHEMA_FILE).split(/\r?\n/);

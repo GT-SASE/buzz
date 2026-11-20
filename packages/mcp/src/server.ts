@@ -77,7 +77,7 @@ export function createServer(serverVersion = "0.0.0"): McpServer {
     "buzz_db_schema",
     {
       description:
-        "Describes both databases. buzz: Drizzle tables from packages/db/src/schema.ts (columns, PKs, FKs, unique constraints, indexes, checks). bot: the Discord bot's tables, enums, domains and functions (with signatures), replayed from sites/discord-bot/db/migrations and labeled with the schema each object is declared in.",
+        "Describes both databases. buzz: Drizzle tables from packages/db/src/schema.ts (columns, PKs, FKs, unique constraints, indexes, checks). bot: the Discord bot's tables, enums, domains and functions (with signatures), read from an in-memory PGlite after applying sites/discord-bot/db/migrations, grouped by schema (a failing migration is returned as the error).",
       inputSchema: {
         table: z
           .string()
