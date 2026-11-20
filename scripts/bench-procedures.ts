@@ -27,14 +27,17 @@ mock.module("../packages/auth/src/index.ts", () => ({
   signOut: async () => undefined,
 }));
 
-const { sql } = await import("../packages/db/node_modules/drizzle-orm/index.js");
+const { sql } =
+  await import("../packages/db/node_modules/drizzle-orm/index.js");
 const { createCaller } = await import("../packages/api/src/root");
 const { db } = await import("../packages/db/src/index");
 const { schoolYear, semester } = await import("../packages/api/src/terms");
 
 const url = process.env.DATABASE_URL ?? "";
 if (!url || /neon\.tech|vercel|supabase/i.test(url)) {
-  throw new Error("Refusing to run: DATABASE_URL must be a disposable local database.");
+  throw new Error(
+    "Refusing to run: DATABASE_URL must be a disposable local database.",
+  );
 }
 
 const RTT = Number(process.env.BENCH_RTT_MS ?? 0);
@@ -71,7 +74,9 @@ pool.connect = (...args: unknown[]) => {
 // ---------------------------------------------------------------------- seed
 async function seed() {
   const [{ n }] = (
-    await db.execute(sql`select count(*)::int as n from buzz_user where id like 'bench-%'`)
+    await db.execute(
+      sql`select count(*)::int as n from buzz_user where id like 'bench-%'`,
+    )
   ).rows as { n: number }[];
   if (n > 0 && process.env.BENCH_RESEED !== "1") return;
   await db.execute(sql`delete from buzz_election where id like 'bench-%'`);
@@ -153,10 +158,14 @@ async function seed() {
     select 'bench-p' || el || '-' || p, 'bench-u' || v,
            'bench-k' || el || '-' || p || '-' || (v % 3), now()
     from generate_series(0, 1) el, generate_series(0, 4) p, generate_series(100, 399) v`);
-  await db.execute(sql`
+  await db
+    .execute(
+      sql`
     insert into buzz_page (id, slug, title, body, published)
     select 'bench-pg' || i, 'bench-page-' || i, 'Page ' || i, 'body', true from generate_series(0, 9) i
-    on conflict do nothing`).catch(() => undefined);
+    on conflict do nothing`,
+    )
+    .catch(() => undefined);
   await db.execute(sql`analyze`);
   void term0;
   void yr0;
@@ -176,12 +185,15 @@ const member = createCaller(ctxFor("bench-u1", "MEMBER"));
 const admin = createCaller(ctxFor("bench-u0", "ADMIN"));
 
 type Case = { name: string; run: () => Promise<unknown> };
-const swallow = <T,>(p: Promise<T>) => p.catch(() => null);
+const swallow = <T>(p: Promise<T>) => p.catch(() => null);
 
 const cases: Case[] = [
   { name: "event.home", run: () => member.event.home() },
   { name: "event.upcoming", run: () => member.event.upcoming() },
-  { name: "member.leaderboard", run: () => member.member.leaderboard({ limit: 10 }) },
+  {
+    name: "member.leaderboard",
+    run: () => member.member.leaderboard({ limit: 10 }),
+  },
   { name: "mentorship.mine", run: () => member.mentorship.mine() },
   { name: "mentorship.myGroup", run: () => member.mentorship.myGroup() },
   { name: "mentorship.groups", run: () => member.mentorship.groups() },
@@ -189,12 +201,30 @@ const cases: Case[] = [
   { name: "election.current", run: () => member.election.current() },
   { name: "resume.mine", run: () => swallow(member.resume.mine()) },
   { name: "chapter.overview", run: () => admin.chapter.overview() },
-  { name: "chapter.attendance", run: () => admin.chapter.attendance({ period: "semester" }) },
-  { name: "chapter.turnout", run: () => admin.chapter.turnout({ period: "semester" }) },
-  { name: "event.listAll", run: () => admin.event.listAll({ limit: 200, offset: 0 }) },
-  { name: "event.getById", run: () => admin.event.getById({ id: "bench-e100" }) },
-  { name: "member.list", run: () => admin.member.list({ limit: 25, offset: 0, sort: "points" }) },
-  { name: "member.metrics", run: () => admin.member.metrics({ tiers: [0, 50, 100, 200] }) },
+  {
+    name: "chapter.attendance",
+    run: () => admin.chapter.attendance({ period: "semester" }),
+  },
+  {
+    name: "chapter.turnout",
+    run: () => admin.chapter.turnout({ period: "semester" }),
+  },
+  {
+    name: "event.listAll",
+    run: () => admin.event.listAll({ limit: 200, offset: 0 }),
+  },
+  {
+    name: "event.getById",
+    run: () => admin.event.getById({ id: "bench-e100" }),
+  },
+  {
+    name: "member.list",
+    run: () => admin.member.list({ limit: 25, offset: 0, sort: "points" }),
+  },
+  {
+    name: "member.metrics",
+    run: () => admin.member.metrics({ tiers: [0, 50, 100, 200] }),
+  },
   { name: "member.byId", run: () => admin.member.byId({ id: "bench-u1" }) },
   { name: "committee.cycles", run: () => admin.committee.cycles() },
   { name: "committee.list", run: () => admin.committee.list({}) },
@@ -233,7 +263,11 @@ const cases: Case[] = [
   {
     name: "PAGE /portal/mentorship",
     run: () =>
-      Promise.all([member.mentorship.mine(), member.mentorship.groups(), member.mentorship.myGroup()]),
+      Promise.all([
+        member.mentorship.mine(),
+        member.mentorship.groups(),
+        member.mentorship.myGroup(),
+      ]),
   },
 ];
 
@@ -252,7 +286,9 @@ async function measure(c: Case, conc: number) {
       calls += 1;
     }
   };
-  await Promise.all(Array.from({ length: conc }, () => worker(Math.ceil(N / conc))));
+  await Promise.all(
+    Array.from({ length: conc }, () => worker(Math.ceil(N / conc))),
+  );
   times.sort((a, b) => a - b);
   return {
     p50: pct(times, 50),
@@ -267,8 +303,10 @@ const results: Record<string, unknown> = {};
 const fmt = (n: number) => n.toFixed(1).padStart(7);
 console.log(`RTT=${RTT}ms N=${N} CONC=${CONC}`);
 console.log(
-  "case".padEnd(28) + "q/call".padStart(7) +
-    "  seq p50    p95    p99 " + " conc p50    p95    p99",
+  "case".padEnd(28) +
+    "q/call".padStart(7) +
+    "  seq p50    p95    p99 " +
+    " conc p50    p95    p99",
 );
 for (const c of cases) {
   if (ONLY && !c.name.includes(ONLY)) continue;
@@ -279,10 +317,14 @@ for (const c of cases) {
   const conc = await measure(c, CONC);
   results[c.name] = { seq, conc };
   console.log(
-    c.name.padEnd(28) + seq.qpc.toFixed(1).padStart(7) + "  " +
-      [seq.p50, seq.p95, seq.p99].map(fmt).join("") + "  " +
+    c.name.padEnd(28) +
+      seq.qpc.toFixed(1).padStart(7) +
+      "  " +
+      [seq.p50, seq.p95, seq.p99].map(fmt).join("") +
+      "  " +
       [conc.p50, conc.p95, conc.p99].map(fmt).join(""),
   );
 }
-if (process.env.BENCH_JSON) writeFileSync(process.env.BENCH_JSON, JSON.stringify(results, null, 2));
+if (process.env.BENCH_JSON)
+  writeFileSync(process.env.BENCH_JSON, JSON.stringify(results, null, 2));
 await pool.end();
