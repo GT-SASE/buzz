@@ -33,7 +33,9 @@ runner and bundler, not these scripts (bare `bun test` skips the DOM setup the
 the scripts and the tests; eslint, prettier and the TypeScript CLIs still run on
 Node 24 (`.nvmrc`). `bun run check`, `typecheck` and `typecheck:tsc` go
 through Turborepo, which caches each task by its inputs: a second run with no
-changes replays the logs instead of re-running. Schema changes go through Drizzle Kit (`bun run db:generate` →
+changes replays the logs instead of re-running. To share results across machines
+and CI, enable the Vercel Remote Cache: `bun x turbo login` then `bun x turbo link`
+(team `sasegt`); CI uses the `TURBO_TOKEN` secret and `TURBO_TEAM` variable. Schema changes go through Drizzle Kit (`bun run db:generate` →
 commit SQL → `bun run db:migrate`).
 
 Deploying on Vercel: set **Root Directory** to `sites/web`. Vercel installs from
