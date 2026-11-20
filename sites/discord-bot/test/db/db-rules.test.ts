@@ -7,6 +7,7 @@
 import type { PGlite } from "@electric-sql/pglite";
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { todayInZone } from "../../src/lib/dates.ts";
+import { pgliteSql } from "../support/sql-client.ts";
 import { insertFinishedJobRun } from "../support/job-runs-fixture.ts";
 import {
   FIXTURE_DUE_DATE as DUE,
@@ -682,5 +683,20 @@ describe("claim_interaction", () => {
       [[old, recent]],
     );
     expect(rows.map((row) => row.interaction_id)).toEqual([recent]);
+  });
+});
+
+describe("queryAs", () => {
+  it("keeps its role while the bot's runner shares the connection", async () => {
+    const run = pgliteSql(db);
+    const signal = new AbortController().signal;
+
+    const [asOther, asBot] = await Promise.all([
+      queryAs<{ who: string }>(db, OTHER_ROLE, "SELECT current_user AS who"),
+      run("SELECT current_user AS who", [], signal),
+    ]);
+
+    expect(asOther).toEqual([{ who: OTHER_ROLE }]);
+    expect(asBot).toEqual([{ who: BOT_APP }]);
   });
 });

@@ -165,13 +165,15 @@ export async function queryAs<Row = Record<string, unknown>>(
   sql: string,
   params: unknown[] = [],
 ): Promise<Row[]> {
-  await db.exec(`SET ROLE ${role}`);
-  try {
-    const result = await db.query<Row>(sql, params);
-    return result.rows;
-  } finally {
-    await db.exec("RESET ROLE");
-  }
+  return onSessionAlone(db, async () => {
+    await db.exec(`SET ROLE ${role}`);
+    try {
+      const result = await db.query<Row>(sql, params);
+      return result.rows;
+    } finally {
+      await db.exec("RESET ROLE");
+    }
+  });
 }
 
 /** The Postgres error code a statement fails with, or undefined if it succeeds. */
