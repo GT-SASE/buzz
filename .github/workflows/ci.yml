@@ -14,6 +14,10 @@ permissions:
 env:
   # Public prerender must not require portal secrets in CI.
   SKIP_ENV_VALIDATION: "1"
+  # Turborepo Remote Cache. Both are empty on fork PRs and until configured;
+  # turbo then runs with the local .turbo/cache restored below.
+  TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+  TURBO_TEAM: ${{ vars.TURBO_TEAM }}
 
 jobs:
   lint:
@@ -89,6 +93,8 @@ jobs:
           restore-keys: turbo-${{ github.job }}-
       - run: bun run db:migrate
       - run: bun x turbo run //#test
+      # The bot's unit tests and its PGlite database tests need no server.
+      - run: bun x turbo run test test:db
 
   build:
     runs-on: ubuntu-latest
@@ -103,3 +109,20 @@ jobs:
           node-version-file: .nvmrc
       - run: bun install --frozen-lockfile
       - run: bun run vercel-build
+      # Builds the bot's functions, then loads them from a folder outside the repo.
+      - run: bun run --cwd sites/discord-bot build
+      - run: bun run --cwd sites/discord-bot smoke
+
+  secret-history:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - run: bash scripts/install-gitleaks.sh
+      - name: Refuse a .gitleaksignore file
+        run: test ! -e .gitleaksignore
+      - name: Scan every commit on every ref
+        run: .tools/gitleaks git . --config .gitleaks.toml --redact --ignore-gitleaks-allow --no-banner --log-opts="--all -m --text --no-color"

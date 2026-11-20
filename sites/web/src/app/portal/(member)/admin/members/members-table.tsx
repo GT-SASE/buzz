@@ -148,7 +148,7 @@ function MemberCard({ member }: { member: Member }) {
     <li>
       <Link
         href={`/portal/admin/members/${member.id}`}
-        className="border-hairline bg-paper/80 hover:border-gold-ink/30 block min-h-11 rounded-xl border p-4 shadow-xs transition-all"
+        className="border-hairline bg-paper/80 hover:border-gold-ink/30 block min-h-11 rounded-xl border p-4 shadow-xs transition-colors"
       >
         <div className="flex items-start justify-between gap-3">
           <p className="font-display text-navy text-base font-bold">

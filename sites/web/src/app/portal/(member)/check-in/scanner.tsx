@@ -208,6 +208,7 @@ export function Scanner({
     unavailableRef.current = onUnavailable;
   });
 
+  // react-doctor-disable-next-line react-doctor/effect-needs-cleanup -- the returned cleanup calls release(), which clears timerRef and stops the tracks
   useEffect(() => {
     // Set by teardown and by a hit. Startup re-checks it after every await,
     // because a member can leave the page while the prompt is still open.

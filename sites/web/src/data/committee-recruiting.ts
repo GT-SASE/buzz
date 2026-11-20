@@ -69,9 +69,8 @@ export async function getCommitteeRecruiting(now = new Date()) {
   }
   if (!cycle) return null;
   const closesAt = new Date(cycle.closesAt);
-  const open = committees.filter((committee) =>
-    cycle.committees.includes(committee.id),
-  );
+  const offered = new Set(cycle.committees);
+  const open = committees.filter((committee) => offered.has(committee.id));
   return {
     id,
     label: semesterLabel(id),

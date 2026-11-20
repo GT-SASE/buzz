@@ -12,12 +12,13 @@ trusting any list in prose, including this file:
 
 - `buzz_guide` this file (also the resource `buzz://AGENTS.md`)
 - `buzz_trpc_procedures [filter]` every tRPC procedure: access, query/mutation, file:line
-- `buzz_db_schema [table]` tables, columns, keys, indexes
-- `buzz_migrations` SQL files, latest number, process
-- `buzz_routes` Next routes tagged marketing / portal member / portal admin / api
-- `buzz_version` footer version rule, computed build, README table
-- `buzz_run_checks tasks=[lint|typecheck|format|test|typecheck:tsc] [force]` runs turbo; `test` is refused unless the server env has `TEST_DATABASE_URL` on a local scratch DB
-- `buzz_deploy_status` latest main commit, its Vercel status, live footer version
+- `buzz_db_schema [table] [database=all|buzz|bot]` buzz Drizzle tables (columns, keys, indexes) and the bot's tables, enums, domains and functions with signatures, read from the catalogs of an in-memory PGlite after applying `sites/discord-bot/db/migrations`, grouped by schema; a failing migration is returned as the error
+- `buzz_migrations` buzz Drizzle SQL and the bot's dbmate files, latest of each, and each process (bot production migrations are a manual owner step)
+- `buzz_routes` Next routes tagged marketing / portal member / portal admin / api, plus the bot's Vercel functions and crons
+- `buzz_bot_commands [filter]` the bot's slash commands, subcommands and options, from the definitions `register-commands.ts` sends
+- `buzz_version` footer version rule, computed build, every workspace (including `@buzz/discord-bot`) with mismatches flagged, README table
+- `buzz_run_checks tasks=[lint|typecheck|format|test|typecheck:tsc|bot:test|bot:test:db|bot:test:db:concurrency] [force]` runs turbo; `test`, `bot:test` and `bot:test:db` are refused unless the server env has `TEST_DATABASE_URL` on a local scratch DB; `bot:test:db:concurrency` also needs `CONCURRENCY_DATABASE_URL` passing the same guard
+- `buzz_deploy_status` latest main commit, its Vercel status, the latest GitHub CI conclusion for main (Vercel success alone is not enough), live footer version
 
 ## Layout
 
@@ -31,6 +32,7 @@ packages/db/drizzle/            generated SQL migrations + meta; commit them
 packages/db/scripts/            seeds
 packages/auth/src/              NextAuth config and auth()
 packages/mcp/src/               this MCP server
+sites/discord-bot/              the events Discord bot: api/ (Vercel functions), src/, db/migrations (dbmate), its own README and docs/
 sites/web/src/app/(marketing)/  public pages, prerendered; [slug] serves CMS pages
 sites/web/src/app/portal/(member)/        member portal pages (needs a session)
 sites/web/src/app/portal/(member)/admin/  officer pages; adminNav lives in sites/web/src/data/portal.ts
@@ -48,15 +50,18 @@ scripts/                        vercel-build.mjs, smoke.mjs, ci-test.mjs
 Use `bun`, `bun run`, `bun x`. Never npm, pnpm, npx, bunx. Spell out `bun run test`: bare `bun test` skips the DOM setup.
 
 - `bun run dev`, `bun run build`, `bun run vercel-build` (migrates when `DATABASE_URL` is set, then builds)
-- `bun run check` = turbo `//#lint typecheck //#typecheck:self //#format:check //#test`
+- `bun run check` = turbo `//#lint typecheck //#typecheck:self //#format:check //#test test test:db` (the last two are the Discord bot's unit and PGlite tests)
 - `bun run test` = `test:node` (`--isolate`, ignores `*.tsx`) then `test:dom` (`.test.tsx`, happy-dom preload in `tests/setup/dom.ts`)
 - `bun run typecheck` (tsrs, fast) and `bun run typecheck:tsc` (tsc, the deciding check)
 - `bun run format:write`, `bun run lint:fix`
 - `bun run db:generate | db:migrate | db:push | db:seed | db:studio`
 - `bun run smoke` = `bun scripts/smoke.mjs` against the live site
+- Discord bot (`sites/discord-bot`, `bun run --cwd sites/discord-bot <script>`): `build` (Vercel Build Output in `.vercel/output`), `smoke` (loads the built functions from a temp folder, expects 401s), `test`, `test:db`, `test:db:concurrency` (needs `CONCURRENCY_DATABASE_URL` and `BOT_APP_PASSWORD`, see its README), `db:migrate` (dbmate into the `discord_bot` schema, which must exist first; `DATABASE_URL` of a disposable DB only)
+- `bun run hooks:install` and `bun run gitleaks:install`: pre-push secret scan, rules in `.gitleaks.toml`
 
 ## Tests
 
+- The bot's tests are excluded from root `test:node` because they need their own preload (`sites/discord-bot/test/support/setup.ts`); they run as the turbo tasks `test` and `test:db` from that folder.
 - bun test. Mock modules with `mock.module(...)` (see `tests/page-router.test.ts`: mock `packages/auth`, then `await import` the router).
 - Router tests use a fake `db`; `*.integration.test.ts` use a real Postgres through `TEST_DATABASE_URL` only and wrap the suite in `describe.skipIf(!process.env.DATABASE_URL)`.
 - `tests/setup/env.ts` (bunfig preload) copies `TEST_DATABASE_URL` into `DATABASE_URL` and deletes it when unset, so unset means DB suites skip.
@@ -65,6 +70,8 @@ Use `bun`, `bun run`, `bun x`. Never npm, pnpm, npx, bunx. Spell out `bun run te
 ## Turbo
 
 `check`, `typecheck`, `typecheck:tsc` are cached by input. The cache is shared across git worktrees, so a second worktree can replay green logs without running anything: add `--force` for independent verification. In Git Bash prefix with `MSYS_NO_PATHCONV=1` or `//#lint` is rewritten into a path. `SKIP_ENV_VALIDATION=1` skips portal env validation.
+
+Remote cache (Vercel, team `sasegt`) is optional and off by default. Locally: `bun x turbo login`, then `bun x turbo link` and pick `sasegt`. CI reads repo secret `TURBO_TOKEN` (Vercel access token scoped to `sasegt`) and repo variable `TURBO_TEAM` (team slug); when either is empty, e.g. fork PRs, turbo uses the local cache that `actions/cache` restores. `remoteCache.signature` stays off: with it on and no `TURBO_REMOTE_CACHE_SIGNATURE_KEY`, uploads fail with "artifact signature error". `bun run vercel-build` runs `next build` directly, not turbo, so Vercel builds do not use the remote cache.
 
 ## Safety
 
@@ -79,7 +86,7 @@ Use `bun`, `bun run`, `bun x`. Never npm, pnpm, npx, bunx. Spell out `bun run te
 2. Commit, push, open a PR to `main`. Commits and PRs carry no AI co-author or attribution lines.
 3. Run CI locally on a disposable Postgres in a clean tree: `bun run check` (use `--force`).
 4. Merge with `gh pr merge N --merge`.
-5. Check the Vercel commit status on the merge commit (`buzz_deploy_status`), then `bun scripts/smoke.mjs`.
+5. Check the Vercel commit status on the merge commit (`buzz_deploy_status`), then `bun scripts/smoke.mjs`, then GitHub CI on `main` (`gh run list --workflow CI --branch main --limit 1`). GitHub CI checks out a shallow clone, so tests that read git history can pass locally and fail there.
 
 Production migrates during the Vercel production build (`scripts/vercel-build.mjs`); previews skip migrations because they share the production DB.
 

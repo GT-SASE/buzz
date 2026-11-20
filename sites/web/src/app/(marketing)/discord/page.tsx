@@ -78,6 +78,7 @@ export default async function DiscordPage() {
               role="img"
               aria-label="QR code that opens the SASE GT Discord invite"
               className="aspect-square w-full [&>svg]:h-full [&>svg]:w-full"
+              // react-doctor-disable-next-line react-doctor/dangerous-html-sink -- qr is SVG generated server-side from the constant invite URL
               dangerouslySetInnerHTML={{ __html: qr }}
             />
             <p className="text-ink-muted text-body-sm mt-4 text-center break-all">
