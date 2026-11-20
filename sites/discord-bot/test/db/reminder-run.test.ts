@@ -11,6 +11,7 @@ import {
   testDatabaseUrl,
 } from "../support/sql-client.ts";
 import { insertFinishedJobRun } from "../support/job-runs-fixture.ts";
+import { expectSentBodiesInert } from "../support/discord-server.ts";
 import { stubEnv } from "../support/stubs.ts";
 import {
   beginJobRun,
@@ -289,6 +290,19 @@ describe("a normal run", () => {
     });
     expect(w.logLines.join("\n")).toContain(bad);
     expect(w.logLines.join("\n")).not.toContain(poison);
+  });
+});
+
+describe("the live text check", () => {
+  it("sees a body sent through the world's fake Discord", async () => {
+    await fetch("https://discord.com/api/v10/channels/1/messages", {
+      method: "POST",
+      body: JSON.stringify({ content: "@everyone", flags: 4 }),
+    }).catch(() => undefined);
+
+    expect(() => {
+      expectSentBodiesInert();
+    }).toThrow();
   });
 });
 

@@ -17,6 +17,7 @@ import {
 } from "../../src/reminders/run.ts";
 import { messageBody, type MessageBody } from "../support/json.ts";
 import { pgliteSql, type Intercept } from "../support/sql-client.ts";
+import { recordSentBody } from "../support/discord-server.ts";
 import { asFetch, stubEnv } from "../support/stubs.ts";
 import {
   insertGuild,
@@ -160,6 +161,9 @@ export function useReminderWorld(): ReminderWorld {
     world.requests.push({ method, path });
     const id = /^\/channels\/([0-9]+)/.exec(path)?.[1] ?? "";
     let message: Sent | undefined;
+    if (typeof init?.body === "string") {
+      recordSentBody(method, path, init.body);
+    }
     if (method === "POST") {
       message = { threadId: id, ...messageBody(init?.body) };
       if (message.flags === undefined) {
