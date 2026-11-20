@@ -54,7 +54,7 @@
     "@types/qrcode": "^1.5.6",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
-    "postcss": "^8.5.32",
+    "postcss": "^8.5.33",
     "shadcn": "^4.23.0",
     "tailwindcss": "^4.3.5",
     "tsrs": "0.20.1-ts7.1.0-beta",
