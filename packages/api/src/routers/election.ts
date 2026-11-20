@@ -1,15 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import {
-  and,
-  asc,
-  count,
-  countDistinct,
-  desc,
-  eq,
-  gte,
-  inArray,
-  isNull,
-} from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, inArray, isNull } from "drizzle-orm";
 import { z } from "zod";
 
 import { notFound } from "../errors";
@@ -27,6 +17,7 @@ import {
   events,
   users,
   type db as Db,
+  type CandidateStatus,
   type ElectionPhase,
 } from "@buzz/db";
 
@@ -85,66 +76,119 @@ async function positionWithElection(db: Database, positionId: string) {
 }
 
 /**
- * One year's elections, positions and candidates in a single round trip.
- * Positions and candidates are selected through the election's year instead of
- * through ids read from the elections query, so none of the three waits on
- * another. Ordering matches what the callers filter on.
+ * One year's elections, positions and candidates in a single statement, as
+ * nested rows rebuilt from one left-joined result. One snapshot, one round
+ * trip, one pool checkout. Elections come newest first, positions by
+ * `sortOrder`, candidates by name.
  */
 async function electionTree(db: Database, year: string) {
-  const [rows, positions, candidates] = await Promise.all([
-    db
-      .select()
-      .from(elections)
-      .where(eq(elections.year, year))
-      .orderBy(desc(elections.createdAt)),
-    db
-      .select({
-        id: electionPositions.id,
-        electionId: electionPositions.electionId,
-        title: electionPositions.title,
-        sortOrder: electionPositions.sortOrder,
-      })
-      .from(electionPositions)
-      .innerJoin(elections, eq(elections.id, electionPositions.electionId))
-      .where(eq(elections.year, year))
-      .orderBy(asc(electionPositions.sortOrder)),
-    db
-      .select({
-        id: electionCandidates.id,
-        positionId: electionCandidates.positionId,
-        userId: electionCandidates.userId,
-        statement: electionCandidates.statement,
-        status: electionCandidates.status,
-        createdAt: electionCandidates.createdAt,
-        name: users.name,
-        email: users.email,
-      })
-      .from(electionCandidates)
-      .innerJoin(users, eq(users.id, electionCandidates.userId))
-      .innerJoin(
-        electionPositions,
-        eq(electionPositions.id, electionCandidates.positionId),
-      )
-      .innerJoin(elections, eq(elections.id, electionPositions.electionId))
-      .where(eq(elections.year, year))
-      .orderBy(asc(users.name)),
-  ]);
-  return { rows, positions, candidates };
+  const joined = await db
+    .select({
+      election: elections,
+      positionId: electionPositions.id,
+      positionTitle: electionPositions.title,
+      positionSortOrder: electionPositions.sortOrder,
+      candidateId: electionCandidates.id,
+      candidateUserId: electionCandidates.userId,
+      statement: electionCandidates.statement,
+      status: electionCandidates.status,
+      createdAt: electionCandidates.createdAt,
+      name: users.name,
+      email: users.email,
+    })
+    .from(elections)
+    .leftJoin(electionPositions, eq(electionPositions.electionId, elections.id))
+    .leftJoin(
+      electionCandidates,
+      eq(electionCandidates.positionId, electionPositions.id),
+    )
+    .leftJoin(users, eq(users.id, electionCandidates.userId))
+    .where(eq(elections.year, year))
+    .orderBy(
+      desc(elections.createdAt),
+      asc(electionPositions.sortOrder),
+      asc(users.name),
+    );
+
+  const rows = new Map<string, (typeof joined)[number]["election"]>();
+  const positions = new Map<
+    string,
+    { id: string; electionId: string; title: string; sortOrder: number }
+  >();
+  const candidates: {
+    id: string;
+    positionId: string;
+    userId: string;
+    statement: string;
+    status: CandidateStatus;
+    createdAt: Date;
+    name: string | null;
+    email: string | null;
+  }[] = [];
+  for (const row of joined) {
+    rows.set(row.election.id, row.election);
+    if (row.positionId === null) continue;
+    positions.set(row.positionId, {
+      id: row.positionId,
+      electionId: row.election.id,
+      title: row.positionTitle!,
+      sortOrder: row.positionSortOrder!,
+    });
+    if (row.candidateId === null) continue;
+    candidates.push({
+      id: row.candidateId,
+      positionId: row.positionId,
+      userId: row.candidateUserId!,
+      statement: row.statement!,
+      status: row.status!,
+      createdAt: row.createdAt!,
+      name: row.name,
+      email: row.email,
+    });
+  }
+  return {
+    rows: [...rows.values()],
+    positions: [...positions.values()],
+    candidates,
+  };
 }
 
-/** Votes per candidate across one year's elections that are in one of `phases`. */
-async function tally(db: Database, year: string, phases: ElectionPhase[]) {
+/**
+ * Votes per (position, candidate) across one year's elections, with no phase
+ * filter: callers decide from the phase on the rows they are already
+ * displaying whether to show counts, so a phase change between two statements
+ * cannot show a published election as zero votes. One vote per voter per
+ * position (primary key), so a position's turnout is the sum of its rows.
+ */
+async function yearVotes(db: Database, year: string) {
   const rows = await db
-    .select({ candidateId: electionVotes.candidateId, votes: count() })
+    .select({
+      positionId: electionVotes.positionId,
+      candidateId: electionVotes.candidateId,
+      votes: count(),
+    })
     .from(electionVotes)
-    .innerJoin(
-      electionPositions,
-      eq(electionPositions.id, electionVotes.positionId),
+    .where(
+      inArray(
+        electionVotes.positionId,
+        db
+          .select({ id: electionPositions.id })
+          .from(electionPositions)
+          .innerJoin(elections, eq(elections.id, electionPositions.electionId))
+          .where(eq(elections.year, year)),
+      ),
     )
-    .innerJoin(elections, eq(elections.id, electionPositions.electionId))
-    .where(and(eq(elections.year, year), inArray(elections.phase, phases)))
-    .groupBy(electionVotes.candidateId);
-  return new Map(rows.map((row) => [row.candidateId, row.votes]));
+    .groupBy(electionVotes.positionId, electionVotes.candidateId);
+  const perCandidate = new Map<string, number>();
+  const perPosition = new Map<string, number>();
+  for (const row of rows) {
+    perCandidate.set(row.candidateId, row.votes);
+    perPosition.set(
+      row.positionId,
+      (perPosition.get(row.positionId) ?? 0) + row.votes,
+    );
+  }
+  return { perCandidate, perPosition };
 }
 
 const yearInput = z
@@ -162,27 +206,38 @@ export const electionRouter = createTRPCRouter({
     const userId = ctx.session.user.id;
     const year = schoolYear(now);
 
-    // Every read is keyed by the year, so the whole screen is one round trip.
-    const [{ rows, positions, candidates }, myVotes, eligible, counts] =
+    // Four statements, one wave: the tree, the vote totals, this member's
+    // ballots and their eligibility. Each is keyed by the year, not by ids read
+    // from another, and none can see a different phase than the tree does.
+    const [{ rows, positions, candidates }, votes, myVotes, eligible] =
       await Promise.all([
         electionTree(ctx.db, year),
+        yearVotes(ctx.db, year),
         ctx.db
           .select({
             positionId: electionVotes.positionId,
             candidateId: electionVotes.candidateId,
           })
           .from(electionVotes)
-          .innerJoin(
-            electionPositions,
-            eq(electionPositions.id, electionVotes.positionId),
-          )
-          .innerJoin(elections, eq(elections.id, electionPositions.electionId))
           .where(
-            and(eq(electionVotes.voterId, userId), eq(elections.year, year)),
+            and(
+              eq(electionVotes.voterId, userId),
+              inArray(
+                electionVotes.positionId,
+                ctx.db
+                  .select({ id: electionPositions.id })
+                  .from(electionPositions)
+                  .innerJoin(
+                    elections,
+                    eq(elections.id, electionPositions.electionId),
+                  )
+                  .where(eq(elections.year, year)),
+              ),
+            ),
           ),
         eligibility(ctx.db, userId, now),
-        tally(ctx.db, year, ["published"]),
       ]);
+    const counts = votes.perCandidate;
 
     return {
       year,
@@ -369,24 +424,11 @@ export const electionRouter = createTRPCRouter({
    */
   list: adminProcedure.input(yearInput).query(async ({ ctx, input }) => {
     const year = input?.year ?? schoolYear(new Date());
-    const [{ rows, positions, candidates }, turnout, counts] =
-      await Promise.all([
-        electionTree(ctx.db, year),
-        ctx.db
-          .select({
-            positionId: electionVotes.positionId,
-            voters: countDistinct(electionVotes.voterId),
-          })
-          .from(electionVotes)
-          .innerJoin(
-            electionPositions,
-            eq(electionPositions.id, electionVotes.positionId),
-          )
-          .innerJoin(elections, eq(elections.id, electionPositions.electionId))
-          .where(eq(elections.year, year))
-          .groupBy(electionVotes.positionId),
-        tally(ctx.db, year, ["closed", "published"]),
-      ]);
+    const [{ rows, positions, candidates }, votes] = await Promise.all([
+      electionTree(ctx.db, year),
+      yearVotes(ctx.db, year),
+    ]);
+    const counts = votes.perCandidate;
 
     return rows.map((election) => {
       const showCounts =
@@ -401,9 +443,7 @@ export const electionRouter = createTRPCRouter({
           .map((position) => ({
             id: position.id,
             title: position.title,
-            voters:
-              turnout.find((row) => row.positionId === position.id)?.voters ??
-              0,
+            voters: votes.perPosition.get(position.id) ?? 0,
             candidates: candidates
               .filter((candidate) => candidate.positionId === position.id)
               .map((candidate) => ({

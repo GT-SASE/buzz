@@ -33,10 +33,17 @@ const { createCaller } = await import("../packages/api/src/root");
 const { db } = await import("../packages/db/src/index");
 const { schoolYear, semester } = await import("../packages/api/src/terms");
 
+const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
 const url = process.env.DATABASE_URL ?? "";
-if (!url || /neon\.tech|vercel|supabase/i.test(url)) {
+let host = "";
+try {
+  host = new URL(url).hostname;
+} catch {
+  // falls through to the refusal below
+}
+if (!LOCAL_HOSTS.has(host)) {
   throw new Error(
-    "Refusing to run: DATABASE_URL must be a disposable local database.",
+    "Refusing to run: DATABASE_URL must point at localhost / 127.0.0.1 (a disposable database).",
   );
 }
 
@@ -81,7 +88,9 @@ async function seed() {
   if (n > 0 && process.env.BENCH_RESEED !== "1") return;
   await db.execute(sql`delete from buzz_election where id like 'bench-%'`);
   await db.execute(sql`delete from buzz_kin_group where id like 'bench-%'`);
-  await db.execute(sql`delete from buzz_committee_cycle where id <> ''`);
+  await db.execute(
+    sql`delete from buzz_committee_cycle where id = ${semester(new Date())}`,
+  );
   await db.execute(sql`delete from buzz_event where id like 'bench-%'`);
   await db.execute(sql`delete from buzz_user where id like 'bench-%'`);
   const year = schoolYear(new Date());
