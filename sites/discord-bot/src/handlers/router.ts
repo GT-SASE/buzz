@@ -51,7 +51,7 @@ import { DISCORD_LIMITS, isWithinLimit, safe } from "../discord/safe-text.ts";
 import { DiscordClientError } from "../discord/client.ts";
 import type { DiscordClient } from "../discord/client.ts";
 import type { VerifiedInteraction } from "../discord/verify.ts";
-import type { DbClient } from "../db/client.ts";
+import { withDeadline, type DbClient } from "../db/client.ts";
 import { errorSummary, type DbResult } from "../db/errors.ts";
 import { getGuildConfig } from "../db/guild-config.ts";
 import { claimInteraction } from "../db/interaction-claims.ts";
@@ -662,8 +662,9 @@ export function createRouter(handlers: readonly Handler[]): Router {
     ) {
       return none;
     }
-    const db = dependencies.db();
-    const config = await getGuildConfig(db, { guildId: actor.guildId });
+    const started = Date.now();
+    const client = dependencies.db();
+    const config = await getGuildConfig(client, { guildId: actor.guildId });
     if (!config.ok) {
       return none;
     }
@@ -671,6 +672,12 @@ export function createRouter(handlers: readonly Handler[]): Router {
     if (scope === undefined) {
       return none;
     }
+    // Autocomplete cannot defer, so every read shares the one deadline.
+    const left = client.deadlineMs - (Date.now() - started);
+    if (left <= 0) {
+      return none;
+    }
+    const db = withDeadline(client, left);
     const ctx = { payload, verified, actor, config: config.value, db };
     try {
       return {
