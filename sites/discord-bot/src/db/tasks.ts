@@ -45,7 +45,7 @@ const TASK_COLUMNS = sql`id, event_id, guild_id, assignee_id, description, due_d
   status, completed_at, created_by, deleted_at, updated_at`;
 
 /** Tasks as `t` with their events as `e`, which are in the same guild by the foreign key. */
-const TASKS_AND_EVENTS = sql`tasks t join events e
+const TASKS_AND_EVENTS = sql`discord_bot.tasks t join discord_bot.events e
   on e.id = t.event_id and e.guild_id = t.guild_id`;
 
 /** The task is live and its event is live and open. */
@@ -101,7 +101,7 @@ export async function createTask(
   return changedRow(
     await query<TaskRow>(
       db,
-      sql`insert into tasks
+      sql`insert into discord_bot.tasks
         (event_id, guild_id, assignee_id, description, due_date, created_by)
       values (${eventId}, ${guildId}, ${assigneeId}, ${description}, ${dueDate},
         ${actorId})
@@ -121,7 +121,7 @@ export async function getTask(
   return firstRow(
     await query<TaskRow>(
       db,
-      sql`select ${TASK_COLUMNS} from tasks
+      sql`select ${TASK_COLUMNS} from discord_bot.tasks
       where id = ${key.taskId} and guild_id = ${key.guildId} and deleted_at is null
       limit 1`,
     ),
@@ -192,7 +192,7 @@ export async function listEventTasks(
   return capped(
     await query<TaskRow>(
       db,
-      sql`select ${TASK_COLUMNS} from tasks
+      sql`select ${TASK_COLUMNS} from discord_bot.tasks
       where guild_id = ${guildId} and event_id = ${eventId} and deleted_at is null
       order by status, due_date, id limit ${MAX_TASKS + 1}`,
     ),
@@ -317,7 +317,7 @@ export async function markOwnTaskDone(
   return changedRow(
     await query<TaskRow>(
       db,
-      sql`update tasks set status = 'done', completed_at = ${key.now.toISOString()}
+      sql`update discord_bot.tasks set status = 'done', completed_at = ${key.now.toISOString()}
       where id = ${key.taskId} and guild_id = ${key.guildId}
         and assignee_id = ${key.assigneeId} and status = 'open' and deleted_at is null
       returning ${TASK_COLUMNS}`,
@@ -333,7 +333,7 @@ export async function markTaskDoneAsOfficer(
   return changedRow(
     await query<TaskRow>(
       db,
-      sql`update tasks set status = 'done', completed_at = ${key.now.toISOString()}
+      sql`update discord_bot.tasks set status = 'done', completed_at = ${key.now.toISOString()}
       where id = ${key.taskId} and guild_id = ${key.guildId} and status = 'open'
         and deleted_at is null
       returning ${TASK_COLUMNS}`,
@@ -353,7 +353,7 @@ export async function reopenTask(
   return changedRow(
     await query<TaskRow>(
       db,
-      sql`update tasks set status = 'open', completed_at = null
+      sql`update discord_bot.tasks set status = 'open', completed_at = null
       where id = ${key.taskId} and guild_id = ${key.guildId} and status = 'done'
         and deleted_at is null
       returning ${TASK_COLUMNS}`,
@@ -387,7 +387,7 @@ export async function editTask(
   return nullAsNotFound(
     await callFunction<TaskRow | null>(
       db,
-      sql`select public.edit_task(p_task_id => ${key.taskId},
+      sql`select discord_bot.edit_task(p_task_id => ${key.taskId},
         p_guild_id => ${key.guildId},
         p_expected_updated_at => ${key.expectedUpdatedAt},
         p_description => ${key.description}, p_due_date => ${key.dueDate},
@@ -407,7 +407,7 @@ export async function softDeleteTaskIfUnchanged(
   return changedRow(
     await query<TaskRow>(
       db,
-      sql`update tasks set deleted_at = ${key.now.toISOString()}
+      sql`update discord_bot.tasks set deleted_at = ${key.now.toISOString()}
       where id = ${key.taskId} and guild_id = ${key.guildId}
         and updated_at = ${key.expectedUpdatedAt} and deleted_at is null
       returning ${TASK_COLUMNS}`,
@@ -423,7 +423,7 @@ export async function softDeleteTask(
   return changedRow(
     await query<TaskRow>(
       db,
-      sql`update tasks set deleted_at = ${key.now.toISOString()}
+      sql`update discord_bot.tasks set deleted_at = ${key.now.toISOString()}
       where id = ${key.taskId} and guild_id = ${key.guildId} and deleted_at is null
       returning ${TASK_COLUMNS}`,
     ),

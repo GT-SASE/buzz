@@ -37,21 +37,21 @@ describe("mcp bot introspection", () => {
   it("applies the real bot migrations to PGlite and describes them", async () => {
     const out = await formatBotDatabase();
     for (const t of ["events", "tasks", "event_steps"]) {
-      expect(out).toContain(`table public.${t}\n`);
+      expect(out).toContain(`table discord_bot.${t}\n`);
     }
     // Columns, types, nullability and defaults come from the catalogs.
-    expect(out).toMatch(/\n {2}guild_id {2}public\.discord_id {2}notNull/);
+    expect(out).toMatch(/\n {2}guild_id {2}discord_bot\.discord_id {2}notNull/);
     expect(out).toMatch(
-      /\n {2}status {2}public\.event_status {2}notNull default 'active'/,
+      /\n {2}status {2}discord_bot\.event_status {2}notNull default 'active'/,
     );
     // A later migration's column and enum values, in sort order.
     expect(out).toContain("not_needed_at  timestamp with time zone");
     expect(out).toMatch(
-      /enum public\.event_step_kind: .*engage_picture, budget_approved, slides/,
+      /enum discord_bot\.event_step_kind: .*engage_picture, budget_approved, slides/,
     );
-    expect(out).toContain("domain public.discord_id: text");
-    expect(out).toContain("table history.row_versions");
-    expect(out).toContain("-- schema history --");
+    expect(out).toContain("domain discord_bot.discord_id: text");
+    expect(out).toContain("table discord_bot.row_versions");
+    expect(out).toContain("-- schema discord_bot --");
     expect(out).toContain(
       "CONSTRAINT event_steps_pkey: PRIMARY KEY (event_id, kind)",
     );
@@ -60,18 +60,18 @@ describe("mcp bot introspection", () => {
     // assign_event_step appears once, with its final return type.
     const assign = out
       .split("\n")
-      .filter((l) => l.startsWith("function public.assign_event_step("));
+      .filter((l) => l.startsWith("function discord_bot.assign_event_step("));
     expect(assign).toHaveLength(1);
-    expect(assign[0]).toContain("p_kind public.event_step_kind");
+    expect(assign[0]).toContain("p_kind discord_bot.event_step_kind");
     expect(assign[0]).toContain("returns text");
     expect(assign[0]).toContain("security definer");
   }, 60_000);
 
   it("filters bot objects by name and keeps the schema heading", async () => {
     const out = await formatBotDatabase("event_steps");
-    expect(out).toStartWith("-- schema public --");
-    expect(out).toContain("table public.event_steps");
-    expect(out).not.toContain("table public.tasks");
+    expect(out).toStartWith("-- schema discord_bot --");
+    expect(out).toContain("table discord_bot.event_steps");
+    expect(out).not.toContain("table discord_bot.tasks");
     expect(await formatBotDatabase("zzz-none")).toBe(
       "No matching bot database objects.",
     );
@@ -82,7 +82,7 @@ describe("mcp bot introspection", () => {
     expect(buzz).toContain("buzz_page");
     expect(buzz).not.toContain("bot database");
     const bot = await describeSchema("event_steps", "bot");
-    expect(bot).toContain("table public.event_steps");
+    expect(bot).toContain("table discord_bot.event_steps");
     expect(bot).not.toContain("buzz_page");
     const all = await describeSchema("event");
     expect(all).toContain("=== buzz database");

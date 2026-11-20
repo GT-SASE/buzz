@@ -5,12 +5,12 @@
 -- because a replacement takes only the attributes it names. A data-modifying CTE always
 -- runs to completion, so `EXISTS` over its RETURNING rows is what FOUND was.
 
-CREATE OR REPLACE FUNCTION public.claim_interaction(p_interaction_id text) RETURNS boolean
+CREATE OR REPLACE FUNCTION discord_bot.claim_interaction(p_interaction_id text) RETURNS boolean
     LANGUAGE sql SECURITY DEFINER
     SET search_path TO ''
     AS $$
   WITH claimed AS (
-    INSERT INTO public.interaction_claims (interaction_id)
+    INSERT INTO discord_bot.interaction_claims (interaction_id)
     VALUES (p_interaction_id)
     ON CONFLICT (interaction_id) DO NOTHING
     RETURNING 1
@@ -18,24 +18,24 @@ CREATE OR REPLACE FUNCTION public.claim_interaction(p_interaction_id text) RETUR
   SELECT EXISTS (SELECT FROM claimed);
 $$;
 
-CREATE OR REPLACE FUNCTION public.expire_interaction_claims() RETURNS integer
+CREATE OR REPLACE FUNCTION discord_bot.expire_interaction_claims() RETURNS integer
     LANGUAGE sql SECURITY DEFINER
     SET search_path TO ''
     AS $$
   WITH deleted AS (
-    DELETE FROM public.interaction_claims
+    DELETE FROM discord_bot.interaction_claims
     WHERE claimed_at < now() - interval '1 day'
     RETURNING 1
   )
   SELECT count(*)::integer FROM deleted;
 $$;
 
-CREATE OR REPLACE FUNCTION public.claim_event_post_attempt(p_event_id uuid, p_guild_id text) RETURNS boolean
+CREATE OR REPLACE FUNCTION discord_bot.claim_event_post_attempt(p_event_id uuid, p_guild_id text) RETURNS boolean
     LANGUAGE sql SECURITY DEFINER
     SET search_path TO ''
     AS $$
   WITH claimed AS (
-    UPDATE public.events
+    UPDATE discord_bot.events
     SET post_attempt_at = now()
     WHERE id = p_event_id
       AND guild_id = p_guild_id
@@ -47,12 +47,12 @@ CREATE OR REPLACE FUNCTION public.claim_event_post_attempt(p_event_id uuid, p_gu
   SELECT EXISTS (SELECT FROM claimed);
 $$;
 
-CREATE OR REPLACE FUNCTION public.release_event_post_attempt(p_event_id uuid, p_guild_id text) RETURNS boolean
+CREATE OR REPLACE FUNCTION discord_bot.release_event_post_attempt(p_event_id uuid, p_guild_id text) RETURNS boolean
     LANGUAGE sql SECURITY DEFINER
     SET search_path TO ''
     AS $$
   WITH released AS (
-    UPDATE public.events
+    UPDATE discord_bot.events
     SET post_attempt_at = NULL
     WHERE id = p_event_id
       AND guild_id = p_guild_id
@@ -63,22 +63,22 @@ CREATE OR REPLACE FUNCTION public.release_event_post_attempt(p_event_id uuid, p_
   SELECT EXISTS (SELECT FROM released);
 $$;
 
-CREATE OR REPLACE FUNCTION public.claim_event_reminder(p_event_id uuid, p_kind public.event_reminder_kind, p_reminder_date date) RETURNS uuid
+CREATE OR REPLACE FUNCTION discord_bot.claim_event_reminder(p_event_id uuid, p_kind discord_bot.event_reminder_kind, p_reminder_date date) RETURNS uuid
     LANGUAGE sql SECURITY DEFINER
     SET search_path TO ''
     AS $$
-  INSERT INTO public.event_reminder_log (event_id, kind, reminder_date)
+  INSERT INTO discord_bot.event_reminder_log (event_id, kind, reminder_date)
   SELECT p_event_id, p_kind, p_reminder_date
-  WHERE public.event_reminder_allowed(p_event_id, p_kind, p_reminder_date)
+  WHERE discord_bot.event_reminder_allowed(p_event_id, p_kind, p_reminder_date)
   ON CONFLICT (event_id, kind, reminder_date) DO NOTHING
   RETURNING claim_token;
 $$;
 
-CREATE OR REPLACE FUNCTION public.reclaim_event_reminder(p_event_id uuid, p_kind public.event_reminder_kind, p_reminder_date date, p_claim_token uuid, p_stale_after_seconds integer) RETURNS uuid
+CREATE OR REPLACE FUNCTION discord_bot.reclaim_event_reminder(p_event_id uuid, p_kind discord_bot.event_reminder_kind, p_reminder_date date, p_claim_token uuid, p_stale_after_seconds integer) RETURNS uuid
     LANGUAGE sql SECURITY DEFINER
     SET search_path TO ''
     AS $$
-  UPDATE public.event_reminder_log AS log
+  UPDATE discord_bot.event_reminder_log AS log
   SET claim_token = gen_random_uuid(),
       claimed_at = now(),
       attempts = log.attempts + 1
@@ -88,16 +88,16 @@ CREATE OR REPLACE FUNCTION public.reclaim_event_reminder(p_event_id uuid, p_kind
     AND log.state = 'claimed'
     AND log.claim_token = p_claim_token
     AND log.claimed_at < now() - make_interval(secs => p_stale_after_seconds)
-    AND public.event_reminder_allowed(p_event_id, p_kind, p_reminder_date)
+    AND discord_bot.event_reminder_allowed(p_event_id, p_kind, p_reminder_date)
   RETURNING log.claim_token;
 $$;
 
-CREATE OR REPLACE FUNCTION public.mark_event_reminder_sent(p_event_id uuid, p_kind public.event_reminder_kind, p_reminder_date date, p_claim_token uuid, p_message_id text) RETURNS boolean
+CREATE OR REPLACE FUNCTION discord_bot.mark_event_reminder_sent(p_event_id uuid, p_kind discord_bot.event_reminder_kind, p_reminder_date date, p_claim_token uuid, p_message_id text) RETURNS boolean
     LANGUAGE sql SECURITY DEFINER
     SET search_path TO ''
     AS $$
   WITH marked AS (
-    UPDATE public.event_reminder_log
+    UPDATE discord_bot.event_reminder_log
     SET state = 'sent',
         sent_at = now(),
         message_id = p_message_id
@@ -111,12 +111,12 @@ CREATE OR REPLACE FUNCTION public.mark_event_reminder_sent(p_event_id uuid, p_ki
   SELECT EXISTS (SELECT FROM marked);
 $$;
 
-CREATE OR REPLACE FUNCTION public.mark_event_reminder_skipped(p_event_id uuid, p_kind public.event_reminder_kind, p_reminder_date date, p_claim_token uuid) RETURNS boolean
+CREATE OR REPLACE FUNCTION discord_bot.mark_event_reminder_skipped(p_event_id uuid, p_kind discord_bot.event_reminder_kind, p_reminder_date date, p_claim_token uuid) RETURNS boolean
     LANGUAGE sql SECURITY DEFINER
     SET search_path TO ''
     AS $$
   WITH marked AS (
-    UPDATE public.event_reminder_log
+    UPDATE discord_bot.event_reminder_log
     SET state = 'skipped'
     WHERE event_id = p_event_id
       AND kind = p_kind
@@ -128,12 +128,12 @@ CREATE OR REPLACE FUNCTION public.mark_event_reminder_skipped(p_event_id uuid, p
   SELECT EXISTS (SELECT FROM marked);
 $$;
 
-CREATE OR REPLACE FUNCTION public.mark_reminder_sent(p_task_id uuid, p_kind public.reminder_kind, p_due_date date, p_claim_token uuid, p_message_id text) RETURNS boolean
+CREATE OR REPLACE FUNCTION discord_bot.mark_reminder_sent(p_task_id uuid, p_kind discord_bot.reminder_kind, p_due_date date, p_claim_token uuid, p_message_id text) RETURNS boolean
     LANGUAGE sql SECURITY DEFINER
     SET search_path TO ''
     AS $$
   WITH marked AS (
-    UPDATE public.reminder_log
+    UPDATE discord_bot.reminder_log
     SET state = 'sent',
         sent_at = now(),
         message_id = p_message_id
@@ -147,12 +147,12 @@ CREATE OR REPLACE FUNCTION public.mark_reminder_sent(p_task_id uuid, p_kind publ
   SELECT EXISTS (SELECT FROM marked);
 $$;
 
-CREATE OR REPLACE FUNCTION public.mark_reminder_skipped(p_task_id uuid, p_kind public.reminder_kind, p_due_date date, p_claim_token uuid) RETURNS boolean
+CREATE OR REPLACE FUNCTION discord_bot.mark_reminder_skipped(p_task_id uuid, p_kind discord_bot.reminder_kind, p_due_date date, p_claim_token uuid) RETURNS boolean
     LANGUAGE sql SECURITY DEFINER
     SET search_path TO ''
     AS $$
   WITH marked AS (
-    UPDATE public.reminder_log
+    UPDATE discord_bot.reminder_log
     SET state = 'skipped'
     WHERE task_id = p_task_id
       AND kind = p_kind
@@ -164,12 +164,12 @@ CREATE OR REPLACE FUNCTION public.mark_reminder_skipped(p_task_id uuid, p_kind p
   SELECT EXISTS (SELECT FROM marked);
 $$;
 
-CREATE OR REPLACE FUNCTION public.record_reminder_refused(p_task_id uuid, p_kind public.reminder_kind, p_due_date date, p_claim_token uuid) RETURNS boolean
+CREATE OR REPLACE FUNCTION discord_bot.record_reminder_refused(p_task_id uuid, p_kind discord_bot.reminder_kind, p_due_date date, p_claim_token uuid) RETURNS boolean
     LANGUAGE sql SECURITY DEFINER
     SET search_path TO ''
     AS $$
   WITH recorded AS (
-    UPDATE public.reminder_log
+    UPDATE discord_bot.reminder_log
     SET refused_attempts = refused_attempts + 1
     WHERE task_id = p_task_id
       AND kind = p_kind
@@ -182,12 +182,12 @@ CREATE OR REPLACE FUNCTION public.record_reminder_refused(p_task_id uuid, p_kind
   SELECT EXISTS (SELECT FROM recorded);
 $$;
 
-CREATE OR REPLACE FUNCTION public.mark_step_handoff_sent(p_event_id uuid, p_guild_id text, p_kind public.event_step_kind) RETURNS boolean
+CREATE OR REPLACE FUNCTION discord_bot.mark_step_handoff_sent(p_event_id uuid, p_guild_id text, p_kind discord_bot.event_step_kind) RETURNS boolean
     LANGUAGE sql SECURITY DEFINER
     SET search_path TO ''
     AS $$
   WITH marked AS (
-    UPDATE public.event_steps
+    UPDATE discord_bot.event_steps
     SET handoff_sent_at = now()
     WHERE event_id = p_event_id
       AND guild_id = p_guild_id
@@ -199,11 +199,11 @@ CREATE OR REPLACE FUNCTION public.mark_step_handoff_sent(p_event_id uuid, p_guil
   SELECT EXISTS (SELECT FROM marked);
 $$;
 
-CREATE OR REPLACE FUNCTION public.save_setup_draft(p_guild_id text, p_actor_id text, p_officer_role_id text, p_admin_role_id text, p_eboard_role_id text, p_events_committee_role_id text, p_treasury_role_id text, p_marketing_role_id text, p_fingerprint text) RETURNS boolean
+CREATE OR REPLACE FUNCTION discord_bot.save_setup_draft(p_guild_id text, p_actor_id text, p_officer_role_id text, p_admin_role_id text, p_eboard_role_id text, p_events_committee_role_id text, p_treasury_role_id text, p_marketing_role_id text, p_fingerprint text) RETURNS boolean
     LANGUAGE sql SECURITY DEFINER
     SET search_path TO ''
     AS $$
-  INSERT INTO public.setup_drafts (
+  INSERT INTO discord_bot.setup_drafts (
     guild_id, actor_id, officer_role_id, admin_role_id, eboard_role_id,
     events_committee_role_id, treasury_role_id, marketing_role_id, fingerprint
   )

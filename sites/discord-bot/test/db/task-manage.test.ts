@@ -597,7 +597,7 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
       const closed = await eventWithPost();
       const closedTask = await newTask(closed.eventId, fakeId());
       await world.backend.connection.query(
-        `UPDATE public.tasks SET status = 'done', completed_at = now() WHERE id = $1`,
+        `UPDATE discord_bot.tasks SET status = 'done', completed_at = now() WHERE id = $1`,
         [doneTask.id],
       );
       unwrap(

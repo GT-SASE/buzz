@@ -19,7 +19,7 @@ Behaviour stated here was read from the code or run in tests with Discord mocked
 
 ```sql
 SELECT started_at, status, error, results
-FROM public.job_runs
+FROM discord_bot.job_runs
 WHERE job_name = 'reminders'
 ORDER BY started_at DESC
 LIMIT 7;
@@ -43,7 +43,7 @@ To see what went out for an event:
 
 ```sql
 SELECT kind, reminder_date, state, attempts, claimed_at, sent_at
-FROM public.event_reminder_log
+FROM discord_bot.event_reminder_log
 WHERE event_id = '<event-id>'
 ORDER BY reminder_date, kind;
 ```
@@ -78,7 +78,7 @@ Which of these Discord gives for a removed bot or a deleted server is unconfirme
 
 ## A full database
 
-Check the size on the project's usage page in the Neon console. `history.row_versions`, `job_runs` and the reminder logs only grow. Do not delete rows by hand: `bot_app` has no `DELETE` or `TRUNCATE` on purpose, and schema changes go through migrations only. If the database is near the plan's limit, take a manual export as in [RECOVERY.md](RECOVERY.md) and move to a paid plan, which is the owner's decision.
+Check the size on the project's usage page in the Neon console. `discord_bot.row_versions`, `job_runs` and the reminder logs only grow. Do not delete rows by hand: `bot_app` has no `DELETE` or `TRUNCATE` on purpose, and schema changes go through migrations only. If the database is near the plan's limit, take a manual export as in [RECOVERY.md](RECOVERY.md) and move to a paid plan, which is the owner's decision.
 
 ## Deploy order
 
@@ -137,6 +137,35 @@ Check the size on the project's usage page in the Neon console. `history.row_ver
 
 **Restoring to an earlier point is the opposite case:** new code on an old schema. Follow [RECOVERY.md](RECOVERY.md), and bring the schema up to date before the bot takes traffic.
 
+## Copying the data from a separate bot database
+
+Only if the bot ran before on its own Neon project, with the tables in that database's `public` schema, and holds live data to keep. Skip this on a new install. Do it once, after `bun run db:migrate` has made the empty `discord_bot` schema in buzz's database ([SETUP.md](SETUP.md#4-prepare-the-database)), with the bot paused: turn reminders off with `/config`, and do not deploy until the copy is checked.
+
+The old tables are in `public` there and the new ones in `discord_bot` here, so the dump is rewritten on the way. Use Postgres 17 tools and direct strings (pooling off), the old owner's as `OLD_URL` and buzz's owner's as `NEW_URL`. This procedure has not been run: try it on a Neon branch of buzz's database first.
+
+```sh
+read -rs OLD_URL
+read -rs NEW_URL
+pg_dump --data-only --no-owner --no-privileges \
+  --schema=public --schema=history --exclude-table=public.schema_migrations \
+  --file=bot-data.sql "$OLD_URL"
+sed -e 's/\bpublic\./discord_bot./g' -e 's/\bhistory\./discord_bot./g' bot-data.sql > bot-data-new.sql
+{ echo 'SET session_replication_role = replica;'; cat bot-data-new.sql; } \
+  | psql -v ON_ERROR_STOP=1 --single-transaction "$NEW_URL"
+```
+
+`session_replication_role = replica` stops the schema's guard triggers from rejecting old rows, such as a task on a closed event. Neon's owner role may set it. If it is refused, stop and ask the owner what to do: do not drop the guards. The old `history.row_versions` lands in `discord_bot.row_versions`, and the dump's `setval` lines move the ID sequences.
+
+Check each count against the same table in the old database:
+
+```sql
+SELECT count(*) FROM discord_bot.events;
+SELECT count(*) FROM discord_bot.tasks;
+SELECT count(*) FROM discord_bot.row_versions;
+```
+
+Then point `DATABASE_URL` in Vercel at the new `bot_app` string, redeploy, turn reminders back on, and watch the next `reminders` row in `job_runs`. Keep the old project, read-only in practice, for a term before deleting it. Delete `bot-data.sql` and `bot-data-new.sql` when done: they hold member IDs and task text.
+
 ## Member data retention
 
 **No retention period is set yet. This is an owner decision, and it has not been made.** Nothing removes member data on a schedule. Whether the club or the university has rules about this data has not been checked.
@@ -144,7 +173,7 @@ Check the size on the project's usage page in the Neon console. `history.row_ver
 | Where                  | What it holds                                                    | How long                                                                           |
 | ---------------------- | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
 | `events`, `tasks`      | Discord IDs of assignees and creators, task text and event names | Until someone decides otherwise. Deletes are soft, so the row stays                |
-| `history.row_versions` | Old copies of events, tasks, steps, settings, forums and drafts  | No limit                                                                           |
+| `discord_bot.row_versions` | Old copies of events, tasks, steps, settings, forums and drafts  | No limit                                                                           |
 | `config_audit`         | Discord IDs of who changed settings, role and forum IDs          | No limit                                                                           |
 | `task_reassignments`   | Discord IDs of who reassigned a task                             | No limit                                                                           |
 | `reminder_log`         | Which reminder went out for which task, and its message ID       | No limit                                                                           |

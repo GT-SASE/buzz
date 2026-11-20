@@ -208,7 +208,7 @@ describe("what an officer is told after a task change", () => {
         const rows = await queryAs<{ version: number }>(
           world.backend.connection,
           "bot_app",
-          `SELECT version FROM public.guild_config WHERE guild_id = $1`,
+          `SELECT version FROM discord_bot.guild_config WHERE guild_id = $1`,
           [GUILD_ID],
         );
         return rows[0]?.version ?? 0;
@@ -216,7 +216,7 @@ describe("what an officer is told after a task change", () => {
       await queryAs(
         world.backend.connection,
         "bot_app",
-        `SELECT public.apply_config_change($1, $2, $3, NULL, ARRAY[$4]::text[])`,
+        `SELECT discord_bot.apply_config_change($1, $2, $3, NULL, ARRAY[$4]::text[])`,
         [GUILD_ID, await version(), fakeId(), removedForum],
       );
       const eventId = await insertEvent(world.backend.connection, {
@@ -233,7 +233,7 @@ describe("what an officer is told after a task change", () => {
       await queryAs(
         world.backend.connection,
         "bot_app",
-        `SELECT public.apply_config_change($1, $2, $3, NULL, NULL, ARRAY[$4]::text[])`,
+        `SELECT discord_bot.apply_config_change($1, $2, $3, NULL, NULL, ARRAY[$4]::text[])`,
         [GUILD_ID, await version(), fakeId(), removedForum],
       );
       const person = fakeId();
@@ -335,7 +335,7 @@ describe("what an officer is told after a task change", () => {
       for (const id of ids) {
         // The bot's role can't choose a task's ID, so the owner connection sets these up.
         await world.backend.connection.query(
-          `INSERT INTO public.tasks (id, event_id, guild_id, assignee_id, description, due_date, created_by)
+          `INSERT INTO discord_bot.tasks (id, event_id, guild_id, assignee_id, description, due_date, created_by)
            VALUES ($1, $2, $3, $4, 'Book the room', $5, $6)`,
           [id, eventId, GUILD_ID, fakeId(), FAR_DUE, fakeId()],
         );

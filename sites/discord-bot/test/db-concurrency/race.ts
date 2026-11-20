@@ -110,7 +110,7 @@ export function raceDatabase(): RaceDatabase {
     const cluster = new pg.Client({ connectionString: adminUrl });
     await cluster.connect();
     cleanups.unshift(() => cluster.end());
-    // The copy keeps the template's owner. The migrations revoke schema public from
+    // The copy keeps the template's owner. The migrations revoke schema discord_bot from
     // PUBLIC, so the functions only reach it while their owner owns the database.
     const owner = await cluster.query<{ owner: string }>(
       "SELECT pg_get_userbyid(datdba) AS owner FROM pg_database WHERE datname = $1",

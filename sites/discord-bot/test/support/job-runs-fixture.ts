@@ -25,7 +25,7 @@ export async function insertFinishedJobRun(
   }: JobRunFixture,
 ): Promise<void> {
   await db.query(
-    `INSERT INTO public.job_runs (job_name, status, started_at, heartbeat_at, finished_at, results, error)
+    `INSERT INTO discord_bot.job_runs (job_name, status, started_at, heartbeat_at, finished_at, results, error)
      VALUES ($1, $2, coalesce($3::timestamptz, now()), coalesce($3::timestamptz, now()),
              coalesce($3::timestamptz, now()), $4::jsonb, $5)`,
     [jobName, status, startedAt ?? null, results, error],

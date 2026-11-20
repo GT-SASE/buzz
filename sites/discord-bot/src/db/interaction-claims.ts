@@ -8,7 +8,7 @@ export async function expireInteractionClaims(
 ): Promise<DbResult<number>> {
   return callFunction<number>(
     db,
-    sql`select public.expire_interaction_claims() as value`,
+    sql`select discord_bot.expire_interaction_claims() as value`,
   );
 }
 
@@ -19,6 +19,6 @@ export async function claimInteraction(
 ): Promise<DbResult<boolean>> {
   return callFunction<boolean>(
     db,
-    sql`select public.claim_interaction(p_interaction_id => ${interactionId}) as value`,
+    sql`select discord_bot.claim_interaction(p_interaction_id => ${interactionId}) as value`,
   );
 }

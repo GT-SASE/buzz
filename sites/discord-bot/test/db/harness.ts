@@ -60,14 +60,14 @@ function migrationsUp(): { version: string; sql: string }[] {
  */
 async function applyMigrations(db: Connection): Promise<void> {
   await db.exec(
-    "CREATE TABLE IF NOT EXISTS public.schema_migrations (version varchar(128) PRIMARY KEY)",
+    "CREATE TABLE IF NOT EXISTS discord_bot.schema_migrations (version varchar(128) PRIMARY KEY)",
   );
   for (const { version, sql } of migrationsUp()) {
     await db.exec("BEGIN");
     try {
       await db.exec(sql);
       await db.query(
-        "INSERT INTO public.schema_migrations (version) VALUES ($1)",
+        "INSERT INTO discord_bot.schema_migrations (version) VALUES ($1)",
         [version],
       );
       await db.exec("COMMIT");
@@ -98,8 +98,9 @@ export const INSUFFICIENT_PRIVILEGE = "42501";
 
 /**
  * What a new server has before the first migration: an owner that is not a superuser but
- * may create roles, and owns the database and its public schema, as on Neon. Safe to
- * run more than once in a cluster, and in any database.
+ * may create roles, and owns the database and its public schema, as on Neon, plus the
+ * empty discord_bot schema docs/SETUP.md has the owner make before the first migration
+ * (dbmate keeps its ledger there). Safe to run more than once in a cluster.
  */
 const SERVER_SETUP = `
   DO $$
@@ -114,6 +115,7 @@ const SERVER_SETUP = `
   END;
   $$;
   ALTER SCHEMA public OWNER TO ${MIGRATION_OWNER};
+  CREATE SCHEMA IF NOT EXISTS discord_bot AUTHORIZATION ${MIGRATION_OWNER};
 `;
 
 /** Applies every migration as the owner, as `bun run db:migrate` does on Neon. */
@@ -126,11 +128,24 @@ async function migrateAsOwner(db: Connection): Promise<void> {
   }
 }
 
-/** A fresh database with every migration applied. */
-export async function createMigratedDb(): Promise<PGlite> {
+/**
+ * A fresh database with every migration applied. `beforeMigrations` runs as the owner
+ * first, to put something else in the database, as buzz's own tables are on Neon.
+ */
+export async function createMigratedDb(
+  beforeMigrations?: (db: PGlite) => Promise<void>,
+): Promise<PGlite> {
   const db = new PGlite();
   await db.waitReady;
   await db.exec(SERVER_SETUP);
+  if (beforeMigrations !== undefined) {
+    await db.exec(`SET ROLE ${MIGRATION_OWNER}`);
+    try {
+      await beforeMigrations(db);
+    } finally {
+      await db.exec("RESET ROLE");
+    }
+  }
   await migrateAsOwner(db);
   return db;
 }

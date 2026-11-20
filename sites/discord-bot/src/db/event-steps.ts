@@ -57,14 +57,14 @@ const STEPS_OF_EVENT = sql`coalesce((
     'completed_by', s.completed_by, 'handoff_claimed_at', s.handoff_claimed_at,
     'handoff_sent_at', s.handoff_sent_at, 'not_needed_at', s.not_needed_at,
     'not_needed_by', s.not_needed_by))
-  from event_steps s where s.event_id = e.id and s.guild_id = e.guild_id
+  from discord_bot.event_steps s where s.event_id = e.id and s.guild_id = e.guild_id
 ), '[]'::json)`;
 
 /** The kind, status and done time of each of an event's steps, as a JSON array. */
 const STEP_STATUSES_OF_EVENT = sql`coalesce((
   select json_agg(json_build_object('kind', s.kind, 'status', s.status,
     'completed_at', s.completed_at, 'not_needed', s.not_needed_at is not null))
-  from event_steps s where s.event_id = e.id and s.guild_id = e.guild_id
+  from discord_bot.event_steps s where s.event_id = e.id and s.guild_id = e.guild_id
 ), '[]'::json)`;
 
 /** An event's live assignments, oldest first, as a JSON array. */
@@ -72,7 +72,7 @@ const LIVE_ASSIGNEES_OF_EVENT = sql`coalesce((
   select json_agg(json_build_object('id', a.id, 'event_id', a.event_id,
     'kind', a.kind, 'user_id', a.user_id, 'assigned_by', a.assigned_by,
     'created_at', a.created_at) order by a.created_at, a.id)
-  from event_step_assignees a
+  from discord_bot.event_step_assignees a
   where a.event_id = e.id and a.guild_id = e.guild_id and a.removed_at is null
 ), '[]'::json)`;
 
@@ -116,8 +116,8 @@ async function listEventWorkflows(
     db,
     sql`select e.id, e.event_date, e.pickup_time, g.timezone,
       ${STEPS_OF_EVENT} as steps, ${LIVE_ASSIGNEES_OF_EVENT} as assignees
-    from events e
-    join guild_config g on g.guild_id = e.guild_id
+    from discord_bot.events e
+    join discord_bot.guild_config g on g.guild_id = e.guild_id
     where e.guild_id = ${guildId} and e.id = any(${[...eventIds]}::uuid[])
       and e.deleted_at is null
     order by e.id limit ${MAX_ID_LIST}`,
@@ -178,7 +178,7 @@ export async function assignEventStep(
   return nullAsNotFound(
     await callFunction<"added" | "needed_again" | "already_on" | null>(
       db,
-      sql`select public.assign_event_step(p_event_id => ${input.eventId},
+      sql`select discord_bot.assign_event_step(p_event_id => ${input.eventId},
         p_guild_id => ${input.guildId},
         p_kind => ${input.kind},
         p_user_id => ${input.userId},
@@ -199,7 +199,7 @@ export async function unassignEventStep(
   return liveEventBoolean(
     await callFunction<boolean | null>(
       db,
-      sql`select public.unassign_event_step(p_event_id => ${input.eventId},
+      sql`select discord_bot.unassign_event_step(p_event_id => ${input.eventId},
         p_guild_id => ${input.guildId},
         p_kind => ${input.kind},
         p_user_id => ${input.userId},
@@ -221,7 +221,7 @@ export async function completeEventStep(
   return liveEventBoolean(
     await callFunction<boolean | null>(
       db,
-      sql`select public.complete_event_step(p_event_id => ${input.eventId},
+      sql`select discord_bot.complete_event_step(p_event_id => ${input.eventId},
         p_guild_id => ${input.guildId},
         p_kind => ${input.kind},
         p_actor_id => ${input.actorId}) as value`,
@@ -243,7 +243,7 @@ export async function claimStepHandoff(
 ): Promise<DbResult<boolean>> {
   return callFunction<boolean>(
     db,
-    sql`select public.claim_step_handoff(p_event_id => ${key.eventId},
+    sql`select discord_bot.claim_step_handoff(p_event_id => ${key.eventId},
       p_guild_id => ${key.guildId},
       p_kind => ${key.kind}) as value`,
   );
@@ -256,7 +256,7 @@ export async function markStepHandoffSent(
 ): Promise<DbResult<boolean>> {
   return callFunction<boolean>(
     db,
-    sql`select public.mark_step_handoff_sent(p_event_id => ${key.eventId},
+    sql`select discord_bot.mark_step_handoff_sent(p_event_id => ${key.eventId},
       p_guild_id => ${key.guildId},
       p_kind => ${key.kind}) as value`,
   );
@@ -274,7 +274,7 @@ export async function reopenEventStep(
   return liveEventBoolean(
     await callFunction<boolean | null>(
       db,
-      sql`select public.reopen_event_step(p_event_id => ${input.eventId},
+      sql`select discord_bot.reopen_event_step(p_event_id => ${input.eventId},
         p_guild_id => ${input.guildId},
         p_kind => ${input.kind}) as value`,
     ),
@@ -292,7 +292,7 @@ export async function setSlidesNotNeeded(
   return liveEventBoolean(
     await callFunction<boolean | null>(
       db,
-      sql`select public.set_slides_not_needed(p_event_id => ${input.eventId},
+      sql`select discord_bot.set_slides_not_needed(p_event_id => ${input.eventId},
         p_guild_id => ${input.guildId},
         p_not_needed => ${input.notNeeded},
         p_actor_id => ${input.actorId}) as value`,
@@ -315,7 +315,7 @@ export async function setEventPickupTime(
   return liveEventBoolean(
     await callFunction<boolean | null>(
       db,
-      sql`select public.set_event_pickup_time(p_event_id => ${input.eventId},
+      sql`select discord_bot.set_event_pickup_time(p_event_id => ${input.eventId},
         p_guild_id => ${input.guildId},
         p_pickup_time => ${input.pickupTime},
         p_actor_id => ${input.actorId}) as value`,
@@ -359,9 +359,9 @@ export async function listOpenStepsForUser(
       db,
       sql`select a.id as assignment_id, a.kind, e.id as event_id,
         e.name as event_name, e.event_date, e.pickup_time, s.status as step_status
-      from event_step_assignees a
-      join events e on e.id = a.event_id and e.guild_id = a.guild_id
-      join event_steps s
+      from discord_bot.event_step_assignees a
+      join discord_bot.events e on e.id = a.event_id and e.guild_id = a.guild_id
+      join discord_bot.event_steps s
         on s.event_id = e.id and s.guild_id = e.guild_id and s.kind = a.kind
       where a.guild_id = ${guildId} and a.user_id = ${userId} and a.removed_at is null
         and e.status = 'active' and e.deleted_at is null
@@ -431,20 +431,20 @@ export async function listEventReminderCandidates(
         coalesce((
           select json_agg(json_build_object('kind', a.kind, 'user_id', a.user_id)
             order by a.created_at, a.id)
-          from event_step_assignees a
+          from discord_bot.event_step_assignees a
           where a.event_id = e.id and a.guild_id = e.guild_id and a.removed_at is null
         ), '[]'::json) as assignees,
         coalesce((
           select json_agg(json_build_object('kind', l.kind,
             'reminder_date', l.reminder_date, 'state', l.state,
             'claimed_at', l.claimed_at))
-          from event_reminder_log l
+          from discord_bot.event_reminder_log l
           where l.event_id = e.id and l.reminder_date >= ${fromDate}
         ), '[]'::json) as log
-      from events e
-      join managed_channels c
+      from discord_bot.events e
+      join discord_bot.managed_channels c
         on c.guild_id = e.guild_id and c.channel_id = e.channel_id
-      join guild_config g on g.guild_id = e.guild_id
+      join discord_bot.guild_config g on g.guild_id = e.guild_id
       where e.status = 'active' and e.deleted_at is null
         and e.event_date >= ${fromDate}
         and c.status = 'active' and g.reminders_enabled
@@ -480,7 +480,7 @@ export async function listStaleEventReminderClaims(
     await query<EventReminderStaleClaim>(
       db,
       sql`select event_id, kind, reminder_date, claim_token, attempts, claimed_at
-      from event_reminder_log
+      from discord_bot.event_reminder_log
       where state = 'claimed' and claimed_at < ${claimedBefore.toISOString()}
       order by claimed_at, event_id, kind, reminder_date
       limit ${MAX_STALE_CLAIMS + 1}`,
@@ -514,7 +514,7 @@ export async function claimEventReminder(
   }
   return callFunction<string | null>(
     db,
-    sql`select public.claim_event_reminder(p_event_id => ${key.eventId},
+    sql`select discord_bot.claim_event_reminder(p_event_id => ${key.eventId},
       p_kind => ${key.kind},
       p_reminder_date => ${key.reminderDate}) as value`,
   );
@@ -530,7 +530,7 @@ export async function reclaimEventReminder(
   }
   return callFunction<string | null>(
     db,
-    sql`select public.reclaim_event_reminder(p_event_id => ${key.eventId},
+    sql`select discord_bot.reclaim_event_reminder(p_event_id => ${key.eventId},
       p_kind => ${key.kind},
       p_reminder_date => ${key.reminderDate},
       p_claim_token => ${key.claimToken},
@@ -548,7 +548,7 @@ export async function markEventReminderSent(
   }
   return callFunction<boolean>(
     db,
-    sql`select public.mark_event_reminder_sent(p_event_id => ${key.eventId},
+    sql`select discord_bot.mark_event_reminder_sent(p_event_id => ${key.eventId},
       p_kind => ${key.kind},
       p_reminder_date => ${key.reminderDate},
       p_claim_token => ${key.claimToken},
@@ -566,7 +566,7 @@ export async function markEventReminderSkipped(
   }
   return callFunction<boolean>(
     db,
-    sql`select public.mark_event_reminder_skipped(p_event_id => ${key.eventId},
+    sql`select discord_bot.mark_event_reminder_skipped(p_event_id => ${key.eventId},
       p_kind => ${key.kind},
       p_reminder_date => ${key.reminderDate},
       p_claim_token => ${key.claimToken}) as value`,
@@ -603,9 +603,9 @@ export async function closeStaleEventClaim(
       sql`select l.state, l.claim_token, e.status as event_status,
         e.deleted_at as event_deleted_at, e.event_date, e.thread_status,
         g.reminders_enabled
-      from event_reminder_log l
-      left join events e on e.id = l.event_id
-      left join guild_config g on g.guild_id = e.guild_id
+      from discord_bot.event_reminder_log l
+      left join discord_bot.events e on e.id = l.event_id
+      left join discord_bot.guild_config g on g.guild_id = e.guild_id
       where l.event_id = ${key.eventId} and l.kind = ${key.kind}
         and l.reminder_date = ${key.reminderDate}
       limit 1`,

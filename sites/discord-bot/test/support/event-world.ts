@@ -80,7 +80,7 @@ type StoredEvent = EventRow & { event_date: string };
 const EVENT_SELECT = `SELECT id, guild_id, channel_id, name, event_date::text AS event_date,
   thread_id, overview_message_id, status::text AS status,
   thread_status::text AS thread_status, created_by, deleted_at::text AS deleted_at
-  FROM public.events`;
+  FROM discord_bot.events`;
 
 /** Call once per test file. The fields are ready inside each test. */
 export function eventWorld(): World {
@@ -115,13 +115,13 @@ export function eventWorld(): World {
     await queryAs(
       pg,
       "bot_app",
-      `SELECT public.apply_role_bindings($1, 0, $2, $3, $4, NULL, NULL, NULL, NULL)`,
+      `SELECT discord_bot.apply_role_bindings($1, 0, $2, $3, $4, NULL, NULL, NULL, NULL)`,
       [GUILD_ID, fakeId(), OFFICER_ROLE, ADMIN_ROLE],
     );
     await queryAs(
       pg,
       "bot_app",
-      `SELECT public.apply_role_bindings($1, 0, $2, $3, $4, NULL, NULL, NULL, NULL)`,
+      `SELECT discord_bot.apply_role_bindings($1, 0, $2, $3, $4, NULL, NULL, NULL, NULL)`,
       [OTHER_GUILD, fakeId(), fakeId(), fakeId()],
     );
   }, HOOK_TIMEOUT_MS);
@@ -134,8 +134,8 @@ export function eventWorld(): World {
     // The schema refuses TRUNCATE outright. This is a test's own scratch database.
     await pg.exec(
       `SET session_replication_role = replica;
-       TRUNCATE public.reminder_log, public.tasks, public.events,
-         public.managed_channels, public.interaction_claims CASCADE;
+       TRUNCATE discord_bot.reminder_log, discord_bot.tasks, discord_bot.events,
+         discord_bot.managed_channels, discord_bot.interaction_claims CASCADE;
        SET session_replication_role = DEFAULT;`,
     );
     server = discordServer(APP_ID);
@@ -207,8 +207,8 @@ export function eventWorld(): World {
       await queryAs(
         pg,
         MIGRATION_OWNER,
-        `INSERT INTO public.managed_channels (guild_id, channel_id, status)
-         VALUES ($1, $2, $3::public.managed_channel_status)`,
+        `INSERT INTO discord_bot.managed_channels (guild_id, channel_id, status)
+         VALUES ($1, $2, $3::discord_bot.managed_channel_status)`,
         [guildId, id, status],
       );
       return id;
@@ -226,7 +226,7 @@ export function eventWorld(): World {
       const rows = await queryAs<{ id: string }>(
         pg,
         "bot_app",
-        `INSERT INTO public.tasks
+        `INSERT INTO discord_bot.tasks
            (event_id, guild_id, assignee_id, description, due_date, created_by)
          VALUES ($1, $2, $3, $4, '2099-01-10', $5) RETURNING id`,
         [eventId, GUILD_ID, assignee, description, fakeId()],
@@ -240,8 +240,8 @@ export function eventWorld(): World {
       await queryAs(
         pg,
         MIGRATION_OWNER,
-        `UPDATE public.managed_channels
-         SET status = $2::public.managed_channel_status WHERE channel_id = $1`,
+        `UPDATE discord_bot.managed_channels
+         SET status = $2::discord_bot.managed_channel_status WHERE channel_id = $1`,
         [channelId, status],
       );
     },
