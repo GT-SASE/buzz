@@ -185,10 +185,10 @@ describe.skipIf(!process.env.DATABASE_URL)("round-trip collapses", () => {
   it("myGroup returns the group and everyone in it, mentors first", async () => {
     const mine = await callerFor(sam, "MEMBER").mentorship.myGroup();
     expect(mine?.name).toBe(`vitest rt kin ${suffix}`);
-    expect(mine?.members.map((member) => member.userId)).toEqual([sam, alex]);
+    expect(mine?.members.map((member) => member.userId)).toEqual([alex, sam]);
     expect(mine?.members.map((member) => member.role)).toEqual([
-      "mentee",
       "mentor",
+      "mentee",
     ]);
   }, SLOW);
 
