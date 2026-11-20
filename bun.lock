@@ -20,7 +20,7 @@
         "eslint-config-next": "^16.4.6",
         "eslint-plugin-drizzle": "^0.2.3",
         "jiti": "^2.7.0",
-        "nodemailer": "^10.3.1",
+        "nodemailer": "^10.6.0",
         "prettier": "^3.10.1",
         "prettier-plugin-tailwindcss": "^0.8.1",
         "react": "^19.3.1",
@@ -40,7 +40,7 @@
         "@buzz/db": "workspace:*",
         "@trpc/server": "^11.28.3",
         "drizzle-orm": "^0.45.4",
-        "nodemailer": "^10.3.1",
+        "nodemailer": "^10.6.0",
         "superjson": "^2.2.6",
         "zod": "^4.6.7",
       },
@@ -1596,7 +1596,7 @@
 
     "node-releases": ["node-releases@2.0.60", "", {}, "sha512-OmO8+GM1JUZqXET720VrJCwkjUCXmCMQm0Z3UDDRbfNLHS4NEAvY60j5jiFv0tkKw2PNNlqOLhahVmwJIOLDIQ=="],
 
-    "nodemailer": ["nodemailer@10.5.0", "", {}, "sha512-L/w/HH5MqpzMDuZD7fQdt/+KqymuvrpaApaIjAH2XA3ILePwlcvXCVVvP75xVrXCEt2ggK2marrrHHFB5Qu0kA=="],
+    "nodemailer": ["nodemailer@10.6.0", "", {}, "sha512-jWanL7D9GD3jvUDYKmoC5rWTiG8MnBgnN2yV68bgMKip1zUJhiSTyz7Eg+18y8sk5OvdVDzws5nZK5arSI4f5Q=="],
 
     "npm-run-path": ["npm-run-path@6.0.0", "", { "dependencies": { "path-key": "4.0.0", "unicorn-magic": "0.3.0" } }, "sha512-9qny7Z9DsQU8Ou39ERsPU4OZQlSTP47ShQzuKZ6PRXpYLtIFgl/DEBYEXKlvcEa+9tHVcK8CF81Y2V72qaZhWA=="],
 

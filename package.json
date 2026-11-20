@@ -50,7 +50,7 @@
     "eslint-config-next": "^16.4.6",
     "eslint-plugin-drizzle": "^0.2.3",
     "jiti": "^2.7.0",
-    "nodemailer": "^10.3.1",
+    "nodemailer": "^10.6.0",
     "prettier": "^3.10.1",
     "prettier-plugin-tailwindcss": "^0.8.1",
     "react": "^19.3.1",
