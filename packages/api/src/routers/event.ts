@@ -286,15 +286,12 @@ export const eventRouter = createTRPCRouter({
       }),
     )
     .query(async ({ ctx, input }) => {
-      const event = await ctx.db.query.events.findFirst({
-        where: eq(events.id, input.id),
-      });
-
-      if (!event) {
-        notFound("Event");
-      }
-
-      const [roster, [rosterCount], rsvps] = await Promise.all([
+      // All four reads key off `input.id`, so they share one round trip. A
+      // missing event just means the other three come back empty and unused.
+      const [event, roster, [rosterCount], rsvps] = await Promise.all([
+        ctx.db.query.events.findFirst({
+          where: eq(events.id, input.id),
+        }),
         ctx.db
           .select({
             userId: eventCheckIns.userId,
@@ -306,14 +303,14 @@ export const eventRouter = createTRPCRouter({
           })
           .from(eventCheckIns)
           .innerJoin(users, eq(users.id, eventCheckIns.userId))
-          .where(eq(eventCheckIns.eventId, event.id))
+          .where(eq(eventCheckIns.eventId, input.id))
           .orderBy(desc(eventCheckIns.checkedInAt))
           .limit(input.limit)
           .offset(input.offset),
         ctx.db
           .select({ total: count() })
           .from(eventCheckIns)
-          .where(eq(eventCheckIns.eventId, event.id)),
+          .where(eq(eventCheckIns.eventId, input.id)),
         ctx.db
           .select({
             userId: eventRsvps.userId,
@@ -323,9 +320,13 @@ export const eventRouter = createTRPCRouter({
           })
           .from(eventRsvps)
           .innerJoin(users, eq(users.id, eventRsvps.userId))
-          .where(eq(eventRsvps.eventId, event.id))
+          .where(eq(eventRsvps.eventId, input.id))
           .orderBy(asc(eventRsvps.createdAt)),
       ]);
+
+      if (!event) {
+        notFound("Event");
+      }
 
       // The officer screen shows whether the door is open. Without this it can
       // only see `checkInEnabled` and would keep advertising a code that
