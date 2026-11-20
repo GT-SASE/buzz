@@ -5,11 +5,7 @@ import { managedRow } from "../../test/support/interactions.ts";
 import { jsonObject } from "../../test/support/json.ts";
 import { serverError } from "../../test/support/sql-client.ts";
 import { stubDb } from "../../test/support/stub-db.ts";
-import {
-  asFetch,
-  stubEnv,
-  type FetchLike,
-} from "../../test/support/stubs.ts";
+import { asFetch, stubEnv, type FetchLike } from "../../test/support/stubs.ts";
 import { managedChannelCheck } from "../handlers/dependencies.ts";
 import { ConfigError } from "../lib/env.ts";
 import {
@@ -206,8 +202,11 @@ it.each([
 });
 
 it("sends the token trimmed when the setting has a trailing newline", async () => {
-  stubEnv("DISCORD_BOT_TOKEN", `${TOKEN}
-`);
+  stubEnv(
+    "DISCORD_BOT_TOKEN",
+    `${TOKEN}
+`,
+  );
   serve();
 
   await client().sendMessage(MANAGED, MESSAGE_BODY);
