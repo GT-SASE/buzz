@@ -3,6 +3,11 @@
 # explicitly, so nothing needs the implicit load.
 env = false
 
+# Runs every `#!/usr/bin/env node` bin (eslint, tsc, prettier, drizzle-kit,
+# next) on Bun, so neither CI nor a local checkout needs Node installed.
+[run]
+bun = true
+
 [install]
 linker = "isolated"
 # eslint and prettier are declared once at the root but resolved from every

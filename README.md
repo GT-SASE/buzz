@@ -31,8 +31,8 @@ Run everything from the repo root: `bun run dev`, `bun run build`,
 it. Spell out `bun run`: bare `bun test` and `bun build` are Bun's own test
 runner and bundler, not these scripts (bare `bun test` skips the DOM setup the
 `.tsx` suites need, so use `bun run test`). Bun installs dependencies and runs
-the scripts and the tests; eslint, prettier and the TypeScript CLIs still run on
-Node 24 (`.nvmrc`). `bun run check`, `typecheck` and `typecheck:tsc` go
+the scripts, the tests and every tool (eslint, prettier, the TypeScript CLIs,
+Drizzle Kit, Next): `bunfig.toml` sets `[run] bun = true`, so Node isn't needed. `bun run check`, `typecheck` and `typecheck:tsc` go
 through Turborepo, which caches each task by its inputs: a second run with no
 changes replays the logs instead of re-running. To share results across machines
 and CI, enable the Vercel Remote Cache: `bun x turbo login` then `bun x turbo link`

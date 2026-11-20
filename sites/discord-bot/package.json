@@ -7,7 +7,7 @@
   "license": "UNLICENSED",
   "scripts": {
     "build": "bun scripts/build.ts",
-    "smoke": "node scripts/smoke-build.mjs",
+    "smoke": "bun scripts/smoke-build.mjs",
     "typecheck": "tsrs --noEmit --fast",
     "typecheck:tsc": "tsc --noEmit",
     "test": "bun test --isolate ./src ./scripts",
