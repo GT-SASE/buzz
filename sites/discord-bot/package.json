@@ -17,7 +17,7 @@
     "commands:register": "bun --env-file=.env scripts/register-commands.ts"
   },
   "dependencies": {
-    "@neondatabase/serverless": "1.2.0",
+    "@neondatabase/serverless": "1.2.1",
     "@vercel/functions": "2.2.13",
     "discord-api-types": "0.38.58",
     "zod": "4.6.7"
