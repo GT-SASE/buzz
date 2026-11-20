@@ -30,8 +30,8 @@ describe("buzz mcp server over stdio", () => {
     if (shallow === "true") {
       const pkg = JSON.parse(
         readFileSync(path.join(webDir, "package.json"), "utf8"),
-      );
-      const [major, minor] = String(pkg.version).split(".");
+      ) as { version: string };
+      const [major, minor] = pkg.version.split(".");
       expected = `${major}.${minor}.0`;
     } else {
       expected = appBuild().version;
