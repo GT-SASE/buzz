@@ -38,7 +38,8 @@
         "DATABASE_URL",
         "GMAIL_USER",
         "GMAIL_APP_PASSWORD",
-        "MAIL_REPLY_TO"
+        "MAIL_REPLY_TO",
+        "VERCEL_URL"
       ]
     },
     "//#lint": {

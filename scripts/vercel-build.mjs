@@ -20,4 +20,5 @@ if (process.env.VERCEL_ENV === "preview") {
   console.log("DATABASE_URL unset; skipping migrate");
 }
 
-run("bun run build");
+// Through turbo so Vercel uses the Remote Cache (TURBO_TOKEN/TURBO_TEAM).
+run("bun x turbo run build --filter=@buzz/web");
