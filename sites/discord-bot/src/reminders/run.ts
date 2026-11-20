@@ -661,7 +661,7 @@ class Run {
           index: 0,
         };
       } catch {
-        this.#countIncomplete("event_errors");
+        this.#countIncomplete("task_event_errors");
         turns.current = null;
       }
     }
@@ -724,7 +724,7 @@ class Run {
     try {
       complete = await this.#sendBatch(turns, cursor, batch.items);
     } catch {
-      this.#countIncomplete("event_errors");
+      this.#countIncomplete("task_event_errors");
     }
     if (!complete) {
       const left = cursor.batches

@@ -1,7 +1,9 @@
 /**
  * The event workflow reminders, as a step of the daily reminder run. It runs under that
  * run's lock, shares its message cap, deadlines and Discord client, and records its counts
- * in the same `job_runs` row, under names starting `event_`.
+ * in the same `job_runs` row, under names starting `event_`. The cap, deadline, send and
+ * stop counts are the exception: they add to the totals task reminders keep under the same
+ * names.
  *
  * Each reminder is one message: claim, send, mark sent. A failed send is dealt with by the
  * run, exactly as for a task reminder, so a forum that is gone is disabled the same way
