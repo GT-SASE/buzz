@@ -13,7 +13,7 @@ packages/db     @buzz/db     drizzle schema, the client, drizzle-kit config
 packages/auth   @buzz/auth   NextAuth config and the auth() helper
 packages/api    @buzz/api    tRPC context, procedures, routers
 sites/web       @buzz/web    the Next.js app
-sites/discord-bot  @buzz/discord-bot  the events team Discord bot (Vercel functions, its own Postgres)
+sites/discord-bot  @buzz/discord-bot  the events team Discord bot (Vercel functions, its own `discord_bot` schema in the same Postgres)
 ```
 
 Inside `sites/web/src`:

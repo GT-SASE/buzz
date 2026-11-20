@@ -88,7 +88,7 @@ async function setup(): Promise<ConcurrencyContext> {
 
   await withClient(migratedUrl, async (client) => {
     const { rows } = await client.query<{ count: number }>(
-      "SELECT count(*)::int AS count FROM public.schema_migrations",
+      "SELECT count(*)::int AS count FROM discord_bot.schema_migrations",
     );
     if ((rows[0]?.count ?? 0) === 0) {
       fail(`${template} has no migrations applied`);

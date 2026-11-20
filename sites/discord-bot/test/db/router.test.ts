@@ -513,7 +513,7 @@ describe("claims", () => {
     await run(router, payload, dependencies);
 
     const claimed = await pg.query(
-      "SELECT interaction_id FROM public.interaction_claims",
+      "SELECT interaction_id FROM discord_bot.interaction_claims",
     );
     expect(claimed.rows).toEqual([{ interaction_id: payload.id }]);
     expect(await claims()).toBe(1);
@@ -738,7 +738,7 @@ describe("the client built by liveDependencies", () => {
     await queryAs(
       database,
       MIGRATION_OWNER,
-      `INSERT INTO public.managed_channels (guild_id, channel_id, status)
+      `INSERT INTO discord_bot.managed_channels (guild_id, channel_id, status)
        VALUES ($1, $2, 'active')`,
       [GUILD_ID, forumId],
     );
@@ -749,7 +749,7 @@ describe("the client built by liveDependencies", () => {
     const rows = await queryAs<{ id: string }>(
       database,
       MIGRATION_OWNER,
-      `INSERT INTO public.events
+      `INSERT INTO discord_bot.events
          (guild_id, channel_id, name, event_date, created_by, thread_id, thread_status)
        VALUES ($1, $2, 'General meeting', '2099-01-15', $3, $4, 'active')
        RETURNING id`,
@@ -758,8 +758,8 @@ describe("the client built by liveDependencies", () => {
     await queryAs(
       database,
       MIGRATION_OWNER,
-      `UPDATE public.managed_channels
-       SET status = $2::public.managed_channel_status WHERE channel_id = $1`,
+      `UPDATE discord_bot.managed_channels
+       SET status = $2::discord_bot.managed_channel_status WHERE channel_id = $1`,
       [forumId, forumStatus],
     );
     const posts = () =>
@@ -776,7 +776,7 @@ describe("the client built by liveDependencies", () => {
     await queryAs(
       database,
       "bot_app",
-      `SELECT public.apply_role_bindings($1, 0, $2, $3, $4, NULL, NULL, NULL, NULL)`,
+      `SELECT discord_bot.apply_role_bindings($1, 0, $2, $3, $4, NULL, NULL, NULL, NULL)`,
       [GUILD_ID, fakeId(), OFFICER_ROLE, ADMIN_ROLE],
     );
   });
@@ -813,7 +813,7 @@ describe("the client built by liveDependencies", () => {
 
       expect(posts()).toEqual([]);
       const { rows } = await database.query(
-        `SELECT 1 FROM public.tasks WHERE event_id = $1`,
+        `SELECT 1 FROM discord_bot.tasks WHERE event_id = $1`,
         [eventId],
       );
       expect(rows).toHaveLength(1);

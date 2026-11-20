@@ -20,9 +20,9 @@ A run that succeeds closes that day's slot, and later runs in it answer `ok` and
 
 ```sql
 SELECT job_name, status, started_at, error, results
-FROM public.job_runs ORDER BY started_at DESC LIMIT 6;
+FROM discord_bot.job_runs ORDER BY started_at DESC LIMIT 6;
 
-UPDATE public.job_runs SET started_at = started_at - interval '1 day'
+UPDATE discord_bot.job_runs SET started_at = started_at - interval '1 day'
 WHERE status = 'succeeded' AND started_at > now() - interval '1 day';
 ```
 
@@ -97,7 +97,7 @@ Clear the terminal's values with `unset BOT_URL CRON` when you finish.
 - [ ] Only `main` deploys: a pushed branch makes no deployment.
 - [ ] Settings > Cron Jobs lists `/api/cron/reminders` twice, the firewall rules are active, and usage notifications are on.
 - [ ] The build log shows Bun installing from the repository's `bun.lock` with no changes to it, then `bun run build` writing `.vercel/output`.
-- [ ] In Neon, only the owner and `bot_app` can log in, and the Data API and Neon Auth are off. `psql "$BOT_URL&sslrootcert=system" -c 'TRUNCATE public.job_runs;'`, with `psql` 16 or later, says `permission denied`.
+- [ ] In Neon, only the owner and `bot_app` can log in, and the Data API and Neon Auth are off. `psql "$BOT_URL&sslrootcert=system" -c 'TRUNCATE discord_bot.job_runs;'`, with `psql` 16 or later, says `permission denied`.
 - [ ] The Discord app has Public Bot off, User Install off and Install Link set to None.
 - [ ] Few people hold Administrator, Manage Roles or the five bound roles.
 - [ ] The first manual export is taken, as in [RECOVERY.md](RECOVERY.md#a-manual-export).

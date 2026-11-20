@@ -23,7 +23,7 @@ export async function getGuildConfig(
       sql`select guild_id, officer_role_id, admin_role_id, eboard_role_id,
         events_committee_role_id, treasury_role_id, marketing_role_id, timezone,
         reminders_enabled, version
-      from guild_config where guild_id = ${guildId} limit 1`,
+      from discord_bot.guild_config where guild_id = ${guildId} limit 1`,
     ),
   );
 }
@@ -72,7 +72,7 @@ export async function applyRoleBindings(
 ): Promise<DbResult<number>> {
   return callFunction<number>(
     db,
-    sql`select public.apply_role_bindings(p_guild_id => ${guildId},
+    sql`select discord_bot.apply_role_bindings(p_guild_id => ${guildId},
       p_expected_version => ${expectedVersion}, p_actor_id => ${actorId},
       p_officer_role_id => ${officerRoleId}, p_admin_role_id => ${adminRoleId},
       p_eboard_role_id => ${eboardRoleId},
@@ -119,7 +119,7 @@ export async function saveSetupDraft(
   const fingerprint = setupDraftFingerprint(roles);
   const saved = await callFunction<boolean>(
     db,
-    sql`select public.save_setup_draft(p_guild_id => ${guildId},
+    sql`select discord_bot.save_setup_draft(p_guild_id => ${guildId},
       p_actor_id => ${actorId}, p_officer_role_id => ${roles.officerRoleId},
       p_admin_role_id => ${roles.adminRoleId},
       p_eboard_role_id => ${roles.eboardRoleId},
@@ -151,7 +151,7 @@ export async function getSetupDraft(
       sql`select guild_id, actor_id, officer_role_id, admin_role_id, eboard_role_id,
         events_committee_role_id, treasury_role_id, marketing_role_id, fingerprint,
         created_at
-      from setup_drafts
+      from discord_bot.setup_drafts
       where guild_id = ${guildId} and actor_id = ${actorId}
         and fingerprint = ${fingerprint}
         and created_at > ${new Date(now.getTime() - SETUP_DRAFT_TTL_MS).toISOString()}
@@ -213,7 +213,7 @@ export async function applyConfigChange(
   }
   return callFunction<number>(
     db,
-    sql`select public.apply_config_change(p_guild_id => ${guildId},
+    sql`select discord_bot.apply_config_change(p_guild_id => ${guildId},
       p_expected_version => ${expectedVersion}, p_actor_id => ${actorId},
       p_reminders_enabled => ${remindersEnabled},
       p_add_channel_ids => ${[...addChannelIds]}::text[],
@@ -232,7 +232,7 @@ export async function listRecentConfigChanges(
       db,
       sql`select id, actor_id, action, old_values, new_values, version_after,
         created_at
-      from config_audit where guild_id = ${guildId}
+      from discord_bot.config_audit where guild_id = ${guildId}
       order by id desc limit ${RECENT_CHANGES + 1}`,
     ),
     RECENT_CHANGES,

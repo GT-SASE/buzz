@@ -169,9 +169,9 @@ No system is unhackable, and this one makes no such claim. The aim is to keep th
 
 **Database**
 
-- The bot logs in as `bot_app`, a role that owns nothing, belongs to no role and cannot create anything. It reaches Neon over HTTPS.
+- The bot logs in as `bot_app`, a role that owns nothing, belongs to no role and cannot create anything. It reaches Neon over HTTPS. Its tables, functions and migration record live in their own schema, `discord_bot`, inside buzz's database. `bot_app` has no privilege on buzz's tables in `public`, and buzz's Drizzle ignores `discord_bot`. No statement relies on `search_path`: each names `discord_bot`, and each function sets an empty one.
 - `bot_app` has no `DELETE` or `TRUNCATE` anywhere. It can read the app's tables and insert and update `events` and `tasks`. Every other write goes through functions that check a version, a claim or a limit, and config changes also write an audit row. A deleted task or event cannot be undeleted, and a closed event cannot be reopened.
-- Triggers copy every changed or removed row of the main tables into `history.row_versions`, which `bot_app` cannot reach.
+- Triggers copy every changed or removed row of the main tables into `discord_bot.row_versions`, which `bot_app` cannot reach.
 - Deletes are soft. The one hard delete is `expire_interaction_claims`, which removes day-old interaction claims, short-lived tokens rather than club data. CI checks the grants on PGlite and on Postgres 17.
 
 **Outgoing messages**
@@ -246,7 +246,7 @@ bun test --isolate ./src/lib/dates.test.ts
 bun test ./test/db/db-rules.test.ts --timeout 30000
 ```
 
-`bun run test:db` runs the migration files on PGlite and the tests send the bot's own SQL to it as `bot_app`. The concurrency tests need real Postgres 17. CI's database workflow runs one as a service, makes an owner and a database, runs `bun run db:migrate` and checks nothing is left pending, sets `bot_app`'s password, then runs those tests through `pg`, logged in as `bot_app`. Point `CONCURRENCY_DATABASE_URL` at that migrated database.
+`bun run test:db` runs the migration files on PGlite and the tests send the bot's own SQL to it as `bot_app`. The concurrency tests need real Postgres 17. CI's database workflow runs one as a service, makes an owner, a database and the `discord_bot` schema, runs `bun run db:migrate` and checks nothing is left pending, sets `bot_app`'s password, then runs those tests through `pg`, logged in as `bot_app`. Point `CONCURRENCY_DATABASE_URL` at that migrated database.
 
 Gitleaks scans every commit on every ref, as CI does. You need a full clone.
 

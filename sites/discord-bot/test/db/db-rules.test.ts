@@ -78,20 +78,20 @@ describe("grants", () => {
     // One row in every table, so a read that returns nothing proves nothing.
     const eventId = await insertEvent(db, guild);
     const taskId = await insertTask(db, guild, eventId);
-    await asBot(`SELECT public.claim_reminder($1, 'due_day', '${DUE}')`, [
+    await asBot(`SELECT discord_bot.claim_reminder($1, 'due_day', '${DUE}')`, [
       taskId,
     ]);
     await asBot(
-      `SELECT public.assign_event_step($1, $2, 'budget_sheet', $3, $3)`,
+      `SELECT discord_bot.assign_event_step($1, $2, 'budget_sheet', $3, $3)`,
       [eventId, guild.guildId, fakeId()],
     );
     await asBot(
       // A step reminder can be claimed only for today or yesterday in the guild's zone.
-      `SELECT public.claim_event_reminder($1, 'daily_steps', (now() AT TIME ZONE 'America/New_York')::date)`,
+      `SELECT discord_bot.claim_event_reminder($1, 'daily_steps', (now() AT TIME ZONE 'America/New_York')::date)`,
       [eventId],
     );
     await asBot(
-      `SELECT public.save_setup_draft($1, $2, $3, $3, $3, $3, $3, $3, 'abcdefgh12345678')`,
+      `SELECT discord_bot.save_setup_draft($1, $2, $3, $3, $3, $3, $3, $3, 'abcdefgh12345678')`,
       [guild.guildId, fakeId(), fakeId()],
     );
     await insertFinishedJobRun(db, { status: "succeeded" });
@@ -101,12 +101,12 @@ describe("grants", () => {
     "bot_app can read %s, and another role cannot read or write it",
     async (table) => {
       expect(
-        (await asBot(`SELECT * FROM public.${table}`)).length,
+        (await asBot(`SELECT * FROM discord_bot.${table}`)).length,
       ).toBeGreaterThan(0);
       for (const sql of [
-        `SELECT * FROM public.${table}`,
-        `INSERT INTO public.${table} DEFAULT VALUES`,
-        `DELETE FROM public.${table}`,
+        `SELECT * FROM discord_bot.${table}`,
+        `INSERT INTO discord_bot.${table} DEFAULT VALUES`,
+        `DELETE FROM discord_bot.${table}`,
       ]) {
         await refused(OTHER_ROLE, sql);
       }
@@ -124,31 +124,31 @@ describe("grants", () => {
     ["reminder_log", "task_id"],
     ["setup_drafts", "fingerprint"],
   ])("bot_app cannot insert into or update %s directly", async (table, col) => {
-    await refused(BOT_APP, `INSERT INTO public.${table} DEFAULT VALUES`);
-    await refused(BOT_APP, `UPDATE public.${table} SET ${col} = ${col}`);
+    await refused(BOT_APP, `INSERT INTO discord_bot.${table} DEFAULT VALUES`);
+    await refused(BOT_APP, `UPDATE discord_bot.${table} SET ${col} = ${col}`);
   });
 
   it.each([...ALL_TABLES, ...NO_GRANT_TABLES, ...LEDGER_TABLES])(
     "bot_app cannot DELETE from or TRUNCATE %s",
     async (table) => {
-      await refused(BOT_APP, `DELETE FROM public.${table}`);
-      await refused(BOT_APP, `TRUNCATE public.${table}`);
+      await refused(BOT_APP, `DELETE FROM discord_bot.${table}`);
+      await refused(BOT_APP, `TRUNCATE discord_bot.${table}`);
     },
   );
 
   it.each([...NO_GRANT_TABLES, ...LEDGER_TABLES])(
     "bot_app cannot read %s",
     async (table) => {
-      await refused(BOT_APP, `SELECT * FROM public.${table}`);
+      await refused(BOT_APP, `SELECT * FROM discord_bot.${table}`);
     },
   );
 
   it.each([
-    "ALTER TABLE public.tasks ADD COLUMN forged text",
-    "ALTER TABLE public.tasks DISABLE TRIGGER ALL",
-    "SELECT public.require_open_parent()",
-    "ALTER FUNCTION public.claim_interaction(text) SECURITY INVOKER",
-    "CREATE TABLE public.forged (id int)",
+    "ALTER TABLE discord_bot.tasks ADD COLUMN forged text",
+    "ALTER TABLE discord_bot.tasks DISABLE TRIGGER ALL",
+    "SELECT discord_bot.require_open_parent()",
+    "ALTER FUNCTION discord_bot.claim_interaction(text) SECURITY INVOKER",
+    "CREATE TABLE discord_bot.forged (id int)",
     "ALTER ROLE bot_app CREATEROLE",
   ])("bot_app cannot run %s", async (sql) => {
     await refused(BOT_APP, sql);
@@ -196,7 +196,7 @@ describe("row history", () => {
       operation: string;
       old_row: Record<string, unknown>;
     }>(
-      `SELECT source_table, operation, old_row FROM history.row_versions WHERE row_id = $1 ORDER BY id`,
+      `SELECT source_table, operation, old_row FROM discord_bot.row_versions WHERE row_id = $1 ORDER BY id`,
       [rowId],
     );
     return rows;
@@ -204,9 +204,10 @@ describe("row history", () => {
 
   it("keeps the old row of each update and soft delete, in order, and not the insert", async () => {
     const eventId = await insertEvent(db, guild);
-    await asBot(`UPDATE public.events SET name = 'Renamed' WHERE id = $1`, [
-      eventId,
-    ]);
+    await asBot(
+      `UPDATE discord_bot.events SET name = 'Renamed' WHERE id = $1`,
+      [eventId],
+    );
     expect(await versionsOf(eventId)).toMatchObject([
       {
         source_table: "events",
@@ -217,12 +218,13 @@ describe("row history", () => {
 
     const taskId = await newTask();
     await asOwner(
-      `UPDATE public.tasks SET description = 'Second' WHERE id = $1`,
+      `UPDATE discord_bot.tasks SET description = 'Second' WHERE id = $1`,
       [taskId],
     );
-    await asBot(`UPDATE public.tasks SET deleted_at = now() WHERE id = $1`, [
-      taskId,
-    ]);
+    await asBot(
+      `UPDATE discord_bot.tasks SET deleted_at = now() WHERE id = $1`,
+      [taskId],
+    );
     expect(
       (await versionsOf(taskId)).map(({ old_row }) => [
         old_row.description,
@@ -235,24 +237,21 @@ describe("row history", () => {
   });
 
   it.each([BOT_APP, OTHER_ROLE])(
-    "%s has no privilege on the history schema and cannot touch it",
+    "%s has no privilege on the row history and cannot touch it",
     async (role) => {
       const { rows } = await db.query(
         `SELECT
-           has_schema_privilege($1, 'history', 'USAGE') AS schema_usage,
-           has_table_privilege($1, 'history.row_versions', 'SELECT') AS table_select,
-           has_function_privilege($1, 'history.record_row_version()', 'EXECUTE') AS fn_execute`,
+           has_table_privilege($1, 'discord_bot.row_versions', 'SELECT') AS table_select,
+           has_function_privilege($1, 'discord_bot.record_row_version()', 'EXECUTE') AS fn_execute`,
         [role],
       );
-      expect(rows).toEqual([
-        { schema_usage: false, table_select: false, fn_execute: false },
-      ]);
+      expect(rows).toEqual([{ table_select: false, fn_execute: false }]);
       for (const sql of [
-        `SELECT * FROM history.row_versions`,
-        `INSERT INTO history.row_versions (source_table, row_id, old_row) VALUES ('x', 'x', '{}')`,
-        `DELETE FROM history.row_versions`,
-        `TRUNCATE history.row_versions`,
-        `DROP TRIGGER tasks_record_update ON public.tasks`,
+        `SELECT * FROM discord_bot.row_versions`,
+        `INSERT INTO discord_bot.row_versions (source_table, row_id, old_row) VALUES ('x', 'x', '{}')`,
+        `DELETE FROM discord_bot.row_versions`,
+        `TRUNCATE discord_bot.row_versions`,
+        `DROP TRIGGER tasks_record_update ON discord_bot.tasks`,
       ]) {
         await refused(role, sql);
       }
@@ -263,7 +262,7 @@ describe("row history", () => {
 describe("deleted and closed rows", () => {
   const column = async (table: string, name: string, id: string) => {
     const { rows } = await db.query<Record<string, unknown>>(
-      `SELECT ${name} FROM public.${table} WHERE id = $1`,
+      `SELECT ${name} FROM discord_bot.${table} WHERE id = $1`,
       [id],
     );
     return rows[0]?.[name];
@@ -276,10 +275,11 @@ describe("deleted and closed rows", () => {
     "a deleted task cannot be %s by the bot, only by the owner",
     async (_label, value) => {
       const taskId = await newTask();
-      const sql = `UPDATE public.tasks SET deleted_at = ${value} WHERE id = $1`;
-      await asBot("UPDATE public.tasks SET deleted_at = now() WHERE id = $1", [
-        taskId,
-      ]);
+      const sql = `UPDATE discord_bot.tasks SET deleted_at = ${value} WHERE id = $1`;
+      await asBot(
+        "UPDATE discord_bot.tasks SET deleted_at = now() WHERE id = $1",
+        [taskId],
+      );
       await refused(BOT_APP, sql, [taskId]);
       await asOwner(sql, [taskId]);
     },
@@ -287,28 +287,30 @@ describe("deleted and closed rows", () => {
 
   it("a deleted event cannot be undeleted by the bot", async () => {
     const eventId = await insertEvent(db, guild);
-    await asBot(`SELECT public.soft_delete_event($1, $2)`, [
+    await asBot(`SELECT discord_bot.soft_delete_event($1, $2)`, [
       eventId,
       guild.guildId,
     ]);
     await refused(
       BOT_APP,
-      "UPDATE public.events SET deleted_at = NULL WHERE id = $1",
+      "UPDATE discord_bot.events SET deleted_at = NULL WHERE id = $1",
       [eventId],
     );
   });
 
   it("a closed event cannot be reopened by the bot, only by the owner", async () => {
     const eventId = await insertEvent(db, guild);
-    const reopen = "UPDATE public.events SET status = 'active' WHERE id = $1";
-    await asBot("UPDATE public.events SET status = 'closed' WHERE id = $1", [
-      eventId,
-    ]);
+    const reopen =
+      "UPDATE discord_bot.events SET status = 'active' WHERE id = $1";
+    await asBot(
+      "UPDATE discord_bot.events SET status = 'closed' WHERE id = $1",
+      [eventId],
+    );
     await refused(BOT_APP, reopen, [eventId]);
 
     // Other columns, and a repeated close, are still allowed.
     await asBot(
-      "UPDATE public.events SET status = 'closed', name = 'Renamed' WHERE id = $1",
+      "UPDATE discord_bot.events SET status = 'closed', name = 'Renamed' WHERE id = $1",
       [eventId],
     );
     await asOwner(reopen, [eventId]);
@@ -319,12 +321,12 @@ describe("deleted and closed rows", () => {
     const threadId = fakeId();
     const link = (eventId: string) =>
       asBot(
-        `UPDATE public.events SET thread_id = $2, thread_status = 'active' WHERE id = $1`,
+        `UPDATE discord_bot.events SET thread_id = $2, thread_status = 'active' WHERE id = $1`,
         [eventId, threadId],
       );
     const oldEvent = await insertEvent(db, guild);
     await link(oldEvent);
-    await asBot(`SELECT public.soft_delete_event($1, $2)`, [
+    await asBot(`SELECT discord_bot.soft_delete_event($1, $2)`, [
       oldEvent,
       guild.guildId,
     ]);
@@ -333,16 +335,17 @@ describe("deleted and closed rows", () => {
     ).toBeUndefined();
     expect(
       await errorCodeOf(
-        asOwner(`UPDATE public.events SET deleted_at = NULL WHERE id = $1`, [
-          oldEvent,
-        ]),
+        asOwner(
+          `UPDATE discord_bot.events SET deleted_at = NULL WHERE id = $1`,
+          [oldEvent],
+        ),
       ),
     ).toBe(UNIQUE_VIOLATION);
   });
 
   it.each([
-    ["deleted", `SELECT public.soft_delete_event($1, $2)`],
-    ["closed", `UPDATE public.events SET status = 'closed' WHERE id = $1`],
+    ["deleted", `SELECT discord_bot.soft_delete_event($1, $2)`],
+    ["closed", `UPDATE discord_bot.events SET status = 'closed' WHERE id = $1`],
   ])("rejects a new task on a %s event", async (_name, sql) => {
     const eventId = await insertEvent(db, guild);
     await asBot(sql, sql.includes("$2") ? [eventId, guild.guildId] : [eventId]);
@@ -355,12 +358,12 @@ describe("deleted and closed rows", () => {
     const eventOn = async (status: string) => {
       const channelId = fakeId();
       await asOwner(
-        `INSERT INTO public.managed_channels (guild_id, channel_id, status) VALUES ($1, $2, $3)`,
+        `INSERT INTO discord_bot.managed_channels (guild_id, channel_id, status) VALUES ($1, $2, $3)`,
         [guild.guildId, channelId, status],
       );
       return errorCodeOf(
         asBot(
-          `INSERT INTO public.events (guild_id, channel_id, name, event_date, created_by)
+          `INSERT INTO discord_bot.events (guild_id, channel_id, name, event_date, created_by)
            VALUES ($1, $2, 'Social', '2030-02-01', $3)`,
           [guild.guildId, channelId, fakeId()],
         ),
@@ -373,15 +376,16 @@ describe("deleted and closed rows", () => {
   it("refuses a step's hand-off on a closed event", async () => {
     const eventId = await insertEvent(db, guild);
     await asBot(
-      "SELECT public.complete_event_step($1, $2, 'budget_sheet', $3)",
+      "SELECT discord_bot.complete_event_step($1, $2, 'budget_sheet', $3)",
       [eventId, guild.guildId, fakeId()],
     );
-    await asBot("UPDATE public.events SET status = 'closed' WHERE id = $1", [
-      eventId,
-    ]);
+    await asBot(
+      "UPDATE discord_bot.events SET status = 'closed' WHERE id = $1",
+      [eventId],
+    );
     expect(
       await errorCodeOf(
-        asBot("SELECT public.claim_step_handoff($1, $2, 'budget_sheet')", [
+        asBot("SELECT discord_bot.claim_step_handoff($1, $2, 'budget_sheet')", [
           eventId,
           guild.guildId,
         ]),
@@ -394,11 +398,11 @@ describe("deleted and closed rows", () => {
     const actor = fakeId();
     const edit = async (assignee?: string) => {
       const { rows } = await db.query<{ assignee_id: string; v: string }>(
-        "SELECT assignee_id, updated_at::text AS v FROM public.tasks WHERE id = $1",
+        "SELECT assignee_id, updated_at::text AS v FROM discord_bot.tasks WHERE id = $1",
         [taskId],
       );
       await asBot(
-        `SELECT public.edit_task($1, $2, $3, 'Book the room', '2030-01-10', $4, $5)`,
+        `SELECT discord_bot.edit_task($1, $2, $3, 'Book the room', '2030-01-10', $4, $5)`,
         [
           taskId,
           guild.guildId,
@@ -408,7 +412,7 @@ describe("deleted and closed rows", () => {
         ],
       );
       const counted = await db.query<{ n: number }>(
-        "SELECT count(*)::int AS n FROM public.task_reassignments WHERE actor_id = $1",
+        "SELECT count(*)::int AS n FROM discord_bot.task_reassignments WHERE actor_id = $1",
         [actor],
       );
       return counted.rows[0]?.n;
@@ -425,7 +429,7 @@ describe("schema constraints", () => {
     expect(
       await errorCodeOf(
         asBot(
-          `INSERT INTO public.events (guild_id, channel_id, name, event_date, created_by)
+          `INSERT INTO discord_bot.events (guild_id, channel_id, name, event_date, created_by)
            VALUES ($1, $2, 'Social', '2030-02-01', $3)`,
           [guild.guildId, other.channelId, fakeId()],
         ),
@@ -439,7 +443,7 @@ describe("schema constraints", () => {
   it("keeps completed_at in step with task status", async () => {
     const taskId = await newTask();
     const update = (set: string) =>
-      asBot(`UPDATE public.tasks SET ${set} WHERE id = $1`, [taskId]);
+      asBot(`UPDATE discord_bot.tasks SET ${set} WHERE id = $1`, [taskId]);
     expect(await errorCodeOf(update(`status = 'done'`))).toBe(CHECK_VIOLATION);
     expect(await errorCodeOf(update(`completed_at = now()`))).toBe(
       CHECK_VIOLATION,
@@ -458,7 +462,7 @@ describe("schema constraints", () => {
     ["9999-12-31", undefined],
   ])("a task's due date of %s gives %p", async (dueDate, code) => {
     const insert = asBot(
-      `INSERT INTO public.tasks (event_id, guild_id, assignee_id, description, due_date, created_by)
+      `INSERT INTO discord_bot.tasks (event_id, guild_id, assignee_id, description, due_date, created_by)
        VALUES ($1, $2, $3, 'Dated', $4::date, $3)`,
       [await insertEvent(db, guild), guild.guildId, fakeId(), dueDate],
     );
@@ -470,7 +474,7 @@ describe("schema constraints", () => {
     const insertLog = (kind: string, dueDate = DUE) =>
       errorCodeOf(
         asOwner(
-          `INSERT INTO public.reminder_log (task_id, kind, due_date) VALUES ($1, $2, $3)`,
+          `INSERT INTO discord_bot.reminder_log (task_id, kind, due_date) VALUES ($1, $2, $3)`,
           [taskId, kind, dueDate],
         ),
       );
@@ -482,7 +486,7 @@ describe("schema constraints", () => {
     const update = (set: string, params: unknown[] = []) =>
       errorCodeOf(
         asOwner(
-          `UPDATE public.reminder_log SET ${set} WHERE task_id = $1 AND due_date = '${DUE}'`,
+          `UPDATE discord_bot.reminder_log SET ${set} WHERE task_id = $1 AND due_date = '${DUE}'`,
           [taskId, ...params],
         ),
       );
@@ -500,14 +504,14 @@ describe("task reminder claims", () => {
   const claim = async (taskId: string, dueDate = DUE) =>
     (
       await asBot<{ token: string | null }>(
-        `SELECT public.claim_reminder($1, 'one_day', $2) AS token`,
+        `SELECT discord_bot.claim_reminder($1, 'one_day', $2) AS token`,
         [taskId, dueDate],
       )
     )[0]?.token ?? null;
   const reclaim = async (taskId: string, token: string) =>
     (
       await asBot<{ token: string | null }>(
-        `SELECT public.reclaim_reminder($1, 'one_day', '${DUE}', $2, 120) AS token`,
+        `SELECT discord_bot.reclaim_reminder($1, 'one_day', '${DUE}', $2, 120) AS token`,
         [taskId, token],
       )
     )[0]?.token ?? null;
@@ -515,20 +519,20 @@ describe("task reminder claims", () => {
     (
       await asBot<{ marked: boolean }>(
         how === "sent"
-          ? `SELECT public.mark_reminder_sent($1, 'one_day', '${DUE}', $2, $3) AS marked`
-          : `SELECT public.mark_reminder_skipped($1, 'one_day', '${DUE}', $2) AS marked`,
+          ? `SELECT discord_bot.mark_reminder_sent($1, 'one_day', '${DUE}', $2, $3) AS marked`
+          : `SELECT discord_bot.mark_reminder_skipped($1, 'one_day', '${DUE}', $2) AS marked`,
         how === "sent" ? [taskId, token, fakeId()] : [taskId, token],
       )
     )[0]?.marked;
   const age = (taskId: string, interval: string) =>
     db.query(
-      `UPDATE public.reminder_log SET claimed_at = now() - $2::interval WHERE task_id = $1`,
+      `UPDATE discord_bot.reminder_log SET claimed_at = now() - $2::interval WHERE task_id = $1`,
       [taskId, interval],
     );
   const logRow = async (taskId: string) =>
     (
       await db.query<{ state: string; attempts: number }>(
-        `SELECT state, attempts FROM public.reminder_log WHERE task_id = $1`,
+        `SELECT state, attempts FROM discord_bot.reminder_log WHERE task_id = $1`,
         [taskId],
       )
     ).rows[0];
@@ -536,7 +540,7 @@ describe("task reminder claims", () => {
   it("claims the new due date after a move, and refuses the old one", async () => {
     const taskId = await newTask();
     const moved = "2030-03-01";
-    await asOwner(`UPDATE public.tasks SET due_date = $2 WHERE id = $1`, [
+    await asOwner(`UPDATE discord_bot.tasks SET due_date = $2 WHERE id = $1`, [
       taskId,
       moved,
     ]);
@@ -584,7 +588,7 @@ describe("event reminder claims", () => {
   const claim = async (eventId: string, kind: string, date: string) =>
     (
       await asBot<{ token: string | null }>(
-        "SELECT public.claim_event_reminder($1, $2::public.event_reminder_kind, $3) AS token",
+        "SELECT discord_bot.claim_event_reminder($1, $2::discord_bot.event_reminder_kind, $3) AS token",
         [eventId, kind, date],
       )
     )[0]?.token ?? null;
@@ -593,12 +597,12 @@ describe("event reminder claims", () => {
     const eventId = await insertEvent(db, guild);
     const actor = fakeId();
     await asBot(
-      "SELECT public.assign_event_step($1, $2, 'food_pickup', $3, $3)",
+      "SELECT discord_bot.assign_event_step($1, $2, 'food_pickup', $3, $3)",
       [eventId, guild.guildId, actor],
     );
     expect(
       await asBot(
-        "SELECT public.set_event_pickup_time($1, $2, '17:30', $3) AS done",
+        "SELECT discord_bot.set_event_pickup_time($1, $2, '17:30', $3) AS done",
         [eventId, guild.guildId, actor],
       ),
     ).toEqual([{ done: true }]);
@@ -630,7 +634,7 @@ describe("claim_interaction", () => {
   const claim = async (interactionId: string) =>
     (
       await asBot<{ claimed: boolean }>(
-        "SELECT public.claim_interaction($1) AS claimed",
+        "SELECT discord_bot.claim_interaction($1) AS claimed",
         [interactionId],
       )
     )[0]?.claimed;
@@ -651,15 +655,18 @@ describe("claim_interaction", () => {
   });
 
   it("is closed to other roles, as is expiry", async () => {
-    await refused(OTHER_ROLE, `SELECT public.claim_interaction('${fakeId()}')`);
-    await refused(OTHER_ROLE, "SELECT public.expire_interaction_claims()");
+    await refused(
+      OTHER_ROLE,
+      `SELECT discord_bot.claim_interaction('${fakeId()}')`,
+    );
+    await refused(OTHER_ROLE, "SELECT discord_bot.expire_interaction_claims()");
   });
 
   it("expires claims older than a day and keeps the rest", async () => {
     const claimAged = async (hours: number) => {
       const id = fakeId();
       await db.query(
-        `INSERT INTO public.interaction_claims (interaction_id, claimed_at)
+        `INSERT INTO discord_bot.interaction_claims (interaction_id, claimed_at)
          VALUES ($1, now() - make_interval(hours => $2))`,
         [id, hours],
       );
@@ -668,10 +675,10 @@ describe("claim_interaction", () => {
     const old = await claimAged(25);
     const recent = await claimAged(23);
 
-    await asBot("SELECT public.expire_interaction_claims()");
+    await asBot("SELECT discord_bot.expire_interaction_claims()");
 
     const { rows } = await db.query<{ interaction_id: string }>(
-      "SELECT interaction_id FROM public.interaction_claims WHERE interaction_id = ANY($1)",
+      "SELECT interaction_id FROM discord_bot.interaction_claims WHERE interaction_id = ANY($1)",
       [[old, recent]],
     );
     expect(rows.map((row) => row.interaction_id)).toEqual([recent]);

@@ -16,7 +16,7 @@ export async function findEventByThread(
   return firstRow(
     await query<EventRow>(
       db,
-      sql`select ${EVENT_COLUMNS} from events
+      sql`select ${EVENT_COLUMNS} from discord_bot.events
       where thread_id = ${threadId} and guild_id = ${guildId} and deleted_at is null
       limit 1`,
     ),
@@ -31,7 +31,7 @@ export async function searchOpenEventsByIdPrefix(
   const { low, high } = idPrefixRange(prefix);
   return await query<EventChoice>(
     db,
-    sql`select ${EVENT_CHOICE_COLUMNS} from events
+    sql`select ${EVENT_CHOICE_COLUMNS} from discord_bot.events
       where guild_id = ${guildId} and status = 'active' and deleted_at is null
         and id >= ${low} and id <= ${high}
       order by id limit ${DISCORD_LIMITS.autocompleteChoices}`,
@@ -51,7 +51,7 @@ export async function searchOpenEvents(
   }
   return await query<EventChoice>(
     db,
-    sql`select ${EVENT_CHOICE_COLUMNS} from events
+    sql`select ${EVENT_CHOICE_COLUMNS} from discord_bot.events
       where guild_id = ${guildId} and status = 'active' and deleted_at is null
         and name ilike ${searchPattern(term)}
       order by event_date desc, id limit ${DISCORD_LIMITS.autocompleteChoices}`,

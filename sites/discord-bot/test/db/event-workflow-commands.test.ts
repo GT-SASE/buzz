@@ -70,13 +70,13 @@ async function bindRoles(
   const rows = await queryAs<{ version: number }>(
     world.pg,
     "bot_app",
-    `SELECT version FROM public.guild_config WHERE guild_id = $1`,
+    `SELECT version FROM discord_bot.guild_config WHERE guild_id = $1`,
     [GUILD_ID],
   );
   await queryAs(
     world.pg,
     "bot_app",
-    `SELECT public.apply_role_bindings($1, $2, $3, $4, $5, $6, NULL, $7, $8)`,
+    `SELECT discord_bot.apply_role_bindings($1, $2, $3, $4, $5, $6, NULL, $7, $8)`,
     [
       GUILD_ID,
       rows[0]?.version,
@@ -110,10 +110,10 @@ async function seed(
   const overviewId = fakeId();
   world.discord.messageIds.add(overviewId);
   const { rows } = await world.pg.query<{ id: string }>(
-    `INSERT INTO public.events
+    `INSERT INTO discord_bot.events
        (guild_id, channel_id, name, event_date, created_by, thread_id,
         overview_message_id, status, thread_status)
-     VALUES ($1, $2, 'Fall Social', $3, $4, $5, $6, $7::public.event_status, 'active')
+     VALUES ($1, $2, 'Fall Social', $3, $4, $5, $6, $7::discord_bot.event_status, 'active')
      RETURNING id`,
     [
       GUILD_ID,
@@ -213,7 +213,7 @@ async function steps(eventId: string) {
   }>(
     `SELECT kind::text AS kind, status::text AS status, completed_by,
             handoff_sent_at IS NOT NULL AS handoff_sent
-     FROM public.event_steps WHERE event_id = $1 ORDER BY kind`,
+     FROM discord_bot.event_steps WHERE event_id = $1 ORDER BY kind`,
     [eventId],
   );
   return Object.fromEntries(rows.map((row) => [row.kind, row]));
@@ -221,8 +221,8 @@ async function steps(eventId: string) {
 
 async function owners(eventId: string, kind: AssignableStepKind) {
   const { rows } = await world.pg.query<{ user_id: string }>(
-    `SELECT user_id FROM public.event_step_assignees
-     WHERE event_id = $1 AND kind = $2::public.event_step_kind
+    `SELECT user_id FROM discord_bot.event_step_assignees
+     WHERE event_id = $1 AND kind = $2::discord_bot.event_step_kind
        AND removed_at IS NULL
      ORDER BY created_at, id`,
     [eventId, kind],
@@ -233,7 +233,7 @@ async function owners(eventId: string, kind: AssignableStepKind) {
 async function pickupTime(eventId: string): Promise<string | null> {
   const { rows } = await world.pg.query<{ pickup_time: string | null }>(
     `SELECT to_char(pickup_time, 'HH24:MI') AS pickup_time
-     FROM public.events WHERE id = $1`,
+     FROM discord_bot.events WHERE id = $1`,
     [eventId],
   );
   return rows[0]?.pickup_time ?? null;
@@ -577,7 +577,7 @@ describe("the overview's buttons", () => {
 
     const deleted = await seed();
     await world.pg.query(
-      `UPDATE public.events SET deleted_at = now() WHERE id = $1`,
+      `UPDATE discord_bot.events SET deleted_at = now() WHERE id = $1`,
       [deleted.id],
     );
     await world.send(click("event.sheet-done", deleted, officer()));
@@ -794,7 +794,7 @@ describe("the event workflow functions", () => {
     const eventId = await insertEvent(db, guild);
     const { rows } = await db.query(
       `SELECT kind::text AS kind, status::text AS status
-       FROM public.event_steps AS step WHERE event_id = $1 ORDER BY step.kind`,
+       FROM discord_bot.event_steps AS step WHERE event_id = $1 ORDER BY step.kind`,
       [eventId],
     );
     expect(rows).toEqual(
@@ -812,13 +812,16 @@ describe("the event workflow functions", () => {
   it.each([
     [
       "assign Budget approved",
-      `public.assign_event_step($1, $2, 'budget_approved', $3, $3)`,
+      `discord_bot.assign_event_step($1, $2, 'budget_approved', $3, $3)`,
     ],
     [
       "complete Food pickup",
-      `public.complete_event_step($1, $2, 'food_pickup', $3)`,
+      `discord_bot.complete_event_step($1, $2, 'food_pickup', $3)`,
     ],
-    ["a null pickup time", `public.set_event_pickup_time($1, $2, NULL, $3)`],
+    [
+      "a null pickup time",
+      `discord_bot.set_event_pickup_time($1, $2, NULL, $3)`,
+    ],
   ])("refuses to %s", async (_name, sql) => {
     const eventId = await insertEvent(db, guild);
     expect(
@@ -830,7 +833,7 @@ describe("the event workflow functions", () => {
     const eventId = await insertEvent(db, guild);
     expect(
       await errorCodeOf(
-        value(`public.reopen_event_step($1, $2, 'food_pickup')`, [
+        value(`discord_bot.reopen_event_step($1, $2, 'food_pickup')`, [
           eventId,
           guild.guildId,
         ]),
@@ -842,14 +845,14 @@ describe("the event workflow functions", () => {
     const eventId = await insertEvent(db, guild);
     const other = await insertGuild(db);
     for (const sql of [
-      `public.assign_event_step($1, $2, 'budget_sheet', $3, $3)`,
-      `public.complete_event_step($1, $2, 'budget_sheet', $3)`,
-      `public.set_event_pickup_time($1, $2, '12:00', $3)`,
+      `discord_bot.assign_event_step($1, $2, 'budget_sheet', $3, $3)`,
+      `discord_bot.complete_event_step($1, $2, 'budget_sheet', $3)`,
+      `discord_bot.set_event_pickup_time($1, $2, '12:00', $3)`,
     ]) {
       expect(await value(sql, [eventId, other.guildId, fakeId()])).toBeNull();
     }
     expect(
-      await value(`public.claim_step_handoff($1, $2, 'budget_sheet')`, [
+      await value(`discord_bot.claim_step_handoff($1, $2, 'budget_sheet')`, [
         eventId,
         other.guildId,
       ]),
@@ -859,13 +862,13 @@ describe("the event workflow functions", () => {
   it("does not let bot_app call the internal functions, or another role the writers", async () => {
     expect(
       await errorCodeOf(
-        queryAs(db, "bot_app", `SELECT public.create_event_steps()`),
+        queryAs(db, "bot_app", `SELECT discord_bot.create_event_steps()`),
       ),
     ).toBe(INSUFFICIENT_PRIVILEGE);
     const eventId = await insertEvent(db, guild);
     for (const sql of [
-      `SELECT public.complete_event_step('${eventId}', '${guild.guildId}', 'budget_sheet', '${fakeId()}')`,
-      `SELECT public.claim_event_reminder('${eventId}', 'daily_steps', '2030-01-15')`,
+      `SELECT discord_bot.complete_event_step('${eventId}', '${guild.guildId}', 'budget_sheet', '${fakeId()}')`,
+      `SELECT discord_bot.claim_event_reminder('${eventId}', 'daily_steps', '2030-01-15')`,
     ]) {
       expect(await errorCodeOf(queryAs(db, OTHER_ROLE, sql))).toBe(
         INSUFFICIENT_PRIVILEGE,
@@ -876,8 +879,8 @@ describe("the event workflow functions", () => {
   it("keeps the step and log rows consistent whatever the owner writes", async () => {
     const eventId = await insertEvent(db, guild);
     for (const sql of [
-      `UPDATE public.event_steps SET status = 'done' WHERE event_id = $1 AND kind = 'budget_sheet'`,
-      `INSERT INTO public.event_reminder_log (event_id, kind, reminder_date, state)
+      `UPDATE discord_bot.event_steps SET status = 'done' WHERE event_id = $1 AND kind = 'budget_sheet'`,
+      `INSERT INTO discord_bot.event_reminder_log (event_id, kind, reminder_date, state)
        VALUES ($1, 'daily_steps', '2030-01-01', 'sent')`,
     ]) {
       expect(
@@ -924,7 +927,7 @@ describe("refreshOverview", () => {
   async function stored() {
     const result = await w.pg.query(
       `SELECT overview_message_id, thread_status::text AS thread_status
-       FROM public.events WHERE id = $1 AND deleted_at IS NULL`,
+       FROM discord_bot.events WHERE id = $1 AND deleted_at IS NULL`,
       [EVENT_ID],
     );
     return result.rows[0];
@@ -995,7 +998,7 @@ describe("refreshOverview", () => {
   it("draws the closed state again when /event close lands during a slow edit", async () => {
     duringEdit = async () => {
       await w.pg.query(
-        `UPDATE public.events SET status = 'closed' WHERE id = $1`,
+        `UPDATE discord_bot.events SET status = 'closed' WHERE id = $1`,
         [EVENT_ID],
       );
     };

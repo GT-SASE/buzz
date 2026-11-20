@@ -27,6 +27,8 @@ The tests stand in for Discord, Vercel and Neon, so the controls below are prove
 | Outgoing messages | One send helper, text escaped when rendered, mentions limited to named users, managed channels only |
 | Recovery          | Soft deletes, row history, Neon's point-in-time restore and occasional private exports              |
 
+The bot shares a database with buzz. `bot_app` has no grant on buzz's tables, but a function created in `public` is executable by every role through Postgres's default PUBLIC grant, so any such function must `REVOKE EXECUTE ... FROM PUBLIC`. buzz has none today.
+
 Some of this also depends on settings in the services' dashboards, which the repository cannot enforce. [docs/SETUP.md](docs/SETUP.md) lists them.
 
 ### Risks that remain
@@ -84,7 +86,7 @@ SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE usename = 'bot_app'
 
 #### After a `DATABASE_URL` leak
 
-Rotate `bot_app`'s password as above. The login cannot delete rows, read `history`, undelete a row or reopen a closed event, but it can change events, tasks, settings and reminder state through the bot's functions. Compare `guild_config` and `managed_channels` with `history.row_versions` and `config_audit` from before the leak, fix anything wrong with `/setup` or `/config`, and check that the next `reminders` row in `job_runs` succeeds. Do not trust `actor_id` or `created_by` for that window.
+Rotate `bot_app`'s password as above. The login cannot delete rows, read `discord_bot.row_versions`, touch buzz's tables in `public`, undelete a row or reopen a closed event, but it can change events, tasks, settings and reminder state through the bot's functions. Compare `guild_config` and `managed_channels` with `discord_bot.row_versions` and `config_audit` from before the leak, fix anything wrong with `/setup` or `/config`, and check that the next `reminders` row in `job_runs` succeeds. Do not trust `actor_id` or `created_by` for that window.
 
 #### After a bot token leak
 

@@ -29,5 +29,8 @@ export default {
   out: "./drizzle",
   dialect: "postgresql",
   dbCredentials: { url },
+  // buzz owns public only. The Discord bot keeps its own tables in the discord_bot
+  // schema of the same database, and db:generate and db:push must never see them.
+  schemaFilter: ["public"],
   tablesFilter: ["buzz_*"],
 } satisfies Config;

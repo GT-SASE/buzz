@@ -57,30 +57,35 @@ Use a long-lived personal email for recovery, not a university one, and save eve
 
 Do not set the Interactions Endpoint URL yet.
 
-## 4. Create the Neon project
+## 4. Prepare the database
 
-Create a project on the Free plan with Postgres 17, in an AWS US East region, close to Vercel's default function region, Washington, D.C. (`iad1`). Neon makes a database, `neondb`, and an owner role, `neondb_owner`. Save the owner's password in the password manager.
+The bot has no database of its own. It keeps its tables in a schema called `discord_bot` inside buzz's existing Neon database, apart from buzz's tables in `public`. The bot logs in as `bot_app`, which can use `discord_bot` and nothing in `public`. Do these steps once, and never run them against anything but the project that holds buzz's database.
+
+This needs Postgres 17 or newer, which buzz's project already is. You need the owner's connection string (`neondb_owner`, the same role buzz's migrations run as), with connection pooling off. In the project's **Connect** dialog, choose the owner and the database, turn pooling off, and change `sslmode=require` at the end to `sslmode=verify-full`.
+
+### Make the schema and `bot_app`
+
+In Neon's SQL editor, signed in as the owner, run this. Make the password first with `openssl rand -hex 32` and save it in the password manager. The schema has to exist before the first migration, because dbmate keeps its record of applied migrations in `discord_bot.schema_migrations`.
+
+```sql
+CREATE SCHEMA IF NOT EXISTS discord_bot;
+CREATE ROLE bot_app LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD '<password>';
+```
+
+If `bot_app` already exists (a second run), use `ALTER ROLE bot_app PASSWORD '<password>';` instead. The migrations give `bot_app` its grants on `discord_bot` and set its timeouts. They create nothing in `public` and change nothing there, including its grants and the owner's default privileges.
 
 ### Run the migrations
 
-In the project's **Connect** dialog, choose `neondb_owner` and the database, and turn connection pooling off. Change `sslmode=require` at the end to `sslmode=verify-full`. Then paste that string at the prompt:
+From `sites/discord-bot`, with the owner's string. The script already passes `--migrations-table discord_bot.schema_migrations`.
 
 ```sh
 read -rs OWNER_URL
 DATABASE_URL="$OWNER_URL" bun run db:migrate
 ```
 
-**Expect:** `Applying:` and `Applied:` for each file in `db/migrations`. Run it again and it prints nothing.
+**Expect:** `Applying:` and `Applied:` for each file in `db/migrations`. Run it again and it prints nothing. buzz's own `bun run db:migrate` is separate and never touches `discord_bot`: its `drizzle.config.ts` has `schemaFilter: ["public"]`.
 
-**Failure looks like:** `permission denied`. Use the project's owner role, never `bot_app`.
-
-### Set `bot_app`'s password
-
-The migrations create `bot_app`, the role the bot logs in as, with no password. Make one with `openssl rand -hex 32` and save it. Then as the owner, in `psql "$OWNER_URL"`, run `\password bot_app` and paste it, or run this in Neon's SQL editor:
-
-```sql
-ALTER ROLE bot_app PASSWORD '<password>';
-```
+**Failure looks like:** `permission denied`. Use the project's owner role, never `bot_app`. `schema "discord_bot" does not exist` means the SQL above was not run.
 
 ### Build the bot's connection string
 
@@ -90,15 +95,15 @@ It has this shape, with the host and database from the Connect dialog:
 postgresql://bot_app:<password>@<host>/<database>?sslmode=verify-full
 ```
 
-A hex password needs no encoding. Save the string in the password manager, then check it:
+Use the pooled host (the one with `-pooler` in its name) for the bot, the owner's direct host only for migrations. The bot sets no `search_path` and needs none: every statement names `discord_bot`. A hex password needs no encoding. Save the string in the password manager, then check it:
 
 ```sh
 read -rs BOT_URL
-psql "$BOT_URL&sslrootcert=system" -c 'SELECT current_user;'
+psql "$BOT_URL&sslrootcert=system" -c 'SELECT current_user;' -c 'SELECT count(*) FROM discord_bot.events;'
 unset OWNER_URL BOT_URL
 ```
 
-**Expect:** `bot_app`.
+**Expect:** `bot_app`, then a count of 0 on a new schema.
 
 **Failure looks like:** `password authentication failed`. Check the password and its encoding.
 
