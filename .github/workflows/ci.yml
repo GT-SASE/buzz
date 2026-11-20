@@ -14,6 +14,10 @@ permissions:
 env:
   # Public prerender must not require portal secrets in CI.
   SKIP_ENV_VALIDATION: "1"
+  # Turborepo Remote Cache. Both are empty on fork PRs and until configured;
+  # turbo then runs with the local .turbo/cache restored below.
+  TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+  TURBO_TEAM: ${{ vars.TURBO_TEAM }}
 
 jobs:
   lint:
