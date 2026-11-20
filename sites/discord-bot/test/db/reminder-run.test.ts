@@ -18,6 +18,7 @@ import {
   getLatestSucceededJobRun,
 } from "../../src/db/job-runs.ts";
 import { runDailyJobs } from "../../src/reminders/daily.ts";
+import { DATABASE_CALL_MS } from "../../src/reminders/run.ts";
 import { jobFreshness, runHealthCheck } from "../../src/reminders/health.ts";
 import { slotStart } from "../../src/reminders/plan.ts";
 import {
@@ -1010,6 +1011,30 @@ describe("the health check", () => {
       });
     },
   );
+
+  it("limits the claim expiry to a database call, like the rest of the run", async () => {
+    const guild = await w.guildInZone();
+    const setTimeoutNow = globalThis.setTimeout;
+    let lastDelay: number | undefined;
+    let expiryDelay: number | undefined;
+    spyOn(globalThis, "setTimeout").mockImplementation(((
+      handler: () => void,
+      ms?: number,
+    ) => {
+      lastDelay = ms;
+      return setTimeoutNow(handler, ms);
+    }) as unknown as typeof setTimeout);
+    w.sqlGate = (call) => {
+      if (call.sql.includes("expire_interaction_claims")) {
+        expiryDelay = lastDelay;
+      }
+      return undefined;
+    };
+
+    expect(await daily(guild)).toBe(true);
+
+    expect(expiryDelay).toBe(DATABASE_CALL_MS);
+  });
 
   it("runs after the reminders, and a rerun is a duplicate, not a failure", async () => {
     const guild = await w.guildInZone();

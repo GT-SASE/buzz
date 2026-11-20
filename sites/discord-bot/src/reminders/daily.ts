@@ -82,7 +82,9 @@ export async function runDailyJobs(
     if (health.status === "failed") {
       log(`Health check failed: ${health.error ?? "unrecorded"}`);
     }
-    const expired = await expireInteractionClaims(shared.db);
+    const expired = await expireInteractionClaims(
+      withDeadline(shared.db, DATABASE_CALL_MS),
+    );
     if (!expired.ok) {
       log(`Claim expiry failed: ${errorSummary(expired.error)}`);
     }
