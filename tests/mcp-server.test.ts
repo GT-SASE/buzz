@@ -97,7 +97,7 @@ describe("buzz mcp server over stdio", () => {
       };
       expect(await text("buzz_guide")).toContain("buzz_bot_commands");
       expect(await text("buzz_db_schema", { database: "bot" })).toContain(
-        "table public.events",
+        "table discord_bot.events",
       );
       expect(
         await text("buzz_db_schema", { table: "page", database: "buzz" }),
