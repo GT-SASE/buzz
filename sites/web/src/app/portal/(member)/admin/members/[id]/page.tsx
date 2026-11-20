@@ -14,7 +14,8 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from "~/components/ui/breadcrumb";
-import { HydrateClient, api, hydrated } from "~/trpc/server";
+import { HydrateClient } from "~/trpc/hydrate";
+import { api, hydrated } from "~/trpc/server";
 import { MemberDetail } from "./member-detail";
 
 const memberForPage = cache((id: string) =>

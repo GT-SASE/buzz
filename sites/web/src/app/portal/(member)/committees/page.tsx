@@ -3,7 +3,8 @@ import { Suspense } from "react";
 
 import { requireSession } from "~/app/portal/_lib/session";
 import { Toaster } from "~/components/ui/sonner";
-import { HydrateClient, api } from "~/trpc/server";
+import { HydrateClient } from "~/trpc/hydrate";
+import { api } from "~/trpc/server";
 import PortalLoading from "../loading";
 import { CommitteeApplyForm } from "./committee-apply-form";
 
