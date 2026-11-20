@@ -134,6 +134,8 @@ export default tseslint.config(
       "**/node_modules/**",
       "**/.vercel/**",
       "**/.tools/**",
+      // Manual bench tool, not shipped or tested; pokes at pg internals.
+      "scripts/bench-procedures.ts",
     ],
   },
   ...exceptBot(webAndTooling),

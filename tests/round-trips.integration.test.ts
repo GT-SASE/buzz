@@ -16,8 +16,15 @@ mock.module("../packages/auth/src/index.ts", () => ({
   signOut: async () => undefined,
 }));
 
-const { db, eventCheckIns, events, kinGroups, kinMemberships, mentorshipEnrollments, users } =
-  await import("../packages/db/src/index");
+const {
+  db,
+  eventCheckIns,
+  events,
+  kinGroups,
+  kinMemberships,
+  mentorshipEnrollments,
+  users,
+} = await import("../packages/db/src/index");
 const { createCaller } = await import("../packages/api/src/root");
 const { schoolYear, semester } = await import("../packages/api/src/terms");
 const { inArray } =
@@ -48,7 +55,9 @@ describe.skipIf(!process.env.DATABASE_URL)("round-trip collapses", () => {
   let alex = "";
   let sam = "";
   let pastEvent = "";
-  let before: Awaited<ReturnType<ReturnType<typeof callerFor>["chapter"]["overview"]>>;
+  let before: Awaited<
+    ReturnType<ReturnType<typeof callerFor>["chapter"]["overview"]>
+  >;
 
   async function makeUser(tag: string, role: "MEMBER" | "ADMIN") {
     const [row] = await db
@@ -110,17 +119,43 @@ describe.skipIf(!process.env.DATABASE_URL)("round-trip collapses", () => {
 
     await db.insert(eventCheckIns).values([
       // Alex: recent + old live check-ins. Sam: one live, one archived.
-      { eventId: byTitle("rt past"), userId: alex, pointsEarned: 10, checkedInAt: new Date(now - 3 * DAY_MS) },
-      { eventId: byTitle("rt older"), userId: alex, pointsEarned: 10, checkedInAt: new Date(now - 60 * DAY_MS) },
-      { eventId: byTitle("rt past"), userId: sam, pointsEarned: 10, checkedInAt: new Date(now - 3 * DAY_MS) },
-      { eventId: byTitle("rt archived"), userId: sam, pointsEarned: 10, checkedInAt: new Date(now - 2 * DAY_MS) },
+      {
+        eventId: byTitle("rt past"),
+        userId: alex,
+        pointsEarned: 10,
+        checkedInAt: new Date(now - 3 * DAY_MS),
+      },
+      {
+        eventId: byTitle("rt older"),
+        userId: alex,
+        pointsEarned: 10,
+        checkedInAt: new Date(now - 60 * DAY_MS),
+      },
+      {
+        eventId: byTitle("rt past"),
+        userId: sam,
+        pointsEarned: 10,
+        checkedInAt: new Date(now - 3 * DAY_MS),
+      },
+      {
+        eventId: byTitle("rt archived"),
+        userId: sam,
+        pointsEarned: 10,
+        checkedInAt: new Date(now - 2 * DAY_MS),
+      },
     ]);
 
     // Kin: one group this semester, alex mentor + sam mentee seated in it.
     const year = schoolYear(new Date());
     const [group] = await db
       .insert(kinGroups)
-      .values({ year, semester: term, name: `vitest rt kin ${suffix}`, capacity: 5, isOpen: true })
+      .values({
+        year,
+        semester: term,
+        name: `vitest rt kin ${suffix}`,
+        capacity: 5,
+        isOpen: true,
+      })
       .returning({ id: kinGroups.id });
     groupIds.push(group!.id);
     await db.insert(mentorshipEnrollments).values([
@@ -145,61 +180,87 @@ describe.skipIf(!process.env.DATABASE_URL)("round-trip collapses", () => {
     }
   }, SLOW);
 
-  it("overview counts live events and their check-ins, and nothing archived", async () => {
-    const after = await callerFor(officer, "ADMIN").chapter.overview();
+  it(
+    "overview counts live events and their check-ins, and nothing archived",
+    async () => {
+      const after = await callerFor(officer, "ADMIN").chapter.overview();
 
-    // Three live events added (past, older, upcoming); the archived one is out.
-    expect(after.events.total - before.events.total).toBe(3);
-    expect(after.events.past - before.events.past).toBe(2);
-    expect(after.events.upcoming - before.events.upcoming).toBe(1);
-    // Three live check-ins; Sam's archived one is out. Two are inside 30 days.
-    expect(after.checkIns.total - before.checkIns.total).toBe(3);
-    expect(after.checkIns.last30Days - before.checkIns.last30Days).toBe(2);
-    // Alex and Sam are the two new members with a live check-in.
-    expect(after.members.withCheckIns - before.members.withCheckIns).toBe(2);
-    expect(after.members.total - before.members.total).toBe(0);
-  }, SLOW);
+      // Three live events added (past, older, upcoming); the archived one is out.
+      expect(after.events.total - before.events.total).toBe(3);
+      expect(after.events.past - before.events.past).toBe(2);
+      expect(after.events.upcoming - before.events.upcoming).toBe(1);
+      // Three live check-ins; Sam's archived one is out. Two are inside 30 days.
+      expect(after.checkIns.total - before.checkIns.total).toBe(3);
+      expect(after.checkIns.last30Days - before.checkIns.last30Days).toBe(2);
+      // Alex and Sam are the two new members with a live check-in.
+      expect(after.members.withCheckIns - before.members.withCheckIns).toBe(2);
+      expect(after.members.total - before.members.total).toBe(0);
+    },
+    SLOW,
+  );
 
-  it("event.getById still answers NOT_FOUND for a missing event", async () => {
-    const error = await callerFor(officer, "ADMIN")
-      .event.getById({ id: "vitest-no-such-event" })
-      .then(
-        () => null,
-        (caught: { code: string }) => caught,
+  it(
+    "event.getById still answers NOT_FOUND for a missing event",
+    async () => {
+      const error = await callerFor(officer, "ADMIN")
+        .event.getById({ id: "vitest-no-such-event" })
+        .then(
+          () => null,
+          (caught: { code: string }) => caught,
+        );
+      expect(error?.code).toBe("NOT_FOUND");
+    },
+    SLOW,
+  );
+
+  it(
+    "event.getById returns the event with its roster in one call",
+    async () => {
+      const result = await callerFor(officer, "ADMIN").event.getById({
+        id: pastEvent,
+      });
+      expect(result.event.id).toBe(pastEvent);
+      expect(result.rosterTotal).toBe(2);
+      expect(result.roster.map((row) => row.userId).sort()).toEqual(
+        [alex, sam].sort(),
       );
-    expect(error?.code).toBe("NOT_FOUND");
-  }, SLOW);
+      expect(result.rsvps).toEqual([]);
+    },
+    SLOW,
+  );
 
-  it("event.getById returns the event with its roster in one call", async () => {
-    const result = await callerFor(officer, "ADMIN").event.getById({
-      id: pastEvent,
-    });
-    expect(result.event.id).toBe(pastEvent);
-    expect(result.rosterTotal).toBe(2);
-    expect(result.roster.map((row) => row.userId).sort()).toEqual(
-      [alex, sam].sort(),
-    );
-    expect(result.rsvps).toEqual([]);
-  }, SLOW);
+  it(
+    "myGroup returns the group and everyone in it, mentors first",
+    async () => {
+      const mine = await callerFor(sam, "MEMBER").mentorship.myGroup();
+      expect(mine?.name).toBe(`vitest rt kin ${suffix}`);
+      expect(mine?.members.map((member) => member.userId)).toEqual([alex, sam]);
+      expect(mine?.members.map((member) => member.role)).toEqual([
+        "mentor",
+        "mentee",
+      ]);
+    },
+    SLOW,
+  );
 
-  it("myGroup returns the group and everyone in it, mentors first", async () => {
-    const mine = await callerFor(sam, "MEMBER").mentorship.myGroup();
-    expect(mine?.name).toBe(`vitest rt kin ${suffix}`);
-    expect(mine?.members.map((member) => member.userId)).toEqual([alex, sam]);
-    expect(mine?.members.map((member) => member.role)).toEqual([
-      "mentor",
-      "mentee",
-    ]);
-  }, SLOW);
+  it(
+    "myGroup is null for a member with no seat this semester",
+    async () => {
+      const stranger = await makeUser("stranger", "MEMBER");
+      expect(
+        await callerFor(stranger, "MEMBER").mentorship.myGroup(),
+      ).toBeNull();
+    },
+    SLOW,
+  );
 
-  it("myGroup is null for a member with no seat this semester", async () => {
-    const stranger = await makeUser("stranger", "MEMBER");
-    expect(await callerFor(stranger, "MEMBER").mentorship.myGroup()).toBeNull();
-  }, SLOW);
-
-  it("committee.mine reports the cycle state without an application", async () => {
-    const result = await callerFor(alex, "MEMBER").committee.mine();
-    expect(result.application).toBeNull();
-    expect(typeof result.label).toBe("string");
-  }, SLOW);
+  it(
+    "committee.mine reports the cycle state without an application",
+    async () => {
+      const result = await callerFor(alex, "MEMBER").committee.mine();
+      expect(result.application).toBeNull();
+      expect(typeof result.label).toBe("string");
+    },
+    SLOW,
+  );
 });
