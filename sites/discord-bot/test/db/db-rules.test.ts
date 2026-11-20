@@ -585,6 +585,96 @@ describe("task reminder claims", () => {
   });
 });
 
+describe("closing a stale claim", () => {
+  const closeTask = async (taskId: string, token: string) =>
+    (
+      await asBot<{ closed: boolean }>(
+        `SELECT discord_bot.close_stale_reminder($1, 'one_day', '${DUE}', $2) AS closed`,
+        [taskId, token],
+      )
+    )[0]?.closed;
+  const claimTask = async (taskId: string) =>
+    present(
+      (
+        await asBot<{ token: string }>(
+          `SELECT discord_bot.claim_reminder($1, 'one_day', '${DUE}') AS token`,
+          [taskId],
+        )
+      )[0],
+    ).token;
+  const stateOf = async (taskId: string) =>
+    (
+      await db.query<{ state: string }>(
+        `SELECT state FROM discord_bot.reminder_log WHERE task_id = $1`,
+        [taskId],
+      )
+    ).rows[0]?.state;
+
+  it("leaves a claim whose task can still be sent, and closes it once it cannot", async () => {
+    const taskId = await newTask();
+    const token = await claimTask(taskId);
+
+    expect(await closeTask(taskId, token)).toBe(false);
+    expect(await stateOf(taskId)).toBe("claimed");
+
+    await asOwner(
+      `UPDATE discord_bot.tasks SET status = 'done', completed_at = now() WHERE id = $1`,
+      [taskId],
+    );
+    expect(await closeTask(taskId, crypto.randomUUID())).toBe(false);
+    expect(await closeTask(taskId, token)).toBe(true);
+    expect(await stateOf(taskId)).toBe("skipped");
+    expect(await closeTask(taskId, token)).toBe(false);
+  });
+
+  const closeEvent = async (eventId: string, token: string, before: string) =>
+    (
+      await asBot<{ closed: boolean }>(
+        `SELECT discord_bot.close_stale_event_reminder($1, 'event_today', $2, $3, $4) AS closed`,
+        [eventId, EVENT_DAY, token, before],
+      )
+    )[0]?.closed;
+  const EVENT_DAY = "2030-01-15";
+
+  it("leaves an event's claim while it is live and the guild has reminders on, and closes it otherwise", async () => {
+    const eventId = await insertEvent(db, guild);
+    await asOwner(
+      `INSERT INTO discord_bot.event_reminder_log (event_id, kind, reminder_date)
+       VALUES ($1, 'event_today', $2)`,
+      [eventId, EVENT_DAY],
+    );
+    const { rows } = await db.query<{ claim_token: string }>(
+      `SELECT claim_token FROM discord_bot.event_reminder_log WHERE event_id = $1`,
+      [eventId],
+    );
+    const token = present(rows[0]).claim_token;
+    const stateOf = async () =>
+      (
+        await db.query<{ state: string }>(
+          `SELECT state FROM discord_bot.event_reminder_log WHERE event_id = $1`,
+          [eventId],
+        )
+      ).rows[0]?.state;
+
+    expect(await closeEvent(eventId, token, "2030-01-01")).toBe(false);
+
+    const setReminders = (on: boolean) =>
+      asOwner(
+        `UPDATE discord_bot.guild_config SET reminders_enabled = $2 WHERE guild_id = $1`,
+        [guild.guildId, on],
+      );
+    await setReminders(false);
+    expect(await closeEvent(eventId, token, "2031-01-01")).toBe(false);
+    await setReminders(true);
+    expect(await closeEvent(eventId, crypto.randomUUID(), "2031-01-01")).toBe(
+      false,
+    );
+    expect(await stateOf()).toBe("claimed");
+    expect(await closeEvent(eventId, token, "2031-01-01")).toBe(true);
+    expect(await stateOf()).toBe("skipped");
+  });
+});
+
 describe("event reminder claims", () => {
   const claim = async (eventId: string, kind: string, date: string) =>
     (
