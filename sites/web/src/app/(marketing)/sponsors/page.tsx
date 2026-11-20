@@ -51,6 +51,7 @@ export default function SponsorsPage() {
       {/* No logo wall until there are logos — an empty one advertises that the
           chapter has no partners. */}
       <Section
+        // react-doctor-disable-next-line react-doctor/rendering-hydration-mismatch-time -- server component, the school year is computed once on the server
         eyebrow={schoolYear(new Date())}
         title="Partner slots are open."
         lead="The chapter is building its corporate partner roster for the coming year. Early partners choose their event first."

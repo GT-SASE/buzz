@@ -16,7 +16,8 @@ import { KinGroupManager } from "./kin-group-manager";
 import { MentorshipRoster } from "./mentorship-roster";
 
 export function KinAdmin({ currentSemester }: { currentSemester: string }) {
-  const [term, setTerm] = useState(currentSemester);
+  const [picked, setTerm] = useState<string | null>(null);
+  const term = picked ?? currentSemester;
   const semesters = api.mentorship.semesters.useQuery();
   const readOnly = term !== currentSemester;
 

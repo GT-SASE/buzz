@@ -105,6 +105,7 @@ export default async function Home() {
 
           <LanyardBadge
             photo={homePhotos.conventionDelegation}
+            // react-doctor-disable-next-line react-doctor/rendering-hydration-mismatch-time -- server component, the school year is computed once on the server
             year={schoolYear(new Date()).replace(
               /^(\d{4})-\d{2}(\d{2})$/,
               "$1–$2",
@@ -282,6 +283,7 @@ export default async function Home() {
             <div>
               <h3 className="font-display text-h2 font-bold text-balance text-white">
                 Partner slots are open for{" "}
+                {/* react-doctor-disable-next-line react-doctor/rendering-hydration-mismatch-time -- server component, the school year is computed once on the server */}
                 {schoolYear(new Date()).replace("-", "–")}.
               </h3>
               <p className="mt-5 text-white/75">

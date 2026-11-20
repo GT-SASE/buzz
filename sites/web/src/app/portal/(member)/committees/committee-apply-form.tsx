@@ -127,9 +127,9 @@ function CommitteeApplyFields({ data }: { data: Mine }) {
     treasury: row?.wantsTreasury,
     website: row?.wantsWebsite,
   };
+  const offered = new Set(data.committees);
   const shown = committees.filter(
-    (committee) =>
-      data.committees.includes(committee.id) || saved[committee.id],
+    (committee) => offered.has(committee.id) || saved[committee.id],
   );
 
   if (!data.cycle || !data.closesAt) {

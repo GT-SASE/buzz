@@ -117,6 +117,7 @@ function ResumeFields({ row }: { row: Mine }) {
               : `${(row.byteSize / 1024).toFixed(0)} KB`}{" "}
             · uploaded {formatDate(row.uploadedAt)}
           </p>
+          {/* react-doctor-disable-next-line react-doctor/nextjs-no-a-element -- file download from a route handler, not a page */}
           <a
             href="/api/portal/resume"
             className="text-navy decoration-gold mt-3 inline-flex min-h-11 items-center font-semibold underline decoration-2 underline-offset-4"
