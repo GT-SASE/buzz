@@ -74,6 +74,7 @@ export function PortalSidebar({
           closes on Escape. A press on the backdrop lands on the dialog itself,
           which has no padding or border of its own, so that is the only way the
           target can be the dialog. */}
+      {/* react-doctor-disable-next-line react-doctor/no-noninteractive-element-interactions -- backdrop tap on a native modal dialog; Escape and the close button are the keyboard paths */}
       <dialog
         ref={sheetRef}
         aria-label="Portal menu"

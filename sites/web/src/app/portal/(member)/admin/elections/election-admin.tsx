@@ -365,7 +365,8 @@ function ElectionPanel({
 }
 
 export function ElectionAdmin({ currentYear }: { currentYear: string }) {
-  const [year, setYear] = useState(currentYear);
+  const [picked, setYear] = useState<string | null>(null);
+  const year = picked ?? currentYear;
   const years = api.election.years.useQuery();
   const list = api.election.list.useQuery({ year });
   const readOnly = year !== currentYear;
