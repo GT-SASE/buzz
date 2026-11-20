@@ -56,7 +56,7 @@ Use `bun`, `bun run`, `bun x`. Never npm, pnpm, npx, bunx. Spell out `bun run te
 - `bun run db:generate | db:migrate | db:push | db:seed | db:studio`
 - `bun run smoke` = `bun scripts/smoke.mjs` against the live site
 - Discord bot (`sites/discord-bot`, `bun run --cwd sites/discord-bot <script>`): `build` (Vercel Build Output in `.vercel/output`), `smoke` (loads the built functions from a temp folder, expects 401s), `test`, `test:db`, `test:db:concurrency` (needs `CONCURRENCY_DATABASE_URL` and `BOT_APP_PASSWORD`, see its README), `db:migrate` (dbmate; `DATABASE_URL` of a disposable DB only)
-- `bun run hooks:install` and `bun run gitleaks:install`: pre-push secret scan, rules in `sites/discord-bot/.gitleaks.toml`
+- `bun run hooks:install` and `bun run gitleaks:install`: pre-push secret scan, rules in `.gitleaks.toml`
 
 ## Tests
 

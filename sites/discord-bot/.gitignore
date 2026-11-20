@@ -88,8 +88,6 @@ dumps/
 # Scanner reports, which may quote findings
 gitleaks-report*
 
-# Locally installed tools
-.tools/
 
 # OS files
 .DS_Store

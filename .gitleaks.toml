@@ -1,6 +1,6 @@
-# gitleaks' default rules, plus three for this project.
+# gitleaks' default rules, plus three Discord and database rules.
 
-title = "GTSASE Discord Bot secret rules"
+title = "buzz secret rules"
 
 [extend]
 useDefault = true
@@ -26,4 +26,10 @@ keywords = ["postgres"]
 
 [[rules.allowlists]]
 description = "A placeholder in angle brackets, such as <password>, in the docs"
-regexes = ['''^<[a-z][a-z-]*>$''']
+regexes = ['''^<[a-z][a-z-]*>
+'']
+
+[[rules.allowlists]]
+description = "The throwaway passwords in buzz's local CI and example connection strings"
+regexes = ['''^(?:postgres|password)
+'']
