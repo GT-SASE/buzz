@@ -1,0 +1,105 @@
+# Environment files. Only the placeholder template is tracked.
+.env
+.env.*
+.env[-_]*
+env.local
+*.env
+.envrc
+!.env.example
+
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# Logs
+logs/
+*.log
+
+# Deployment and local service state
+.vercel/
+
+# Keys and certificates
+*.pem
+*.key
+*.crt
+*.cer
+*.der
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+
+# Credential files
+secrets.json
+credentials.json
+service-account*.json
+.npmrc
+.netrc
+.pgpass
+pgpass.conf
+.pg_service.conf
+.git-credentials
+
+# Database dumps and backups.
+# All SQL is ignored by default so a dump cannot be committed by accident.
+# Migrations are the one exception.
+*.sql
+!db/migrations/*.sql
+*.sql.*
+*.psql
+*.pgsql
+*.dump
+*.pgdump
+*.bak
+*.backup
+*.sqlite*
+*.db
+backups/
+dumps/
+*.tar
+*.tar.*
+*.tgz
+*.zip
+*.gz
+*.bz2
+*.xz
+*.7z
+*.rar
+
+# Data exports, which may hold member data
+*.csv
+*.tsv
+*.jsonl
+*.ndjson
+*.xls
+*.xlsx
+*.ods
+*.pdf
+
+# Scanner reports, which may quote findings
+gitleaks-report*
+
+
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Turborepo's local cache
+.turbo/
