@@ -332,9 +332,10 @@ describe("countdown pings", () => {
 
     expect((await w.run([guild])).status).toBe("succeeded");
 
-    expect(w.sent.map((sent) => sent.content)).toEqual([
-      expect.stringContaining("Engage picture for **Spring social**"),
-    ]);
+    expect(w.sent).toHaveLength(1);
+    expect(present(w.sent[0]).content).toContain(
+      "Engage picture for **Spring social**",
+    );
     expect(
       (await logRows(made.eventId)).filter(
         (row) => row.kind === "engage_picture_late",
