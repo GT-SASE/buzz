@@ -1192,8 +1192,8 @@ class Run {
     }
     let state: ForumState = "unknown";
     try {
-      await this.#client.getChannel(guildId, channelId);
-      state = "present";
+      const forum = await this.#client.getChannel(guildId, channelId);
+      state = forum.guildId === guildId ? "present" : "unknown";
     } catch (error) {
       const failure = failureOf(error);
       if (failure !== null && actionForFailure(failure) === "stop_run") {

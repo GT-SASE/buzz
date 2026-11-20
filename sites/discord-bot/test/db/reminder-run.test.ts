@@ -529,6 +529,30 @@ describe("targets that fail", () => {
     });
   });
 
+  it("does not mark a thread missing when the forum answers from another guild", async () => {
+    const guild = await w.guildInZone();
+    const [event] = await eventsDueIn(guild, [3]);
+    const { threadId } = present(event);
+    let refused = false;
+    w.discordGate = (method, path) => {
+      if (method === "POST") {
+        refused = true;
+        return Response.json({ code: 10003 }, { status: 404 });
+      }
+      return refused && path.endsWith(guild.channelId)
+        ? Response.json({ id: guild.channelId, type: 15, guild_id: fakeId() })
+        : undefined;
+    };
+
+    await w.run([guild]);
+
+    const { rows } = await w.database.query<{ thread_status: string }>(
+      `SELECT thread_status FROM discord_bot.events WHERE thread_id = $1`,
+      [threadId],
+    );
+    expect(rows).toEqual([{ thread_status: "active" }]);
+  });
+
   it("sends nothing to a thread whose parent is not managed, and keeps the claim", async () => {
     const guild = await w.guildInZone();
     const [event] = await eventsDueIn(guild, [3]);
