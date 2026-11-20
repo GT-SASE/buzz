@@ -59,15 +59,10 @@ export async function runDailyJobs(
       "reminders",
       new Date(),
     );
-    // The run's limits assume it has the function's time to itself.
-    const spentMs = Date.now() - startedMs;
     const reminders = await runReminders({
       ...shared,
       log,
-      limits: {
-        workMs: DEFAULT_LIMITS.workMs - spentMs,
-        hardStopMs: DEFAULT_LIMITS.hardStopMs - spentMs,
-      },
+      startedAtMs: startedMs,
     });
     if (reminders.status === "failed") {
       log(`Reminder run failed: ${reminders.error ?? "unrecorded"}`);

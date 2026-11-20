@@ -327,6 +327,29 @@ describe("crashes", () => {
     expect(w.sent).toHaveLength(2);
   });
 
+  it("counts the time the lock took against the run's budget", async () => {
+    const guild = await w.guildInZone();
+    await eventsDueIn(guild, [3]);
+    let at = Date.now();
+    w.sqlGate = () => {
+      at += 15_000;
+      w.sqlGate = () => undefined;
+      return undefined;
+    };
+
+    const result = await w.run([guild], {
+      now: () => new Date(at),
+      limits: { workMs: 10_000, hardStopMs: 20_000 },
+    });
+
+    expect(result).toMatchObject({
+      status: "failed",
+      error: "reminders_incomplete",
+    });
+    expect(w.sent).toEqual([]);
+    expect((await w.jobRow()).results).toMatchObject({ deferred_deadline: 1 });
+  });
+
   // The last catch in runReminders: if it recorded nothing, the crashed run would count
   // as a success and the lock would refuse the recovery cron.
   it("records a throw outside the per-event work as failed, and the next run still sends", async () => {
