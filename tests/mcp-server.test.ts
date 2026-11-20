@@ -14,7 +14,17 @@ describe("buzz mcp server over stdio", () => {
   it("lists tools and answers read-only calls", async () => {
     const env: Record<string, string> = {};
     for (const [k, v] of Object.entries(process.env)) {
-      if (v !== undefined && k !== "DATABASE_URL") env[k] = v;
+      // The refusal check below needs no scratch DB in the server's env.
+      if (
+        v !== undefined &&
+        ![
+          "DATABASE_URL",
+          "TEST_DATABASE_URL",
+          "CONCURRENCY_DATABASE_URL",
+        ].includes(k)
+      ) {
+        env[k] = v;
+      }
     }
     // Shallow clones (GitHub CI): server returns MAJOR.MINOR.0 instead of the computed build.
     const webDir = path.join(root, "sites/web");
@@ -52,6 +62,7 @@ describe("buzz mcp server over stdio", () => {
 
       const { tools } = await client.listTools();
       expect(tools.map((t) => t.name).sort()).toEqual([
+        "buzz_bot_commands",
         "buzz_db_schema",
         "buzz_deploy_status",
         "buzz_guide",
@@ -75,6 +86,35 @@ describe("buzz mcp server over stdio", () => {
       });
       expect(mig.isError).toBeFalsy();
       expect(JSON.stringify(mig.content)).toContain("0011_page.sql");
+      expect(JSON.stringify(mig.content)).toContain(
+        "20261111000000_baseline.sql",
+      );
+
+      const text = async (name: string, args: Record<string, unknown> = {}) => {
+        const r = await client.callTool({ name, arguments: args });
+        expect(r.isError).toBeFalsy();
+        return JSON.stringify(r.content);
+      };
+      expect(await text("buzz_guide")).toContain("buzz_bot_commands");
+      expect(await text("buzz_db_schema", { database: "bot" })).toContain(
+        "table public.events",
+      );
+      expect(
+        await text("buzz_db_schema", { table: "page", database: "buzz" }),
+      ).toContain("buzz_page");
+      expect(await text("buzz_routes")).toContain("[bot cron]");
+      expect(await text("buzz_bot_commands", { filter: "event" })).toContain(
+        "/event",
+      );
+      expect(await text("buzz_version")).toContain("@buzz/discord-bot");
+
+      // The bot tasks are guarded: without a scratch DB the call is refused.
+      const refused = await client.callTool({
+        name: "buzz_run_checks",
+        arguments: { tasks: ["bot:test:db:concurrency"] },
+      });
+      expect(refused.isError).toBe(true);
+      expect(JSON.stringify(refused.content)).toContain("Refused");
     } finally {
       await client.close();
     }

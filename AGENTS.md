@@ -12,12 +12,13 @@ trusting any list in prose, including this file:
 
 - `buzz_guide` this file (also the resource `buzz://AGENTS.md`)
 - `buzz_trpc_procedures [filter]` every tRPC procedure: access, query/mutation, file:line
-- `buzz_db_schema [table]` tables, columns, keys, indexes
-- `buzz_migrations` SQL files, latest number, process
-- `buzz_routes` Next routes tagged marketing / portal member / portal admin / api
-- `buzz_version` footer version rule, computed build, README table
-- `buzz_run_checks tasks=[lint|typecheck|format|test|typecheck:tsc] [force]` runs turbo; `test` is refused unless the server env has `TEST_DATABASE_URL` on a local scratch DB
-- `buzz_deploy_status` latest main commit, its Vercel status, live footer version
+- `buzz_db_schema [table] [database=all|buzz|bot]` buzz Drizzle tables (columns, keys, indexes) and the bot's tables, enums, domains and functions with signatures, replayed from `sites/discord-bot/db/migrations` and labeled with the schema each is declared in
+- `buzz_migrations` buzz Drizzle SQL and the bot's dbmate files, latest of each, and each process (bot production migrations are a manual owner step)
+- `buzz_routes` Next routes tagged marketing / portal member / portal admin / api, plus the bot's Vercel functions and crons
+- `buzz_bot_commands [filter]` the bot's slash commands, subcommands and options, from the definitions `register-commands.ts` sends
+- `buzz_version` footer version rule, computed build, every workspace (including `@buzz/discord-bot`) with mismatches flagged, README table
+- `buzz_run_checks tasks=[lint|typecheck|format|test|typecheck:tsc|bot:test|bot:test:db|bot:test:db:concurrency] [force]` runs turbo; `test`, `bot:test` and `bot:test:db` are refused unless the server env has `TEST_DATABASE_URL` on a local scratch DB; `bot:test:db:concurrency` also needs `CONCURRENCY_DATABASE_URL` passing the same guard
+- `buzz_deploy_status` latest main commit, its Vercel status, the latest GitHub CI conclusion for main (Vercel success alone is not enough), live footer version
 
 ## Layout
 

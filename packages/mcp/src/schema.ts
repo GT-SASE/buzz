@@ -1,6 +1,7 @@
 import { is } from "drizzle-orm";
 import { getTableConfig, PgTable } from "drizzle-orm/pg-core";
 
+import { BOT_MIGRATIONS_DIR, formatBotDatabase } from "./bot-sql";
 import { readRepoFile } from "./repo";
 
 const SCHEMA_FILE = "packages/db/src/schema.ts";
@@ -9,7 +10,12 @@ const SCHEMA_FILE = "packages/db/src/schema.ts";
  * Describes the Drizzle schema. Imports the schema file directly, not the
  * `@buzz/db` index, because the index opens a database client.
  */
-export async function describeSchema(filter?: string): Promise<string> {
+export async function describeSchema(
+  filter?: string,
+  database: "all" | "buzz" | "bot" = "all",
+): Promise<string> {
+  const bot = database === "buzz" ? "" : formatBotDatabase(filter);
+  if (database === "bot") return bot;
   const schema = (await import("@buzz/db/schema")) as Record<string, unknown>;
   const source = readRepoFile(SCHEMA_FILE).split(/\r?\n/);
   const f = filter?.trim().toLowerCase();
@@ -64,5 +70,12 @@ export async function describeSchema(filter?: string): Promise<string> {
     for (const ck of cfg.checks) lines.push(`  CHECK ${ck.name}`);
     blocks.push(lines.join("\n"));
   }
-  return blocks.length ? blocks.join("\n\n") : "No matching tables.";
+  const buzz = blocks.length ? blocks.join("\n\n") : "No matching tables.";
+  if (database === "buzz") return buzz;
+  return [
+    `=== buzz database (Drizzle, ${SCHEMA_FILE}) ===`,
+    buzz,
+    `=== bot database (dbmate SQL, ${BOT_MIGRATIONS_DIR}) ===`,
+    bot,
+  ].join("\n\n");
 }
