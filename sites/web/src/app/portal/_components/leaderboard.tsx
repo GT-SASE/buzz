@@ -1,5 +1,3 @@
-"use client";
-
 import Link from "next/link";
 
 import {
@@ -13,7 +11,7 @@ import {
 } from "~/components/ui/table";
 import { cn } from "~/lib/utils";
 import { tierFor } from "~/data/portal";
-import { api } from "~/trpc/react";
+import type { RouterOutputs } from "~/trpc/react";
 
 const columnHeading =
   "text-eyebrow tracking-caps text-ink-muted px-0 font-semibold uppercase";
@@ -87,17 +85,13 @@ function Standing({
   );
 }
 
-export function Leaderboard() {
-  const standings = api.member.leaderboard.useQuery({ limit: 10 });
-
-  // Nothing at all until there is something to show. Painting the heading and
-  // a skeleton first would flash a phantom section on every load of a chapter
-  // where nobody has checked in yet, which is exactly when it is most visible.
-  // Keeping the last good data also means a failed background refetch does not
-  // tear down a board that was rendering.
-  const { data, error } = standings;
-
-  if (error && !data) {
+/** `null` means the board failed to load. */
+export function Leaderboard({
+  data,
+}: {
+  data: RouterOutputs["member"]["leaderboard"] | null;
+}) {
+  if (!data) {
     return (
       <Board>
         <p className="text-ink-muted text-body-sm mt-4">
@@ -106,8 +100,6 @@ export function Leaderboard() {
       </Board>
     );
   }
-
-  if (!data) return null;
 
   const { top, you } = data;
 

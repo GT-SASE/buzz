@@ -4,7 +4,8 @@ import { Suspense } from "react";
 
 import { PortalHeader } from "~/app/portal/_components/portal-ui";
 import { Section } from "~/components/site";
-import { HydrateClient, api } from "~/trpc/server";
+import { HydrateClient } from "~/trpc/hydrate";
+import { api } from "~/trpc/server";
 import { semester } from "@buzz/api";
 import AdminLoading from "../loading";
 import { KinAdmin } from "./kin-admin";
