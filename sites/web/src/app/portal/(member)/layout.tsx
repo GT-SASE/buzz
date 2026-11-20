@@ -1,7 +1,6 @@
 import { PortalSidebar } from "~/app/portal/_components/portal-sidebar";
 import { SignOutButton } from "~/app/portal/_components/portal-ui";
 import { SignedOutHeader } from "~/app/portal/_components/signed-out-header";
-import { PortalProviders } from "~/app/portal/providers";
 import { auth } from "@buzz/auth";
 import { isOfficerRole } from "@buzz/db";
 
@@ -40,7 +39,7 @@ export default async function MemberPortalLayout({
           tabIndex={-1}
           className="min-w-0 flex-1 focus:shadow-none focus:outline-none"
         >
-          <PortalProviders>{children}</PortalProviders>
+          {children}
         </main>
       </div>
     </>

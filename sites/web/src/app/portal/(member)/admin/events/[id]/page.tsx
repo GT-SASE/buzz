@@ -14,7 +14,8 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from "~/components/ui/breadcrumb";
-import { HydrateClient, api, hydrated } from "~/trpc/server";
+import { HydrateClient } from "~/trpc/hydrate";
+import { api, hydrated } from "~/trpc/server";
 import { EventAttendance } from "./event-attendance";
 
 const eventForPage = cache((id: string) =>

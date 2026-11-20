@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 
 import { requireOfficer } from "~/app/portal/_lib/session";
 import { Section } from "~/components/site";
+import { TRPCReactProvider } from "~/trpc/react";
 import { PageBreadcrumb } from "../page-breadcrumb";
 import { PageEditor } from "../page-editor";
 
@@ -13,7 +14,9 @@ export default async function NewPagePage() {
   return (
     <Section size="sm">
       <PageBreadcrumb current="New page" />
-      <PageEditor />
+      <TRPCReactProvider>
+        <PageEditor />
+      </TRPCReactProvider>
     </Section>
   );
 }
