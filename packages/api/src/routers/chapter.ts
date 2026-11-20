@@ -9,6 +9,7 @@ import {
   gte,
   isNull,
   lt,
+  min,
   or,
   sql,
 } from "drizzle-orm";
@@ -29,55 +30,32 @@ export const chapterRouter = createTRPCRouter({
     const now = new Date();
     const since = new Date(now.getTime() - THIRTY_DAYS_MS);
 
-    const [
-      [memberTotals],
-      [checkInTotals],
-      [checkInsLast30],
-      [liveEvents],
-      [pastEvents],
-      [upcomingEvents],
-      [pastAttendance],
-      next,
-    ] = await Promise.all([
+    // Three queries, not eight, and the tail is the reason: the pool holds
+    // five sockets, so the officer dashboard (this plus attendance, turnout
+    // and the event list, all in flight at once) used to queue behind itself.
+    // Every figure over live events and their check-ins comes from the one
+    // events LEFT JOIN check-ins scan, split with FILTER.
+    //
+    // `count(eventCheckIns.id)`, never `count(*)`: the LEFT JOIN gives an
+    // event nobody attended one row, and `count(*)` would score it as one
+    // attendee.
+    const pastFilter = sql`${events.startsAt} < ${now}`;
+    const upcomingFilter = sql`${events.startsAt} >= ${now}`;
+    const [[memberTotals], [liveTotals], next] = await Promise.all([
       ctx.db.select({ total: count() }).from(users),
       ctx.db
         .select({
-          total: count(),
-          withCheckIns: countDistinct(eventCheckIns.userId),
-        })
-        .from(eventCheckIns)
-        .innerJoin(events, eq(events.id, eventCheckIns.eventId))
-        .where(isNull(events.archivedAt)),
-      ctx.db
-        .select({ total: count() })
-        .from(eventCheckIns)
-        .innerJoin(events, eq(events.id, eventCheckIns.eventId))
-        .where(
-          and(isNull(events.archivedAt), gte(eventCheckIns.checkedInAt, since)),
-        ),
-      ctx.db
-        .select({ total: count() })
-        .from(events)
-        .where(isNull(events.archivedAt)),
-      ctx.db
-        .select({ total: count() })
-        .from(events)
-        .where(and(isNull(events.archivedAt), lt(events.startsAt, now))),
-      ctx.db
-        .select({ total: count() })
-        .from(events)
-        .where(and(isNull(events.archivedAt), gte(events.startsAt, now))),
-      // `count(eventCheckIns.id)`, never `count(*)`: the LEFT JOIN gives an
-      // event nobody attended one row, and `count(*)` would score it as one
-      // attendee.
-      ctx.db
-        .select({
           events: countDistinct(events.id),
+          pastEvents: sql<number>`count(distinct ${events.id}) filter (where ${pastFilter})`,
+          upcomingEvents: sql<number>`count(distinct ${events.id}) filter (where ${upcomingFilter})`,
           checkIns: count(eventCheckIns.id),
+          withCheckIns: countDistinct(eventCheckIns.userId),
+          checkInsLast30: sql<number>`count(${eventCheckIns.id}) filter (where ${eventCheckIns.checkedInAt} >= ${since})`,
+          pastCheckIns: sql<number>`count(${eventCheckIns.id}) filter (where ${pastFilter})`,
         })
         .from(events)
         .leftJoin(eventCheckIns, eq(eventCheckIns.eventId, events.id))
-        .where(and(isNull(events.archivedAt), lt(events.startsAt, now))),
+        .where(isNull(events.archivedAt)),
       ctx.db
         .select({
           id: events.id,
@@ -96,11 +74,11 @@ export const chapterRouter = createTRPCRouter({
         .limit(1),
     ]);
 
-    const pastCount = asInt(pastAttendance?.events);
+    const pastCount = asInt(liveTotals?.pastEvents);
     const averageAttendance =
       pastCount === 0
         ? 0
-        : Math.round((asInt(pastAttendance?.checkIns) / pastCount) * 10) / 10;
+        : Math.round((asInt(liveTotals?.pastCheckIns) / pastCount) * 10) / 10;
 
     const nextEvent = next[0]
       ? {
@@ -112,16 +90,16 @@ export const chapterRouter = createTRPCRouter({
     return {
       members: {
         total: asInt(memberTotals?.total),
-        withCheckIns: asInt(checkInTotals?.withCheckIns),
+        withCheckIns: asInt(liveTotals?.withCheckIns),
       },
       checkIns: {
-        total: asInt(checkInTotals?.total),
-        last30Days: asInt(checkInsLast30?.total),
+        total: asInt(liveTotals?.checkIns),
+        last30Days: asInt(liveTotals?.checkInsLast30),
       },
       events: {
-        total: asInt(liveEvents?.total),
-        past: asInt(pastEvents?.total),
-        upcoming: asInt(upcomingEvents?.total),
+        total: asInt(liveTotals?.events),
+        past: asInt(pastCount),
+        upcoming: asInt(liveTotals?.upcomingEvents),
         averageAttendance,
       },
       nextEvent,
@@ -227,10 +205,23 @@ export const chapterRouter = createTRPCRouter({
         // Uncapped events never bump currentCheckIns, so look at the rows.
         sql`exists (select 1 from ${eventCheckIns} as ${anyCheckIn} where ${anyCheckIn}.${sql.identifier(eventCheckIns.eventId.name)} = ${events.id})`,
       );
-      // Earlier check-ins by the same member, from the same table. An archived
-      // event counts for nothing, so it cannot make someone "returning".
-      const prior = sql.identifier("prior_check_in");
-      const priorEvent = sql.identifier("prior_event");
+      // A check-in is a first-timer's when the member has no live check-in
+      // strictly before it, i.e. it is not later than their earliest live one
+      // (an archived event counts for nothing, so it cannot make someone
+      // "returning"). That earliest time is computed once per member rather
+      // than probed per check-in with a correlated NOT EXISTS: at a semester's
+      // volume the correlated form re-scanned the event table per row and
+      // dominated the officer dashboard's p99.
+      const firstLive = ctx.db
+        .select({
+          userId: eventCheckIns.userId,
+          firstAt: min(eventCheckIns.checkedInAt).as("first_at"),
+        })
+        .from(eventCheckIns)
+        .innerJoin(events, eq(events.id, eventCheckIns.eventId))
+        .where(isNull(events.archivedAt))
+        .groupBy(eventCheckIns.userId)
+        .as("first_live");
 
       const [past, upcoming] = await Promise.all([
         ctx.db
@@ -239,19 +230,11 @@ export const chapterRouter = createTRPCRouter({
             title: events.title,
             startsAt: events.startsAt,
             checkIns: count(eventCheckIns.id),
-            firstTimers: sql<number>`count(${eventCheckIns.id}) filter (where not exists (
-              select 1 from ${eventCheckIns} as ${prior}
-              where ${prior}.${sql.identifier(eventCheckIns.userId.name)} = ${eventCheckIns.userId}
-                and ${prior}.${sql.identifier(eventCheckIns.checkedInAt.name)} < ${eventCheckIns.checkedInAt}
-                and exists (
-                  select 1 from ${events} as ${priorEvent}
-                  where ${priorEvent}.${sql.identifier(events.id.name)} = ${prior}.${sql.identifier(eventCheckIns.eventId.name)}
-                    and ${priorEvent}.${sql.identifier(events.archivedAt.name)} is null
-                )
-            ))`,
+            firstTimers: sql<number>`count(${eventCheckIns.id}) filter (where ${eventCheckIns.checkedInAt} <= ${firstLive.firstAt})`,
           })
           .from(events)
           .leftJoin(eventCheckIns, eq(eventCheckIns.eventId, events.id))
+          .leftJoin(firstLive, eq(firstLive.userId, eventCheckIns.userId))
           .where(and(inWindow, countable, isNull(events.archivedAt)))
           .groupBy(events.id)
           .orderBy(desc(events.startsAt))
