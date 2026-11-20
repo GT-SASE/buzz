@@ -67,13 +67,15 @@ jobs:
           psql -v ON_ERROR_STOP=1 -U postgres -v owner_password="${OWNER_PASSWORD}" <<'SQL'
           CREATE ROLE migration_owner LOGIN NOSUPERUSER CREATEROLE PASSWORD :'owner_password';
           CREATE DATABASE bot OWNER migration_owner;
+          \c bot migration_owner
+          CREATE SCHEMA discord_bot AUTHORIZATION migration_owner;
           SQL
       # status fails if any migration is still pending.
       - name: Apply the migrations as the owner with dbmate
         run: |
           export DATABASE_URL="postgres://migration_owner:${OWNER_PASSWORD}@localhost:5432/bot?sslmode=disable"
           bun run db:migrate
-          bun x --bun --no-install dbmate --migrations-dir db/migrations status --exit-code
+          bun x --bun --no-install dbmate --migrations-dir db/migrations --migrations-table discord_bot.schema_migrations status --exit-code
       # The owner may do this only because it made bot_app, which gave it ADMIN on the
       # role, so this also checks that grant.
       - name: Set bot_app's password as the owner

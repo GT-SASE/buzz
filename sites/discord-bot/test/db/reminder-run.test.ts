@@ -56,7 +56,7 @@ async function eventWithThread(
   const rows = await queryAs<{ id: string }>(
     w.database,
     "bot_app",
-    `INSERT INTO public.events
+    `INSERT INTO discord_bot.events
        (guild_id, channel_id, name, event_date, created_by, thread_id, thread_status)
      VALUES ($1, $2, $3, '2030-01-15', $4, $5, 'active')
      RETURNING id`,
@@ -78,7 +78,7 @@ async function task(
   const rows = await queryAs<{ id: string }>(
     w.database,
     "bot_app",
-    `INSERT INTO public.tasks (event_id, guild_id, assignee_id, description, due_date, created_by)
+    `INSERT INTO discord_bot.tasks (event_id, guild_id, assignee_id, description, due_date, created_by)
      VALUES ($1, $2, $3, $4, $5, $6)
      RETURNING id`,
     [eventId, guild.guildId, assigneeId, description, dueDate, fakeId()],
@@ -111,7 +111,7 @@ interface LogRow {
 async function logRows(taskId: string): Promise<LogRow[]> {
   const { rows } = await w.database.query<LogRow>(
     `SELECT task_id, kind, state, attempts, message_id, refused_attempts
-     FROM public.reminder_log WHERE task_id = $1 ORDER BY kind`,
+     FROM discord_bot.reminder_log WHERE task_id = $1 ORDER BY kind`,
     [taskId],
   );
   return rows;
@@ -131,11 +131,11 @@ async function staleClaim(
   await queryAs(
     w.database,
     "bot_app",
-    `SELECT public.claim_reminder($1, $2, $3)`,
+    `SELECT discord_bot.claim_reminder($1, $2, $3)`,
     [taskId, kind, dueDate],
   );
   await w.database.query(
-    `UPDATE public.reminder_log SET attempts = $2, claimed_at = now() - interval '2 hours'
+    `UPDATE discord_bot.reminder_log SET attempts = $2, claimed_at = now() - interval '2 hours'
      WHERE task_id = $1`,
     [taskId, attempts],
   );
@@ -144,18 +144,18 @@ async function staleClaim(
 /** The 17:00 cron, by which time a morning claim has gone stale. */
 async function staleAllClaims(): Promise<void> {
   await w.database.exec(
-    `UPDATE public.reminder_log SET claimed_at = now() - interval '2 hours'`,
+    `UPDATE discord_bot.reminder_log SET claimed_at = now() - interval '2 hours'`,
   );
 }
 
 /** Moves the clock on by a day as far as the lock and the claims can tell. */
 async function nextDay(): Promise<void> {
   await w.database.exec(`
-    UPDATE public.job_runs
+    UPDATE discord_bot.job_runs
     SET started_at = started_at - interval '25 hours',
         heartbeat_at = heartbeat_at - interval '25 hours'
     WHERE job_name = 'reminders';
-    UPDATE public.reminder_log SET claimed_at = claimed_at - interval '25 hours';
+    UPDATE discord_bot.reminder_log SET claimed_at = claimed_at - interval '25 hours';
   `);
 }
 
@@ -477,7 +477,7 @@ describe("targets that fail", () => {
 
     expect(result.status).toBe("succeeded");
     const { rows } = await w.database.query<{ status: string }>(
-      `SELECT status FROM public.managed_channels WHERE guild_id = $1`,
+      `SELECT status FROM discord_bot.managed_channels WHERE guild_id = $1`,
       [guild.guildId],
     );
     expect(rows).toEqual([{ status: "unavailable" }]);
@@ -584,7 +584,7 @@ describe("the repeat-ping guard", () => {
       if (method === "POST" && !changed) {
         changed = true;
         await w.database.query(
-          `UPDATE public.tasks SET assignee_id = $2, description = 'New text' WHERE id = $1`,
+          `UPDATE discord_bot.tasks SET assignee_id = $2, description = 'New text' WHERE id = $1`,
           [taskId, after],
         );
       }
@@ -623,16 +623,16 @@ describe("stale claims on tasks the plan left out", () => {
   it.each([
     [
       "its thread is missing",
-      `UPDATE public.events SET thread_status = 'missing' WHERE id = $1`,
+      `UPDATE discord_bot.events SET thread_status = 'missing' WHERE id = $1`,
     ],
     [
       "its task is done",
-      `UPDATE public.tasks SET status = 'done', completed_at = now() WHERE event_id = $1`,
+      `UPDATE discord_bot.tasks SET status = 'done', completed_at = now() WHERE event_id = $1`,
     ],
     [
       "its forum is no longer managed",
-      `UPDATE public.managed_channels SET status = 'removed'
-       WHERE (guild_id, channel_id) = (SELECT guild_id, channel_id FROM public.events WHERE id = $1)`,
+      `UPDATE discord_bot.managed_channels SET status = 'removed'
+       WHERE (guild_id, channel_id) = (SELECT guild_id, channel_id FROM discord_bot.events WHERE id = $1)`,
     ],
   ])("closes the claim as skipped when %s", async (_label, change) => {
     const guild = await w.guildInZone();
@@ -684,30 +684,30 @@ describe("each guild's own zone", () => {
 });
 
 describe("reminder claims check the task's parents", () => {
-  const turnOff = `SELECT public.apply_config_change($1, 2, $1, false)`;
+  const turnOff = `SELECT discord_bot.apply_config_change($1, 2, $1, false)`;
   /** Each change, given the guild, must stop new claims and takeovers. */
   const STOPPERS: [string, string, string][] = [
     ["reminders turned off", "bot_app", turnOff],
     [
       "the channel removed",
       MIGRATION_OWNER,
-      `UPDATE public.managed_channels SET status = 'removed' WHERE guild_id = $1`,
+      `UPDATE discord_bot.managed_channels SET status = 'removed' WHERE guild_id = $1`,
     ],
     [
       "the channel unavailable",
       "bot_app",
-      `SELECT public.mark_channel_unavailable(guild_id, channel_id)
-       FROM public.managed_channels WHERE guild_id = $1`,
+      `SELECT discord_bot.mark_channel_unavailable(guild_id, channel_id)
+       FROM discord_bot.managed_channels WHERE guild_id = $1`,
     ],
     [
       "the event closed",
       "bot_app",
-      `UPDATE public.events SET status = 'closed' WHERE guild_id = $1`,
+      `UPDATE discord_bot.events SET status = 'closed' WHERE guild_id = $1`,
     ],
     [
       "the event deleted with its task left live",
       MIGRATION_OWNER,
-      `UPDATE public.events SET deleted_at = now() WHERE guild_id = $1`,
+      `UPDATE discord_bot.events SET deleted_at = now() WHERE guild_id = $1`,
     ],
   ];
 
@@ -735,17 +735,17 @@ describe("reminder claims check the task's parents", () => {
 
   const claim = (taskId: string) =>
     tokenOf(
-      `SELECT public.claim_reminder($1, 'due_day', '${FIXTURE_DUE_DATE}') AS token`,
+      `SELECT discord_bot.claim_reminder($1, 'due_day', '${FIXTURE_DUE_DATE}') AS token`,
       [taskId],
     );
 
   async function staleThenReclaim(taskId: string, token: string | null) {
     await w.database.query(
-      `UPDATE public.reminder_log SET claimed_at = now() - interval '2 hours' WHERE task_id = $1`,
+      `UPDATE discord_bot.reminder_log SET claimed_at = now() - interval '2 hours' WHERE task_id = $1`,
       [taskId],
     );
     return tokenOf(
-      `SELECT public.reclaim_reminder($1, 'due_day', '${FIXTURE_DUE_DATE}', $2, 120) AS token`,
+      `SELECT discord_bot.reclaim_reminder($1, 'due_day', '${FIXTURE_DUE_DATE}', $2, 120) AS token`,
       [taskId, token ?? ""],
     );
   }
@@ -773,7 +773,7 @@ describe("reminder claims check the task's parents", () => {
     await stop(role, sql);
     expect(await staleThenReclaim(taskId, token)).toBeNull();
     const { rows } = await w.database.query(
-      `SELECT attempts, claim_token AS token FROM public.reminder_log WHERE task_id = $1`,
+      `SELECT attempts, claim_token AS token FROM discord_bot.reminder_log WHERE task_id = $1`,
       [taskId],
     );
     expect(rows).toEqual([{ attempts: 1, token }]);
@@ -841,7 +841,7 @@ describe("the job lock", () => {
     try {
       await insertRun("succeeded", new Date(currentSlot().getTime() - 1000));
       expect(await beginOk()).not.toBeNull();
-      await w.database.exec(`DELETE FROM public.job_runs`);
+      await w.database.exec(`DELETE FROM discord_bot.job_runs`);
       await insertRun("succeeded", currentSlot());
       expect(await beginOk()).toBeNull();
     } finally {
@@ -852,19 +852,19 @@ describe("the job lock", () => {
   it("closes a run the platform killed and starts a new one", async () => {
     const dead = present(await beginOk());
     await w.database.query(
-      `UPDATE public.job_runs SET heartbeat_at = now() - interval '3 minutes'`,
+      `UPDATE discord_bot.job_runs SET heartbeat_at = now() - interval '3 minutes'`,
     );
     expect(present(await beginOk())).not.toBe(dead);
     const { rows } = await w.database.query(
-      `SELECT status, error FROM public.job_runs WHERE id = $1`,
+      `SELECT status, error FROM discord_bot.job_runs WHERE id = $1`,
       [dead],
     );
     expect(rows).toEqual([{ status: "failed", error: "abandoned" }]);
   });
 
   it.each([
-    `SELECT public.begin_job_run('reminders', 1, now())`,
-    `SELECT public.finish_job_run(gen_random_uuid(), now(), '{}', NULL)`,
+    `SELECT discord_bot.begin_job_run('reminders', 1, now())`,
+    `SELECT discord_bot.finish_job_run(gen_random_uuid(), now(), '{}', NULL)`,
   ])("is closed to a role with no grants: %s", async (sql) => {
     expect(await errorCodeOf(queryAs(w.database, OTHER_ROLE, sql))).toBe(
       INSUFFICIENT_PRIVILEGE,
@@ -896,7 +896,7 @@ describe("the health check", () => {
 
   async function channelStatus(guild: GuildFixture) {
     const { rows } = await w.database.query<{ status: string }>(
-      `SELECT status FROM public.managed_channels WHERE guild_id = $1`,
+      `SELECT status FROM discord_bot.managed_channels WHERE guild_id = $1`,
       [guild.guildId],
     );
     return rows[0]?.status;
@@ -956,7 +956,7 @@ describe("the health check", () => {
       state: "fresh",
       ageHours: 0,
     });
-    await w.database.exec(`DELETE FROM public.job_runs`);
+    await w.database.exec(`DELETE FROM discord_bot.job_runs`);
     await succeededRun("reminders", 30);
     expect(await jobFreshness(w.db, "reminders", new Date())).toEqual({
       state: "stale",
@@ -992,7 +992,7 @@ describe("the health check", () => {
     const guild = await w.guildInZone();
     expect(await daily(guild)).toBe(true);
     const { rows } = await w.database.query(
-      `SELECT job_name, status FROM public.job_runs ORDER BY job_name`,
+      `SELECT job_name, status FROM discord_bot.job_runs ORDER BY job_name`,
     );
     expect(rows).toEqual([
       { job_name: "health_check", status: "succeeded" },
@@ -1059,7 +1059,7 @@ describe("the cron endpoint", () => {
     await guildWithTaskDue();
     if (locked) {
       await w.database.exec(
-        `INSERT INTO public.job_runs (job_name) VALUES ('reminders'), ('health_check')`,
+        `INSERT INTO discord_bot.job_runs (job_name) VALUES ('reminders'), ('health_check')`,
       );
     }
 
@@ -1103,7 +1103,7 @@ describe("the cron endpoint", () => {
     w.discordGate = async (method) => {
       if (method !== "POST") {
         await w.database.query(
-          `UPDATE public.managed_channels SET status = 'removed' WHERE guild_id = $1`,
+          `UPDATE discord_bot.managed_channels SET status = 'removed' WHERE guild_id = $1`,
           [guild.guildId],
         );
       }

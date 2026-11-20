@@ -38,7 +38,7 @@ async function event(
   const rows = await queryAs<{ id: string }>(
     w.database,
     "bot_app",
-    `INSERT INTO public.events
+    `INSERT INTO discord_bot.events
        (guild_id, channel_id, name, event_date, created_by, thread_id, thread_status)
      VALUES ($1, $2, $3, $4, $5, $6, 'active') RETURNING id`,
     [
@@ -107,7 +107,7 @@ async function logRows(eventId: string) {
     attempts: number;
   }>(
     `SELECT kind, to_char(reminder_date, 'YYYY-MM-DD') AS reminder_date, state, attempts
-     FROM public.event_reminder_log WHERE event_id = $1 ORDER BY kind, reminder_date`,
+     FROM discord_bot.event_reminder_log WHERE event_id = $1 ORDER BY kind, reminder_date`,
     [eventId],
   );
   return rows;
@@ -124,7 +124,7 @@ async function claimAgo(
   minutes: number,
 ): Promise<void> {
   await w.database.query(
-    `INSERT INTO public.event_reminder_log (event_id, kind, reminder_date, claimed_at)
+    `INSERT INTO discord_bot.event_reminder_log (event_id, kind, reminder_date, claimed_at)
      VALUES ($1, 'event_today', $2, now() - make_interval(mins => $3))`,
     [eventId, reminderDate, minutes],
   );
@@ -138,7 +138,7 @@ async function slidesNotNeeded(made: EventFixture): Promise<void> {
 async function engageDoneOn(made: EventFixture, day: string): Promise<void> {
   await complete(made, "engage_post");
   await w.database.query(
-    `UPDATE public.event_steps SET completed_at = $2
+    `UPDATE discord_bot.event_steps SET completed_at = $2
      WHERE event_id = $1 AND kind = 'engage_post'`,
     [made.eventId, `${day}T12:00:00Z`],
   );
@@ -166,8 +166,8 @@ async function configChange(
   await queryAs(
     w.database,
     "bot_app",
-    `SELECT public.apply_config_change($1,
-       (SELECT version FROM public.guild_config WHERE guild_id = $1), $1, $2,
+    `SELECT discord_bot.apply_config_change($1,
+       (SELECT version FROM discord_bot.guild_config WHERE guild_id = $1), $1, $2,
        $3::text[], $4::text[])`,
     [guild.guildId, ...change],
   );
@@ -403,7 +403,7 @@ describe("countdown pings", () => {
     const guild = await w.guildInZone();
     const events = [await event(guild, 0), await event(guild, 7)];
     await w.database.query(
-      `UPDATE public.events SET status = 'closed' WHERE id = ANY($1)`,
+      `UPDATE discord_bot.events SET status = 'closed' WHERE id = ANY($1)`,
       [events.map((made) => made.eventId)],
     );
 
@@ -554,7 +554,7 @@ describe("claims left by an earlier run", () => {
       await pause(guild, true);
       // Lets another run start in this slot, as after a failed run.
       await w.database.query(
-        `UPDATE public.job_runs SET status = 'failed', error = 'test' WHERE job_name = 'reminders'`,
+        `UPDATE discord_bot.job_runs SET status = 'failed', error = 'test' WHERE job_name = 'reminders'`,
       );
       await w.run([guild]);
 
@@ -570,7 +570,7 @@ describe("claims left by an earlier run", () => {
     const made = await event(guild, 0);
     await claimAgo(made.eventId, dateOffset(0), 90);
     await w.database.query(
-      `UPDATE public.event_reminder_log SET attempts = 2 WHERE event_id = $1`,
+      `UPDATE discord_bot.event_reminder_log SET attempts = 2 WHERE event_id = $1`,
       [made.eventId],
     );
 
@@ -600,7 +600,7 @@ describe("what stops event reminders", () => {
     const guild = await w.guildInZone();
     const made = await event(guild, 0);
     await w.database.query(
-      `UPDATE public.events SET thread_status = 'missing' WHERE id = $1`,
+      `UPDATE discord_bot.events SET thread_status = 'missing' WHERE id = $1`,
       [made.eventId],
     );
 

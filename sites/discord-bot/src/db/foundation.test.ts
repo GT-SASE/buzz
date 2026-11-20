@@ -82,7 +82,7 @@ describe("client", () => {
 
 describe("the sql tag", () => {
   it("sends every value as a parameter, never as text", () => {
-    const hostile = "x'); DROP TABLE public.tasks; --";
+    const hostile = "x'); DROP TABLE discord_bot.tasks; --";
     const query = sql`select id from tasks where description = ${hostile} and guild_id = ${"1"}`;
     expect(query.text).toBe(
       "select id from tasks where description = $1 and guild_id = $2",

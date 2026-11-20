@@ -44,7 +44,7 @@ async function eventWithTask(assignee = fakeId()) {
 }
 
 describe("a retried interaction", () => {
-  const claimSql = "SELECT public.claim_interaction($1)";
+  const claimSql = "SELECT discord_bot.claim_interaction($1)";
 
   it.each([
     ["only one of the two deliveries", "COMMIT", false],
@@ -66,7 +66,7 @@ describe("a double click on Done", () => {
 
     const second = await db.race(
       [
-        `UPDATE public.tasks SET status = 'done', completed_at = now()
+        `UPDATE discord_bot.tasks SET status = 'done', completed_at = now()
          WHERE id = $1 AND guild_id = $2 AND assignee_id = $3
            AND status = 'open' AND deleted_at IS NULL
          RETURNING id`,
@@ -83,7 +83,7 @@ describe("a double click on Done", () => {
 
     expect(second).toEqual(NOT_FOUND);
     const { rows } = await db.observer.query(
-      "SELECT status FROM public.tasks WHERE id = $1",
+      "SELECT status FROM discord_bot.tasks WHERE id = $1",
       [taskId],
     );
     expect(rows).toEqual([{ status: "done" }]);
@@ -94,7 +94,7 @@ describe("a double click on Done", () => {
 
     const second = await db.race(
       [
-        "SELECT public.complete_event_step($1, $2, 'budget_sheet', $3)",
+        "SELECT discord_bot.complete_event_step($1, $2, 'budget_sheet', $3)",
         [eventId, guildId, fakeId()],
       ],
       (bot) =>
@@ -114,13 +114,13 @@ describe("a double click on Done", () => {
     await queryAs(
       db.connection,
       "bot_app",
-      "SELECT public.complete_event_step($1, $2, 'budget_sheet', $3)",
+      "SELECT discord_bot.complete_event_step($1, $2, 'budget_sheet', $3)",
       [eventId, guildId, fakeId()],
     );
 
     const second = await db.race(
       [
-        "SELECT public.claim_step_handoff($1, $2, 'budget_sheet')",
+        "SELECT discord_bot.claim_step_handoff($1, $2, 'budget_sheet')",
         [eventId, guildId],
       ],
       (bot) =>
@@ -129,7 +129,7 @@ describe("a double click on Done", () => {
 
     expect(second).toEqual({ ok: true, value: false });
     const { rows } = await db.observer.query(
-      `SELECT handoff_claimed_at IS NOT NULL AS claimed FROM public.event_steps
+      `SELECT handoff_claimed_at IS NOT NULL AS claimed FROM discord_bot.event_steps
        WHERE event_id = $1 AND kind = 'budget_sheet'`,
       [eventId],
     );
@@ -139,11 +139,11 @@ describe("a double click on Done", () => {
 
 describe("a task change racing another change", () => {
   // edit_task with the task's own date, as an edit through the bot sends it.
-  const editSql = `SELECT public.edit_task(task.id, task.guild_id, task.updated_at,
+  const editSql = `SELECT discord_bot.edit_task(task.id, task.guild_id, task.updated_at,
                      $2, task.due_date, $3, $4) AS task
-                   FROM public.tasks AS task WHERE task.id = $1`;
+                   FROM discord_bot.tasks AS task WHERE task.id = $1`;
   const closeSql =
-    "UPDATE public.events SET status = 'closed' WHERE id = $1 RETURNING id";
+    "UPDATE discord_bot.events SET status = 'closed' WHERE id = $1 RETURNING id";
 
   it("a Done click waiting on a reassign finds the task no longer the clicker's", async () => {
     const { guildId, taskId, assignee } = await eventWithTask();
@@ -162,7 +162,7 @@ describe("a task change racing another change", () => {
 
     expect(second).toEqual(NOT_FOUND);
     const { rows } = await db.observer.query(
-      "SELECT status, assignee_id FROM public.tasks WHERE id = $1",
+      "SELECT status, assignee_id FROM discord_bot.tasks WHERE id = $1",
       [taskId],
     );
     expect(rows).toEqual([{ status: "open", assignee_id: newAssignee }]);
@@ -190,7 +190,7 @@ describe("a task change racing another change", () => {
 
     expect(second).toEqual(PARENT_UNAVAILABLE);
     const { rows } = await db.observer.query(
-      "SELECT description FROM public.tasks WHERE id = $1",
+      "SELECT description FROM discord_bot.tasks WHERE id = $1",
       [taskId],
     );
     expect(rows).toEqual([{ description: "Book the room" }]);
@@ -215,7 +215,7 @@ describe("a delete racing an insert under it", () => {
 
     const second = await db.race(
       [
-        `INSERT INTO public.tasks (event_id, guild_id, assignee_id, description, due_date, created_by)
+        `INSERT INTO discord_bot.tasks (event_id, guild_id, assignee_id, description, due_date, created_by)
          VALUES ($1, $2, $3, 'Book the room', '2030-01-10', $3)`,
         [eventId, guild.guildId, fakeId()],
       ],
@@ -224,7 +224,7 @@ describe("a delete racing an insert under it", () => {
 
     expect(second).toEqual({ ok: true, value: 1 });
     const { rows } = await db.observer.query(
-      "SELECT count(*)::int AS n FROM public.tasks WHERE event_id = $1 AND deleted_at IS NULL",
+      "SELECT count(*)::int AS n FROM discord_bot.tasks WHERE event_id = $1 AND deleted_at IS NULL",
       [eventId],
     );
     expect(rows).toEqual([{ n: 0 }]);
@@ -235,7 +235,10 @@ describe("a delete racing an insert under it", () => {
     const eventId = await insertEvent(db.connection, guild);
 
     const second = await db.race(
-      ["SELECT public.soft_delete_event($1, $2)", [eventId, guild.guildId]],
+      [
+        "SELECT discord_bot.soft_delete_event($1, $2)",
+        [eventId, guild.guildId],
+      ],
       (bot) =>
         createTask(bot, {
           guildId: guild.guildId,
@@ -255,7 +258,7 @@ describe("a delete racing an insert under it", () => {
 
     const second = await db.race(
       [
-        "SELECT public.apply_config_change($1, 2, $2, NULL, NULL, ARRAY[$3]::text[])",
+        "SELECT discord_bot.apply_config_change($1, 2, $2, NULL, NULL, ARRAY[$3]::text[])",
         [guild.guildId, fakeId(), guild.channelId],
       ],
       (bot) =>

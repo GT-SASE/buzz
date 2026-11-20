@@ -21,8 +21,8 @@ const ROUNDS = 25;
  * both get past it, as they can once a run's lock has gone stale.
  */
 const db = raceDatabase();
-const beginSql = "SELECT public.begin_job_run($1, 120, $2) AS id";
-const finishSql = `SELECT public.finish_job_run($1, now(), '{}', NULL) AS rows`;
+const beginSql = "SELECT discord_bot.begin_job_run($1, 120, $2) AS id";
+const finishSql = `SELECT discord_bot.finish_job_run($1, now(), '{}', NULL) AS rows`;
 const slot = () => new Date(slotStart(new Date()));
 
 describe("two overlapping reminder runs", () => {
@@ -53,7 +53,7 @@ describe("two overlapping reminder runs", () => {
 
     expect(second).toEqual({ ok: true, value: null });
     const statuses = await db.observer.query(
-      "SELECT status FROM public.job_runs WHERE job_name = 'health_check'",
+      "SELECT status FROM discord_bot.job_runs WHERE job_name = 'health_check'",
     );
     expect(statuses.rows).toEqual([{ status: "succeeded" }]);
   });
@@ -64,7 +64,10 @@ describe("two overlapping reminder runs", () => {
     const taskId = await insertTask(db.connection, guild, eventId);
 
     const second = await db.race(
-      ["SELECT public.claim_reminder($1, 'one_day', '2030-01-10')", [taskId]],
+      [
+        "SELECT discord_bot.claim_reminder($1, 'one_day', '2030-01-10')",
+        [taskId],
+      ],
       (bot) =>
         claimReminder(bot, {
           taskId,
@@ -75,7 +78,7 @@ describe("two overlapping reminder runs", () => {
 
     expect(second).toEqual({ ok: true, value: null });
     const { rows } = await db.observer.query(
-      "SELECT attempts, state FROM public.reminder_log WHERE task_id = $1",
+      "SELECT attempts, state FROM discord_bot.reminder_log WHERE task_id = $1",
       [taskId],
     );
     expect(rows).toEqual([{ attempts: 1, state: "claimed" }]);
@@ -89,7 +92,7 @@ describe("two overlapping reminder runs", () => {
 
     const second = await db.race(
       [
-        "SELECT public.claim_event_reminder($1, 'daily_steps', $2)",
+        "SELECT discord_bot.claim_event_reminder($1, 'daily_steps', $2)",
         [eventId, today],
       ],
       (bot) =>
@@ -102,7 +105,7 @@ describe("two overlapping reminder runs", () => {
 
     expect(second).toEqual({ ok: true, value: null });
     const { rows } = await db.observer.query(
-      "SELECT count(*)::int AS n FROM public.event_reminder_log WHERE event_id = $1",
+      "SELECT count(*)::int AS n FROM discord_bot.event_reminder_log WHERE event_id = $1",
       [eventId],
     );
     expect(rows).toEqual([{ n: 1 }]);
@@ -116,7 +119,7 @@ describe("two overlapping reminder runs", () => {
  */
 describe("the job lock", () => {
   const beginOwnSql =
-    "SELECT public.begin_job_run($1, 120, now() - interval '1 hour') AS id";
+    "SELECT discord_bot.begin_job_run($1, 120, now() - interval '1 hour') AS id";
   const newJob = () => `lock_order_${fakeId()}`;
 
   async function startRun(jobName: string): Promise<string> {
@@ -128,7 +131,7 @@ describe("the job lock", () => {
 
   async function statuses(jobName: string): Promise<string[]> {
     const { rows } = await db.observer.query<{ status: string }>(
-      "SELECT status FROM public.job_runs WHERE job_name = $1 ORDER BY status",
+      "SELECT status FROM discord_bot.job_runs WHERE job_name = $1 ORDER BY status",
       [jobName],
     );
     return rows.map((row) => row.status);

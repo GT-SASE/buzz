@@ -155,7 +155,7 @@ describe("database layer against the real schema", () => {
     }>(
       `SELECT status, assignee_id, deleted_at IS NOT NULL AS deleted, description,
               due_date::text AS due_date
-       FROM public.tasks WHERE id = $1`,
+       FROM discord_bot.tasks WHERE id = $1`,
       [taskId],
     );
     return rows[0];
@@ -164,7 +164,7 @@ describe("database layer against the real schema", () => {
   const eventState = async (eventId: string) => {
     const { rows } = await pg.query(
       `SELECT thread_status, overview_message_id, deleted_at IS NOT NULL AS deleted
-       FROM public.events WHERE id = $1`,
+       FROM discord_bot.events WHERE id = $1`,
       [eventId],
     );
     return rows[0];
@@ -326,7 +326,7 @@ describe("database layer against the real schema", () => {
       expect(await claim()).toBe(true);
       expect(await claim()).toBe(false);
       await pg.query(
-        `UPDATE public.events SET post_attempt_at = now() - interval '1 day' WHERE id = $1`,
+        `UPDATE discord_bot.events SET post_attempt_at = now() - interval '1 day' WHERE id = $1`,
         [event.id],
       );
       expect(await claim()).toBe(false);
@@ -341,7 +341,7 @@ describe("database layer against the real schema", () => {
     it("lists active events first at the cap, then the latest dates", async () => {
       const own = await insertGuild(pg);
       await pg.query(
-        `INSERT INTO public.events
+        `INSERT INTO discord_bot.events
            (guild_id, channel_id, name, event_date, created_by, status)
          SELECT $1::text, $2::text, 'Old ' || n, date '2030-01-15', $3::text, 'closed'
          FROM generate_series(1, 101) AS n`,
@@ -563,7 +563,7 @@ describe("database layer against the real schema", () => {
       const stamped = async () =>
         (
           await pg.query<{ deleted_at: Date }>(
-            `SELECT deleted_at FROM public.tasks WHERE id = $1`,
+            `SELECT deleted_at FROM discord_bot.tasks WHERE id = $1`,
             [taskId],
           )
         ).rows[0]?.deleted_at;
@@ -712,7 +712,7 @@ describe("database layer against the real schema", () => {
           await queryAs(
             pg,
             MIGRATION_OWNER,
-            `UPDATE public.events SET deleted_at = now() WHERE id = $1`,
+            `UPDATE discord_bot.events SET deleted_at = now() WHERE id = $1`,
             [eventId],
           );
           return { ok: true, value: null };
@@ -827,7 +827,7 @@ describe("database layer against the real schema", () => {
         });
 
         const { rows } = await pg.query<{ id: string }>(
-          `SELECT id FROM public.tasks WHERE event_id = $1 LIMIT 1`,
+          `SELECT id FROM discord_bot.tasks WHERE event_id = $1 LIMIT 1`,
           [eventId],
         );
         const taskId = rows[0]?.id ?? "";
@@ -841,7 +841,7 @@ describe("database layer against the real schema", () => {
         const secondEvent = await insertEvent(pg, own);
         await fill(eventId, OFFICER_DAILY_LIMIT, () => actorId);
         await pg.query(
-          `UPDATE public.tasks SET deleted_at = now() WHERE event_id = $1`,
+          `UPDATE discord_bot.tasks SET deleted_at = now() WHERE event_id = $1`,
           [eventId],
         );
 
@@ -888,7 +888,7 @@ describe("database layer against the real schema", () => {
         }
         expect(await newTaskOn(eventId, fakeId(), actorId)).toEqual(actorLimit);
         await pg.query(
-          `UPDATE public.task_reassignments SET created_at = now() - interval '25 hours'
+          `UPDATE discord_bot.task_reassignments SET created_at = now() - interval '25 hours'
            WHERE actor_id = $1`,
           [actorId],
         );
@@ -908,7 +908,7 @@ describe("database layer against the real schema", () => {
           reassignAs(db, { guildId: own.guildId, actorId, taskId: task.id });
         expect(await reassign()).toEqual(actorLimit);
         await pg.query(
-          `UPDATE public.tasks SET created_at = now() - interval '25 hours'
+          `UPDATE discord_bot.tasks SET created_at = now() - interval '25 hours'
            WHERE created_by = $1`,
           [actorId],
         );
@@ -926,13 +926,13 @@ describe("database layer against the real schema", () => {
 
     const age = (taskId: string) =>
       pg.query(
-        `UPDATE public.reminder_log SET claimed_at = now() - interval '2 hours' WHERE task_id = $1`,
+        `UPDATE discord_bot.reminder_log SET claimed_at = now() - interval '2 hours' WHERE task_id = $1`,
         [taskId],
       );
 
     const logState = async (taskId: string) => {
       const { rows } = await pg.query<{ state: string }>(
-        `SELECT state FROM public.reminder_log WHERE task_id = $1`,
+        `SELECT state FROM discord_bot.reminder_log WHERE task_id = $1`,
         [taskId],
       );
       return rows[0]?.state;
@@ -1104,7 +1104,7 @@ describe("database layer against the real schema", () => {
       const rows = await queryAs<{ id: string }>(
         pg,
         "bot_app",
-        `INSERT INTO public.events (guild_id, channel_id, name, event_date, created_by)
+        `INSERT INTO discord_bot.events (guild_id, channel_id, name, event_date, created_by)
        VALUES ($1, $2, 'Workflow', $3, $4) RETURNING id`,
         [guild.guildId, guild.channelId, eventDate, fakeId()],
       );
@@ -1126,7 +1126,7 @@ describe("database layer against the real schema", () => {
         expect((await workflow(eventId))?.assignees).toEqual([]);
         const { rows } = await pg.query(
           `SELECT removed_by, removed_at IS NOT NULL AS removed
-         FROM public.event_step_assignees WHERE event_id = $1`,
+         FROM discord_bot.event_step_assignees WHERE event_id = $1`,
           [eventId],
         );
         expect(rows).toEqual([
@@ -1390,7 +1390,7 @@ describe("database layer against the real schema", () => {
       const twoHoursOn = new Date(now.getTime() + 2 * 3_600_000);
       expect(await read(secondPrint, actorId, twoHoursOn)).toBeNull();
       const { rows } = await pg.query(
-        `SELECT count(*)::int AS count FROM public.setup_drafts WHERE guild_id = $1`,
+        `SELECT count(*)::int AS count FROM discord_bot.setup_drafts WHERE guild_id = $1`,
         [guildId],
       );
       expect(rows).toEqual([{ count: 1 }]);

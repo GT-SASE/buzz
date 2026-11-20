@@ -77,7 +77,7 @@ export async function beginJobRun(
 ): Promise<DbResult<string | null>> {
   return callFunction<string | null>(
     db,
-    sql`select public.begin_job_run(p_job_name => ${jobName},
+    sql`select discord_bot.begin_job_run(p_job_name => ${jobName},
       p_stale_after_seconds => ${staleAfterSeconds},
       p_slot_start => ${slotStart.toISOString()}) as value`,
   );
@@ -105,7 +105,7 @@ export async function finishJobRun(
   // The function returns the finished row in a JSON array, empty if it finished nothing.
   const finished = await callFunction<JobRun[]>(
     db,
-    sql`select public.finish_job_run(p_id => ${id},
+    sql`select discord_bot.finish_job_run(p_id => ${id},
       p_finished_at => ${now.toISOString()},
       p_results => ${JSON.stringify(results)}::jsonb,
       p_error => ${error === null ? null : errorSummary(error)}) as value`,
@@ -122,7 +122,7 @@ export async function getLatestJobRun(
       db,
       sql`select id, job_name, status, started_at, heartbeat_at, finished_at, results,
         error
-      from job_runs where job_name = ${jobName}
+      from discord_bot.job_runs where job_name = ${jobName}
       order by started_at desc limit 1`,
     ),
   );
@@ -138,7 +138,7 @@ export async function getLatestSucceededJobRun(
       db,
       sql`select id, job_name, status, started_at, heartbeat_at, finished_at, results,
         error
-      from job_runs where job_name = ${jobName} and status = 'succeeded'
+      from discord_bot.job_runs where job_name = ${jobName} and status = 'succeeded'
       order by started_at desc limit 1`,
     ),
   );

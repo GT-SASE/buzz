@@ -51,14 +51,14 @@ describe("the bot's role over a real connection", () => {
   });
 
   it.each([
-    "DELETE FROM public.tasks",
-    "DELETE FROM public.interaction_claims",
-    "TRUNCATE public.tasks",
-    "TRUNCATE public.config_audit",
-    "ALTER TABLE public.tasks DISABLE TRIGGER ALL",
-    "CREATE TABLE public.forged (id int)",
-    "SELECT * FROM history.row_versions",
-    "INSERT INTO public.task_reassignments (guild_id, actor_id, task_id) VALUES ('1', '1', gen_random_uuid())",
+    "DELETE FROM discord_bot.tasks",
+    "DELETE FROM discord_bot.interaction_claims",
+    "TRUNCATE discord_bot.tasks",
+    "TRUNCATE discord_bot.config_audit",
+    "ALTER TABLE discord_bot.tasks DISABLE TRIGGER ALL",
+    "CREATE TABLE discord_bot.forged (id int)",
+    "SELECT * FROM discord_bot.row_versions",
+    "INSERT INTO discord_bot.task_reassignments (guild_id, actor_id, task_id) VALUES ('1', '1', gen_random_uuid())",
     "SET ROLE migration_owner",
   ])("cannot run %s", async (sql) => {
     expect(await errorCodeOf(db.t1.query(sql))).toBe(INSUFFICIENT_PRIVILEGE);
@@ -81,9 +81,9 @@ describe("the bot's role over a real connection", () => {
  */
 describe("two config saves at once", () => {
   const changeSql =
-    "SELECT public.apply_config_change($1, $2, $3, $4) AS version";
+    "SELECT discord_bot.apply_config_change($1, $2, $3, $4) AS version";
   const bindingsSql =
-    "SELECT public.apply_role_bindings($1, $2, $3, $4, $5, $6, $7, $8, $9) AS version";
+    "SELECT discord_bot.apply_role_bindings($1, $2, $3, $4, $5, $6, $7, $8, $9) AS version";
 
   /** Arguments after the version for a full set of role bindings: actor, then roles. */
   const roles = () => Array.from({ length: 7 }, () => fakeId());
@@ -116,7 +116,7 @@ describe("two config saves at once", () => {
 
   async function auditCount(guildId: string): Promise<number> {
     const { rows } = await db.observer.query<{ n: number }>(
-      "SELECT count(*)::int AS n FROM public.config_audit WHERE guild_id = $1",
+      "SELECT count(*)::int AS n FROM discord_bot.config_audit WHERE guild_id = $1",
       [guildId],
     );
     return rows[0]?.n ?? -1;
@@ -144,7 +144,7 @@ describe("two config saves at once", () => {
 
       expect(second).toEqual(expected);
       const { rows } = await db.observer.query(
-        "SELECT version, reminders_enabled FROM public.guild_config WHERE guild_id = $1",
+        "SELECT version, reminders_enabled FROM discord_bot.guild_config WHERE guild_id = $1",
         [guildId],
       );
       expect(rows).toEqual([{ version: 3, reminders_enabled: enabled }]);
@@ -186,7 +186,7 @@ describe("two config saves at once", () => {
 
       expect(second).toEqual(expected);
       const { rows } = await db.observer.query(
-        "SELECT version, officer_role_id FROM public.guild_config WHERE guild_id = $1",
+        "SELECT version, officer_role_id FROM discord_bot.guild_config WHERE guild_id = $1",
         [guildId],
       );
       // The first setup keeps its roles unless it rolled back.
@@ -205,13 +205,13 @@ describe("two config saves at once", () => {
  * and only one may get it.
  */
 describe("two writes for the last place under a quota", () => {
-  const insertBySql = `INSERT INTO public.tasks (event_id, guild_id, assignee_id, description, due_date, created_by)
+  const insertBySql = `INSERT INTO discord_bot.tasks (event_id, guild_id, assignee_id, description, due_date, created_by)
                        VALUES ($1, $2, $3, 'Book the room', '${FIXTURE_DUE_DATE}', $4) RETURNING id`;
   // edit_task with the task's own text and date and a new person, which counts as a
   // reassignment by the actor.
-  const reassignSql = `SELECT public.edit_task(task.id, task.guild_id, task.updated_at,
+  const reassignSql = `SELECT discord_bot.edit_task(task.id, task.guild_id, task.updated_at,
                          task.description, task.due_date, $2, $3) AS task
-                       FROM public.tasks AS task WHERE task.id = $1`;
+                       FROM discord_bot.tasks AS task WHERE task.id = $1`;
   const actorLimit = {
     ok: false,
     error: { category: "actor_task_limit", code: "CF430" },
@@ -225,8 +225,8 @@ describe("two writes for the last place under a quota", () => {
   /** New tasks and reassignments by one officer, the two things the daily quota counts. */
   function officerActions(guildId: string, officer: string): Promise<number> {
     return countOf(
-      `SELECT (SELECT count(*) FROM public.tasks WHERE guild_id = $1 AND created_by = $2)::int
-            + (SELECT count(*) FROM public.task_reassignments WHERE guild_id = $1 AND actor_id = $2)::int AS n`,
+      `SELECT (SELECT count(*) FROM discord_bot.tasks WHERE guild_id = $1 AND created_by = $2)::int
+            + (SELECT count(*) FROM discord_bot.task_reassignments WHERE guild_id = $1 AND actor_id = $2)::int AS n`,
       [guildId, officer],
     );
   }
@@ -292,7 +292,7 @@ describe("two writes for the last place under a quota", () => {
     });
     expect(
       await countOf(
-        "SELECT count(*)::int AS n FROM public.tasks WHERE event_id = $1 AND deleted_at IS NULL",
+        "SELECT count(*)::int AS n FROM discord_bot.tasks WHERE event_id = $1 AND deleted_at IS NULL",
         [eventId],
       ),
     ).toBe(100);
@@ -361,8 +361,8 @@ describe("two writes for the last place under a quota", () => {
  */
 describe("a task update against its event's soft delete", () => {
   const softDeleteSql =
-    "SELECT public.soft_delete_event($1, $2) AS deleted_tasks";
-  const markDoneSql = `UPDATE public.tasks SET status = 'done', completed_at = now()
+    "SELECT discord_bot.soft_delete_event($1, $2) AS deleted_tasks";
+  const markDoneSql = `UPDATE discord_bot.tasks SET status = 'done', completed_at = now()
                        WHERE id = $1 AND deleted_at IS NULL`;
 
   async function eventWithTasks(count: number) {
@@ -383,7 +383,7 @@ describe("a task update against its event's soft delete", () => {
     // its guard has not yet asked for the event.
     await db.t1.query("BEGIN");
     await db.t1.query(
-      "SELECT id FROM public.tasks WHERE id = $1 FOR NO KEY UPDATE",
+      "SELECT id FROM discord_bot.tasks WHERE id = $1 FOR NO KEY UPDATE",
       [taskId],
     );
     const deleted = settled(db.t2.query(softDeleteSql, [eventId, guildId]));
@@ -399,7 +399,7 @@ describe("a task update against its event's soft delete", () => {
     expect(await deleted).toEqual({ rows: [{ deleted_tasks: 1 }] });
     const { rows } = await db.observer.query(
       `SELECT t.status, t.deleted_at IS NOT NULL AS task_gone, e.deleted_at IS NOT NULL AS event_gone
-       FROM public.tasks t JOIN public.events e ON e.id = t.event_id
+       FROM discord_bot.tasks t JOIN discord_bot.events e ON e.id = t.event_id
        WHERE t.id = $1`,
       [taskId],
     );

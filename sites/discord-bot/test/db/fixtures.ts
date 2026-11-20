@@ -35,7 +35,7 @@ export async function insertGuild(
   await queryAs(
     db,
     "bot_app",
-    `SELECT public.apply_role_bindings($1, 0, $2, $3, $4, $5, $6, $7, $8)`,
+    `SELECT discord_bot.apply_role_bindings($1, 0, $2, $3, $4, $5, $6, $7, $8)`,
     [
       fixture.guildId,
       fakeId(),
@@ -50,7 +50,7 @@ export async function insertGuild(
   await queryAs(
     db,
     "bot_app",
-    `SELECT public.apply_config_change($1, 1, $2, NULL, ARRAY[$3]::text[])`,
+    `SELECT discord_bot.apply_config_change($1, 1, $2, NULL, ARRAY[$3]::text[])`,
     [fixture.guildId, fakeId(), fixture.channelId],
   );
   return fixture;
@@ -63,7 +63,7 @@ export async function insertEvent(
   const rows = await queryAs<{ id: string }>(
     db,
     "bot_app",
-    `INSERT INTO public.events (guild_id, channel_id, name, event_date, created_by)
+    `INSERT INTO discord_bot.events (guild_id, channel_id, name, event_date, created_by)
      VALUES ($1, $2, 'General meeting', '2030-01-15', $3)
      RETURNING id`,
     [guild.guildId, guild.channelId, fakeId()],
@@ -80,7 +80,7 @@ export async function insertTask(
   const rows = await queryAs<{ id: string }>(
     db,
     "bot_app",
-    `INSERT INTO public.tasks (event_id, guild_id, assignee_id, description, due_date, created_by)
+    `INSERT INTO discord_bot.tasks (event_id, guild_id, assignee_id, description, due_date, created_by)
      VALUES ($1, $2, $3, 'Book the room', '${FIXTURE_DUE_DATE}', $4)
      RETURNING id`,
     [eventId, guild.guildId, assigneeId, fakeId()],
@@ -98,7 +98,7 @@ export async function finishEventSteps(
   eventId: string,
 ): Promise<void> {
   await db.query(
-    `UPDATE public.event_steps
+    `UPDATE discord_bot.event_steps
      SET status = 'done', completed_at = now(), completed_by = $2
      WHERE event_id = $1`,
     [eventId, fakeId()],

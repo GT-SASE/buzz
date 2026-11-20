@@ -58,7 +58,7 @@ function applyRoles(
   more: MoreRoles = {},
 ): Promise<number> {
   return versionFrom(
-    `SELECT public.apply_role_bindings($1, $2, $3, $4, $5, $6, $7, $8, $9) AS version`,
+    `SELECT discord_bot.apply_role_bindings($1, $2, $3, $4, $5, $6, $7, $8, $9) AS version`,
     [
       guildId,
       expected,
@@ -79,7 +79,7 @@ function applyChange(
   change: Change,
 ): Promise<number> {
   return versionFrom(
-    `SELECT public.apply_config_change($1, $2, $3, $4, $5, $6, $7) AS version`,
+    `SELECT discord_bot.apply_config_change($1, $2, $3, $4, $5, $6, $7) AS version`,
     [
       guildId,
       expected,
@@ -107,7 +107,7 @@ async function auditRows(guildId: string) {
     version_after: number;
   }>(
     `SELECT actor_id, action, old_values, new_values, version_after
-     FROM public.config_audit WHERE guild_id = $1 ORDER BY id`,
+     FROM discord_bot.config_audit WHERE guild_id = $1 ORDER BY id`,
     [guildId],
   );
   return rows;
@@ -119,7 +119,7 @@ async function configOf(guildId: string) {
     reminders_enabled: boolean;
     timezone: string;
   }>(
-    `SELECT version, reminders_enabled, timezone FROM public.guild_config WHERE guild_id = $1`,
+    `SELECT version, reminders_enabled, timezone FROM discord_bot.guild_config WHERE guild_id = $1`,
     [guildId],
   );
   return rows[0];
@@ -127,7 +127,7 @@ async function configOf(guildId: string) {
 
 async function channelsOf(guildId: string) {
   const { rows } = await db.query<{ channel_id: string; status: string }>(
-    `SELECT channel_id, status FROM public.managed_channels WHERE guild_id = $1 ORDER BY channel_id`,
+    `SELECT channel_id, status FROM discord_bot.managed_channels WHERE guild_id = $1 ORDER BY channel_id`,
     [guildId],
   );
   return rows;
@@ -151,7 +151,7 @@ describe("apply_role_bindings", () => {
     const bound = await db.query(
       `SELECT officer_role_id, eboard_role_id, events_committee_role_id,
               treasury_role_id, marketing_role_id
-       FROM public.guild_config WHERE guild_id = $1`,
+       FROM discord_bot.guild_config WHERE guild_id = $1`,
       [guildId],
     );
     expect(bound.rows).toEqual([
@@ -183,7 +183,7 @@ describe("apply_role_bindings", () => {
 
     await applyRoles(guildId, 2, newOfficer, admin);
     const after = await db.query(
-      `SELECT eboard_role_id FROM public.guild_config WHERE guild_id = $1`,
+      `SELECT eboard_role_id FROM discord_bot.guild_config WHERE guild_id = $1`,
       [guildId],
     );
     expect(after.rows).toEqual([{ eboard_role_id: null }]);
@@ -316,10 +316,10 @@ describe("apply_config_change", () => {
   it("rolls everything back if the audit row cannot be written", async () => {
     const guildId = await setUpGuild();
     await db.exec(`
-      CREATE FUNCTION public.test_fail_audit() RETURNS trigger LANGUAGE plpgsql AS $$
+      CREATE FUNCTION discord_bot.test_fail_audit() RETURNS trigger LANGUAGE plpgsql AS $$
       BEGIN RAISE EXCEPTION 'audit unavailable' USING ERRCODE = 'XX999'; END; $$;
-      CREATE TRIGGER test_fail_audit BEFORE INSERT ON public.config_audit
-        FOR EACH ROW EXECUTE FUNCTION public.test_fail_audit();
+      CREATE TRIGGER test_fail_audit BEFORE INSERT ON discord_bot.config_audit
+        FOR EACH ROW EXECUTE FUNCTION discord_bot.test_fail_audit();
     `);
     try {
       expect(
@@ -329,8 +329,8 @@ describe("apply_config_change", () => {
       ).toBe("XX999");
     } finally {
       await db.exec(`
-        DROP TRIGGER test_fail_audit ON public.config_audit;
-        DROP FUNCTION public.test_fail_audit();
+        DROP TRIGGER test_fail_audit ON discord_bot.config_audit;
+        DROP FUNCTION discord_bot.test_fail_audit();
       `);
     }
     expect(await configOf(guildId)).toMatchObject({
@@ -350,7 +350,7 @@ it("mark_channel_unavailable marks an active channel once, leaving the version a
       await queryAs<{ marked: boolean }>(
         db,
         BOT_APP,
-        `SELECT public.mark_channel_unavailable($1, $2) AS marked`,
+        `SELECT discord_bot.mark_channel_unavailable($1, $2) AS marked`,
         [guildId, channel],
       )
     )[0]?.marked;
@@ -370,9 +370,9 @@ it("mark_channel_unavailable marks an active channel once, leaving the version a
 it("other roles cannot call any of the three config functions", async () => {
   const guildId = await setUpGuild();
   for (const sql of [
-    `SELECT public.apply_role_bindings('${guildId}', 1, '${fakeId()}', '${fakeId()}', '${fakeId()}', NULL, NULL, NULL, NULL)`,
-    `SELECT public.apply_config_change('${guildId}', 1, '${fakeId()}', false)`,
-    `SELECT public.mark_channel_unavailable('${guildId}', '${fakeId()}')`,
+    `SELECT discord_bot.apply_role_bindings('${guildId}', 1, '${fakeId()}', '${fakeId()}', '${fakeId()}', NULL, NULL, NULL, NULL)`,
+    `SELECT discord_bot.apply_config_change('${guildId}', 1, '${fakeId()}', false)`,
+    `SELECT discord_bot.mark_channel_unavailable('${guildId}', '${fakeId()}')`,
   ]) {
     expect(await errorCodeOf(queryAs(db, OTHER_ROLE, sql))).toBe(
       INSUFFICIENT_PRIVILEGE,

@@ -71,7 +71,7 @@ async function insertRow(
       : value,
   );
   await db.query(
-    `INSERT INTO public.${table} (${columns.join(", ")}) OVERRIDING SYSTEM VALUE
+    `INSERT INTO discord_bot.${table} (${columns.join(", ")}) OVERRIDING SYSTEM VALUE
      VALUES (${columns.map((_, index) => `$${String(index + 1)}`).join(", ")})`,
     values,
   );
@@ -96,9 +96,9 @@ async function seed(db: PGlite, fields: Seed): Promise<void> {
       await insertRow(db, "events", event);
       // The trigger that adds an event's steps is off while seeding.
       await db.query(
-        `INSERT INTO public.event_steps (event_id, guild_id, kind)
+        `INSERT INTO discord_bot.event_steps (event_id, guild_id, kind)
          SELECT $1, $2, kind
-         FROM unnest(enum_range(NULL::public.event_step_kind)) AS kind`,
+         FROM unnest(enum_range(NULL::discord_bot.event_step_kind)) AS kind`,
         [
           (event as { id: string }).id,
           (event as { guild_id: string }).guild_id,
@@ -116,7 +116,7 @@ async function seed(db: PGlite, fields: Seed): Promise<void> {
         created_by: fakeId(),
       });
       await db.query(
-        `INSERT INTO public.tasks
+        `INSERT INTO discord_bot.tasks
            (event_id, guild_id, assignee_id, description, due_date, created_by)
          SELECT $1, $2, $3, 'Book the room', '2099-01-10', $3
          FROM generate_series(1, $4)`,
@@ -159,15 +159,16 @@ export async function handlerDb(fields: Seed = {}): Promise<HandlerDb> {
         `SELECT guild_id, officer_role_id, admin_role_id, eboard_role_id,
                 events_committee_role_id, treasury_role_id, marketing_role_id,
                 timezone, reminders_enabled, version
-         FROM public.guild_config WHERE guild_id = $1`,
+         FROM discord_bot.guild_config WHERE guild_id = $1`,
       );
       return row ?? null;
     },
     async setConfig(row) {
       await pg.exec("SET session_replication_role = replica");
-      await pg.query("DELETE FROM public.guild_config WHERE guild_id = $1", [
-        GUILD_ID,
-      ]);
+      await pg.query(
+        "DELETE FROM discord_bot.guild_config WHERE guild_id = $1",
+        [GUILD_ID],
+      );
       await seed(pg, { config: row });
     },
     drafts: () =>
@@ -175,22 +176,22 @@ export async function handlerDb(fields: Seed = {}): Promise<HandlerDb> {
         `SELECT guild_id, actor_id, officer_role_id, admin_role_id, eboard_role_id,
                 events_committee_role_id, treasury_role_id, marketing_role_id,
                 fingerprint, created_at::text AS created_at
-         FROM public.setup_drafts WHERE guild_id = $1`,
+         FROM discord_bot.setup_drafts WHERE guild_id = $1`,
       ),
     channels: () =>
       rows<ChannelRow>(
         `SELECT guild_id, channel_id, status::text AS status
-         FROM public.managed_channels WHERE guild_id = $1
+         FROM discord_bot.managed_channels WHERE guild_id = $1
          ORDER BY created_at, channel_id`,
       ),
     changes: () =>
       rows(
-        `SELECT actor_id, action FROM public.config_audit
+        `SELECT actor_id, action FROM discord_bot.config_audit
          WHERE guild_id = $1 ORDER BY id`,
       ),
     async claims() {
       const result = await pg.query<{ count: number }>(
-        "SELECT count(*)::int AS count FROM public.interaction_claims",
+        "SELECT count(*)::int AS count FROM discord_bot.interaction_claims",
       );
       return result.rows[0]?.count ?? 0;
     },

@@ -482,7 +482,7 @@ describe("Confirm", () => {
       async (w) => {
         const customId = await showSetup(w);
         await w.pg.query(
-          "UPDATE public.setup_drafts SET created_at = now() - interval '3601 seconds'",
+          "UPDATE discord_bot.setup_drafts SET created_at = now() - interval '3601 seconds'",
         );
         return componentPayload(customId);
       },

@@ -84,7 +84,7 @@ SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE usename = 'bot_app'
 
 #### After a `DATABASE_URL` leak
 
-Rotate `bot_app`'s password as above. The login cannot delete rows, read `history`, undelete a row or reopen a closed event, but it can change events, tasks, settings and reminder state through the bot's functions. Compare `guild_config` and `managed_channels` with `history.row_versions` and `config_audit` from before the leak, fix anything wrong with `/setup` or `/config`, and check that the next `reminders` row in `job_runs` succeeds. Do not trust `actor_id` or `created_by` for that window.
+Rotate `bot_app`'s password as above. The login cannot delete rows, read `discord_bot.row_versions`, touch buzz's tables in `public`, undelete a row or reopen a closed event, but it can change events, tasks, settings and reminder state through the bot's functions. Compare `guild_config` and `managed_channels` with `discord_bot.row_versions` and `config_audit` from before the leak, fix anything wrong with `/setup` or `/config`, and check that the next `reminders` row in `job_runs` succeeds. Do not trust `actor_id` or `created_by` for that window.
 
 #### After a bot token leak
 
