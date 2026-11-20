@@ -3,6 +3,7 @@ import { pathToFileURL } from "node:url";
 import { repoPath } from "./repo";
 
 const BOT_DIR = "sites/discord-bot";
+export const BOT_MIGRATIONS_DIR = `${BOT_DIR}/db/migrations`;
 
 export type BotFunction = { route: string; source: string };
 export type BotCron = { path: string; schedule: string };

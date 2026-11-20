@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
 import { formatBotCommands } from "../packages/mcp/src/bot";
-import { parseBotSql, readBotDatabase } from "../packages/mcp/src/bot-sql";
+import { formatBotDatabase } from "../packages/mcp/src/bot-db";
 import { listProcedures } from "../packages/mcp/src/procedures";
 import { formatRoutes, listRoutes } from "../packages/mcp/src/routes";
 import { describeSchema } from "../packages/mcp/src/schema";
@@ -34,64 +34,47 @@ describe("mcp introspection", () => {
 });
 
 describe("mcp bot introspection", () => {
-  it("replays the real bot migrations", () => {
-    const db = readBotDatabase();
-    const steps = db.tables.find(
-      (t) => t.name === "event_steps" && t.schema === "public",
+  it("applies the real bot migrations to PGlite and describes them", async () => {
+    const out = await formatBotDatabase();
+    for (const t of ["events", "tasks", "event_steps"]) {
+      expect(out).toContain(`table public.${t}\n`);
+    }
+    // Columns, types, nullability and defaults come from the catalogs.
+    expect(out).toMatch(/\n {2}guild_id {2}public\.discord_id {2}notNull/);
+    expect(out).toMatch(
+      /\n {2}status {2}public\.event_status {2}notNull default 'active'/,
     );
-    // Added by a later migration than the baseline.
-    expect(steps?.columns.map((c) => c.name)).toContain("not_needed_at");
-    const kind = db.enums.find((e) => e.name === "event_step_kind");
-    expect(kind?.values).toContain("slides");
-    expect(
-      db.functions.filter((f) => f.name === "assign_event_step"),
-    ).toHaveLength(1);
-    expect(db.domains.map((d) => d.name)).toContain("discord_id");
-  });
+    // A later migration's column and enum values, in sort order.
+    expect(out).toContain("not_needed_at  timestamp with time zone");
+    expect(out).toMatch(
+      /enum public\.event_step_kind: .*engage_picture, budget_approved, slides/,
+    );
+    expect(out).toContain("domain public.discord_id: text");
+    expect(out).toContain("table history.row_versions");
+    expect(out).toContain("-- schema history --");
+    expect(out).toContain(
+      "CONSTRAINT event_steps_pkey: PRIMARY KEY (event_id, kind)",
+    );
+    expect(out).toMatch(/INDEX events_live_thread_uq|events_live_thread_uq/);
+    // Functions carry their argument list and SECURITY DEFINER flag; the replaced
+    // assign_event_step appears once, with its final return type.
+    const assign = out
+      .split("\n")
+      .filter((l) => l.startsWith("function public.assign_event_step("));
+    expect(assign).toHaveLength(1);
+    expect(assign[0]).toContain("p_kind public.event_step_kind");
+    expect(assign[0]).toContain("returns text");
+    expect(assign[0]).toContain("security definer");
+  }, 60_000);
 
-  it("labels objects with the schema the SQL declares", () => {
-    const db = parseBotSql([
-      {
-        name: "1_a.sql",
-        sql: `-- migrate:up
--- it's a comment with an apostrophe
-CREATE SCHEMA discord_bot;
-SET LOCAL search_path TO discord_bot;
-CREATE TYPE kind AS ENUM ('a', 'c');
-CREATE TABLE things (
-  id uuid DEFAULT gen_random_uuid() NOT NULL,
-  note text DEFAULT 'x;y',
-  CONSTRAINT things_pkey PRIMARY KEY (id)
-);
-CREATE FUNCTION touch(p_id uuid, p_k kind) RETURNS boolean
-  LANGUAGE sql AS $$ SELECT 1; SELECT 2; $$;
--- migrate:down
-DROP TABLE things;`,
-      },
-      {
-        name: "2_b.sql",
-        sql: `-- migrate:up
-ALTER TYPE discord_bot.kind ADD VALUE 'b' AFTER 'a';
-ALTER TABLE discord_bot.things ADD COLUMN extra integer NOT NULL, DROP COLUMN note;
-DROP FUNCTION discord_bot.touch(uuid, discord_bot.kind);
-CREATE FUNCTION discord_bot.touch(p_id uuid) RETURNS text LANGUAGE sql AS $$ SELECT 'x' $$;`,
-      },
-    ]);
-    expect(db.schemas).toContain("discord_bot");
-    expect(db.enums).toEqual([
-      { schema: "discord_bot", name: "kind", values: ["a", "b", "c"] },
-    ]);
-    const things = db.tables[0]!;
-    expect(things.schema).toBe("discord_bot");
-    expect(things.columns.map((c) => c.name)).toEqual(["id", "extra"]);
-    expect(things.constraints).toEqual(["PK things_pkey: (id)"]);
-    expect(db.functions).toHaveLength(1);
-    expect(db.functions[0]).toMatchObject({
-      schema: "discord_bot",
-      name: "touch",
-      args: "p_id uuid",
-      returns: "text",
-    });
+  it("filters bot objects by name and keeps the schema heading", async () => {
+    const out = await formatBotDatabase("event_steps");
+    expect(out).toStartWith("-- schema public --");
+    expect(out).toContain("table public.event_steps");
+    expect(out).not.toContain("table public.tasks");
+    expect(await formatBotDatabase("zzz-none")).toBe(
+      "No matching bot database objects.",
+    );
   });
 
   it("filters buzz from bot in describeSchema", async () => {
