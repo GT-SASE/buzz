@@ -15,6 +15,7 @@ import { refused, type DbResult } from "./errors.ts";
 import type { CappedList, EventChoice, EventRow } from "./types.ts";
 import {
   MAX_EVENT_NAME_LENGTH,
+  idPrefixRange,
   isDbDate,
   isSearchTerm,
   isStoredText,
@@ -169,6 +170,21 @@ export async function searchEvents(
       where guild_id = ${guildId} and deleted_at is null
         and name ilike ${searchPattern(term)}
       order by status, event_date desc, id limit ${DISCORD_LIMITS.autocompleteChoices}`,
+  );
+}
+
+/** Autocomplete by the start of an event's ID, across live events of any status. */
+export async function searchEventsByIdPrefix(
+  db: DbClient,
+  { guildId, prefix }: { guildId: string; prefix: string },
+): Promise<DbResult<EventChoice[]>> {
+  const { low, high } = idPrefixRange(prefix);
+  return await query<EventChoice>(
+    db,
+    sql`select ${EVENT_CHOICE_COLUMNS} from discord_bot.events
+      where guild_id = ${guildId} and deleted_at is null
+        and id >= ${low} and id <= ${high}
+      order by id limit ${DISCORD_LIMITS.autocompleteChoices}`,
   );
 }
 

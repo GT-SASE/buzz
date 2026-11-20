@@ -16,7 +16,7 @@ import {
   SafeTextError,
 } from "../discord/safe-text.ts";
 import type { PlainText, SafeText } from "../discord/safe-text.ts";
-import { getEvent } from "../db/events.ts";
+import { getEvent, searchEventsByIdPrefix } from "../db/events.ts";
 import type { DbResult } from "../db/errors.ts";
 import { searchOpenEventsByIdPrefix } from "../db/task-events.ts";
 import {
@@ -164,23 +164,23 @@ export async function chosenTaskId(
     : onlyId(await searchOpenTasksByIdPrefix(ctx.db, { guildId, prefix }));
 }
 
-/** The same for an event, among those that can take tasks. */
+/** The same for an event: among those that can take tasks, or with `orClosed`, any live one. */
 export async function chosenEventId(
   ctx: FinishContext,
   raw: string,
+  { orClosed = false }: { readonly orClosed?: boolean } = {},
 ): Promise<string | undefined> {
   if (isUuid(raw)) {
     return raw;
   }
   const prefix = typedShortId(raw);
-  return prefix === undefined
-    ? undefined
-    : onlyId(
-        await searchOpenEventsByIdPrefix(ctx.db, {
-          guildId: ctx.actor.guildId,
-          prefix,
-        }),
-      );
+  if (prefix === undefined) {
+    return undefined;
+  }
+  const { guildId } = ctx.actor;
+  return orClosed
+    ? onlyId(await searchEventsByIdPrefix(ctx.db, { guildId, prefix }))
+    : onlyId(await searchOpenEventsByIdPrefix(ctx.db, { guildId, prefix }));
 }
 
 /**

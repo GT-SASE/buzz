@@ -290,6 +290,19 @@ describe.each(["status", "close", "delete"])(
       });
     });
 
+    it.each([["active"], ["closed"]] as const)(
+      "takes the whole short ID of an event that is %s, typed and not chosen",
+      async (state) => {
+        const event = await seed({ status: state });
+
+        await world.send(
+          eventCommand(sub, eventOption(event.id.slice(0, 8)), officerFields),
+        );
+
+        expect(world.discord.lastReply()).not.toBe(REFUSED.message);
+      },
+    );
+
     it("tells an officer what to do outside a post when no event is named", async () => {
       await seed();
 

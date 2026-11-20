@@ -84,7 +84,11 @@ import {
 import { getEventWorkflow } from "../db/event-steps.ts";
 import { MAX_EVENT_NAME_LENGTH } from "../db/validate.ts";
 import { listEventTasks } from "../db/tasks.ts";
-import { REFUSED_TEXT, versionFingerprint } from "../tasks/shared.ts";
+import {
+  chosenEventId,
+  REFUSED_TEXT,
+  versionFingerprint,
+} from "../tasks/shared.ts";
 import type { EventChoice, EventRow, ManagedChannel } from "../db/types.ts";
 import {
   hasInviteOrMaskedLink,
@@ -875,7 +879,10 @@ async function finishLink(ctx: FinishContext): Promise<MessageInput> {
     ApplicationCommandOptionType.String,
   );
   if (typeof chosen === "string") {
-    return linkChosen(ctx, chosen);
+    const eventId = await chosenEventId(ctx, chosen, { orClosed: true });
+    return eventId === undefined
+      ? message(REFUSED_TEXT)
+      : linkChosen(ctx, eventId);
   }
   const rawDate = commandOptionValue(
     payload,
@@ -957,16 +964,26 @@ async function loadChosenEvent(
   action: EventScopedAction,
 ): Promise<ChosenEvent> {
   const { actor, db, payload, verified } = ctx;
-  const named = commandOptionValue(
+  const option = commandOptionValue(
     payload,
     "event",
     ApplicationCommandOptionType.String,
   );
-  if (typeof named !== "string" && !isThreadChannelType(verified.channelType)) {
+  if (
+    typeof option !== "string" &&
+    !isThreadChannelType(verified.channelType)
+  ) {
     return { kind: "none" };
   }
+  const named =
+    typeof option === "string"
+      ? await chosenEventId(ctx, option, { orClosed: true })
+      : undefined;
+  if (typeof option === "string" && named === undefined) {
+    return { kind: "refused" };
+  }
   const read =
-    typeof named === "string"
+    named !== undefined
       ? await getEvent(db, { guildId: actor.guildId, eventId: named })
       : await findEventByThread(db, {
           guildId: actor.guildId,
@@ -977,7 +994,7 @@ async function loadChosenEvent(
   }
   const event = valueOf(read);
   if (event === null) {
-    return typeof named === "string" ? { kind: "refused" } : { kind: "none" };
+    return named !== undefined ? { kind: "refused" } : { kind: "none" };
   }
   return authorize<EventScopedAction>(action, actor, ctx.config, event).allowed
     ? { kind: "event", event }

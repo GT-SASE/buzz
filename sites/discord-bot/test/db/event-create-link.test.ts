@@ -617,6 +617,19 @@ describe("an event whose post was deleted", () => {
   });
 
   describe("/event link with the event chosen", () => {
+    it("takes the event's whole short ID when it is typed and not chosen", async () => {
+      const { forum, id } = await lostEvent();
+      const threadId = memberPost(forum, "Replacement Thread");
+
+      await world.send(linkIn(threadId, forum, chosen(id.slice(0, 8))));
+
+      expect((await world.events())[0]).toMatchObject({
+        id,
+        thread_id: threadId,
+        thread_status: "active",
+      });
+    });
+
     it("moves the row to a post with another title, keeping its name", async () => {
       const { forum, id } = await lostEvent();
       const threadId = memberPost(forum, "Replacement Thread");
