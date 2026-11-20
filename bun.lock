@@ -92,6 +92,7 @@
       "version": "2.5.0",
       "dependencies": {
         "@buzz/db": "workspace:*",
+        "@electric-sql/pglite": "0.5.16",
         "@modelcontextprotocol/sdk": "^1.32.2",
         "drizzle-orm": "^0.45.4",
         "typescript": "^6.0.2",

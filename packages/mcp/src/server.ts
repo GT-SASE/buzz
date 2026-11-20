@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
+import { formatBotCommands } from "./bot";
 import { CHECK_TASKS, runChecks } from "./checks";
 import { formatProcedures } from "./procedures";
 import { deployStatus, migrations, version } from "./project";
@@ -76,22 +77,28 @@ export function createServer(serverVersion = "0.0.0"): McpServer {
     "buzz_db_schema",
     {
       description:
-        "Describes Drizzle tables from packages/db/src/schema.ts: columns, PKs, FKs, unique constraints, indexes, checks.",
+        "Describes both databases. buzz: Drizzle tables from packages/db/src/schema.ts (columns, PKs, FKs, unique constraints, indexes, checks). bot: the Discord bot's tables, enums, domains and functions (with signatures), read from an in-memory PGlite after applying sites/discord-bot/db/migrations, grouped by schema (a failing migration is returned as the error).",
       inputSchema: {
         table: z
           .string()
           .optional()
-          .describe("Case-insensitive substring of the table or export name."),
+          .describe(
+            "Case-insensitive substring of the table, export, enum or function name.",
+          ),
+        database: z
+          .enum(["all", "buzz", "bot"])
+          .optional()
+          .describe("Which database to describe. Default all."),
       },
     },
-    guarded(({ table }) => describeSchema(table)),
+    guarded(({ table, database }) => describeSchema(table, database)),
   );
 
   server.registerTool(
     "buzz_migrations",
     {
       description:
-        "Lists SQL migrations in packages/db/drizzle, the latest number, and the migration process.",
+        "Lists buzz Drizzle migrations (packages/db/drizzle) and the bot's dbmate migrations (sites/discord-bot/db/migrations), each with its process. Bot migrations in production are a manual owner step.",
     },
     guarded(() => migrations()),
   );
@@ -100,16 +107,31 @@ export function createServer(serverVersion = "0.0.0"): McpServer {
     "buzz_routes",
     {
       description:
-        "Lists Next.js app routes (pages and route handlers) tagged marketing, portal member, portal admin or api.",
+        "Lists Next.js app routes (pages and route handlers) tagged marketing, portal member, portal admin or api, plus the Discord bot's Vercel functions and crons from sites/discord-bot/scripts/deployment.ts.",
     },
     guarded(() => formatRoutes()),
+  );
+
+  server.registerTool(
+    "buzz_bot_commands",
+    {
+      description:
+        "Lists the Discord bot's slash commands with subcommands and options (type, required, choices, limits), derived from the command definitions scripts/register-commands.ts sends to Discord.",
+      inputSchema: {
+        filter: z
+          .string()
+          .optional()
+          .describe("Case-insensitive substring of the command name."),
+      },
+    },
+    guarded(({ filter }) => formatBotCommands(filter)),
   );
 
   server.registerTool(
     "buzz_version",
     {
       description:
-        "Site version: package.json MAJOR.MINOR, computed build version, README version table.",
+        "Site version: package.json MAJOR.MINOR, computed build version, README version table, and every workspace (including @buzz/discord-bot) with mismatches flagged.",
     },
     guarded(() => version()),
   );
@@ -118,7 +140,7 @@ export function createServer(serverVersion = "0.0.0"): McpServer {
     "buzz_run_checks",
     {
       description:
-        "Runs turbo checks with SKIP_ENV_VALIDATION=1 and returns pass/fail plus the last 80 lines. 'test' needs TEST_DATABASE_URL on a local scratch database in this server's env; it is refused otherwise.",
+        "Runs turbo checks with SKIP_ENV_VALIDATION=1 and returns pass/fail plus the last 80 lines. 'test' and the bot tasks 'bot:test' and 'bot:test:db' (turbo test / test:db in @buzz/discord-bot) need TEST_DATABASE_URL on a local scratch database in this server's env; they are refused otherwise. 'bot:test:db:concurrency' also needs CONCURRENCY_DATABASE_URL (and BOT_APP_PASSWORD) in the env, and CONCURRENCY_DATABASE_URL must pass the same local-scratch guard.",
       inputSchema: {
         tasks: z.array(z.enum(CHECK_TASKS)).min(1),
         force: z
@@ -139,7 +161,7 @@ export function createServer(serverVersion = "0.0.0"): McpServer {
     "buzz_deploy_status",
     {
       description:
-        "Latest main commit, its GitHub Vercel status, and the live site footer version. Does not call /api/health or any database route.",
+        "Latest main commit, its GitHub Vercel status, the latest GitHub CI conclusion for main (gh run list; says so if gh is unavailable), and the live site footer version. Vercel success alone does not mean CI is green. Does not call /api/health or any database route.",
     },
     guarded(() => deployStatus()),
   );
