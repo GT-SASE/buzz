@@ -117,8 +117,8 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - run: bash sites/discord-bot/scripts/install-gitleaks.sh
+      - run: bash scripts/install-gitleaks.sh
       - name: Refuse a .gitleaksignore file
-        run: test ! -e sites/discord-bot/.gitleaksignore
+        run: test ! -e .gitleaksignore
       - name: Scan every commit on every ref
-        run: sites/discord-bot/.tools/gitleaks git . --config sites/discord-bot/.gitleaks.toml --redact --ignore-gitleaks-allow --no-banner --log-opts="--all -m --text --no-color"
+        run: .tools/gitleaks git . --config .gitleaks.toml --redact --ignore-gitleaks-allow --no-banner --log-opts="--all -m --text --no-color"

@@ -37,7 +37,7 @@ through Turborepo, which caches each task by its inputs: a second run with no
 changes replays the logs instead of re-running. Schema changes go through Drizzle Kit (`bun run db:generate` →
 commit SQL → `bun run db:migrate`).
 
-`sites/discord-bot` is a separate Vercel project and has its own README. It bundles its functions with `bun build` into Vercel Build Output, so it deploys with no `node_modules` tracing even though the repo installs with the isolated linker. Its tests run through `bun run check`; `bun run hooks:install` and `bun run gitleaks:install` set up its pre-push secret scan for the whole repo.
+`sites/discord-bot` is a separate Vercel project and has its own README. It bundles its functions with `bun build` into Vercel Build Output, so it deploys with no `node_modules` tracing even though the repo installs with the isolated linker. Its tests run through `bun run check`; `bun run hooks:install` and `bun run gitleaks:install` set up the pre-push secret scan (`.githooks`, `.gitleaks.toml`) for the whole repo.
 
 Deploying the site on Vercel: set **Root Directory** to `sites/web`. Vercel installs from
 the repo root, so the workspace packages resolve normally. `sites/web/vercel.json`
