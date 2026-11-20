@@ -83,7 +83,7 @@ Use `bun`, `bun run`, `bun x`. Never npm, pnpm, npx, bunx. Spell out `bun run te
 2. Commit, push, open a PR to `main`. Commits and PRs carry no AI co-author or attribution lines.
 3. Run CI locally on a disposable Postgres in a clean tree: `bun run check` (use `--force`).
 4. Merge with `gh pr merge N --merge`.
-5. Check the Vercel commit status on the merge commit (`buzz_deploy_status`), then `bun scripts/smoke.mjs`.
+5. Check the Vercel commit status on the merge commit (`buzz_deploy_status`), then `bun scripts/smoke.mjs`, then GitHub CI on `main` (`gh run list --workflow CI --branch main --limit 1`). GitHub CI checks out a shallow clone, so tests that read git history can pass locally and fail there.
 
 Production migrates during the Vercel production build (`scripts/vercel-build.mjs`); previews skip migrations because they share the production DB.
 
