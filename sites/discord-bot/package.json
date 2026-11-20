@@ -1,0 +1,34 @@
+{
+  "name": "@buzz/discord-bot",
+  "version": "2.5.0",
+  "private": true,
+  "type": "module",
+  "description": "Discord bot that tracks events, tasks and deadlines for a student organisation's events team.",
+  "license": "UNLICENSED",
+  "scripts": {
+    "build": "bun scripts/build.ts",
+    "smoke": "node scripts/smoke-build.mjs",
+    "typecheck": "tsrs --noEmit --fast",
+    "typecheck:tsc": "tsc --noEmit",
+    "test": "bun test --isolate ./src ./scripts",
+    "test:db": "bun test --isolate --parallel --timeout 30000 ./test/db/",
+    "test:db:concurrency": "bun test --timeout 30000 --preload ./test/db-concurrency/preload.ts ./test/db-concurrency/",
+    "db:migrate": "dbmate --migrations-dir db/migrations --no-dump-schema up",
+    "commands:register": "bun --env-file=.env scripts/register-commands.ts"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "1.2.0",
+    "@vercel/functions": "2.2.13",
+    "discord-api-types": "0.38.58",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.16",
+    "@types/node": "^26.6.6",
+    "@types/pg": "^8.23.1",
+    "dbmate": "2.38.0",
+    "pg": "^8.23.1",
+    "tsrs": "0.20.1-ts7.1.0-beta",
+    "typescript-7": "npm:typescript@^7.0.0"
+  }
+}

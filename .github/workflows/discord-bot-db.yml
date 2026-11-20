@@ -1,0 +1,87 @@
+name: Discord bot database
+
+# Runs only when the bot or the lockfile changes. A skipped check never reports, so
+# drop these filters before making this check required in branch protection.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "sites/discord-bot/**"
+      - "bun.lock"
+      - ".github/workflows/discord-bot-db.yml"
+  push:
+    branches: [main]
+    paths:
+      - "sites/discord-bot/**"
+      - "bun.lock"
+      - ".github/workflows/discord-bot-db.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  concurrency:
+    name: The bot's role and concurrent writes on Postgres 17
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: sites/discord-bot
+    # Throwaway passwords for a database that lives only as long as this job.
+    env:
+      PGHOST: localhost
+      PGPASSWORD: ci-postgres
+      OWNER_PASSWORD: ci-owner
+      BOT_APP_PASSWORD: ci-bot-app
+      # The migrated database, as the superuser. pg reads the password from PGPASSWORD.
+      CONCURRENCY_DATABASE_URL: postgres://postgres@localhost:5432/bot
+    services:
+      postgres:
+        image: postgres:17@sha256:3b0cda93be7c8dba2ed484d19393d93845dc3dafb88973e248ba8e6d99d784e1
+        env:
+          POSTGRES_PASSWORD: ci-postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+      - run: bun install --frozen-lockfile
+        working-directory: .
+      # As on Neon: an owner that may create roles and owns its database, but is not a
+      # superuser.
+      - name: Make the owner and its database
+        run: |
+          psql -v ON_ERROR_STOP=1 -U postgres -v owner_password="${OWNER_PASSWORD}" <<'SQL'
+          CREATE ROLE migration_owner LOGIN NOSUPERUSER CREATEROLE PASSWORD :'owner_password';
+          CREATE DATABASE bot OWNER migration_owner;
+          SQL
+      # status fails if any migration is still pending.
+      - name: Apply the migrations as the owner with dbmate
+        run: |
+          export DATABASE_URL="postgres://migration_owner:${OWNER_PASSWORD}@localhost:5432/bot?sslmode=disable"
+          bun run db:migrate
+          bun x --bun --no-install dbmate --migrations-dir db/migrations status --exit-code
+      # The owner may do this only because it made bot_app, which gave it ADMIN on the
+      # role, so this also checks that grant.
+      - name: Set bot_app's password as the owner
+        run: |
+          PGPASSWORD="${OWNER_PASSWORD}" psql -v ON_ERROR_STOP=1 -U migration_owner -d bot -v bot_password="${BOT_APP_PASSWORD}" <<'SQL'
+          ALTER ROLE bot_app PASSWORD :'bot_password';
+          SQL
+      - run: bun run test:db:concurrency
+      - name: Show the server's log
+        if: failure()
+        run: docker logs "${{ job.services.postgres.id }}"
