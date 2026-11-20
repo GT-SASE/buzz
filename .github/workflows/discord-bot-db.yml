@@ -67,7 +67,7 @@ jobs:
           psql -v ON_ERROR_STOP=1 -U postgres -v owner_password="${OWNER_PASSWORD}" <<'SQL'
           CREATE ROLE migration_owner LOGIN NOSUPERUSER CREATEROLE PASSWORD :'owner_password';
           CREATE DATABASE bot OWNER migration_owner;
-          \c bot migration_owner
+          \c bot
           CREATE SCHEMA discord_bot AUTHORIZATION migration_owner;
           SQL
       # status fails if any migration is still pending.

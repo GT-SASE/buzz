@@ -27,6 +27,8 @@ The tests stand in for Discord, Vercel and Neon, so the controls below are prove
 | Outgoing messages | One send helper, text escaped when rendered, mentions limited to named users, managed channels only |
 | Recovery          | Soft deletes, row history, Neon's point-in-time restore and occasional private exports              |
 
+The bot shares a database with buzz. `bot_app` has no grant on buzz's tables, but a function created in `public` is executable by every role through Postgres's default PUBLIC grant, so any such function must `REVOKE EXECUTE ... FROM PUBLIC`. buzz has none today.
+
 Some of this also depends on settings in the services' dashboards, which the repository cannot enforce. [docs/SETUP.md](docs/SETUP.md) lists them.
 
 ### Risks that remain
