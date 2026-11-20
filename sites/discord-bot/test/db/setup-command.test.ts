@@ -17,6 +17,7 @@ import {
   GUILD_ID,
   member,
   MEMBER_ID,
+  NOT_READY,
   OFFICER,
   OFFICER_ROLE,
   PLAIN_MEMBER,
@@ -248,7 +249,7 @@ describe("/setup", () => {
       w.dependencies,
     );
 
-    expect(reply.data?.content).toBe(FIXED_REFUSAL_TEXT);
+    expect(reply.data?.content).toBe(setUp ? FIXED_REFUSAL_TEXT : NOT_READY);
     expect(deferred).toBe(false);
     expect(w.edits).toEqual([]);
     expect(await w.drafts()).toEqual([]);

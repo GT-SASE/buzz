@@ -128,6 +128,7 @@ import {
   autocompleteRoute,
   commandRoute,
   componentRoute,
+  NOT_READY,
   noRow,
   tierOnly,
   valueOf,
@@ -140,7 +141,6 @@ const NO_TASKS = { rows: [], truncated: false };
 // Enough to tell events apart at a glance. The full ID is what a picker submits.
 const SHORT_ID_LENGTH = 8;
 
-const NOT_READY = safe`This server hasn't been set up yet. An administrator can run /setup.`;
 const BAD_NAME = safe`That name can't be used. Give it some letters or numbers, up to 100 characters.`;
 const NO_FORUMS = safe`No forums are managed yet. An admin can add one with /config.`;
 const PICK_FORUM = safe`More than one forum is managed, so choose one with the forum option.`;

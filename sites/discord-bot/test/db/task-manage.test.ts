@@ -16,6 +16,7 @@ import {
   fakeDiscord,
   GUILD_ID,
   member,
+  NOT_READY,
   run,
 } from "../support/interactions.ts";
 import { fakeId } from "../support/ids.ts";
@@ -831,16 +832,19 @@ describe("the task commands without a usable database", () => {
       "the button",
       componentPayload(`task.done:${TASK_ID}`, { member: member() }),
     ],
-  ])("refuses %s before setup", async (_name, payload) => {
-    const { db } = await handlerDb();
-    const { discord, edits } = fakeDiscord();
+  ])(
+    "says the server is not set up for %s before setup",
+    async (_name, payload) => {
+      const { db } = await handlerDb();
+      const { discord, edits } = fakeDiscord();
 
-    const ran = await run(ROUTER, payload, dependenciesFor(db, discord));
+      const ran = await run(ROUTER, payload, dependenciesFor(db, discord));
 
-    expect(ran.deferred).toBe(false);
-    expect(ran.reply.data?.content).toBe(FIXED_REFUSAL);
-    expect(edits).toEqual([]);
-  });
+      expect(ran.deferred).toBe(false);
+      expect(ran.reply.data?.content).toBe(NOT_READY);
+      expect(edits).toEqual([]);
+    },
+  );
 
   it.each([
     [

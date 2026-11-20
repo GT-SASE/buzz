@@ -30,6 +30,7 @@ import {
   GUILD_ID,
   member,
   modalPayload,
+  NOT_READY,
   run,
 } from "../support/interactions.ts";
 import { fakeId } from "../support/ids.ts";
@@ -401,7 +402,7 @@ describe("authorization on every kind of interaction", () => {
     expect(finished).toHaveBeenCalledTimes(1);
   });
 
-  it("refuses everything but public routes before setup", async () => {
+  it("says the server is not set up for everything but public routes before setup", async () => {
     const { dependencies } = await setup({ config: null });
 
     const { reply } = await run(
@@ -410,7 +411,7 @@ describe("authorization on every kind of interaction", () => {
       dependencies,
     );
 
-    expect(reply).toEqual(FIXED_REFUSAL);
+    expect(reply.data?.content).toBe(NOT_READY);
   });
 
   it.each([

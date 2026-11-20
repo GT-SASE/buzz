@@ -10,6 +10,7 @@ import { HOSTILE_TEXT, INVISIBLE_TEXT } from "../support/hostile-text.ts";
 import {
   GUILD_ID,
   MEMBER_ID,
+  NOT_READY,
   OFFICER,
   PLAIN_MEMBER,
 } from "../support/interactions.ts";
@@ -212,7 +213,7 @@ describe("/event create", () => {
     expect(world.discord.requests).toEqual([]);
   });
 
-  it("refuses everything before setup, even for an officer's roles", async () => {
+  it("says the server is not set up before setup, even to an officer", async () => {
     const replica = "SET session_replication_role = replica";
     const { rows } = await world.pg.query<{ saved: string }>(
       `SELECT row_to_json(guild_config)::text AS saved FROM discord_bot.guild_config WHERE guild_id = $1`,
@@ -225,7 +226,7 @@ describe("/event create", () => {
     try {
       const ran = await world.send(create());
 
-      expect(ran.reply.data?.content).toBe(REFUSED.message);
+      expect(ran.reply.data?.content).toBe(NOT_READY);
       expect(await world.events()).toEqual([]);
     } finally {
       await world.pg.exec(replica);
