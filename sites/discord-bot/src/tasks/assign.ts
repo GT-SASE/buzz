@@ -14,6 +14,7 @@ import type { MessageInput } from "../discord/outbound.ts";
 import { safe, userMention } from "../discord/safe-text.ts";
 import { isThreadChannelType } from "../discord/verify.ts";
 import { getEvent } from "../db/events.ts";
+import { MAX_DATE_INPUT_LENGTH } from "../events/input.ts";
 import { findEventByThread } from "../db/task-events.ts";
 import { createTask } from "../db/tasks.ts";
 import type { EventRow } from "../db/types.ts";
@@ -195,7 +196,7 @@ export const assignSubcommand: CommandOption = {
       name: "due",
       description: "Due date, as YYYY-MM-DD or MM/DD",
       required: true,
-      max_length: 10,
+      max_length: MAX_DATE_INPUT_LENGTH,
     },
     {
       type: ApplicationCommandOptionType.String,

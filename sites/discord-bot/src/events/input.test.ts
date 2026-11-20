@@ -5,6 +5,7 @@ import {
   UNSTORABLE_TEXT,
 } from "../../test/support/hostile-text.ts";
 import { plainTextValue, safeTextValue } from "../discord/safe-text.ts";
+import { COMMANDS } from "../handlers/registry.ts";
 import {
   hasInviteOrMaskedLink,
   normaliseEventName,
@@ -86,10 +87,35 @@ describe("normaliseEventName", () => {
   });
 });
 
+/** The date and due options of every command, however deep. */
+function dateOptions(
+  options: readonly unknown[] = [],
+): { max_length?: number }[] {
+  return options.flatMap((option) => {
+    const { name, options: nested } = option as {
+      name: string;
+      options?: unknown[];
+    };
+    return [
+      ...(name === "date" || name === "due" ? [option as object] : []),
+      ...dateOptions(nested),
+    ];
+  });
+}
+
 describe("parseEventDate", () => {
   const ZONE = "America/New_York";
   // 04:30 UTC on the 16th is still the 15th in New York.
   const NOW = new Date("2026-11-16T04:30:00.000Z");
+
+  it("takes no more than the commands let someone type", () => {
+    const limits = dateOptions(COMMANDS).map((option) => option.max_length);
+
+    expect(limits.length).toBeGreaterThan(2);
+    expect(new Set(limits)).toEqual(new Set([10]));
+    expect(parseEventDate("2026-11-20", ZONE, NOW).ok).toBe(true);
+    expect(parseEventDate(" 2026-11-20", ZONE, NOW).ok).toBe(false);
+  });
 
   it("reads both forms against the guild's today, not the server's", () => {
     const parsed: unknown = parseEventDate(" 11/15 ", ZONE, NOW);

@@ -92,6 +92,7 @@ import {
 import type { EventChoice, EventRow, ManagedChannel } from "../db/types.ts";
 import {
   hasInviteOrMaskedLink,
+  MAX_DATE_INPUT_LENGTH,
   normaliseEventName,
   parseEventDate,
 } from "../events/input.ts";
@@ -1299,7 +1300,6 @@ const confirmDelete = componentRoute({
   },
 });
 
-const DATE_INPUT_LIMIT = 32;
 const SUBCOMMAND = ApplicationCommandOptionType.Subcommand;
 const STRING = ApplicationCommandOptionType.String;
 
@@ -1315,7 +1315,7 @@ const DATE_OPTION = {
   name: "date",
   description: "The date, as YYYY-MM-DD or MM/DD",
   required: true,
-  max_length: DATE_INPUT_LIMIT,
+  max_length: MAX_DATE_INPUT_LENGTH,
 };
 
 export const handler: Handler = {

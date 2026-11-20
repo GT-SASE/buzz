@@ -12,11 +12,10 @@ import {
 } from "../discord/safe-text.ts";
 import type { SafeText } from "../discord/safe-text.ts";
 import { MAX_TASK_DESCRIPTION_LENGTH, isStoredText } from "../db/validate.ts";
+import { MAX_DATE_INPUT_LENGTH } from "../events/input.ts";
 import { parseDateInput, todayInZone } from "../lib/dates.ts";
 import type { DateOnly } from "../lib/dates.ts";
 import type { FinishContext } from "../handlers/router.ts";
-
-const LONGEST_DATE_INPUT = 32;
 
 export type Checked<T> = { readonly value: T } | { readonly problem: SafeText };
 
@@ -62,7 +61,7 @@ export function checkDueDate(
   const timezone = ctx.config?.timezone;
   if (
     typeof raw !== "string" ||
-    raw.length > LONGEST_DATE_INPUT ||
+    raw.length > MAX_DATE_INPUT_LENGTH ||
     timezone === undefined
   ) {
     return { problem: safe`Enter the due date as YYYY-MM-DD or MM/DD.` };
