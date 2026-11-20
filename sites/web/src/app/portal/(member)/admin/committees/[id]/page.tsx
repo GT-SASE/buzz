@@ -13,7 +13,8 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from "~/components/ui/breadcrumb";
-import { HydrateClient, api, hydrated } from "~/trpc/server";
+import { HydrateClient } from "~/trpc/hydrate";
+import { api, hydrated } from "~/trpc/server";
 import { CommitteeApplication } from "./committee-application";
 
 const applicationForPage = cache((id: string) =>

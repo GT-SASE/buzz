@@ -13,7 +13,7 @@ import { requireSession } from "~/app/portal/_lib/session";
 import { Card } from "~/components/ui/card";
 import { Separator } from "~/components/ui/separator";
 import { getCommitteeRecruiting, listNames } from "~/data/committee-recruiting";
-import { api, HydrateClient } from "~/trpc/server";
+import { api } from "~/trpc/server";
 import PortalLoading from "./loading";
 
 export const metadata: Metadata = {
@@ -35,17 +35,22 @@ export default function PortalDashboard() {
 async function DashboardBody() {
   const session = await requireSession("/portal");
 
-  const [home, , kin, kinGroup, recruiting, committee] = await Promise.all([
-    api.event.home(),
-    api.member.leaderboard.prefetch({ limit: 10 }),
-    api.mentorship.mine().catch((error) => {
-      console.error("KIN prefetch failed:", error);
-      return null;
-    }),
-    api.mentorship.myGroup().catch(() => null),
-    getCommitteeRecruiting(),
-    api.committee.mine().catch(() => null),
-  ]);
+  const [home, board, kin, kinGroup, recruiting, committee] = await Promise.all(
+    [
+      api.event.home(),
+      api.member.leaderboard({ limit: 10 }).catch((error) => {
+        console.error("Leaderboard failed:", error);
+        return null;
+      }),
+      api.mentorship.mine().catch((error) => {
+        console.error("KIN prefetch failed:", error);
+        return null;
+      }),
+      api.mentorship.myGroup().catch(() => null),
+      getCommitteeRecruiting(),
+      api.committee.mine().catch(() => null),
+    ],
+  );
   const hasApplication = !!committee?.application;
   const { stats, attended, upcoming } = home;
 
@@ -83,203 +88,199 @@ async function DashboardBody() {
   );
 
   return (
-    <HydrateClient>
-      <div className="max-w-content mx-auto px-5 pt-5 pb-10 sm:px-6 sm:py-14">
-        <h1 className="sr-only">My card</h1>
-        <div className="grid gap-10 xl:grid-cols-[26rem_minmax(0,1fr)] xl:items-start xl:gap-14">
-          <div className="grid gap-5 lg:gap-8">
-            <MemberCard
+    <div className="max-w-content mx-auto px-5 pt-5 pb-10 sm:px-6 sm:py-14">
+      <h1 className="sr-only">My card</h1>
+      <div className="grid gap-10 xl:grid-cols-[26rem_minmax(0,1fr)] xl:items-start xl:gap-14">
+        <div className="grid gap-5 lg:gap-8">
+          <MemberCard
+            name={session.user.name ?? session.user.email ?? "Member"}
+            memberSince={
+              stats.memberSince ? formatMonth(stats.memberSince) : null
+            }
+            totalPoints={stats.totalPoints}
+            totalEvents={stats.totalEvents}
+          />
+          <div className="xl:hidden">{checkInCard}</div>
+          {kin && kin.status !== "withdrawn" && (
+            <KinCard
               name={session.user.name ?? session.user.email ?? "Member"}
-              memberSince={
-                stats.memberSince ? formatMonth(stats.memberSince) : null
-              }
-              totalPoints={stats.totalPoints}
-              totalEvents={stats.totalEvents}
+              role={kin.role}
+              points={kin.points}
+              groupName={kinGroup?.name}
             />
-            <div className="xl:hidden">{checkInCard}</div>
-            {kin && kin.status !== "withdrawn" && (
-              <KinCard
-                name={session.user.name ?? session.user.email ?? "Member"}
-                role={kin.role}
-                points={kin.points}
-                groupName={kinGroup?.name}
-              />
-            )}
+          )}
+        </div>
+
+        <div>
+          <div className="hidden xl:block">{checkInCard}</div>
+
+          <div className="hidden xl:block">
+            <Card className="border-hairline mt-3 gap-0 rounded-lg py-0 shadow-none">
+              <Link
+                href="/portal/events"
+                className="flex min-h-11 items-center justify-between gap-4 px-5 py-5 sm:gap-6 sm:px-7"
+              >
+                <span className="min-w-0">
+                  <span className="font-display text-navy block text-lg font-bold">
+                    Upcoming events
+                  </span>
+                  <span className="text-ink-muted mt-1 block text-sm">
+                    RSVP for what is coming up.
+                  </span>
+                </span>
+                <ArrowRight
+                  aria-hidden="true"
+                  className="text-gold-ink size-5 shrink-0"
+                />
+              </Link>
+            </Card>
+
+            <Card className="border-hairline mt-3 gap-0 rounded-lg py-0 shadow-none">
+              <Link
+                href="/portal/mentorship"
+                className="flex min-h-11 items-center justify-between gap-4 px-5 py-5 sm:gap-6 sm:px-7"
+              >
+                <span className="min-w-0">
+                  <span className="font-display text-navy block text-lg font-bold">
+                    SASE KIN
+                  </span>
+                  <span className="text-ink-muted mt-1 block text-sm">
+                    Sign up and join a kin group this semester.
+                  </span>
+                </span>
+                <ArrowRight
+                  aria-hidden="true"
+                  className="text-gold-ink size-5 shrink-0"
+                />
+              </Link>
+            </Card>
+
+            <Card className="border-hairline mt-3 gap-0 rounded-lg py-0 shadow-none">
+              <Link
+                href="/portal/elections"
+                className="flex min-h-11 items-center justify-between gap-4 px-5 py-5 sm:gap-6 sm:px-7"
+              >
+                <span className="min-w-0">
+                  <span className="font-display text-navy block text-lg font-bold">
+                    Elections
+                  </span>
+                  <span className="text-ink-muted mt-1 block text-sm">
+                    Run for the board or vote for next year&apos;s officers.
+                  </span>
+                </span>
+                <ArrowRight
+                  aria-hidden="true"
+                  className="text-gold-ink size-5 shrink-0"
+                />
+              </Link>
+            </Card>
+
+            <Card className="border-hairline mt-3 gap-0 rounded-lg py-0 shadow-none">
+              <Link
+                href="/portal/resume"
+                className="flex min-h-11 items-center justify-between gap-4 px-5 py-5 sm:gap-6 sm:px-7"
+              >
+                <span className="min-w-0">
+                  <span className="font-display text-navy block text-lg font-bold">
+                    Resume
+                  </span>
+                  <span className="text-ink-muted mt-1 block text-sm">
+                    Upload a PDF for the member resume book.
+                  </span>
+                </span>
+                <ArrowRight
+                  aria-hidden="true"
+                  className="text-gold-ink size-5 shrink-0"
+                />
+              </Link>
+            </Card>
           </div>
 
-          <div>
-            <div className="hidden xl:block">{checkInCard}</div>
-
-            <div className="hidden xl:block">
-              <Card className="border-hairline mt-3 gap-0 rounded-lg py-0 shadow-none">
-                <Link
-                  href="/portal/events"
-                  className="flex min-h-11 items-center justify-between gap-4 px-5 py-5 sm:gap-6 sm:px-7"
-                >
-                  <span className="min-w-0">
-                    <span className="font-display text-navy block text-lg font-bold">
-                      Upcoming events
-                    </span>
-                    <span className="text-ink-muted mt-1 block text-sm">
-                      RSVP for what is coming up.
-                    </span>
+          {(!!recruiting?.open || hasApplication) && (
+            <Card className="border-hairline mt-3 gap-0 rounded-lg py-0 shadow-none">
+              <Link
+                href="/portal/committees"
+                className="flex min-h-11 items-center justify-between gap-4 px-5 py-5 sm:gap-6 sm:px-7"
+              >
+                <span className="min-w-0">
+                  <span className="font-display text-navy block text-lg font-bold">
+                    Committees
                   </span>
-                  <ArrowRight
-                    aria-hidden="true"
-                    className="text-gold-ink size-5 shrink-0"
-                  />
-                </Link>
-              </Card>
-
-              <Card className="border-hairline mt-3 gap-0 rounded-lg py-0 shadow-none">
-                <Link
-                  href="/portal/mentorship"
-                  className="flex min-h-11 items-center justify-between gap-4 px-5 py-5 sm:gap-6 sm:px-7"
-                >
-                  <span className="min-w-0">
-                    <span className="font-display text-navy block text-lg font-bold">
-                      SASE KIN
-                    </span>
-                    <span className="text-ink-muted mt-1 block text-sm">
-                      Sign up and join a kin group this semester.
-                    </span>
+                  <span className="text-ink-muted mt-1 block text-sm">
+                    {recruiting?.open
+                      ? `Apply to ${listNames(recruiting.names).replace(/,? and /, " or ")}. Closes ${recruiting.closesLabel}.`
+                      : "Check the status of your application."}
                   </span>
-                  <ArrowRight
-                    aria-hidden="true"
-                    className="text-gold-ink size-5 shrink-0"
-                  />
-                </Link>
-              </Card>
+                </span>
+                <ArrowRight
+                  aria-hidden="true"
+                  className="text-gold-ink size-5 shrink-0"
+                />
+              </Link>
+            </Card>
+          )}
 
-              <Card className="border-hairline mt-3 gap-0 rounded-lg py-0 shadow-none">
-                <Link
-                  href="/portal/elections"
-                  className="flex min-h-11 items-center justify-between gap-4 px-5 py-5 sm:gap-6 sm:px-7"
-                >
-                  <span className="min-w-0">
-                    <span className="font-display text-navy block text-lg font-bold">
-                      Elections
-                    </span>
-                    <span className="text-ink-muted mt-1 block text-sm">
-                      Run for the board or vote for next year&apos;s officers.
-                    </span>
-                  </span>
-                  <ArrowRight
-                    aria-hidden="true"
-                    className="text-gold-ink size-5 shrink-0"
-                  />
-                </Link>
-              </Card>
-
-              <Card className="border-hairline mt-3 gap-0 rounded-lg py-0 shadow-none">
-                <Link
-                  href="/portal/resume"
-                  className="flex min-h-11 items-center justify-between gap-4 px-5 py-5 sm:gap-6 sm:px-7"
-                >
-                  <span className="min-w-0">
-                    <span className="font-display text-navy block text-lg font-bold">
-                      Resume
-                    </span>
-                    <span className="text-ink-muted mt-1 block text-sm">
-                      Upload a PDF for the member resume book.
-                    </span>
-                  </span>
-                  <ArrowRight
-                    aria-hidden="true"
-                    className="text-gold-ink size-5 shrink-0"
-                  />
-                </Link>
-              </Card>
-            </div>
-
-            {(!!recruiting?.open || hasApplication) && (
-              <Card className="border-hairline mt-3 gap-0 rounded-lg py-0 shadow-none">
-                <Link
-                  href="/portal/committees"
-                  className="flex min-h-11 items-center justify-between gap-4 px-5 py-5 sm:gap-6 sm:px-7"
-                >
-                  <span className="min-w-0">
-                    <span className="font-display text-navy block text-lg font-bold">
-                      Committees
-                    </span>
-                    <span className="text-ink-muted mt-1 block text-sm">
-                      {recruiting?.open
-                        ? `Apply to ${listNames(recruiting.names).replace(/,? and /, " or ")}. Closes ${recruiting.closesLabel}.`
-                        : "Check the status of your application."}
-                    </span>
-                  </span>
-                  <ArrowRight
-                    aria-hidden="true"
-                    className="text-gold-ink size-5 shrink-0"
-                  />
-                </Link>
-              </Card>
-            )}
-
-            {open.length !== 1 && (
-              <EventRows
-                title="Open now"
-                empty={
-                  <p className="text-ink-muted text-body-sm text-center">
-                    Nothing is open at the moment. Check-in opens when an
-                    officer starts an event.
-                  </p>
-                }
-                rows={open.map((event) => ({
-                  key: event.id,
-                  title: event.title,
-                  at: event.startsAt,
-                  location: event.location,
-                  points: event.pointsValue,
-                  done: event.attendedAt !== null,
-                  href: "/portal/check-in",
-                }))}
-              />
-            )}
-
+          {open.length !== 1 && (
             <EventRows
-              title="Where you have been"
-              count={
-                stats.totalEvents > 0
-                  ? `${stats.totalEvents} · ${stats.totalPoints} pts`
-                  : undefined
-              }
+              title="Open now"
               empty={
-                <div className="text-center">
-                  <p className="font-display text-navy text-h3 font-bold">
-                    No check-ins yet.
-                  </p>
-                  <p className="text-ink-muted text-body max-w-measure mx-auto mt-3">
-                    Your first one takes about ten seconds.{" "}
-                    {open.length > 0
-                      ? `${open.length} ${open.length === 1 ? "event is" : "events are"} open right now. Check into one and it lands here.`
-                      : "Check-in opens when an officer starts an event."}
-                  </p>
-                </div>
+                <p className="text-ink-muted text-body-sm text-center">
+                  Nothing is open at the moment. Check-in opens when an officer
+                  starts an event.
+                </p>
               }
-              totalCount={stats.totalEvents}
-              rows={attended.map((event) => ({
+              rows={open.map((event) => ({
                 key: event.id,
                 title: event.title,
                 at: event.startsAt,
                 location: event.location,
-                points: event.pointsEarned,
-                note: event.method === "manual" ? "Added by an officer" : null,
+                points: event.pointsValue,
+                done: event.attendedAt !== null,
+                href: "/portal/check-in",
               }))}
             />
+          )}
 
-            <Leaderboard />
+          <EventRows
+            title="Where you have been"
+            count={
+              stats.totalEvents > 0
+                ? `${stats.totalEvents} · ${stats.totalPoints} pts`
+                : undefined
+            }
+            empty={
+              <div className="text-center">
+                <p className="font-display text-navy text-h3 font-bold">
+                  No check-ins yet.
+                </p>
+                <p className="text-ink-muted text-body max-w-measure mx-auto mt-3">
+                  Your first one takes about ten seconds.{" "}
+                  {open.length > 0
+                    ? `${open.length} ${open.length === 1 ? "event is" : "events are"} open right now. Check into one and it lands here.`
+                    : "Check-in opens when an officer starts an event."}
+                </p>
+              </div>
+            }
+            totalCount={stats.totalEvents}
+            rows={attended.map((event) => ({
+              key: event.id,
+              title: event.title,
+              at: event.startsAt,
+              location: event.location,
+              points: event.pointsEarned,
+              note: event.method === "manual" ? "Added by an officer" : null,
+            }))}
+          />
 
-            <Separator className="mt-12" />
-            <div className="flex flex-wrap items-center justify-between gap-4 pt-6">
-              <p className="text-ink-muted text-body-sm">
-                {session.user.email}
-              </p>
-              <SignOutButton />
-            </div>
+          <Leaderboard data={board} />
+
+          <Separator className="mt-12" />
+          <div className="flex flex-wrap items-center justify-between gap-4 pt-6">
+            <p className="text-ink-muted text-body-sm">{session.user.email}</p>
+            <SignOutButton />
           </div>
         </div>
       </div>
-    </HydrateClient>
+    </div>
   );
 }

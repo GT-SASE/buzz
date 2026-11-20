@@ -5,7 +5,8 @@ import { cache } from "react";
 import { orNotFound } from "~/app/portal/_lib/missing";
 import { requireOfficer } from "~/app/portal/_lib/session";
 import { Section } from "~/components/site";
-import { HydrateClient, api, hydrated } from "~/trpc/server";
+import { HydrateClient } from "~/trpc/hydrate";
+import { api, hydrated } from "~/trpc/server";
 import { PageBreadcrumb } from "../page-breadcrumb";
 import { PageEditor } from "../page-editor";
 

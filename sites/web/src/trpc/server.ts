@@ -23,10 +23,8 @@ const createContext = cache(async () => {
 const getQueryClient = cache(createQueryClient);
 const caller = createCaller(createContext);
 
-export const { trpc: api, HydrateClient } = createHydrationHelpers<AppRouter>(
-  caller,
-  getQueryClient,
-);
+export const { trpc: api, HydrateClient: HydrateQueries } =
+  createHydrationHelpers<AppRouter>(caller, getQueryClient);
 
 /**
  * `await api.x.y(input)` for a page that reads the result itself and also

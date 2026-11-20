@@ -60,6 +60,17 @@ export function migrations(): string {
   ].join("\n");
 }
 
+async function isShallow(): Promise<boolean> {
+  return (
+    (
+      await run("git", ["rev-parse", "--is-shallow-repository"], {
+        cwd: repoPath("sites/web"),
+        timeout: 5_000,
+      })
+    ).stdout.trim() === "true"
+  );
+}
+
 export async function version(): Promise<string> {
   const pkg = JSON.parse(readRepoFile("sites/web/package.json")) as {
     version: string;
@@ -83,11 +94,18 @@ export async function version(): Promise<string> {
     );
   }
   try {
-    const { appBuild } = (await import(
-      pathToFileURL(repoPath("sites/web/build-version.ts")).href
-    )) as { appBuild: () => { version: string; commit: string } };
-    const b = appBuild();
-    lines.push(`computed build: ${b.version} (commit ${b.commit})`);
+    if (await isShallow()) {
+      const [major, minor] = pkg.version.split(".");
+      lines.push(
+        `computed build: skipped on a shallow clone (PATCH needs history); MAJOR.MINOR is ${major}.${minor}`,
+      );
+    } else {
+      const { appBuild } = (await import(
+        pathToFileURL(repoPath("sites/web/build-version.ts")).href
+      )) as { appBuild: () => { version: string; commit: string } };
+      const b = appBuild();
+      lines.push(`computed build: ${b.version} (commit ${b.commit})`);
+    }
   } catch (e) {
     lines.push(`computed build unavailable: ${(e as Error).message}`);
   }
@@ -233,13 +251,7 @@ export async function serverVersion(): Promise<string> {
   const [major, minor] = pkg.version.split(".");
   const fallback = `${major}.${minor}.0`;
   try {
-    const shallow = (
-      await run("git", ["rev-parse", "--is-shallow-repository"], {
-        cwd: repoPath("sites/web"),
-        timeout: 5_000,
-      })
-    ).stdout.trim();
-    if (shallow === "true") return fallback;
+    if (await isShallow()) return fallback;
     const { appBuild } = (await import(
       pathToFileURL(repoPath("sites/web/build-version.ts")).href
     )) as { appBuild: () => { version: string } };

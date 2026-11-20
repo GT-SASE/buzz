@@ -4,7 +4,8 @@ import { cache } from "react";
 
 import { orNotFound } from "~/app/portal/_lib/missing";
 import { requireOfficer } from "~/app/portal/_lib/session";
-import { HydrateClient, api, hydrated } from "~/trpc/server";
+import { HydrateClient } from "~/trpc/hydrate";
+import { api, hydrated } from "~/trpc/server";
 import { PresentScreen } from "./present-screen";
 
 const eventForPage = cache((id: string) =>
