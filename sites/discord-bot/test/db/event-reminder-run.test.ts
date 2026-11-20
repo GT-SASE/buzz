@@ -325,6 +325,23 @@ describe("countdown pings", () => {
     ).toMatchObject([{ reminder_date: dateOffset(0), state: "sent" }]);
   });
 
+  it("sends engage_picture_late a week after Engage post, though the event has passed", async () => {
+    const guild = await w.guildInZone();
+    const made = await event(guild, -4);
+    await engageDoneOn(made, dateOffset(-7));
+
+    expect((await w.run([guild])).status).toBe("succeeded");
+
+    expect(w.sent.map((sent) => sent.content)).toEqual([
+      expect.stringContaining("Engage picture for **Spring social**"),
+    ]);
+    expect(
+      (await logRows(made.eventId)).filter(
+        (row) => row.kind === "engage_picture_late",
+      ),
+    ).toMatchObject([{ reminder_date: dateOffset(0), state: "sent" }]);
+  });
+
   it.each<[EventReminderKind, number, (made: EventFixture) => Promise<void>]>([
     [
       "steps_unassigned",

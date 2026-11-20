@@ -403,8 +403,9 @@ export async function listOpenStepsForUser(
 }
 
 /**
- * Every live active event dated `fromDate` or later, across all guilds, whose channel is
- * active and whose guild has reminders on, with its steps, live assignments and the log
+ * Every live active event dated `fromDate` or later, or whose Engage picture ping may
+ * still be due after the event, across all guilds, whose channel is active and whose
+ * guild has reminders on, with its steps, live assignments and the log
  * rows dated `fromDate` or later. Pass a date early enough for every timezone, such as
  * yesterday in UTC, and decide per guild which events are due. Soonest first.
  */
@@ -446,7 +447,14 @@ export async function listEventReminderCandidates(
         on c.guild_id = e.guild_id and c.channel_id = e.channel_id
       join discord_bot.guild_config g on g.guild_id = e.guild_id
       where e.status = 'active' and e.deleted_at is null
-        and e.event_date >= ${fromDate}
+        and (e.event_date >= ${fromDate} or exists (
+          select 1 from discord_bot.event_steps post
+          where post.event_id = e.id and post.kind = 'engage_post' and post.status = 'done'
+            and post.completed_at >= ${fromDate}::date - 9
+            and not exists (
+              select 1 from discord_bot.event_steps picture
+              where picture.event_id = e.id and picture.kind = 'engage_picture'
+                and picture.status = 'done')))
         and c.status = 'active' and g.reminders_enabled
       order by e.event_date, e.id limit ${MAX_REMINDER_EVENTS + 1}`,
     ),
