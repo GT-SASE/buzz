@@ -5,6 +5,7 @@ import "./src/server/auth-env";
 import type { NextConfig } from "next";
 
 import { appBuild } from "./build-version";
+import { cspHeaderRules } from "./csp";
 
 const isProd = process.env.NODE_ENV === "production";
 const build = appBuild();
@@ -46,28 +47,8 @@ const config: NextConfig = {
           },
         ],
       },
-      {
-        source: "/:path*",
-        headers: [
-          ...base,
-          {
-            key: "Content-Security-Policy",
-            value: [
-              "default-src 'self'",
-              isProd
-                ? "script-src 'self' 'unsafe-inline' https://va.vercel-scripts.com"
-                : "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://va.vercel-scripts.com",
-              "style-src 'self' 'unsafe-inline'",
-              "img-src 'self' data: blob: https:",
-              "font-src 'self' data:",
-              "connect-src 'self' https:",
-              "frame-ancestors 'none'",
-              "base-uri 'self'",
-              "form-action 'self'",
-            ].join("; "),
-          },
-        ],
-      },
+      { source: "/:path*", headers: base },
+      ...cspHeaderRules(isProd),
     ];
   },
 };

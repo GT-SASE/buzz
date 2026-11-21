@@ -88,6 +88,10 @@ Remote cache (Vercel, team `sasegt`) is optional and off by default. Locally: `b
 4. Merge with `gh pr merge N --merge`.
 5. Check the Vercel commit status on the merge commit (`buzz_deploy_status`), then `bun scripts/smoke.mjs`, then GitHub CI on `main` (`gh run list --workflow CI --branch main --limit 1`). GitHub CI checks out a shallow clone, so tests that read git history can pass locally and fail there.
 
+## Content Security Policy
+
+`sites/web/csp.ts` builds the policy, `next.config.ts` serves it, `tests/csp.test.ts` pins it. Every page may load images and make requests only from its own origin (Vercel Analytics and Speed Insights use `/_vercel/*`). Two exceptions are scoped to the routes that need them: `/status` may also fetch `raw.githubusercontent.com` (the uptime JSON), and the public CMS pages plus the page-editor preview keep `img-src https:` because officers embed images by URL (`markdown.tsx`). A new third-party host goes into `csp.ts` for its own route, never into the default. Scripts keep `'unsafe-inline'` on purpose: a nonce works only on pages rendered per request, and building it (Next 16.4.6, `proxy.ts` plus `connection()` in the root layout) turned every marketing page from static to dynamic, losing the CDN-cached prerender. Do not retry that without a new idea, for example a nonce on `/portal` only, whose member pages are already dynamic.
+
 Production migrates during the Vercel production build (`scripts/vercel-build.mjs`); previews skip migrations because they share the production DB.
 
 ## Versioning
