@@ -203,11 +203,10 @@ export const eventRouter = createTRPCRouter({
       // and the old text keeps rendering to members.
       const capacity = fields.maxCheckIns ?? null;
 
-      // Uncapped check-ins skip the counter entirely, because a shared counter
-      // is a row every scanner has to serialise on. So the moment a capacity is
-      // added the counter may be stale, and the gate it feeds would admit past
-      // the limit. Recomputing it from the rows that actually exist is what
-      // makes the fast path safe to turn back off.
+      // Older uncapped events can hold a stale counter (code check-ins used to
+      // skip it), so the moment a capacity is added it is recomputed from the
+      // rows that actually exist, or the gate it feeds would admit past the
+      // limit.
       //
       // The recount is a subquery inside this UPDATE, not a separate SELECT
       // before it: two statements leave a window where a check-in inserted
@@ -689,15 +688,12 @@ export const eventRouter = createTRPCRouter({
 
       if (event.maxCheckIns === null) {
         /*
-         * Uncapped: no capacity counter to serialise on, but archive / disable /
-         * window still have to be re-validated under a lock so a concurrent
-         * officer close cannot race the insert.
-         *
-         * `currentCheckIns` is deliberately NOT incremented here. It exists to
-         * settle capacity, this event has none, and a shared counter is a row
-         * every writer must serialise on. `listAll` already reports attendance
-         * with `count(*)`, and `update` recomputes the counter if a capacity is
-         * ever added.
+         * Uncapped: no capacity to settle, but archive / disable / window
+         * still have to be re-validated under a lock so a concurrent officer
+         * close cannot race the insert. The event row is locked either way, so
+         * keeping `currentCheckIns` current costs one UPDATE on a row this
+         * transaction already holds. Manual check-in and `removeCheckIn` keep
+         * it current on every event, so this path has to as well.
          */
         await ctx.db.transaction(async (tx) => {
           const [locked] = await tx
@@ -738,6 +734,11 @@ export const eventRouter = createTRPCRouter({
             }
             throw error;
           }
+
+          await tx
+            .update(events)
+            .set({ currentCheckIns: locked.currentCheckIns + 1 })
+            .where(eq(events.id, locked.id));
         });
       } else {
         await ctx.db.transaction(async (tx) => {
