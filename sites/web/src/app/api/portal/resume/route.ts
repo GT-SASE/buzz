@@ -74,7 +74,13 @@ export async function POST(req: NextRequest) {
     return jsonError("Sign in to upload a resume.", 401);
   }
 
-  if (!takeToken(`resume-upload:${session.user.id}`, RESUME_UPLOAD_LIMIT)) {
+  if (
+    !(await takeToken(
+      db,
+      `resume-upload:${session.user.id}`,
+      RESUME_UPLOAD_LIMIT,
+    ))
+  ) {
     return jsonError("Too many requests. Try again shortly.", 429);
   }
 

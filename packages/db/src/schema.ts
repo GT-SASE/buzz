@@ -749,3 +749,25 @@ export const electionVotes = createTable(
     index(idx("election_vote_candidate_idx")).on(t.candidateId),
   ],
 );
+
+/**
+ * Fixed-window request counters behind the API rate limiter. One row per
+ * caller key per window: `key` is the call site's string (`check-in:<userId>`),
+ * `windowStart` is the window's start, `floor(now / intervalMs) * intervalMs`,
+ * and `count` is the hits so far in it. Every hit is one atomic upsert on the
+ * primary key, so serverless instances share one count. Rows are dead once
+ * their window ends; the limiter deletes them an hour after it starts, which
+ * is what the `windowStart` index serves.
+ */
+export const rateLimits = createTable(
+  "rate_limit",
+  (d) => ({
+    key: d.varchar({ length: 255 }).notNull(),
+    windowStart: d.timestamp({ withTimezone: true }).notNull(),
+    count: d.integer().notNull(),
+  }),
+  (t) => [
+    primaryKey({ columns: [t.key, t.windowStart] }),
+    index(idx("rate_limit_window_start_idx")).on(t.windowStart),
+  ],
+);

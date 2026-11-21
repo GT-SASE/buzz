@@ -110,7 +110,8 @@ export const mentorshipRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      assertRateLimit(
+      await assertRateLimit(
+        ctx.db,
         `mentorship-enroll:${ctx.session.user.id}`,
         MENTORSHIP_ENROLL_LIMIT,
       );
@@ -154,7 +155,8 @@ export const mentorshipRouter = createTRPCRouter({
     }),
 
   withdraw: protectedProcedure.mutation(async ({ ctx }) => {
-    assertRateLimit(
+    await assertRateLimit(
+      ctx.db,
       `mentorship-enroll:${ctx.session.user.id}`,
       MENTORSHIP_ENROLL_LIMIT,
     );
@@ -273,7 +275,8 @@ export const mentorshipRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      assertRateLimit(
+      await assertRateLimit(
+        ctx.db,
         `mentorship-award:${ctx.session.user.id}`,
         MENTORSHIP_AWARD_LIMIT,
       );
@@ -415,7 +418,8 @@ export const mentorshipRouter = createTRPCRouter({
   joinGroup: protectedProcedure
     .input(z.object({ groupId: z.string().min(1) }))
     .mutation(async ({ ctx, input }) => {
-      assertRateLimit(
+      await assertRateLimit(
+        ctx.db,
         `mentorship-enroll:${ctx.session.user.id}`,
         MENTORSHIP_ENROLL_LIMIT,
       );
@@ -489,7 +493,8 @@ export const mentorshipRouter = createTRPCRouter({
 
   /** Back to signed up. Yearly KIN points stay with the member. */
   leaveGroup: protectedProcedure.mutation(async ({ ctx }) => {
-    assertRateLimit(
+    await assertRateLimit(
+      ctx.db,
       `mentorship-enroll:${ctx.session.user.id}`,
       MENTORSHIP_ENROLL_LIMIT,
     );
@@ -663,7 +668,8 @@ export const mentorshipRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      assertRateLimit(
+      await assertRateLimit(
+        ctx.db,
         `mentorship-award:${ctx.session.user.id}`,
         MENTORSHIP_AWARD_LIMIT,
       );

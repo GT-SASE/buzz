@@ -26,7 +26,7 @@ trusting any list in prose, including this file:
 packages/api/src/root.ts        appRouter; every router must be added here by hand
 packages/api/src/routers/*.ts   tRPC routers (chapter committee election event member mentorship page resume)
 packages/api/src/trpc.ts        context and procedure builders (protected, admin, superAdmin)
-packages/api/src/*.ts           pure helpers (page-slug, terms, rate-limit, ...) with unit tests
+packages/api/src/*.ts           helpers (page-slug, terms, ...) with unit tests; rate-limit.ts is the Postgres rate limiter (`buzz_rate_limit`)
 packages/db/src/schema.ts       Drizzle schema; all tables are prefixed buzz_
 packages/db/drizzle/            generated SQL migrations + meta; commit them
 packages/db/scripts/            seeds
@@ -63,6 +63,7 @@ Use `bun`, `bun run`, `bun x`. Never npm, pnpm, npx, bunx. Spell out `bun run te
 
 - The bot's tests are excluded from root `test:node` because they need their own preload (`sites/discord-bot/test/support/setup.ts`); they run as the turbo tasks `test` and `test:db` from that folder.
 - bun test. Mock modules with `mock.module(...)` (see `tests/page-router.test.ts`: mock `packages/auth`, then `await import` the router).
+- Rate limits live in Postgres and take the caller's `ctx.db`, so a router test's fake `db` is wrapped in `withMemoryLimiter(db)` (`tests/helpers/rate-limit.ts`) and clears counts with its `resetRateLimits()`. The real SQL is `tests/rate-limit.integration.test.ts`.
 - Router tests use a fake `db`; `*.integration.test.ts` use a real Postgres through `TEST_DATABASE_URL` only and wrap the suite in `describe.skipIf(!process.env.DATABASE_URL)`.
 - `tests/setup/env.ts` (bunfig preload) copies `TEST_DATABASE_URL` into `DATABASE_URL` and deletes it when unset, so unset means DB suites skip.
 - `.tsx` tests need the happy-dom preload; they only run in `test:dom`.

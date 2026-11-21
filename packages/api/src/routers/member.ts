@@ -250,7 +250,8 @@ export const memberRouter = createTRPCRouter({
   exportRoster: adminProcedure
     .input(z.object({ search: z.string().trim().max(100).optional() }))
     .query(async ({ ctx, input }) => {
-      assertRateLimit(
+      await assertRateLimit(
+        ctx.db,
         `export-roster:${ctx.session.user.id}`,
         EXPORT_ROSTER_LIMIT,
       );

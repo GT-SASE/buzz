@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it, mock, vi } from "bun:test";
 import { stubEnv, unstubAllEnvs } from "./helpers/env";
+import { resetRateLimits, withMemoryLimiter } from "./helpers/rate-limit";
 
 /**
  * Unit coverage for the helpers inside packages/api/src/routers/event.ts. None
@@ -27,14 +28,13 @@ mock.module("../packages/auth/src/index.ts", () => ({
 
 stubEnv("NODE_ENV", "production");
 const { createCaller } = await import("../packages/api/src/root");
-const { resetRateLimits } = await import("../packages/api/src/rate-limit");
 unstubAllEnvs();
 
 type Ctx = Parameters<typeof createCaller>[0];
 
 function adminCtx(db: unknown): Ctx {
   return {
-    db,
+    db: withMemoryLimiter(db),
     session: {
       user: { id: "officer-1", role: "ADMIN", email: "officer@gatech.edu" },
       expires: "2099-01-01T00:00:00.000Z",
@@ -45,7 +45,7 @@ function adminCtx(db: unknown): Ctx {
 
 function memberCtx(db: unknown): Ctx {
   return {
-    db,
+    db: withMemoryLimiter(db),
     session: {
       user: { id: "member-1", role: "MEMBER", email: "member@gatech.edu" },
       expires: "2099-01-01T00:00:00.000Z",

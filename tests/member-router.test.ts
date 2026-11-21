@@ -9,6 +9,7 @@ import {
 } from "drizzle-orm";
 import { afterAll, describe, expect, it, mock, vi } from "bun:test";
 import { stubEnv, unstubAllEnvs } from "./helpers/env";
+import { resetRateLimits, withMemoryLimiter } from "./helpers/rate-limit";
 
 import { eventCheckIns, events, users } from "../packages/db/src/schema";
 
@@ -36,7 +37,6 @@ stubEnv("NODE_ENV", "production");
 const { createCaller } = await import("../packages/api/src/root");
 const { escapeLikePattern } =
   await import("../packages/api/src/routers/member");
-const { resetRateLimits } = await import("../packages/api/src/rate-limit");
 unstubAllEnvs();
 
 type Ctx = Parameters<typeof createCaller>[0];
@@ -45,7 +45,7 @@ const CALLER_ID = "member-1";
 
 function adminCtx(db: unknown): Ctx {
   return {
-    db,
+    db: withMemoryLimiter(db),
     session: {
       user: { id: "officer-1", role: "ADMIN", email: "officer@gatech.edu" },
       expires: "2099-01-01T00:00:00.000Z",
@@ -56,7 +56,7 @@ function adminCtx(db: unknown): Ctx {
 
 function superAdminCtx(db: unknown): Ctx {
   return {
-    db,
+    db: withMemoryLimiter(db),
     session: {
       user: {
         id: "super-1",
@@ -71,7 +71,7 @@ function superAdminCtx(db: unknown): Ctx {
 
 function memberCtx(db: unknown): Ctx {
   return {
-    db,
+    db: withMemoryLimiter(db),
     session: {
       user: { id: CALLER_ID, role: "MEMBER", email: "member@gatech.edu" },
       expires: "2099-01-01T00:00:00.000Z",

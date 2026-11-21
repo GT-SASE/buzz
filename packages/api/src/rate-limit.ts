@@ -1,65 +1,72 @@
 import { TRPCError } from "@trpc/server";
+import { lt, sql } from "drizzle-orm";
 
-type Bucket = {
-  tokens: number;
-  updatedAt: number;
-  fullAt: number;
-};
+import { rateLimits, type db as appDb } from "@buzz/db";
 
-const buckets = new Map<string, Bucket>();
-
-const SWEEP_INTERVAL_MS = 60_000;
-let sweptAt = 0;
-
-function sweep(now: number) {
-  if (now - sweptAt < SWEEP_INTERVAL_MS) return;
-  sweptAt = now;
-  for (const [key, bucket] of buckets) {
-    if (now >= bucket.fullAt) buckets.delete(key);
-  }
-}
+/** All the limiter needs of a database handle, so a fake can stand in. */
+type LimiterDb = Pick<typeof appDb, "insert" | "delete">;
 
 export type RateLimitOptions = {
   limit: number;
   intervalMs: number;
 };
 
-export function takeToken(
+/**
+ * Rows are dead once their window ends. Keeping them an hour is the slack that
+ * lets the sweep skip the question of which window length wrote a row, so no
+ * limit may use a window longer than this.
+ */
+const PRUNE_AFTER_MS = 60 * 60_000;
+
+/** Each instance sweeps at most this often, starting with its first hit. */
+const PRUNE_EVERY_MS = 5 * 60_000;
+let prunedAt = 0;
+
+/**
+ * A fixed-window counter in Postgres, so every serverless instance counts into
+ * the same row. A window is `intervalMs` long and starts on a multiple of it;
+ * the call that makes the count exceed `limit` is refused, and the next window
+ * starts from zero. A caller can land `limit` hits at the end of one window and
+ * `limit` more at the start of the next, which a code-guessing cap tolerates.
+ *
+ * The window comes from this instance's clock, not the database's: instances
+ * agree to within NTP skew, which only blurs a boundary, and a test can move it.
+ *
+ * Pass the pool handle, never a transaction: a refused hit has to stay counted
+ * when the caller's own work rolls back.
+ */
+export async function takeToken(
+  db: LimiterDb,
   key: string,
   { limit, intervalMs }: RateLimitOptions,
-): boolean {
+): Promise<boolean> {
   const now = Date.now();
-  sweep(now);
+  const windowStart = new Date(Math.floor(now / intervalMs) * intervalMs);
 
-  const current = buckets.get(key);
-  const elapsed = current ? now - current.updatedAt : 0;
-  const restored = current ? Math.floor(elapsed / intervalMs) : 0;
-  const tokens = current ? Math.min(limit, current.tokens + restored) : limit;
-  const updatedAt =
-    current && restored > 0
-      ? current.updatedAt + restored * intervalMs
-      : (current?.updatedAt ?? now);
+  const [row] = await db
+    .insert(rateLimits)
+    .values({ key, windowStart, count: 1 })
+    .onConflictDoUpdate({
+      target: [rateLimits.key, rateLimits.windowStart],
+      set: { count: sql`${rateLimits.count} + 1` },
+    })
+    .returning({ count: rateLimits.count });
 
-  if (tokens <= 0) {
-    buckets.set(key, {
-      tokens: 0,
-      updatedAt,
-      fullAt: updatedAt + limit * intervalMs,
-    });
-    return false;
+  if (now - prunedAt >= PRUNE_EVERY_MS) {
+    prunedAt = now;
+    // Housekeeping: a failed sweep leaves rows for the next one.
+    await pruneRateLimits(db, now).catch(() => undefined);
   }
 
-  const remaining = tokens - 1;
-  buckets.set(key, {
-    tokens: remaining,
-    updatedAt,
-    fullAt: updatedAt + (limit - remaining) * intervalMs,
-  });
-  return true;
+  return row!.count <= limit;
 }
 
-export function assertRateLimit(key: string, options: RateLimitOptions) {
-  if (!takeToken(key, options)) {
+export async function assertRateLimit(
+  db: LimiterDb,
+  key: string,
+  options: RateLimitOptions,
+) {
+  if (!(await takeToken(db, key, options))) {
     throw new TRPCError({
       code: "TOO_MANY_REQUESTS",
       message: "Too many requests. Try again shortly.",
@@ -67,13 +74,10 @@ export function assertRateLimit(key: string, options: RateLimitOptions) {
   }
 }
 
-export function resetRateLimits() {
-  buckets.clear();
-  sweptAt = 0;
-}
-
-export function rateLimitBucketCount() {
-  return buckets.size;
+export async function pruneRateLimits(db: LimiterDb, now = Date.now()) {
+  await db
+    .delete(rateLimits)
+    .where(lt(rateLimits.windowStart, new Date(now - PRUNE_AFTER_MS)));
 }
 
 export const CHECK_IN_LIMIT = {
