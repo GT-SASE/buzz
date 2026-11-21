@@ -5,7 +5,7 @@ import "./src/server/auth-env";
 import type { NextConfig } from "next";
 
 import { appBuild } from "./build-version";
-import { cspHeaderRules } from "./csp";
+import { contentSecurityPolicy } from "./csp";
 
 const isProd = process.env.NODE_ENV === "production";
 const build = appBuild();
@@ -47,8 +47,16 @@ const config: NextConfig = {
           },
         ],
       },
-      { source: "/:path*", headers: base },
-      ...cspHeaderRules(isProd),
+      {
+        source: "/:path*",
+        headers: [
+          ...base,
+          {
+            key: "Content-Security-Policy",
+            value: contentSecurityPolicy(isProd),
+          },
+        ],
+      },
     ];
   },
 };
