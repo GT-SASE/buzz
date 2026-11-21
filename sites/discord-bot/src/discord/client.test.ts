@@ -211,7 +211,7 @@ it("sends the token trimmed when the setting has a trailing newline", async () =
 
   await client().sendMessage(MANAGED, MESSAGE_BODY);
 
-  expect(requests()[0]?.headers?.Authorization).toBe(`Bot ${TOKEN}`);
+  expect(requests()[0]?.headers.Authorization).toBe(`Bot ${TOKEN}`);
 });
 
 describe("sends", () => {
