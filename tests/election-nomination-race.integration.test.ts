@@ -83,9 +83,9 @@ describe.skipIf(!process.env.DATABASE_URL)(
       electionId: string,
       during: () => Promise<unknown>,
     ) {
-      let release = () => {};
+      let release!: () => void;
       const held = new Promise<void>((resolve) => (release = resolve));
-      let locked = () => {};
+      let locked!: () => void;
       const lockTaken = new Promise<void>((resolve) => (locked = resolve));
 
       const flip = db.transaction(async (tx) => {
