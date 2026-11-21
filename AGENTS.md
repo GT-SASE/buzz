@@ -88,6 +88,10 @@ Remote cache (Vercel, team `sasegt`) is optional and off by default. Locally: `b
 4. Merge with `gh pr merge N --merge`.
 5. Check the Vercel commit status on the merge commit (`buzz_deploy_status`), then `bun scripts/smoke.mjs`, then GitHub CI on `main` (`gh run list --workflow CI --branch main --limit 1`). GitHub CI checks out a shallow clone, so tests that read git history can pass locally and fail there.
 
+## Content Security Policy
+
+`sites/web/csp.ts` builds the policy, `next.config.ts` serves it, `tests/csp.test.ts` pins it. One policy covers every route, because a browser fixes it when the document loads and App Router links keep that document: a per-route exception only works for the first page a visitor opens (we tried it; clicking from `/about` to `/status` blocked the uptime fetch). Requests may go to this origin and `raw.githubusercontent.com` (the `/status` uptime JSON) only; Vercel Analytics and Speed Insights use `/_vercel/*`. Images keep `https:` because officers embed images by URL in CMS Markdown (`markdown.tsx`), published and in the editor preview; narrow it to this origin once page-builder uploads land. A new third-party host is a deliberate edit to `csp.ts`. Scripts keep `'unsafe-inline'` on purpose. A nonce exists only on pages rendered per request. Measured on Next 16.4.6 with the documented `proxy.ts` plus `await connection()` in the root layout: with `force-static` dropped from `(marketing)/layout.tsx`, every marketing page, `/status` and `/portal/signin` became dynamic and lost the CDN-cached prerender; with it kept they stay static but ship 55 script tags without a nonce, and the browser blocks all of them. SRI does not rescue it, because `/` carries 39 inline scripts whose text differs per page. Do not retry without a new idea, for example a nonce on `/portal` only, whose member pages are already dynamic.
+
 Production migrates during the Vercel production build (`scripts/vercel-build.mjs`); previews skip migrations because they share the production DB.
 
 ## Versioning
