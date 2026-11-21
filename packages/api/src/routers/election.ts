@@ -22,6 +22,7 @@ import {
 } from "@buzz/db";
 
 type Database = typeof Db;
+type Tx = Parameters<Parameters<Database["transaction"]>[0]>[0];
 
 const phases = ["nominating", "voting", "closed", "published"] as const;
 
@@ -73,6 +74,30 @@ async function positionWithElection(db: Database, positionId: string) {
     .where(eq(electionPositions.id, positionId));
   if (!row) notFound("Position");
   return row;
+}
+
+/**
+ * Runs `write` while the election is still nominating, under a shared lock on
+ * its row. `setPhase` takes the same row FOR UPDATE, so a phase flip waits for
+ * the write or the write sees the new phase: no nomination, withdrawal or
+ * approval lands in an election after voting opened. `vote` does the same for
+ * ballots.
+ */
+async function whileNominating<T>(
+  db: Database,
+  electionId: string,
+  closedMessage: string,
+  write: (tx: Tx) => Promise<T>,
+) {
+  return db.transaction(async (tx) => {
+    const [locked] = await tx
+      .select({ phase: elections.phase })
+      .from(elections)
+      .where(eq(elections.id, electionId))
+      .for("share");
+    if (locked?.phase !== "nominating") badRequest(closedMessage);
+    return write(tx);
+  });
 }
 
 /**
@@ -291,22 +316,26 @@ export const electionRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       assertRateLimit(`election:${ctx.session.user.id}`, ELECTION_ACTION_LIMIT);
       const position = await positionWithElection(ctx.db, input.positionId);
-      if (position.phase !== "nominating") {
-        badRequest("Nominations are closed for this election.");
-      }
       try {
-        const [created] = await ctx.db
-          .insert(electionCandidates)
-          .values({
-            positionId: input.positionId,
-            userId: ctx.session.user.id,
-            statement: input.statement,
-          })
-          .returning({
-            id: electionCandidates.id,
-            status: electionCandidates.status,
-          });
-        return created;
+        return await whileNominating(
+          ctx.db,
+          position.electionId,
+          "Nominations are closed for this election.",
+          async (tx) => {
+            const [created] = await tx
+              .insert(electionCandidates)
+              .values({
+                positionId: input.positionId,
+                userId: ctx.session.user.id,
+                statement: input.statement,
+              })
+              .returning({
+                id: electionCandidates.id,
+                status: electionCandidates.status,
+              });
+            return created;
+          },
+        );
       } catch (error) {
         if (isUniqueViolation(error)) {
           throw new TRPCError({
@@ -332,12 +361,15 @@ export const electionRouter = createTRPCRouter({
         .where(eq(electionCandidates.id, input.candidateId));
       if (candidate?.userId !== ctx.session.user.id) notFound("Nomination");
       const position = await positionWithElection(ctx.db, candidate.positionId);
-      if (position.phase !== "nominating") {
-        badRequest("Nominations are closed. Ask an officer.");
-      }
-      await ctx.db
-        .delete(electionCandidates)
-        .where(eq(electionCandidates.id, candidate.id));
+      await whileNominating(
+        ctx.db,
+        position.electionId,
+        "Nominations are closed. Ask an officer.",
+        (tx) =>
+          tx
+            .delete(electionCandidates)
+            .where(eq(electionCandidates.id, candidate.id)),
+      );
       return { id: candidate.id };
     }),
 
@@ -508,18 +540,22 @@ export const electionRouter = createTRPCRouter({
         .where(eq(electionCandidates.id, input.candidateId));
       if (!candidate) notFound("Candidate");
       const position = await positionWithElection(ctx.db, candidate.positionId);
-      if (position.phase !== "nominating") {
-        badRequest("The ballot is locked once voting opens.");
-      }
-      const [updated] = await ctx.db
-        .update(electionCandidates)
-        .set({ status: input.status })
-        .where(eq(electionCandidates.id, input.candidateId))
-        .returning({
-          id: electionCandidates.id,
-          status: electionCandidates.status,
-        });
-      return updated;
+      return whileNominating(
+        ctx.db,
+        position.electionId,
+        "The ballot is locked once voting opens.",
+        async (tx) => {
+          const [updated] = await tx
+            .update(electionCandidates)
+            .set({ status: input.status })
+            .where(eq(electionCandidates.id, input.candidateId))
+            .returning({
+              id: electionCandidates.id,
+              status: electionCandidates.status,
+            });
+          return updated;
+        },
+      );
     }),
 
   setPhase: adminProcedure
