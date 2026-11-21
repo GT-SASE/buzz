@@ -96,10 +96,12 @@ describe("mentorship.expressInterest", () => {
       },
       insert: () => ({
         values: (row: unknown) => ({
-          returning: () => {
-            inserted.push(row);
-            return Promise.resolve([row]);
-          },
+          onConflictDoUpdate: () => ({
+            returning: () => {
+              inserted.push(row);
+              return Promise.resolve([row]);
+            },
+          }),
         }),
       }),
     };
