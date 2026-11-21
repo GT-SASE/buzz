@@ -1,5 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import { and, count, desc, eq, notInArray } from "drizzle-orm";
+import { and, count, desc, eq, gt, notInArray, or } from "drizzle-orm";
 import { z } from "zod";
 
 import {
@@ -8,6 +8,7 @@ import {
   committeeApplySchema,
   committeeIdsSchema,
   closedCommitteePicks,
+  currentCommitteeCycle,
   isCommitteeApplicationLocked,
   isCommitteeCycleOpen,
   LOCKED_COMMITTEE_STATUSES,
@@ -19,7 +20,12 @@ import {
   COMMITTEE_APPLY_LIMIT,
   EXPORT_COMMITTEE_LIMIT,
 } from "../rate-limit";
-import { semester, semesterLabel, semesterPattern } from "../terms";
+import {
+  nextSemester,
+  semester,
+  semesterLabel,
+  semesterPattern,
+} from "../terms";
 import { adminProcedure, createTRPCRouter, protectedProcedure } from "../trpc";
 import {
   committeeApplications,
@@ -36,13 +42,23 @@ const cycleInput = z
 
 type Db = typeof db;
 
-async function findCycle(database: Db, id: string) {
+/**
+ * The cycle members see now (see `currentCommitteeCycle`), found by date
+ * window rather than by `semester(now)`. Only cycles still open plus the one
+ * named for this semester can win, so that is all the query reads.
+ */
+async function findCurrentCycle(database: Db, now: Date) {
   try {
-    const [row] = await database
+    const rows = await database
       .select()
       .from(committeeCycles)
-      .where(eq(committeeCycles.id, id));
-    return row ?? null;
+      .where(
+        or(
+          gt(committeeCycles.closesAt, now),
+          eq(committeeCycles.id, semester(now)),
+        ),
+      );
+    return currentCommitteeCycle(rows, now);
   } catch (error) {
     if (isUndefinedTable(error)) return null;
     throw error;
@@ -50,24 +66,30 @@ async function findCycle(database: Db, id: string) {
 }
 
 /**
- * The cycle an officer screen shows when none is picked: this semester's if
+ * The cycle an officer screen shows when none is picked: the current one if
  * it exists, else the one that closed most recently.
  */
 async function defaultCycleId(database: Db, now: Date) {
-  const current = semester(now);
-  if (await findCycle(database, current)) return current;
+  const current = await findCurrentCycle(database, now);
+  if (current) return current.id;
   const [latest] = await database
     .select({ id: committeeCycles.id })
     .from(committeeCycles)
     .orderBy(desc(committeeCycles.closesAt))
     .limit(1);
-  return latest?.id ?? current;
+  return latest?.id ?? semester(now);
 }
 
 async function openCurrentCycle(database: Db, now: Date) {
-  const cycle = await findCycle(database, semester(now));
+  const cycle = await findCurrentCycle(database, now);
   if (!cycle || !isCommitteeCycleOpen(cycle.closesAt, now)) cycleClosed();
   return cycle;
+}
+
+/** Semesters an officer may open applications for at `now`. */
+function openableSemesters(now: Date) {
+  const current = semester(now);
+  return [current, nextSemester(current)];
 }
 
 function cycleClosed(): never {
@@ -112,23 +134,20 @@ const applicationSelect = {
 export const committeeRouter = createTRPCRouter({
   mine: protectedProcedure.query(async ({ ctx }) => {
     const now = new Date();
-    const cycleId = semester(now);
-    // Independent reads, one round trip: the application is keyed by user and
-    // cycle id, not by the cycle row.
-    const [cycle, row] = await Promise.all([
-      findCycle(ctx.db, cycleId),
-      ctx.db.query.committeeApplications
-        .findFirst({
-          where: and(
-            eq(committeeApplications.userId, ctx.session.user.id),
-            eq(committeeApplications.cycle, cycleId),
-          ),
-        })
-        .catch((error: unknown) => {
-          if (!isUndefinedTable(error)) throw error;
-          return undefined;
-        }),
-    ]);
+    const cycle = await findCurrentCycle(ctx.db, now);
+    // The application is keyed by user and cycle id, not by the cycle row.
+    const cycleId = cycle?.id ?? semester(now);
+    const row = await ctx.db.query.committeeApplications
+      .findFirst({
+        where: and(
+          eq(committeeApplications.userId, ctx.session.user.id),
+          eq(committeeApplications.cycle, cycleId),
+        ),
+      })
+      .catch((error: unknown) => {
+        if (!isUndefinedTable(error)) throw error;
+        return undefined;
+      });
 
     const application = row
       ? (({ officerNotes: _notes, ...safe }) => safe)(row)
@@ -233,10 +252,12 @@ export const committeeRouter = createTRPCRouter({
       COMMITTEE_APPLY_LIMIT,
     );
 
+    const now = new Date();
+    const cycle = await findCurrentCycle(ctx.db, now);
     const existing = await ctx.db.query.committeeApplications.findFirst({
       where: and(
         eq(committeeApplications.userId, ctx.session.user.id),
-        eq(committeeApplications.cycle, semester(new Date())),
+        eq(committeeApplications.cycle, cycle?.id ?? semester(now)),
       ),
       columns: { id: true, status: true },
     });
@@ -419,9 +440,14 @@ export const committeeRouter = createTRPCRouter({
         .from(committeeApplications)
         .groupBy(committeeApplications.cycle),
     ]);
+    const current = currentCommitteeCycle(cycles, now)?.id ?? semester(now);
     return {
-      current: semester(now),
-      currentLabel: semesterLabel(semester(now)),
+      current,
+      currentLabel: semesterLabel(current),
+      // The semesters an officer can still open: this one and the next.
+      openable: openableSemesters(now)
+        .filter((id) => !cycles.some((cycle) => cycle.id === id))
+        .map((id) => ({ id, label: semesterLabel(id) })),
       cycles: cycles.map((cycle) => ({
         id: cycle.id,
         label: semesterLabel(cycle.id),
@@ -433,10 +459,15 @@ export const committeeRouter = createTRPCRouter({
     };
   }),
 
-  /** Opens this semester's applications. One cycle per semester. */
+  /**
+   * Opens applications for a semester, this one or the next, so spring
+   * recruiting can open in December. Omitted, the semester is the one the
+   * close date falls in. One cycle per semester.
+   */
   openCycle: adminProcedure
     .input(
       z.object({
+        semester: z.string().regex(semesterPattern).optional(),
         closesAt: z.date(),
         committees: committeeIdsSchema.optional(),
       }),
@@ -449,7 +480,13 @@ export const committeeRouter = createTRPCRouter({
           message: "Pick a close date in the future.",
         });
       }
-      const id = semester(now);
+      const id = input.semester ?? semester(input.closesAt);
+      if (!openableSemesters(now).includes(id)) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Open applications for this semester or the next one.",
+        });
+      }
       try {
         const [created] = await ctx.db
           .insert(committeeCycles)

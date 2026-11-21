@@ -5,9 +5,61 @@ import {
   committeeApplySchema,
   committeeIdsSchema,
   closedCommitteePicks,
+  currentCommitteeCycle,
   isCommitteeApplicationLocked,
   isCommitteeCycleOpen,
 } from "../packages/api/src/committee-cycle";
+import { nextSemester } from "../packages/api/src/terms";
+
+describe("currentCommitteeCycle", () => {
+  const fall = {
+    id: "fall-2026",
+    createdAt: new Date("2026-08-15T16:00:00.000Z"),
+    closesAt: new Date("2026-09-10T04:00:00.000Z"),
+  };
+  // Opened on December 20 for spring: the id is spring even though the clock
+  // still reads fall that day.
+  const spring = {
+    id: "spring-2027",
+    createdAt: new Date("2026-12-20T17:00:00.000Z"),
+    closesAt: new Date("2027-01-31T05:00:00.000Z"),
+  };
+
+  it("finds a spring cycle opened in December on both sides of January 1", () => {
+    expect(
+      currentCommitteeCycle([fall, spring], new Date("2026-12-21T17:00:00Z")),
+    ).toBe(spring);
+    expect(
+      currentCommitteeCycle([fall, spring], new Date("2027-01-02T17:00:00Z")),
+    ).toBe(spring);
+  });
+
+  it("prefers the newest cycle when two are open", () => {
+    const lateFall = { ...fall, closesAt: new Date("2027-01-15T05:00:00Z") };
+    expect(
+      currentCommitteeCycle(
+        [lateFall, spring],
+        new Date("2026-12-21T17:00:00Z"),
+      ),
+    ).toBe(spring);
+  });
+
+  it("falls back to this semester's closed cycle, then to none", () => {
+    expect(
+      currentCommitteeCycle([fall, spring], new Date("2026-10-01T12:00:00Z")),
+    ).toBe(fall);
+    expect(
+      currentCommitteeCycle([fall], new Date("2027-02-01T12:00:00Z")),
+    ).toBeNull();
+  });
+});
+
+describe("nextSemester", () => {
+  it("alternates fall and spring, rolling the year after fall", () => {
+    expect(nextSemester("fall-2026")).toBe("spring-2027");
+    expect(nextSemester("spring-2027")).toBe("fall-2027");
+  });
+});
 
 describe("isCommitteeCycleOpen", () => {
   const closesAt = new Date("2026-09-10T04:00:00.000Z");

@@ -165,3 +165,119 @@ describe.skipIf(!process.env.DATABASE_URL)("committee cycles", () => {
     ).toBe("NOT_FOUND");
   });
 });
+
+/**
+ * Spring recruiting opened in December. The cycle id is the semester it
+ * recruits for, chosen when it opens. Deriving it from the clock at lookup time
+ * made a December-opened spring cycle vanish on January 1, while its close date
+ * was still in the future.
+ */
+describe.skipIf(!process.env.DATABASE_URL)(
+  "committee cycle opened in December",
+  () => {
+    const suffix = crypto.randomUUID().slice(0, 8);
+    const userIds: string[] = [];
+    // The fall ids are what a cycle opened in December gets when its id comes
+    // from the clock; listed so a failing run cleans up after itself.
+    const cycleIds = ["fall-2094", "spring-2095", "fall-2095", "spring-2096"];
+    const DEC = new Date("2094-12-20T17:00:00.000Z");
+    const JAN = new Date("2095-01-02T17:00:00.000Z");
+    const CLOSES = new Date("2095-01-31T05:00:00.000Z");
+    let officer: TestUser;
+    let member: TestUser;
+
+    async function makeUser(label: string, role: TestUser["role"]) {
+      const id = `ccd-${label}-${suffix}`;
+      const email = `${id}@vitest.local`;
+      await db.insert(users).values({ id, email, role, name: label });
+      userIds.push(id);
+      return { id, email, role };
+    }
+
+    beforeAll(async () => {
+      resetRateLimits();
+      await db
+        .delete(committeeCycles)
+        .where(inArray(committeeCycles.id, cycleIds));
+      officer = await makeUser("officer", "ADMIN");
+      member = await makeUser("member", "MEMBER");
+    });
+
+    afterAll(async () => {
+      setSystemTime();
+      await db
+        .delete(committeeApplications)
+        .where(inArray(committeeApplications.userId, userIds));
+      await db
+        .delete(committeeCycles)
+        .where(inArray(committeeCycles.id, cycleIds));
+      await db.delete(users).where(inArray(users.id, userIds));
+    });
+
+    it("names the cycle for the semester it recruits, not the day it opened", async () => {
+      setSystemTime(DEC);
+      const opened = await callerFor(officer).committee.openCycle({
+        closesAt: CLOSES,
+      });
+      expect(opened.id).toBe("spring-2095");
+      expect(await callerFor(member).committee.mine()).toMatchObject({
+        cycle: "spring-2095",
+        open: true,
+      });
+    });
+
+    it("keeps taking applications after January 1", async () => {
+      setSystemTime(JAN);
+      expect(await callerFor(member).committee.mine()).toMatchObject({
+        cycle: "spring-2095",
+        label: "Spring 2095",
+        open: true,
+      });
+
+      const applied = await callerFor(member).committee.submit(treasury);
+      expect(applied).toMatchObject({
+        cycle: "spring-2095",
+        status: "submitted",
+      });
+      expect(await callerFor(member).committee.mine()).toMatchObject({
+        application: { cycle: "spring-2095", status: "submitted" },
+      });
+
+      const { current, cycles } = await callerFor(officer).committee.cycles();
+      expect(current).toBe("spring-2095");
+      expect(cycles.find((cycle) => cycle.id === "spring-2095")).toMatchObject({
+        open: true,
+        applications: 1,
+      });
+      const listed = await callerFor(officer).committee.list();
+      expect(listed.map((row) => row.userId)).toContain(member.id);
+
+      const withdrawn = await callerFor(member).committee.withdraw();
+      expect(withdrawn).toMatchObject({
+        cycle: "spring-2095",
+        status: "withdrawn",
+      });
+    });
+
+    it("takes an explicit semester when the close date falls in the other one", async () => {
+      setSystemTime(new Date("2095-12-20T17:00:00.000Z"));
+      // Closes December 31, which is still fall by the calendar.
+      const opened = await callerFor(officer).committee.openCycle({
+        semester: "spring-2096",
+        closesAt: new Date("2096-01-01T04:00:00.000Z"),
+      });
+      expect(opened.id).toBe("spring-2096");
+      expect(
+        await errorCode(
+          callerFor(officer).committee.openCycle({
+            semester: "spring-2099",
+            closesAt: new Date("2096-01-01T04:00:00.000Z"),
+          }),
+        ),
+      ).toBe("BAD_REQUEST");
+
+      const { openable } = await callerFor(officer).committee.cycles();
+      expect(openable.map((option) => option.id)).toEqual(["fall-2095"]);
+    });
+  },
+);

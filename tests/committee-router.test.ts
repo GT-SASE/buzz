@@ -71,10 +71,11 @@ const CLOSES_AT = new Date("2026-09-10T04:00:00.000Z");
 const ALL = ["events", "marketing", "treasury", "website"];
 
 /** The `select().from().where()` chain the router uses to read a cycle. */
-function cycleSelect(rows: unknown[]) {
+function cycleSelect(rows: object[]) {
+  const stamped = rows.map((row) => ({ createdAt: new Date(0), ...row }));
   return () => ({
     from: () => ({
-      where: () => Promise.resolve(rows),
+      where: () => Promise.resolve(stamped),
     }),
   });
 }
@@ -272,6 +273,9 @@ describe("committee.withdraw", () => {
   it("marks a submitted row withdrawn", async () => {
     const sets: unknown[] = [];
     const db = {
+      select: cycleSelect([
+        { id: "fall-2026", closesAt: CLOSES_AT, committees: ALL },
+      ]),
       query: {
         committeeApplications: {
           findFirst: () =>

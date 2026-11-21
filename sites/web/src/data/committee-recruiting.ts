@@ -1,9 +1,9 @@
 import "server-only";
 
-import { eq } from "drizzle-orm";
+import { desc } from "drizzle-orm";
 import { unstable_cache } from "next/cache";
 
-import { semester, semesterLabel } from "@buzz/api";
+import { currentCommitteeCycle, semesterLabel } from "@buzz/api";
 import { committeeCycles, db } from "@buzz/db";
 import { committees } from "~/data/committees";
 
@@ -20,26 +20,37 @@ const closesFormat = new Intl.DateTimeFormat("en-US", {
 
 // Throws on a database error: unstable_cache does not store a throw, so one
 // transient failure is not served for the whole revalidate window.
-async function fetchCycle(
-  id: string,
-): Promise<{ closesAt: string; committees: string[] } | null> {
-  if (!process.env.DATABASE_URL) return null;
-  const [row] = await db
+//
+// The newest few cycles, not one looked up by `semester(now)`: which of them
+// is current depends on the clock, and is decided per request below.
+async function fetchRecentCycles() {
+  if (!process.env.DATABASE_URL) return [];
+  const rows = await db
     .select({
+      id: committeeCycles.id,
+      createdAt: committeeCycles.createdAt,
       closesAt: committeeCycles.closesAt,
       committees: committeeCycles.committees,
     })
     .from(committeeCycles)
-    .where(eq(committeeCycles.id, id));
-  return row
-    ? { closesAt: row.closesAt.toISOString(), committees: row.committees }
-    : null;
+    .orderBy(desc(committeeCycles.createdAt))
+    .limit(4);
+  return rows.map((row) => ({
+    id: row.id,
+    createdAt: row.createdAt.toISOString(),
+    closesAt: row.closesAt.toISOString(),
+    committees: row.committees,
+  }));
 }
 
-const loadCycle = unstable_cache(fetchCycle, [COMMITTEE_RECRUITING_TAG, "v2"], {
-  tags: [COMMITTEE_RECRUITING_TAG],
-  revalidate: process.env.NODE_ENV === "production" ? 3600 : 60,
-});
+const loadRecentCycles = unstable_cache(
+  fetchRecentCycles,
+  [COMMITTEE_RECRUITING_TAG, "v3"],
+  {
+    tags: [COMMITTEE_RECRUITING_TAG],
+    revalidate: process.env.NODE_ENV === "production" ? 3600 : 60,
+  },
+);
 
 /** "Events", "Events and Website Team", "Events, Marketing, and Treasury". */
 export function listNames(names: readonly string[]) {
@@ -48,15 +59,14 @@ export function listNames(names: readonly string[]) {
 }
 
 /**
- * This semester's committee recruiting, or null when officers have not
- * opened it. `open` is computed per request, so a cached row still closes
- * on time.
+ * The current committee recruiting (see `currentCommitteeCycle`), or null when
+ * officers have not opened it. `open` is computed per request, so a cached row
+ * still closes on time.
  */
 export async function getCommitteeRecruiting(now = new Date()) {
-  const id = semester(now);
-  let cycle: Awaited<ReturnType<typeof fetchCycle>>;
+  let rows: Awaited<ReturnType<typeof fetchRecentCycles>>;
   try {
-    cycle = await loadCycle(id);
+    rows = await loadRecentCycles();
   } catch (error) {
     console.error(
       JSON.stringify({
@@ -67,16 +77,23 @@ export async function getCommitteeRecruiting(now = new Date()) {
     );
     return null;
   }
+  const cycle = currentCommitteeCycle(
+    rows.map((row) => ({
+      ...row,
+      createdAt: new Date(row.createdAt),
+      closesAt: new Date(row.closesAt),
+    })),
+    now,
+  );
   if (!cycle) return null;
-  const closesAt = new Date(cycle.closesAt);
   const offered = new Set(cycle.committees);
   const open = committees.filter((committee) => offered.has(committee.id));
   return {
-    id,
-    label: semesterLabel(id),
-    closesAt,
-    closesLabel: closesFormat.format(closesAt),
-    open: now.getTime() < closesAt.getTime(),
+    id: cycle.id,
+    label: semesterLabel(cycle.id),
+    closesAt: cycle.closesAt,
+    closesLabel: closesFormat.format(cycle.closesAt),
+    open: now.getTime() < cycle.closesAt.getTime(),
     committees: open,
     names: open.map((committee) => committee.title.replace(/ Committee$/, "")),
   };

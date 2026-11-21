@@ -94,12 +94,14 @@ function CommitteePicker({
   );
 }
 
-function OpenCycle({ label }: { label: string }) {
+function OpenCycle({ options }: { options: Cycles["openable"] }) {
   const refresh = useRefresh();
   const [closes, setCloses] = useState(() =>
     toLocalInputValue(new Date(Date.now() + 2 * WEEK_MS)),
   );
   const [picked, setPicked] = useState<PublicCommitteeId[]>(allCommittees);
+  const [semester, setSemester] = useState(options[0]?.id ?? "");
+  const label = options.find((option) => option.id === semester)?.label ?? "";
   const open = api.committee.openCycle.useMutation({
     onSuccess: async () => {
       toast.success(`${label} applications are open.`);
@@ -114,11 +116,29 @@ function OpenCycle({ label }: { label: string }) {
       onSubmit={(event) => {
         event.preventDefault();
         open.mutate({
+          semester,
           closesAt: fromLocalInputValue(closes),
           committees: picked,
         });
       }}
     >
+      {options.length > 1 && (
+        <div className="grid gap-2 sm:col-span-2">
+          <Label htmlFor="cycle-semester">Semester</Label>
+          <Select value={semester} onValueChange={setSemester}>
+            <SelectTrigger id="cycle-semester" className="h-auto min-h-11 w-64">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {options.map((option) => (
+                <SelectItem key={option.id} value={option.id}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
       <CommitteePicker
         name="open-committees"
         value={picked}
@@ -263,7 +283,7 @@ export function CommitteeAdmin() {
   const data = cycles.data;
   const selectedId = picked ?? defaultCycle(data);
   const selected = data.cycles.find((cycle) => cycle.id === selectedId);
-  const currentExists = data.cycles.some((cycle) => cycle.id === data.current);
+  const anyOpen = data.cycles.some((cycle) => cycle.open);
 
   return (
     <>
@@ -289,9 +309,9 @@ export function CommitteeAdmin() {
         </div>
       )}
 
-      {!currentExists && (
+      {!anyOpen && data.openable.length > 0 && (
         <div className="mb-8">
-          <OpenCycle label={data.currentLabel} />
+          <OpenCycle options={data.openable} />
         </div>
       )}
 
@@ -301,7 +321,7 @@ export function CommitteeAdmin() {
           <CycleSettings
             key={`${selected.id}:${new Date(selected.closesAt).getTime()}`}
             cycle={selected}
-            readOnly={selected.id !== data.current}
+            readOnly={selected.id !== data.current && !selected.open}
           />
         </div>
       )}
