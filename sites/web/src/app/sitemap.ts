@@ -1,37 +1,8 @@
 import type { MetadataRoute } from "next";
 
-import { site } from "~/data/site";
+import { getPublishedPageList } from "~/data/pages";
+import { buildSitemap } from "~/lib/sitemap";
 
-/**
- * Priorities reflect what a prospective member or a recruiter is actually
- * searching for, not an even spread: the homepage and /join carry the
- * conversion, /events changes most often.
- *
- * Public routes only, and deliberately hand-written rather than derived: the
- * /portal subtree is behind auth and disallowed in robots.txt, so listing it
- * would submit URLs that answer a crawler with a sign-in redirect and
- * contradict the `robots: { index: false }` those pages already declare.
- */
-const routes = [
-  { path: "/", priority: 1, changeFrequency: "weekly" },
-  { path: "/join", priority: 0.9, changeFrequency: "monthly" },
-  { path: "/events", priority: 0.9, changeFrequency: "weekly" },
-  { path: "/programs", priority: 0.8, changeFrequency: "monthly" },
-  { path: "/about", priority: 0.7, changeFrequency: "yearly" },
-  { path: "/sponsors", priority: 0.7, changeFrequency: "monthly" },
-  { path: "/board", priority: 0.6, changeFrequency: "yearly" },
-  { path: "/contact", priority: 0.6, changeFrequency: "yearly" },
-  { path: "/discord", priority: 0.6, changeFrequency: "yearly" },
-  { path: "/website-team", priority: 0.6, changeFrequency: "monthly" },
-  { path: "/status", priority: 0.3, changeFrequency: "daily" },
-] as const;
-
-export default function sitemap(): MetadataRoute.Sitemap {
-  // No lastModified. These routes have no per-page content date, and stamping
-  // `new Date()` made every URL look edited at build time.
-  return routes.map((route) => ({
-    url: route.path === "/" ? site.url : `${site.url}${route.path}`,
-    changeFrequency: route.changeFrequency,
-    priority: route.priority,
-  }));
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
+  return buildSitemap(await getPublishedPageList());
 }

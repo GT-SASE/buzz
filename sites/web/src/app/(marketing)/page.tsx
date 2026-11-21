@@ -218,8 +218,8 @@ export default async function Home() {
           ))}
         </ol>
         <div className="mt-12 flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
-          <Button href="/join" className="w-full justify-center sm:w-auto">
-            Start at the next meeting
+          <Button href={joinHref} className="w-full justify-center sm:w-auto">
+            Join SASE
           </Button>
           <SaseDino className="-mb-12 h-28 self-end sm:-mb-20 sm:h-36 lg:-mb-28" />
         </div>

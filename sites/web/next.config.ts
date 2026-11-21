@@ -17,6 +17,13 @@ const config: NextConfig = {
     NEXT_PUBLIC_APP_COMMIT: build.commit,
   },
   agentRules: false,
+  images: {
+    // Every photo in public/photos is at most 1920px wide, so the default
+    // 2048 and 3840 steps return the same bytes under a different cache key.
+    // A retina visitor to a 72rem slot asked for w=3840 and paid a cold
+    // resize that nobody else had warmed.
+    deviceSizes: [640, 750, 828, 1080, 1200, 1920],
+  },
   async headers() {
     const base = [
       { key: "X-Content-Type-Options", value: "nosniff" },

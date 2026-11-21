@@ -1,3 +1,4 @@
+import { eventPath, signInPath } from "~/app/portal/_lib/paths";
 import {
   Button,
   CtaPanel,
@@ -116,7 +117,9 @@ export default async function EventsPage() {
             {upcoming.map((event) => (
               <EventCard key={event.id} event={event}>
                 {!event.reminder && (
-                  <TextLink href="/portal/events">RSVP</TextLink>
+                  <TextLink href={signInPath(eventPath(event.id))}>
+                    Sign in to RSVP
+                  </TextLink>
                 )}
                 <TextLink href={googleCalendarUrl(event)} external>
                   Add to Google Calendar

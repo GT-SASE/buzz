@@ -4,6 +4,7 @@ import Link from "next/link";
 import { toast } from "sonner";
 
 import { formatEventTime } from "~/app/portal/_lib/format";
+import { eventRowId } from "~/app/portal/_lib/paths";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
@@ -41,7 +42,10 @@ function EventRow({ event }: { event: Upcoming }) {
   const busy = rsvp.isPending || cancel.isPending;
 
   return (
-    <li className="border-hairline bg-paper/80 rounded-xl border p-5 shadow-xs sm:p-6">
+    <li
+      id={eventRowId(event.id)}
+      className="border-hairline bg-paper/80 target:border-navy scroll-mt-20 rounded-xl border p-5 shadow-xs sm:p-6"
+    >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-gold-ink text-eyebrow tracking-caps font-semibold uppercase">

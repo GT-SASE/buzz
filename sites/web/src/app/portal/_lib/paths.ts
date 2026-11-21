@@ -65,6 +65,20 @@ export function signInPath(from: string) {
   return `/portal/signin?from=${encodeURIComponent(from)}`;
 }
 
+/** The DOM id of one event's row in the member portal's event list. */
+export function eventRowId(eventId: string) {
+  return `event-${eventId}`;
+}
+
+/**
+ * One event in the member portal, scrolled to its row. The `#` is safe inside
+ * `signInPath`: the whole path is one encoded `from` value, so the fragment is
+ * not read until the browser follows the post-sign-in redirect.
+ */
+export function eventPath(eventId: string) {
+  return `/portal/events#${eventRowId(eventId)}`;
+}
+
 /**
  * Check-in with a code in the query. QR links use `#code=` instead, but a
  * fragment does not survive the OAuth round-trip, so this is what `from`

@@ -95,7 +95,7 @@ export function SiteFooter({ dino = true }: { dino?: boolean } = {}) {
           </div>
         </div>
 
-        <div className="text-eyebrow tracking-caps mt-16 flex flex-col gap-4 border-t-2 border-white/20 pt-8 text-white/50 uppercase lg:flex-row lg:items-center lg:justify-between">
+        <div className="text-eyebrow tracking-caps mt-16 flex flex-col gap-4 border-t-2 border-white/20 pt-8 text-white/60 uppercase lg:flex-row lg:items-center lg:justify-between">
           <p>{site.name}</p>
           <p>Georgia Institute of Technology · Atlanta, GA</p>
           <Link

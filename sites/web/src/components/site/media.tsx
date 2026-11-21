@@ -7,6 +7,10 @@ import { cn } from "~/lib/utils";
  * A chapter photo. The caller sizes the frame and this fills it. `sizes` is not
  * optional: with `fill`, omitting it makes Next request a 100vw source for a
  * tile that may render at 300px.
+ *
+ * `priority` is for the one photo above the fold. Next 16 only turns it into an
+ * eager load plus a preload link; the browser still ranks that fetch below
+ * scripts and CSS unless the tag says `fetchpriority="high"`.
  */
 export function PhotoFrame({
   photo,
@@ -35,6 +39,7 @@ export function PhotoFrame({
         fill
         sizes={sizes}
         priority={priority}
+        fetchPriority={priority ? "high" : undefined}
         placeholder="blur"
         className="object-cover transition duration-700 group-hover:scale-[1.04]"
       />

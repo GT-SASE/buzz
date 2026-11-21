@@ -2,6 +2,8 @@ import { describe, expect, it } from "bun:test";
 
 import {
   afterSignIn,
+  eventPath,
+  eventRowId,
   firstParam,
   safeRedirectPath,
   signInPath,
@@ -15,6 +17,15 @@ describe("signInPath", () => {
   it("keeps any other destination", () => {
     expect(signInPath("/portal/events")).toBe(
       "/portal/signin?from=%2Fportal%2Fevents",
+    );
+  });
+
+  it("carries one event through sign-in and back to its row", () => {
+    const href = signInPath(eventPath("evt-1"));
+    expect(href).toBe("/portal/signin?from=%2Fportal%2Fevents%23event-evt-1");
+    const from = new URL(href, "https://example.test").searchParams.get("from");
+    expect(safeRedirectPath(from ?? undefined)).toBe(
+      `/portal/events#${eventRowId("evt-1")}`,
     );
   });
 });
