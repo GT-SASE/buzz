@@ -3,7 +3,7 @@ import { and, asc, count, desc, eq, gte, isNull } from "drizzle-orm";
 import { z } from "zod";
 
 import { asDate, asInt, totalsColumns } from "../aggregates";
-import { sendCalendarInvite } from "../calendar-invite";
+import { sendCalendarInvite, type InviteEvent } from "../calendar-invite";
 import { notFound } from "../errors";
 import { isUniqueViolation } from "../pg-errors";
 import {
@@ -15,7 +15,13 @@ import {
   RSVP_LIMIT,
 } from "../rate-limit";
 import { adminProcedure, createTRPCRouter, protectedProcedure } from "../trpc";
-import { eventCheckIns, eventRsvps, events, users } from "@buzz/db";
+import {
+  eventCheckIns,
+  eventRsvps,
+  events,
+  users,
+  type db as Db,
+} from "@buzz/db";
 
 /**
  * How long after an event starts the door stays open. The member-facing list
@@ -97,6 +103,35 @@ const publicEventColumns = {
   pointsValue: events.pointsValue,
   checkInEnabled: events.checkInEnabled,
 } as const;
+
+/** Sends in small batches: Gmail throttles a burst of parallel connections. */
+const INVITE_BATCH = 5;
+
+/**
+ * Re-sends the calendar invite (same UID, later SEQUENCE) to everyone who
+ * RSVPed, after the event's time or place changed. A failed send does not fail
+ * the edit; the officer gets the count instead.
+ */
+async function sendUpdateInvites(db: typeof Db, event: InviteEvent) {
+  const rsvps = await db
+    .select({ email: users.email })
+    .from(eventRsvps)
+    .innerJoin(users, eq(users.id, eventRsvps.userId))
+    .where(eq(eventRsvps.eventId, event.id));
+
+  let failed = 0;
+  for (let i = 0; i < rsvps.length; i += INVITE_BATCH) {
+    const results = await Promise.all(
+      rsvps
+        .slice(i, i + INVITE_BATCH)
+        .map(({ email }) =>
+          sendCalendarInvite("REQUEST", event, email, { updated: true }),
+        ),
+    );
+    failed += results.filter((sent) => !sent).length;
+  }
+  return { sent: rsvps.length - failed, failed };
+}
 
 const eventInput = z.object({
   title: z.string().trim().min(1).max(200),
@@ -183,7 +218,11 @@ export const eventRouter = createTRPCRouter({
       // UPDATE cannot leave the counter low of the real attendance.
       const updated = await ctx.db.transaction(async (tx) => {
         const [locked] = await tx
-          .select({ id: events.id })
+          .select({
+            id: events.id,
+            startsAt: events.startsAt,
+            location: events.location,
+          })
           .from(events)
           .where(eq(events.id, id))
           .for("update");
@@ -214,13 +253,28 @@ export const eventRouter = createTRPCRouter({
           .where(eq(events.id, id))
           .returning();
 
-        return row ?? null;
+        return row ? { row, before: locked } : null;
       });
 
       if (!updated) {
         notFound("Event");
       }
-      return updated;
+      const { row, before } = updated;
+
+      // Members who RSVPed have the old time or place on their calendar.
+      // Past events and archived ones are left alone: nobody is planning
+      // around them, and a typo fix there should not email the whole list.
+      const moved =
+        before.startsAt.getTime() !== row.startsAt.getTime() ||
+        before.location !== row.location;
+      const notify =
+        moved && row.archivedAt === null && row.startsAt.getTime() > Date.now();
+      return {
+        ...row,
+        invites: notify
+          ? await sendUpdateInvites(ctx.db, row)
+          : { sent: 0, failed: 0 },
+      };
     }),
 
   /** Every event with its attendance count, in one query rather than N+1. */

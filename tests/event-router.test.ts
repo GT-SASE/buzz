@@ -102,7 +102,7 @@ function updateCapturingDb() {
     const chain = {
       from: () => chain,
       where: () => chain,
-      for: () => Promise.resolve([{ id: "event-1" }]),
+      for: () => Promise.resolve([{ id: "event-1", startsAt, location: null }]),
       then: (
         onFulfilled?: (value: { total: number }[]) => unknown,
         onRejected?: (reason: unknown) => unknown,
