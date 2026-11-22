@@ -17,7 +17,8 @@ import {
 } from "../../src/reminders/run.ts";
 import { messageBody, type MessageBody } from "../support/json.ts";
 import { pgliteSql, type Intercept } from "../support/sql-client.ts";
-import { asFetch } from "../support/stubs.ts";
+import { recordSentBody } from "../support/discord-server.ts";
+import { asFetch, stubEnv } from "../support/stubs.ts";
 import {
   insertGuild,
   type GuildFixture,
@@ -97,7 +98,6 @@ export function useReminderWorld(): ReminderWorld {
     client: () =>
       createDiscordClient({
         check: managedChannelCheck(world.db),
-        env: { DISCORD_BOT_TOKEN: "unit-test-token", DISCORD_APP_ID: fakeId() },
         sleep: () => Promise.resolve(),
       }),
     // tsrs types `{ now, limits } = {}` here as any, so the options are destructured inside.
@@ -161,6 +161,9 @@ export function useReminderWorld(): ReminderWorld {
     world.requests.push({ method, path });
     const id = /^\/channels\/([0-9]+)/.exec(path)?.[1] ?? "";
     let message: Sent | undefined;
+    if (typeof init?.body === "string") {
+      recordSentBody(method, path, init.body);
+    }
     if (method === "POST") {
       message = { threadId: id, ...messageBody(init?.body) };
       if (message.flags === undefined) {
@@ -194,6 +197,8 @@ export function useReminderWorld(): ReminderWorld {
     world.sent = [];
     world.channels = new Map();
     world.logLines = [];
+    stubEnv("DISCORD_BOT_TOKEN", "unit-test-token");
+    stubEnv("DISCORD_APP_ID", fakeId());
     spyOn(globalThis, "fetch").mockImplementation(asFetch(answer));
     await world.database.exec(`
       UPDATE discord_bot.tasks SET deleted_at = now() WHERE deleted_at IS NULL;

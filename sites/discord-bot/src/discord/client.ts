@@ -18,7 +18,7 @@
 
 import { setTimeout as delay } from "node:timers/promises";
 import { parsePermissions } from "../lib/actor.ts";
-import { ConfigError } from "../lib/config-error.ts";
+import { getDiscordAppId, getDiscordBotToken } from "../lib/env.ts";
 import { isSnowflake } from "../lib/snowflake.ts";
 import { isEphemeralInitialResponse } from "./outbound.ts";
 import type { OutboundBody } from "./outbound.ts";
@@ -341,7 +341,6 @@ export interface DiscordClient {
 
 export interface DiscordClientOptions {
   readonly check: ManagedChannelCheck;
-  readonly env?: Readonly<Record<string, string | undefined>>;
   readonly sleep?: (ms: number) => Promise<unknown>;
   readonly now?: () => number;
   /** Total time per operation, including checks, lookups and retries. */
@@ -358,30 +357,6 @@ export function messageUrl(
     throw new RangeError("A message link needs three Discord IDs");
   }
   return `${WEB_BASE}/${guildId}/${channelId}/${messageId}`;
-}
-
-function readBotToken(env: DiscordClientOptions["env"]): string {
-  const token = env?.DISCORD_BOT_TOKEN;
-  if (token === undefined || token === "") {
-    throw new ConfigError("DISCORD_BOT_TOKEN", "must be set");
-  }
-  // A value that is not valid in a header would make fetch throw an error that
-  // quotes it, so it is refused here first.
-  if (!/^[\x21-\x7e]+$/.test(token)) {
-    throw new ConfigError(
-      "DISCORD_BOT_TOKEN",
-      "must be the bare token, with no spaces or prefix",
-    );
-  }
-  return token;
-}
-
-function readAppId(env: DiscordClientOptions["env"]): string {
-  const appId = env?.DISCORD_APP_ID;
-  if (appId === undefined || !isSnowflake(appId)) {
-    throw new ConfigError("DISCORD_APP_ID", "must be a Discord ID");
-  }
-  return appId;
 }
 
 /**
@@ -544,13 +519,13 @@ type Remaining = () => number;
 export function createDiscordClient(
   options: DiscordClientOptions,
 ): DiscordClient {
-  const { check, env = process.env, sleep = delay, now = Date.now } = options;
+  const { check, sleep = delay, now = Date.now } = options;
   const callbackBudgetMs =
     options.budget?.callbackMs ?? DEFAULT_CALLBACK_BUDGET_MS;
   const operationBudgetMs =
     options.budget?.operationMs ?? DEFAULT_OPERATION_BUDGET_MS;
-  const botToken = readBotToken(env);
-  const appId = readAppId(env);
+  const botToken = getDiscordBotToken();
+  const appId = getDiscordAppId();
   let tokenRefused = false;
   const unavailableChannels = new Map<string, DiscordFailure>();
 

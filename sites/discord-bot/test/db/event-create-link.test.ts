@@ -8,11 +8,10 @@ import {
 } from "../support/event-world.ts";
 import { HOSTILE_TEXT, INVISIBLE_TEXT } from "../support/hostile-text.ts";
 import {
-  ADMIN_ROLE,
   GUILD_ID,
   MEMBER_ID,
+  NOT_READY,
   OFFICER,
-  OFFICER_ROLE,
   PLAIN_MEMBER,
 } from "../support/interactions.ts";
 import {
@@ -214,20 +213,28 @@ describe("/event create", () => {
     expect(world.discord.requests).toEqual([]);
   });
 
-  it("refuses everything before setup, even for an officer's roles", async () => {
+  it("says the server is not set up before setup, even to an officer", async () => {
     const replica = "SET session_replication_role = replica";
+    const { rows } = await world.pg.query<{ saved: string }>(
+      `SELECT row_to_json(guild_config)::text AS saved FROM discord_bot.guild_config WHERE guild_id = $1`,
+      [GUILD_ID],
+    );
+    const saved = rows[0]?.saved ?? "";
     await world.pg.exec(
-      `${replica}; DELETE FROM discord_bot.guild_config WHERE officer_role_id = '${OFFICER_ROLE}'; RESET session_replication_role`,
+      `${replica}; DELETE FROM discord_bot.guild_config WHERE guild_id = '${GUILD_ID}'; RESET session_replication_role`,
     );
     try {
       const ran = await world.send(create());
 
-      expect(ran.reply.data?.content).toBe(REFUSED.message);
+      expect(ran.reply.data?.content).toBe(NOT_READY);
       expect(await world.events()).toEqual([]);
     } finally {
-      await world.pg.exec(
-        `${replica}; INSERT INTO discord_bot.guild_config (guild_id, officer_role_id, admin_role_id, version) VALUES ('${GUILD_ID}', '${OFFICER_ROLE}', '${ADMIN_ROLE}', 1); RESET session_replication_role`,
+      await world.pg.exec(replica);
+      await world.pg.query(
+        `INSERT INTO discord_bot.guild_config SELECT * FROM jsonb_populate_record(null::discord_bot.guild_config, $1::jsonb)`,
+        [saved],
       );
+      await world.pg.exec("RESET session_replication_role");
     }
   });
 
@@ -617,6 +624,19 @@ describe("an event whose post was deleted", () => {
   });
 
   describe("/event link with the event chosen", () => {
+    it("takes the event's whole short ID when it is typed and not chosen", async () => {
+      const { forum, id } = await lostEvent();
+      const threadId = memberPost(forum, "Replacement Thread");
+
+      await world.send(linkIn(threadId, forum, chosen(id.slice(0, 8))));
+
+      expect((await world.events())[0]).toMatchObject({
+        id,
+        thread_id: threadId,
+        thread_status: "active",
+      });
+    });
+
     it("moves the row to a post with another title, keeping its name", async () => {
       const { forum, id } = await lostEvent();
       const threadId = memberPost(forum, "Replacement Thread");

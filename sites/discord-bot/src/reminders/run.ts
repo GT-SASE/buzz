@@ -126,6 +126,8 @@ export interface RunDependencies {
   readonly now?: () => Date;
   readonly log?: (line: string) => void;
   readonly limits?: Partial<RunLimits>;
+  /** When the invocation began, if something before this run already spent time. */
+  readonly startedAtMs?: number;
 }
 
 export type RunResult =
@@ -353,7 +355,11 @@ class Run {
   /** Something meant to go out did not, for a reason other than the message cap. */
   #incomplete = false;
 
-  constructor(dependencies: RunDependencies, db: DbClient) {
+  constructor(
+    dependencies: RunDependencies,
+    db: DbClient,
+    startedAtMs: number,
+  ) {
     this.#db = db;
     this.#client = dependencies.client;
     this.#allowedGuildIds = dependencies.allowedGuildIds;
@@ -364,9 +370,8 @@ class Run {
         console.warn(line);
       });
     this.#limits = { ...DEFAULT_LIMITS, ...dependencies.limits };
-    const start = this.#now().getTime();
-    this.#deadline = start + this.#limits.workMs;
-    this.#hardStop = start + this.#limits.hardStopMs;
+    this.#deadline = startedAtMs + this.#limits.workMs;
+    this.#hardStop = startedAtMs + this.#limits.hardStopMs;
   }
 
   /** Counts, and which events a person needs to look at, for the run's row. */
@@ -656,7 +661,7 @@ class Run {
           index: 0,
         };
       } catch {
-        this.#countIncomplete("event_errors");
+        this.#countIncomplete("task_event_errors");
         turns.current = null;
       }
     }
@@ -719,7 +724,7 @@ class Run {
     try {
       complete = await this.#sendBatch(turns, cursor, batch.items);
     } catch {
-      this.#countIncomplete("event_errors");
+      this.#countIncomplete("task_event_errors");
     }
     if (!complete) {
       const left = cursor.batches
@@ -1187,8 +1192,8 @@ class Run {
     }
     let state: ForumState = "unknown";
     try {
-      await this.#client.getChannel(guildId, channelId);
-      state = "present";
+      const forum = await this.#client.getChannel(guildId, channelId);
+      state = forum.guildId === guildId ? "present" : "unknown";
     } catch (error) {
       const failure = failureOf(error);
       if (failure !== null && actionForFailure(failure) === "stop_run") {
@@ -1283,6 +1288,7 @@ export async function runReminders(
 ): Promise<RunResult> {
   const db = withDeadline(dependencies.db, DATABASE_CALL_MS);
   const now = dependencies.now ?? (() => new Date());
+  const startedAtMs = dependencies.startedAtMs ?? now().getTime();
   const lock = await beginJobRun(db, {
     jobName: "reminders",
     staleAfterSeconds: LOCK_STALE_SECONDS,
@@ -1300,7 +1306,7 @@ export async function runReminders(
     return { status: "duplicate" };
   }
 
-  const run = new Run(dependencies, db);
+  const run = new Run(dependencies, db, startedAtMs);
   try {
     await run.work();
   } catch {

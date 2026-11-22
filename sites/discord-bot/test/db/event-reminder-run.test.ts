@@ -117,16 +117,17 @@ async function jobResults(): Promise<Record<string, unknown>> {
   return (await w.jobRow()).results;
 }
 
-/** An "is today" claim on the given date, left by a run that crashed. */
+/** A claim, "is today" unless given a kind, on the date, left by a run that crashed. */
 async function claimAgo(
   eventId: string,
   reminderDate: string,
   minutes: number,
+  kind: EventReminderKind = "event_today",
 ): Promise<void> {
   await w.database.query(
     `INSERT INTO discord_bot.event_reminder_log (event_id, kind, reminder_date, claimed_at)
-     VALUES ($1, 'event_today', $2, now() - make_interval(mins => $3))`,
-    [eventId, reminderDate, minutes],
+     VALUES ($1, $4::discord_bot.event_reminder_kind, $2, now() - make_interval(mins => $3))`,
+    [eventId, reminderDate, minutes, kind],
   );
 }
 
@@ -322,6 +323,24 @@ describe("countdown pings", () => {
     expect(message.roles.sort()).toEqual(who.roles.sort());
     expect(
       (await logRows(made.eventId)).filter((row) => row.kind === kind),
+    ).toMatchObject([{ reminder_date: dateOffset(0), state: "sent" }]);
+  });
+
+  it("sends engage_picture_late a week after Engage post, though the event has passed", async () => {
+    const guild = await w.guildInZone();
+    const made = await event(guild, -4);
+    await engageDoneOn(made, dateOffset(-7));
+
+    expect((await w.run([guild])).status).toBe("succeeded");
+
+    expect(w.sent).toHaveLength(1);
+    expect(present(w.sent[0]).content).toContain(
+      "Engage picture for **Spring social**",
+    );
+    expect(
+      (await logRows(made.eventId)).filter(
+        (row) => row.kind === "engage_picture_late",
+      ),
     ).toMatchObject([{ reminder_date: dateOffset(0), state: "sent" }]);
   });
 
@@ -561,6 +580,34 @@ describe("claims left by an earlier run", () => {
       expect(w.sent).toHaveLength(1);
       expect(await logRows(made.eventId)).toMatchObject([
         { state: "sent", attempts: 2 },
+      ]);
+    },
+  );
+
+  it.each(pauses)(
+    "keeps a stale Engage picture late claim a week after Engage post while %s, and sends it once that is undone",
+    async (_label, pause) => {
+      const guild = await w.guildInZone();
+      // The event is past, so the closer cannot lean on its date: the ping goes out only on
+      // the seventh day, and a claim closed as skipped now would never be sent.
+      const made = await event(guild, -4);
+      await engageDoneOn(made, dateOffset(-7));
+      await claimAgo(made.eventId, dateOffset(0), 90, "engage_picture_late");
+      await pause(guild, false);
+
+      expect((await w.run([guild])).status).toBe("succeeded");
+      expect(w.posts()).toEqual([]);
+      expect(await logRows(made.eventId)).toMatchObject([{ state: "claimed" }]);
+
+      await pause(guild, true);
+      await w.database.query(
+        `UPDATE discord_bot.job_runs SET status = 'failed', error = 'test' WHERE job_name = 'reminders'`,
+      );
+      await w.run([guild]);
+
+      expect(w.sent).toHaveLength(1);
+      expect(await logRows(made.eventId)).toMatchObject([
+        { kind: "engage_picture_late", state: "sent", attempts: 2 },
       ]);
     },
   );

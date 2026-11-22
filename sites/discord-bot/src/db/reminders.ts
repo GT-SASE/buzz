@@ -2,11 +2,10 @@ import type { DateOnly } from "../lib/dates.ts";
 import { STALE_CLAIM_MS } from "../reminders/plan.ts";
 import type { DbClient } from "./client.ts";
 import { refused, type DbResult } from "./errors.ts";
-import { callFunction, capped, firstRow, query, sql } from "./internal.ts";
+import { callFunction, capped, query, sql } from "./internal.ts";
 import type {
   CappedList,
   EventStatus,
-  ManagedChannelStatus,
   ReminderCandidate,
   ReminderKind,
   ReminderState,
@@ -261,67 +260,17 @@ export async function closeStaleClaim(
   if (!isDbDate(key.dueDate)) {
     return refused();
   }
-  const claim = firstRow(
-    await query<{ state: ReminderState; claim_token: string }>(
-      db,
-      sql`select state, claim_token from discord_bot.reminder_log
-      where task_id = ${key.taskId} and kind = ${key.kind}
-        and due_date = ${key.dueDate}
-      limit 1`,
-    ),
+  const closed = await callFunction<boolean>(
+    db,
+    sql`select discord_bot.close_stale_reminder(p_task_id => ${key.taskId},
+      p_kind => ${key.kind},
+      p_due_date => ${key.dueDate},
+      p_claim_token => ${key.claimToken}) as value`,
   );
-  if (!claim.ok) {
-    return claim;
+  if (!closed.ok) {
+    return closed;
   }
-  if (
-    claim.value?.state !== "claimed" ||
-    claim.value.claim_token !== key.claimToken
-  ) {
-    return { ok: true, value: { outcome: "left" } };
-  }
-
-  const task = firstRow(
-    await query<{
-      due_date: DateOnly;
-      status: TaskStatus;
-      deleted_at: string | null;
-      event_status: EventStatus | null;
-      event_deleted_at: string | null;
-      thread_status: ThreadStatus | null;
-      forum_status: ManagedChannelStatus | null;
-    }>(
-      db,
-      sql`select t.due_date, t.status, t.deleted_at, e.status as event_status,
-        e.deleted_at as event_deleted_at, e.thread_status, c.status as forum_status
-      from discord_bot.tasks t
-      left join discord_bot.events e on e.id = t.event_id and e.guild_id = t.guild_id
-      left join discord_bot.managed_channels c
-        on c.guild_id = e.guild_id and c.channel_id = e.channel_id
-      where t.id = ${key.taskId} limit 1`,
-    ),
-  );
-  if (!task.ok) {
-    return task;
-  }
-  const live = task.value;
-  const stillDue =
-    live !== null &&
-    live.status === "open" &&
-    live.deleted_at === null &&
-    live.due_date === key.dueDate &&
-    live.event_status === "active" &&
-    live.event_deleted_at === null &&
-    live.thread_status !== "missing" &&
-    live.forum_status === "active";
-  if (stillDue) {
-    return { ok: true, value: { outcome: "left" } };
-  }
-
-  const skipped = await markReminderSkipped(db, key);
-  if (!skipped.ok) {
-    return skipped;
-  }
-  return { ok: true, value: { outcome: skipped.value ? "closed" : "left" } };
+  return { ok: true, value: { outcome: closed.value ? "closed" : "left" } };
 }
 
 /** False if the token no longer holds the claim. */

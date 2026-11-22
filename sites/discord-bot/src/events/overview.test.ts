@@ -400,3 +400,26 @@ describe("handoffMessage", () => {
     expect(input.mentionRoleIds).toEqual([TREASURY]);
   });
 });
+
+describe("hasLiveSyntax", () => {
+  it.each([
+    ["@everyone", "@everyone"],
+    ["an escaped backslash before @everyone", String.raw`\\@everyone`],
+    ["a masked link after an escaped backslash", String.raw`\\](x)`],
+    ["bold after an escaped backslash", String.raw`\\**x**`],
+    ["a spoiler after an escaped backslash", String.raw`\\||x||`],
+    ["a mention after an escaped backslash", String.raw`\\<@1>`],
+  ])("sees %s as live", (_label, content) => {
+    expect(hasLiveSyntax(content)).toBe(true);
+  });
+
+  it.each([
+    ["an escaped @everyone", String.raw`\@everyone`],
+    ["an escaped mention", String.raw`\<@1>`],
+    ["an escaped bold", String.raw`\**x**`],
+    ["an escaped masked link", String.raw`\](x)`],
+    ["three backslashes before @everyone", String.raw`\\\@everyone`],
+  ])("sees %s as inert", (_label, content) => {
+    expect(hasLiveSyntax(content)).toBe(false);
+  });
+});

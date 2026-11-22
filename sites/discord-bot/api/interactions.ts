@@ -23,8 +23,8 @@ import {
 } from "../src/discord/verify.ts";
 import { liveDependencies } from "../src/handlers/dependencies.ts";
 import { ROUTER } from "../src/handlers/registry.ts";
-import { ConfigError } from "../src/lib/config-error.ts";
 import {
+  ConfigError,
   getAllowedGuildIds,
   getDiscordAppId,
   getDiscordPublicKey,

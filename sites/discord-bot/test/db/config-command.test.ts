@@ -24,6 +24,7 @@ import {
   GUILD_ID,
   managedRow,
   MEMBER_ID,
+  NOT_READY,
   OFFICER,
   PLAIN_MEMBER,
   run,
@@ -200,7 +201,6 @@ describe("/config", () => {
   it.each<[string, Record<string, unknown>, Seed]>([
     ["a member", PLAIN_MEMBER, {}],
     ["an officer", OFFICER, {}],
-    ["an administrator before setup", ADMINISTRATOR, { config: null }],
   ])("refuses %s with the fixed reply", async (_label, who, seed) => {
     const { dependencies, edits } = await world(seed);
 
@@ -211,6 +211,20 @@ describe("/config", () => {
     );
 
     expect(reply.data?.content).toBe(REFUSED.message);
+    expect(deferred).toBe(false);
+    expect(edits).toEqual([]);
+  });
+
+  it("says the server is not set up to an administrator before setup", async () => {
+    const { dependencies, edits } = await world({ config: null });
+
+    const { reply, deferred } = await run(
+      ROUTER,
+      commandPayload("config", { member: ADMINISTRATOR }),
+      dependencies,
+    );
+
+    expect(reply.data?.content).toBe(NOT_READY);
     expect(deferred).toBe(false);
     expect(edits).toEqual([]);
   });

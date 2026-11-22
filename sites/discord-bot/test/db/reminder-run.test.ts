@@ -11,6 +11,7 @@ import {
   testDatabaseUrl,
 } from "../support/sql-client.ts";
 import { insertFinishedJobRun } from "../support/job-runs-fixture.ts";
+import { expectSentBodiesInert } from "../support/discord-server.ts";
 import { stubEnv } from "../support/stubs.ts";
 import {
   beginJobRun,
@@ -18,6 +19,7 @@ import {
   getLatestSucceededJobRun,
 } from "../../src/db/job-runs.ts";
 import { runDailyJobs } from "../../src/reminders/daily.ts";
+import { DATABASE_CALL_MS } from "../../src/reminders/run.ts";
 import { jobFreshness, runHealthCheck } from "../../src/reminders/health.ts";
 import { slotStart } from "../../src/reminders/plan.ts";
 import {
@@ -291,6 +293,19 @@ describe("a normal run", () => {
   });
 });
 
+describe("the live text check", () => {
+  it("sees a body sent through the world's fake Discord", async () => {
+    await fetch("https://discord.com/api/v10/channels/1/messages", {
+      method: "POST",
+      body: JSON.stringify({ content: "@everyone", flags: 4 }),
+    }).catch(() => undefined);
+
+    expect(() => {
+      expectSentBodiesInert();
+    }).toThrow();
+  });
+});
+
 describe("crashes", () => {
   it("between send and mark, leaves the claim, then resends exactly once the next day", async () => {
     const guild = await w.guildInZone();
@@ -325,6 +340,29 @@ describe("crashes", () => {
     await nextDay();
     await w.run([guild]);
     expect(w.sent).toHaveLength(2);
+  });
+
+  it("counts the time the lock took against the run's budget", async () => {
+    const guild = await w.guildInZone();
+    await eventsDueIn(guild, [3]);
+    let at = Date.now();
+    w.sqlGate = () => {
+      at += 15_000;
+      w.sqlGate = () => undefined;
+      return undefined;
+    };
+
+    const result = await w.run([guild], {
+      now: () => new Date(at),
+      limits: { workMs: 10_000, hardStopMs: 20_000 },
+    });
+
+    expect(result).toMatchObject({
+      status: "failed",
+      error: "reminders_incomplete",
+    });
+    expect(w.sent).toEqual([]);
+    expect((await w.jobRow()).results).toMatchObject({ deferred_deadline: 1 });
   });
 
   // The last catch in runReminders: if it recorded nothing, the crashed run would count
@@ -489,6 +527,30 @@ describe("targets that fail", () => {
       channels_gone: 1,
       claim_lost: 1,
     });
+  });
+
+  it("does not mark a thread missing when the forum answers from another guild", async () => {
+    const guild = await w.guildInZone();
+    const [event] = await eventsDueIn(guild, [3]);
+    const { threadId } = present(event);
+    let refused = false;
+    w.discordGate = (method, path) => {
+      if (method === "POST") {
+        refused = true;
+        return Response.json({ code: 10003 }, { status: 404 });
+      }
+      return refused && path.endsWith(guild.channelId)
+        ? Response.json({ id: guild.channelId, type: 15, guild_id: fakeId() })
+        : undefined;
+    };
+
+    await w.run([guild]);
+
+    const { rows } = await w.database.query<{ thread_status: string }>(
+      `SELECT thread_status FROM discord_bot.events WHERE thread_id = $1`,
+      [threadId],
+    );
+    expect(rows).toEqual([{ thread_status: "active" }]);
   });
 
   it("sends nothing to a thread whose parent is not managed, and keeps the claim", async () => {
@@ -987,6 +1049,30 @@ describe("the health check", () => {
       });
     },
   );
+
+  it("limits the claim expiry to a database call, like the rest of the run", async () => {
+    const guild = await w.guildInZone();
+    const setTimeoutNow = globalThis.setTimeout;
+    let lastDelay: number | undefined;
+    let expiryDelay: number | undefined;
+    spyOn(globalThis, "setTimeout").mockImplementation(((
+      handler: () => void,
+      ms?: number,
+    ) => {
+      lastDelay = ms;
+      return setTimeoutNow(handler, ms);
+    }) as unknown as typeof setTimeout);
+    w.sqlGate = (call) => {
+      if (call.sql.includes("expire_interaction_claims")) {
+        expiryDelay = lastDelay;
+      }
+      return undefined;
+    };
+
+    expect(await daily(guild)).toBe(true);
+
+    expect(expiryDelay).toBe(DATABASE_CALL_MS);
+  });
 
   it("runs after the reminders, and a rerun is a duplicate, not a failure", async () => {
     const guild = await w.guildInZone();

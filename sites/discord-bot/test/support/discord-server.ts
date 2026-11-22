@@ -115,6 +115,15 @@ export function expectInert(json: string): void {
 // What the fake server found live in the bodies sent during the current test.
 const liveFound: string[] = [];
 
+/** Notes live text in a body sent to a fake server, for `expectSentBodiesInert`. */
+export function recordSentBody(
+  method: string,
+  path: string,
+  body: string,
+): void {
+  liveFound.push(...liveText(body).map((live) => `${method} ${path}: ${live}`));
+}
+
 /**
  * Fails the test if any body sent to a fake server had live text. The preload calls
  * it after each test, since the client would catch a failure thrown while it sends.
@@ -294,9 +303,7 @@ export function discordServer(appId: string): DiscordServer {
       const path = url.pathname.replace(/^\/api\/v[0-9]+/, "");
       let body: Record<string, unknown> | undefined;
       if (typeof init?.body === "string") {
-        liveFound.push(
-          ...liveText(init.body).map((live) => `${method} ${path}: ${live}`),
-        );
+        recordSentBody(method, path, init.body);
         body = jsonObject(init.body, `the body of ${method} ${path}`);
       }
       requests.push({ method, path, body });

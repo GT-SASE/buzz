@@ -51,7 +51,7 @@ import { DISCORD_LIMITS, isWithinLimit, safe } from "../discord/safe-text.ts";
 import { DiscordClientError } from "../discord/client.ts";
 import type { DiscordClient } from "../discord/client.ts";
 import type { VerifiedInteraction } from "../discord/verify.ts";
-import type { DbClient } from "../db/client.ts";
+import { withDeadline, type DbClient } from "../db/client.ts";
 import { errorSummary, type DbResult } from "../db/errors.ts";
 import { getGuildConfig } from "../db/guild-config.ts";
 import { claimInteraction } from "../db/interaction-claims.ts";
@@ -440,6 +440,8 @@ export function refusal(): OutboundBody<"direct-response"> {
   });
 }
 
+export const NOT_READY = safe`This server hasn't been set up yet. An administrator can run /setup.`;
+
 const UNAVAILABLE_TEXT = safe`Something went wrong. Nothing else was changed. Please try again in a moment.`;
 
 /**
@@ -454,6 +456,10 @@ function failureInput(route: Route): MessageInput {
     mentionUserIds: [],
     components: [],
   };
+}
+
+function notReady(): OutboundBody<"direct-response"> {
+  return ephemeralReply({ content: NOT_READY, mentionUserIds: [] });
 }
 
 function unavailable(): OutboundBody<"direct-response"> {
@@ -656,8 +662,9 @@ export function createRouter(handlers: readonly Handler[]): Router {
     ) {
       return none;
     }
-    const db = dependencies.db();
-    const config = await getGuildConfig(db, { guildId: actor.guildId });
+    const started = Date.now();
+    const client = dependencies.db();
+    const config = await getGuildConfig(client, { guildId: actor.guildId });
     if (!config.ok) {
       return none;
     }
@@ -665,6 +672,12 @@ export function createRouter(handlers: readonly Handler[]): Router {
     if (scope === undefined) {
       return none;
     }
+    // Autocomplete cannot defer, so every read shares the one deadline.
+    const left = client.deadlineMs - (Date.now() - started);
+    if (left <= 0) {
+      return none;
+    }
+    const db = withDeadline(client, left);
     const ctx = { payload, verified, actor, config: config.value, db };
     try {
       return {
@@ -735,8 +748,9 @@ export function createRouter(handlers: readonly Handler[]): Router {
       }
 
       let config: GuildConfig | null = null;
+      const tier = COMMAND_POLICY.get(route.action);
       // A public action must work before setup and with no database settings.
-      if (COMMAND_POLICY.get(route.action) !== "public") {
+      if (tier !== "public") {
         const read = await getGuildConfig(dependencies.db(), {
           guildId: actor.guildId,
         });
@@ -744,6 +758,13 @@ export function createRouter(handlers: readonly Handler[]): Router {
           return { reply: unavailable() };
         }
         config = read.value;
+        // Only an administrator running /setup can act with no settings.
+        if (
+          config === null &&
+          !(tier === "bindings" && actor.isAdministrator)
+        ) {
+          return { reply: notReady() };
+        }
       }
 
       const ctx: RouteContext = {

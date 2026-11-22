@@ -41,6 +41,8 @@ export const APP_ID = fakeId();
 export const MEMBER_ID = fakeId();
 export const OFFICER_ROLE = fakeId();
 export const ADMIN_ROLE = fakeId();
+export const NOT_READY =
+  "This server hasn't been set up yet. An administrator can run /setup.";
 export const ADMINISTRATOR_BIT = String(1n << 3n);
 const EPHEMERAL_FLAG = 64;
 

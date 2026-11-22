@@ -22,8 +22,8 @@ import {
 import { parseDateInput, todayInZone } from "../lib/dates.ts";
 import type { DateOnly } from "../lib/dates.ts";
 
-/** Longest date worth reading: `2026-11-15` with room for stray spaces. */
-const MAX_DATE_INPUT_LENGTH = 32;
+/** The longest date form, `2026-11-15`, and the most the date options let anyone type. */
+export const MAX_DATE_INPUT_LENGTH = 10;
 
 export interface EventName {
   /** What is stored. It is the same text as the post's title. */

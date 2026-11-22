@@ -4,8 +4,22 @@
  * it uses. Errors name the setting and never include its value.
  */
 
-import { ConfigError } from "./config-error.ts";
 import { isSnowflake } from "./snowflake.ts";
+
+/**
+ * Thrown when a required setting is missing or malformed. The message names the
+ * setting and never includes its value, because the value may be a secret and
+ * this message may reach the logs.
+ */
+export class ConfigError extends Error {
+  readonly setting: string;
+
+  constructor(setting: string, reason: string) {
+    super(`Invalid configuration for ${setting}: ${reason}`);
+    this.name = "ConfigError";
+    this.setting = setting;
+  }
+}
 
 const ED25519_PUBLIC_KEY_HEX = /^[0-9a-f]{64}$/i;
 const BOT_TOKEN = /^[\x21-\x7e]+$/;

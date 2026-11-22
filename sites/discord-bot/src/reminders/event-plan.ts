@@ -133,7 +133,8 @@ export function kindsDueToday(
 ): EventReminderKind[] {
   const daysLeft = daysBetween(today, event.event_date);
   if (daysLeft < 0) {
-    return [];
+    // Dated a week after Engage post, which can fall after the event.
+    return engagePictureLate(event, today) ? ["engage_picture_late"] : [];
   }
   const budgetOpen = !stepDone(event, "budget_sheet");
   const engageOpen = !stepDone(event, "engage_post");

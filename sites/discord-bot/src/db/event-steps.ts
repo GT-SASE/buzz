@@ -17,7 +17,6 @@ import { failure, refused, type DbResult } from "./errors.ts";
 import {
   callFunction,
   capped,
-  firstRow,
   nullAsNotFound,
   query,
   sql,
@@ -31,14 +30,11 @@ import {
   type EventReminderCandidate,
   type EventReminderKind,
   type EventReminderStaleClaim,
-  type EventStatus,
   type EventStep,
   type EventWorkflow,
   type HandoffStepKind,
-  type ReminderState,
   type StepAssignee,
   type TaskStatus,
-  type ThreadStatus,
   type UserStep,
 } from "./types.ts";
 import { MAX_ID_LIST, isDbDate, isPickupTime } from "./validate.ts";
@@ -403,8 +399,9 @@ export async function listOpenStepsForUser(
 }
 
 /**
- * Every live active event dated `fromDate` or later, across all guilds, whose channel is
- * active and whose guild has reminders on, with its steps, live assignments and the log
+ * Every live active event dated `fromDate` or later, or whose Engage picture ping may
+ * still be due after the event, across all guilds, whose channel is active and whose
+ * guild has reminders on, with its steps, live assignments and the log
  * rows dated `fromDate` or later. Pass a date early enough for every timezone, such as
  * yesterday in UTC, and decide per guild which events are due. Soonest first.
  */
@@ -446,7 +443,14 @@ export async function listEventReminderCandidates(
         on c.guild_id = e.guild_id and c.channel_id = e.channel_id
       join discord_bot.guild_config g on g.guild_id = e.guild_id
       where e.status = 'active' and e.deleted_at is null
-        and e.event_date >= ${fromDate}
+        and (e.event_date >= ${fromDate} or exists (
+          select 1 from discord_bot.event_steps post
+          where post.event_id = e.id and post.kind = 'engage_post' and post.status = 'done'
+            and post.completed_at >= ${fromDate}::date - 9
+            and not exists (
+              select 1 from discord_bot.event_steps picture
+              where picture.event_id = e.id and picture.kind = 'engage_picture'
+                and picture.status = 'done')))
         and c.status = 'active' and g.reminders_enabled
       order by e.event_date, e.id limit ${MAX_REMINDER_EVENTS + 1}`,
     ),
@@ -576,8 +580,9 @@ export async function markEventReminderSkipped(
 /**
  * Closes a stale event reminder claim that no plan named, once its event is read again
  * and shows it can never go out: the event is gone, deleted or closed, its post is gone,
- * or it was dated before `beforeDate`, a day already past in every guild. Anything else
- * is left exactly as it is, with no takeover and no rise in `attempts`: a guild with
+ * or it was dated before `beforeDate`, a day already past in every guild. A kind that may
+ * go out after its event, Engage picture late, is judged by its own day instead. Anything
+ * else is left exactly as it is, with no takeover and no rise in `attempts`: a guild with
  * reminders off, whatever its events, and a live event the candidate read left out, such
  * as one in a forum no longer managed, which may be added back. "closed" only when this
  * call recorded it skipped.
@@ -589,52 +594,15 @@ export async function closeStaleEventClaim(
   if (!isDbDate(key.reminderDate) || !isDbDate(key.beforeDate)) {
     return refused();
   }
-  const read = firstRow(
-    await query<{
-      state: ReminderState;
-      claim_token: string;
-      event_status: EventStatus | null;
-      event_deleted_at: string | null;
-      event_date: DateOnly | null;
-      thread_status: ThreadStatus | null;
-      reminders_enabled: boolean | null;
-    }>(
-      db,
-      sql`select l.state, l.claim_token, e.status as event_status,
-        e.deleted_at as event_deleted_at, e.event_date, e.thread_status,
-        g.reminders_enabled
-      from discord_bot.event_reminder_log l
-      left join discord_bot.events e on e.id = l.event_id
-      left join discord_bot.guild_config g on g.guild_id = e.guild_id
-      where l.event_id = ${key.eventId} and l.kind = ${key.kind}
-        and l.reminder_date = ${key.reminderDate}
-      limit 1`,
-    ),
+  const closed = await callFunction<boolean>(
+    db,
+    sql`select discord_bot.close_stale_event_reminder(p_event_id => ${key.eventId},
+      p_kind => ${key.kind},
+      p_reminder_date => ${key.reminderDate},
+      p_claim_token => ${key.claimToken},
+      p_before_date => ${key.beforeDate}) as value`,
   );
-  if (!read.ok) {
-    return read;
-  }
-  const live = read.value;
-  if (
-    live?.state !== "claimed" ||
-    live.claim_token !== key.claimToken ||
-    // Paused for now: closing would keep it from going out once they are back on.
-    live.reminders_enabled === false
-  ) {
-    return { ok: true, value: "left" };
-  }
-  const dead =
-    live.event_status !== "active" ||
-    live.event_deleted_at !== null ||
-    live.thread_status === "missing" ||
-    live.event_date === null ||
-    live.event_date < key.beforeDate;
-  if (!dead) {
-    return { ok: true, value: "left" };
-  }
-  const marked = await markEventReminderSkipped(db, key);
-  if (!marked.ok) {
-    return marked;
-  }
-  return { ok: true, value: marked.value ? "closed" : "left" };
+  return closed.ok
+    ? { ok: true, value: closed.value ? "closed" : "left" }
+    : closed;
 }

@@ -14,7 +14,7 @@ import {
   type Mock,
 } from "bun:test";
 import { pgliteSql, serverError } from "./sql-client.ts";
-import { asFetch } from "./stubs.ts";
+import { asFetch, stubEnv } from "./stubs.ts";
 import { createDbClient, type DbClient } from "../../src/db/client.ts";
 import type { EventRow } from "../../src/db/types.ts";
 import { createDiscordClient } from "../../src/discord/client.ts";
@@ -138,6 +138,8 @@ export function eventWorld(): World {
          discord_bot.managed_channels, discord_bot.interaction_claims CASCADE;
        SET session_replication_role = DEFAULT;`,
     );
+    stubEnv("DISCORD_BOT_TOKEN", TOKEN);
+    stubEnv("DISCORD_APP_ID", APP_ID);
     server = discordServer(APP_ID);
     spyOn(globalThis, "fetch").mockImplementation(asFetch(server.fetch));
     dbFailures = [];
@@ -178,7 +180,6 @@ export function eventWorld(): World {
     discord: () =>
       createDiscordClient({
         check: managedChannelCheck(db),
-        env: { DISCORD_BOT_TOKEN: TOKEN, DISCORD_APP_ID: APP_ID },
         sleep: () => Promise.resolve(),
       }),
   };

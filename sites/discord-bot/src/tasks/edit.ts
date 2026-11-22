@@ -11,6 +11,7 @@ import { safe, userMention } from "../discord/safe-text.ts";
 import type { SafeText } from "../discord/safe-text.ts";
 import { editTask } from "../db/tasks.ts";
 import { MAX_TASK_DESCRIPTION_LENGTH } from "../db/validate.ts";
+import { MAX_DATE_INPUT_LENGTH } from "../events/input.ts";
 import { lines } from "../handlers/render.ts";
 import {
   autocompleteRoute,
@@ -184,7 +185,7 @@ export const editSubcommand: CommandOption = {
       type: ApplicationCommandOptionType.String,
       name: "due",
       description: "Due date, as YYYY-MM-DD or MM/DD. This restarts reminders",
-      max_length: 10,
+      max_length: MAX_DATE_INPUT_LENGTH,
     },
     {
       type: ApplicationCommandOptionType.User,

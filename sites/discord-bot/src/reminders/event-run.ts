@@ -1,7 +1,9 @@
 /**
  * The event workflow reminders, as a step of the daily reminder run. It runs under that
  * run's lock, shares its message cap, deadlines and Discord client, and records its counts
- * in the same `job_runs` row, under names starting `event_`.
+ * in the same `job_runs` row, under names starting `event_`. The cap, deadline, send and
+ * stop counts are the exception: they add to the totals task reminders keep under the same
+ * names.
  *
  * Each reminder is one message: claim, send, mark sent. A failed send is dealt with by the
  * run, exactly as for a task reminder, so a forum that is gone is disabled the same way
@@ -507,9 +509,10 @@ export class EventReminderStep {
    * Stale claims that no plan named. On an event the candidates hold, a claim for a day
    * before the guild's today can never go out and is closed. Any other is closed only once
    * its event, read again now, shows it never can: gone, deleted, closed, its post gone,
-   * or dated before every guild's today. A claim on a guild with reminders off, in a forum
-   * no longer managed or on a row the candidate read left out is left as it is, so it
-   * goes out if a later run plans it, such as after reminders are turned back on.
+   * or dated before every guild's today, by the claim's own day for a kind that goes out
+   * after its event. A claim on a guild with reminders off, in a forum no longer managed
+   * or on a row the candidate read left out is left as it is, so it goes out if a later
+   * run plans it, such as after reminders are turned back on.
    */
   async #closeDeadClaims(
     rows: readonly EventReminderCandidate[],

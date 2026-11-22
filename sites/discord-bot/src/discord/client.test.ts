@@ -5,9 +5,9 @@ import { managedRow } from "../../test/support/interactions.ts";
 import { jsonObject } from "../../test/support/json.ts";
 import { serverError } from "../../test/support/sql-client.ts";
 import { stubDb } from "../../test/support/stub-db.ts";
-import { asFetch, type FetchLike } from "../../test/support/stubs.ts";
+import { asFetch, stubEnv, type FetchLike } from "../../test/support/stubs.ts";
 import { managedChannelCheck } from "../handlers/dependencies.ts";
-import { ConfigError } from "../lib/config-error.ts";
+import { ConfigError } from "../lib/env.ts";
 import {
   actionForFailure,
   createDiscordClient,
@@ -41,7 +41,6 @@ const INTERACTION_TOKEN = "unit-test-interaction-token/with+symbols";
 const ENCODED_TOKEN = encodeURIComponent(INTERACTION_TOKEN);
 const SECRET_TEXT = "privatemessagetext";
 const APP_ID = fakeId(9);
-const ENV = { DISCORD_BOT_TOKEN: TOKEN, DISCORD_APP_ID: APP_ID };
 const API = "https://discord.com/api/v10";
 
 const MANAGED_FORUM = fakeId(1);
@@ -129,7 +128,7 @@ const fetchMock = mock<FetchLike>();
 const sleep = mock<(ms: number) => Promise<void>>();
 
 function client(managedCheck = check) {
-  return createDiscordClient({ check: managedCheck, env: ENV, sleep });
+  return createDiscordClient({ check: managedCheck, sleep });
 }
 
 function created(): Response {
@@ -186,17 +185,33 @@ beforeEach(() => {
   sleep.mockReset();
   sleep.mockResolvedValue(undefined);
   spyOn(globalThis, "fetch").mockImplementation(asFetch(fetchMock));
+  stubEnv("DISCORD_BOT_TOKEN", TOKEN);
+  stubEnv("DISCORD_APP_ID", APP_ID);
 });
 
 it.each([
-  ["missing token", { DISCORD_APP_ID: APP_ID }],
-  ["prefixed token", { ...ENV, DISCORD_BOT_TOKEN: `Bot ${TOKEN}` }],
-  ["missing application ID", { DISCORD_BOT_TOKEN: TOKEN }],
-])("refuses a %s without quoting it", (_label, env) => {
-  const attempt = () => createDiscordClient({ check, env });
+  ["missing token", "DISCORD_BOT_TOKEN", undefined],
+  ["prefixed token", "DISCORD_BOT_TOKEN", `Bot ${TOKEN}`],
+  ["missing application ID", "DISCORD_APP_ID", undefined],
+])("refuses a %s without quoting it", (_label, name, value) => {
+  stubEnv(name, value);
+  const attempt = () => createDiscordClient({ check });
 
   expect(attempt).toThrow(ConfigError);
   expect(attempt).not.toThrow(TOKEN);
+});
+
+it("sends the token trimmed when the setting has a trailing newline", async () => {
+  stubEnv(
+    "DISCORD_BOT_TOKEN",
+    `${TOKEN}
+`,
+  );
+  serve();
+
+  await client().sendMessage(MANAGED, MESSAGE_BODY);
+
+  expect(requests()[0]?.headers.Authorization).toBe(`Bot ${TOKEN}`);
 });
 
 describe("sends", () => {

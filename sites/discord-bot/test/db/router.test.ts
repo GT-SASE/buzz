@@ -12,6 +12,7 @@ import {
   spyOn,
 } from "bun:test";
 import { POST } from "../../api/interactions.ts";
+import { withDeadline } from "../../src/db/client.ts";
 import { discordServer } from "../support/discord-server.ts";
 import {
   ADMIN,
@@ -30,6 +31,7 @@ import {
   GUILD_ID,
   member,
   modalPayload,
+  NOT_READY,
   run,
 } from "../support/interactions.ts";
 import { fakeId } from "../support/ids.ts";
@@ -168,8 +170,9 @@ const TEST_HANDLERS: Handler[] = [
       autocompleteRoute({
         path: "event one",
         action: "event.status",
-        choices: (_ctx, scope, typed) => {
+        choices: (ctx, scope, typed) => {
           finished({ scope, typed });
+          choicesDeadlines.push(ctx.db.deadlineMs);
           return Promise.resolve([{ name: plain`Choice`, value: "value" }]);
         },
       }),
@@ -180,6 +183,7 @@ const TEST_HANDLERS: Handler[] = [
   },
 ];
 
+const choicesDeadlines: number[] = [];
 const router = createRouter(TEST_HANDLERS);
 
 async function setup(fields: Seed = { config: configRow() }) {
@@ -201,6 +205,7 @@ async function setup(fields: Seed = { config: configRow() }) {
 const logged = mock();
 
 beforeEach(() => {
+  choicesDeadlines.length = 0;
   finished.mockReset();
   logged.mockReset();
   spyOn(console, "error").mockImplementation(logged);
@@ -401,7 +406,7 @@ describe("authorization on every kind of interaction", () => {
     expect(finished).toHaveBeenCalledTimes(1);
   });
 
-  it("refuses everything but public routes before setup", async () => {
+  it("says the server is not set up for everything but public routes before setup", async () => {
     const { dependencies } = await setup({ config: null });
 
     const { reply } = await run(
@@ -410,7 +415,7 @@ describe("authorization on every kind of interaction", () => {
       dependencies,
     );
 
-    expect(reply).toEqual(FIXED_REFUSAL);
+    expect(reply.data?.content).toBe(NOT_READY);
   });
 
   it.each([
@@ -618,13 +623,13 @@ describe("failures", () => {
       editEphemeralReply: () => Promise.reject(new Error("thrown")),
     };
 
-    expect(
-      await run(
-        router,
-        commandPayload("config.boom"),
-        dependenciesFor(db, rejected),
-      ),
-    ).toBeDefined();
+    const ran = await run(
+      router,
+      commandPayload("config.boom"),
+      dependenciesFor(db, rejected),
+    );
+
+    expect(ran).toHaveProperty("reply");
   });
 });
 
@@ -637,6 +642,21 @@ describe("autocomplete", () => {
   const payload = (typed: unknown, fields: Record<string, unknown> = {}) => ({
     ...autocompletePayload("event", typed, fields),
     data: { type: 1, name: "event", options: [subcommand(typed)] },
+  });
+
+  it("gives the route what is left of one deadline after the config read", async () => {
+    const { db } = await setup();
+    const { discord } = fakeDiscord();
+    // The first read of the clock starts the request, and every later one is 1.5 s on.
+    let reads = 0;
+    spyOn(Date, "now").mockImplementation(() => (reads++ === 0 ? 0 : 1500));
+
+    await run(router, payload("text", { member: OFFICER }), {
+      ...dependenciesFor(db, discord),
+      db: () => withDeadline(db, 2200),
+    });
+
+    expect(choicesDeadlines).toEqual([700]);
   });
 
   it("passes the scope and the text to the route", async () => {

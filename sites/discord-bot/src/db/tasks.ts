@@ -155,7 +155,7 @@ export interface OpenTaskCount {
   readonly truncated: boolean;
 }
 
-/** The open tasks of a forum's live events, for the warning before it is removed. */
+/** The open tasks of a forum's active events, for the warning before it is removed. */
 export async function countOpenTasksInChannel(
   db: DbClient,
   { guildId, channelId }: { guildId: string; channelId: string },
@@ -166,6 +166,7 @@ export async function countOpenTasksInChannel(
       sql`select t.id from ${TASKS_AND_EVENTS}
       where t.guild_id = ${guildId} and t.status = 'open' and t.deleted_at is null
         and e.channel_id = ${channelId} and e.deleted_at is null
+        and e.status = 'active'
       limit ${MAX_TASKS + 1}`,
     ),
     MAX_TASKS,

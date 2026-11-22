@@ -7,9 +7,8 @@ import { getDb, withDeadline, type DbClient } from "../db/client.ts";
 import { errorSummary } from "../db/errors.ts";
 import { expireInteractionClaims } from "../db/interaction-claims.ts";
 import { createDiscordClient, type DiscordClient } from "../discord/client.ts";
-import { ConfigError } from "../lib/config-error.ts";
 import { managedChannelCheck } from "../handlers/dependencies.ts";
-import { getAllowedGuildIds } from "../lib/env.ts";
+import { ConfigError, getAllowedGuildIds } from "../lib/env.ts";
 import { jobFreshness, runHealthCheck } from "./health.ts";
 import {
   DATABASE_CALL_MS,
@@ -60,15 +59,10 @@ export async function runDailyJobs(
       "reminders",
       new Date(),
     );
-    // The run's limits assume it has the function's time to itself.
-    const spentMs = Date.now() - startedMs;
     const reminders = await runReminders({
       ...shared,
       log,
-      limits: {
-        workMs: DEFAULT_LIMITS.workMs - spentMs,
-        hardStopMs: DEFAULT_LIMITS.hardStopMs - spentMs,
-      },
+      startedAtMs: startedMs,
     });
     if (reminders.status === "failed") {
       log(`Reminder run failed: ${reminders.error ?? "unrecorded"}`);
@@ -88,7 +82,9 @@ export async function runDailyJobs(
     if (health.status === "failed") {
       log(`Health check failed: ${health.error ?? "unrecorded"}`);
     }
-    const expired = await expireInteractionClaims(shared.db);
+    const expired = await expireInteractionClaims(
+      withDeadline(shared.db, DATABASE_CALL_MS),
+    );
     if (!expired.ok) {
       log(`Claim expiry failed: ${errorSummary(expired.error)}`);
     }
