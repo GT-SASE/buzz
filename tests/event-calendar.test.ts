@@ -380,6 +380,30 @@ describe("public event pages", () => {
     ).not.toHaveProperty("url");
   });
 
+  it("dates a campus reminder by its chapter-local day, not its stored instant", () => {
+    const reminder = (startsAt: string) =>
+      eventSchema({
+        title: "Career Fair",
+        startsAt: at(startsAt),
+        location: null,
+        description: null,
+        reminder: true,
+      }).startDate;
+    expect(reminder("2026-12-04T15:00:00Z")).toBe("2026-12-04");
+    // 10 pm EST Dec 4 is already Dec 5 in UTC, which is the day a naive
+    // toISOString().slice(0, 10) would print.
+    expect(reminder("2026-12-05T03:00:00Z")).toBe("2026-12-04");
+    // A timed event keeps its full instant.
+    expect(
+      eventSchema({
+        title: "GBM",
+        startsAt: at("2026-12-04T15:00:00Z"),
+        location: null,
+        description: null,
+      }).startDate,
+    ).toBe("2026-12-04T15:00:00.000Z");
+  });
+
   it("lets a page bring its own share image", () => {
     const image = {
       url: `${site.url}/events/abc/card?v=1`,

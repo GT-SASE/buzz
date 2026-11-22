@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 
 import { eventPagePath } from "~/app/portal/_lib/paths";
 import { site } from "~/data/site";
+import { localDateKey } from "~/lib/event-time";
 
 /**
  * Share image served by `app/opengraph-image.tsx`. A page that sets its own
@@ -127,7 +128,9 @@ export function organizationSchema() {
  * One chapter event.
  *
  * `startsAt` is a real instant, so it is emitted as a fully qualified ISO 8601
- * string with its offset.
+ * string with its offset. A date-only listing (`reminder`) has no real time:
+ * its stored hour means nothing, so it is emitted as the chapter-local day,
+ * the same day the cards, the month grid and the .ics feed put it on.
  *
  * Location and description are omitted rather than defaulted when the officer
  * left them blank. A placeholder like "Location announced on Instagram" is fine
@@ -141,6 +144,8 @@ export function eventSchema(event: {
   startsAt: Date;
   location: string | null;
   description: string | null;
+  /** Campus listing with a date and no time. */
+  reminder?: boolean;
   /** Absolute URL of the event's share card. */
   image?: string;
 }) {
@@ -154,7 +159,9 @@ export function eventSchema(event: {
         }
       : {}),
     name: event.title,
-    startDate: event.startsAt.toISOString(),
+    startDate: event.reminder
+      ? localDateKey(event.startsAt)
+      : event.startsAt.toISOString(),
     ...(event.image ? { image: event.image } : {}),
     ...(event.description ? { description: event.description } : {}),
     eventAttendanceMode: "https://schema.org/OfflineEventAttendanceMode",
