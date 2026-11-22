@@ -5,16 +5,18 @@ import { join } from "node:path";
 const src = join(import.meta.dir, "../sites/web/src");
 
 /**
- * These client files load on every public page: the nav shell and the error
- * boundary in the page's own JS, the sign-in card because every Join link
- * prefetches that route. `cn` brings tailwind-merge (~28 kB decoded), `Button`
+ * These client files load on every public page: the nav shell and the
+ * marketing error boundary in the page's own JS, the sign-in card and the
+ * portal error boundary because every Join link prefetches that route. `cn` brings tailwind-merge (~28 kB decoded), `Button`
  * and `Alert` bring cva and Slot, lucide-react brings its icon runtime, and the
  * `~/components/site` barrel brings all of them. Static markup belongs on the
  * server, passed in as a prop, as `SiteNav` and the sign-in page do.
  */
 const lean = [
   "components/site/site-nav-shell.tsx",
+  "components/site/error-alert.tsx",
   "app/(marketing)/error.tsx",
+  "app/portal/error.tsx",
   "app/portal/signin/sign-in-card.tsx",
 ];
 const heavy =

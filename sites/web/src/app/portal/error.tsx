@@ -1,17 +1,17 @@
 "use client";
 
-import { TriangleAlert } from "lucide-react";
 import { useEffect } from "react";
 
-import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert";
-import { Button } from "~/components/ui/button";
 import {
-  Card,
-  CardContent,
-  CardFooter,
-  CardHeader,
-} from "~/components/ui/card";
+  ErrorAlert,
+  errorButtonOutline,
+  errorButtonPrimary,
+} from "~/components/site/error-alert";
 
+/**
+ * Portal shell boundary. Plain markup on purpose: every public page prefetches
+ * the sign-in route, and this file is part of its JS. See error-alert.tsx.
+ */
 export default function PortalShellError({
   error,
   reset,
@@ -25,43 +25,35 @@ export default function PortalShellError({
 
   return (
     <section className="bg-cream flex min-h-[60vh] items-center px-5 py-20 sm:px-6">
-      <Card className="border-hairline bg-paper mx-auto w-full max-w-lg rounded-lg">
-        <CardHeader>
+      <div className="text-card-foreground border-hairline bg-paper mx-auto flex w-full max-w-lg flex-col gap-6 rounded-lg border py-6 shadow-sm">
+        <div className="grid auto-rows-min grid-rows-[auto_auto] items-start gap-2 px-6">
           <h1 className="font-display text-navy text-h2 font-bold tracking-tight text-balance">
             Sign-in could not load.
           </h1>
-        </CardHeader>
+        </div>
 
-        <CardContent>
-          <Alert variant="destructive" className="border-destructive/30">
-            <TriangleAlert />
-            <AlertTitle>Something went wrong</AlertTitle>
-            <AlertDescription>
-              <p>
-                This is usually temporary. Nothing about your account has
-                changed. Try again, or come back in a minute.
-              </p>
-            </AlertDescription>
-          </Alert>
-        </CardContent>
+        <div className="px-6">
+          <ErrorAlert>
+            <p>
+              This is usually temporary. Nothing about your account has changed.
+              Try again, or come back in a minute.
+            </p>
+          </ErrorAlert>
+        </div>
 
-        <CardFooter className="flex-col items-start gap-6">
+        <div className="flex flex-col items-start gap-6 px-6">
           <div className="flex w-full flex-col gap-3 sm:flex-row sm:flex-wrap">
-            <Button
+            <button
               type="button"
               onClick={reset}
-              className="bg-gold-bright text-navy hover:bg-gold min-h-11 w-full rounded-md font-semibold sm:w-auto"
+              className={errorButtonPrimary}
             >
               Try again
-            </Button>
-            <Button
-              asChild
-              variant="outline"
-              className="border-hairline text-navy hover:bg-cream min-h-11 w-full rounded-md font-semibold sm:w-auto"
-            >
-              {/* react-doctor-disable-next-line react-doctor/nextjs-no-a-element -- full reload on purpose: the tree that threw is discarded */}
-              <a href="/">Back to the site</a>
-            </Button>
+            </button>
+            {/* react-doctor-disable-next-line react-doctor/nextjs-no-a-element -- full reload on purpose: the tree that threw is discarded */}
+            <a href="/" className={errorButtonOutline}>
+              Back to the site
+            </a>
           </div>
 
           {error.digest && (
@@ -69,8 +61,8 @@ export default function PortalShellError({
               Reference {error.digest}
             </p>
           )}
-        </CardFooter>
-      </Card>
+        </div>
+      </div>
     </section>
   );
 }
