@@ -108,7 +108,7 @@ function returnedToRsvp() {
   return new URLSearchParams(window.location.search).get("rsvp") === "1";
 }
 
-/** So a refresh does not ask again. The RSVP itself is idempotent anyway. */
+/** So a refresh does not ask again. */
 function forgetReturnedToRsvp() {
   const url = new URL(window.location.href);
   url.searchParams.delete("rsvp");
@@ -120,10 +120,51 @@ function forgetReturnedToRsvp() {
 }
 
 /**
+ * The visitor's own click on "Sign in to RSVP", remembered for this tab. The
+ * URL alone cannot be trusted to mean "RSVP me": anyone can send a signed-in
+ * member a link ending in `?rsvp=1`, and a state change that a link can cause
+ * is the one thing a cross-site page must not be able to do. A tab's
+ * `sessionStorage` survives the trip to Google and back and is not something
+ * another site can write. Storage that is blocked just means nothing is
+ * remembered: the visitor comes back to an RSVP button instead.
+ */
+const INTENT_KEY = "buzz:rsvp-intent";
+const INTENT_TTL_MS = 15 * 60 * 1000;
+
+function rememberIntent(eventId: string) {
+  try {
+    window.sessionStorage.setItem(
+      INTENT_KEY,
+      JSON.stringify({ id: eventId, at: Date.now() }),
+    );
+  } catch {
+    // Blocked storage: the RSVP button is the fallback.
+  }
+}
+
+/** True once, and only for the event the visitor asked about a moment ago. */
+function takeIntent(eventId: string) {
+  try {
+    const stored = window.sessionStorage.getItem(INTENT_KEY);
+    window.sessionStorage.removeItem(INTENT_KEY);
+    if (!stored) return false;
+    const intent = JSON.parse(stored) as { id?: unknown; at?: unknown };
+    return (
+      intent.id === eventId &&
+      typeof intent.at === "number" &&
+      Date.now() - intent.at < INTENT_TTL_MS
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
  * One session check and one RSVP lookup for every control inside it.
  * `eventIds` are the events a control may appear for. `returnTo` is the one
- * event whose page is the landing spot after sign-in: arriving with `?rsvp=1`
- * and a session RSVPs once, shows the confirmed state and drops the parameter.
+ * event whose page is the landing spot after sign-in. Arriving there with
+ * `?rsvp=1` drops the flag, and if the visitor asked to RSVP on this tab (see
+ * `rememberIntent`) and has a session, RSVPs once and shows the confirmed state.
  */
 export function RsvpProvider({
   eventIds,
@@ -193,7 +234,8 @@ export function RsvpProvider({
       dispatch({ type: "signed-in", going });
       if (returnTo && returnedToRsvp()) {
         forgetReturnedToRsvp();
-        if (!going.includes(returnTo)) await act(returnTo, true);
+        const asked = takeIntent(returnTo);
+        if (asked && !going.includes(returnTo)) await act(returnTo, true);
       }
     })();
     return () => {
@@ -271,7 +313,12 @@ export function RsvpControl({
       </span>
     );
   } else if (!signedIn) {
-    body = children;
+    // `contents` keeps the wrapper out of the layout; the click still passes through it.
+    body = (
+      <div className="contents" onClickCapture={() => rememberIntent(eventId)}>
+        {children}
+      </div>
+    );
   } else if (going) {
     body = (
       <>

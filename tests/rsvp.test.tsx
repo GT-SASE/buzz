@@ -101,7 +101,10 @@ function page(options: {
   );
 }
 
-beforeEach(() => window.history.replaceState(null, "", "/events/e1"));
+beforeEach(() => {
+  window.history.replaceState(null, "", "/events/e1");
+  window.sessionStorage.clear();
+});
 afterEach(cleanup);
 
 describe("what the server renders", () => {
@@ -318,9 +321,28 @@ describe("what the server says no to", () => {
 
 describe("coming back from sign-in", () => {
   const search = () => window.location.search;
+  const INTENT_KEY = "buzz:rsvp-intent";
+
+  /** The visitor's own click on "Sign in to RSVP", on a page that is then left. */
+  async function clickSignIn(eventId = "e1") {
+    server({ signedIn: false });
+    const view = render(page({ ids: [eventId] }));
+    const link = await screen.findByRole("link", { name: "Sign in to RSVP" });
+    // Following the link would leave the page; the click is what is under test.
+    const stay = (event: Event) => event.preventDefault();
+    document.addEventListener("click", stay);
+    await userEvent.click(link);
+    document.removeEventListener("click", stay);
+    view.unmount();
+  }
+
+  async function landOnEvent(url = "/events/e1?rsvp=1") {
+    window.history.replaceState(null, "", url);
+  }
 
   it("RSVPs once, shows the confirmed state and drops the flag", async () => {
-    window.history.replaceState(null, "", "/events/e1?rsvp=1");
+    await clickSignIn();
+    await landOnEvent();
     const api = server({ signedIn: true });
     render(page({ returnTo: "e1", title: "GBM 4" }));
     expect(await screen.findByText("You’re going")).toBeTruthy();
@@ -331,22 +353,26 @@ describe("coming back from sign-in", () => {
   });
 
   it("does not RSVP again on a refresh", async () => {
-    window.history.replaceState(null, "", "/events/e1?rsvp=1");
+    await clickSignIn();
+    await landOnEvent();
     const first = server({ signedIn: true });
     const { unmount } = render(page({ returnTo: "e1" }));
     await screen.findByText("You’re going");
     unmount();
 
-    // A refresh: new page load, the flag already gone, the RSVP now on file.
+    // A refresh: new page load, the flag and the memory of the click both
+    // used up, the RSVP now on file.
     const second = server({ signedIn: true, going: ["e1"] });
     render(page({ returnTo: "e1" }));
     await screen.findByText("You’re going");
     expect(first.posts()).toHaveLength(1);
     expect(second.posts()).toEqual([]);
+    expect(window.sessionStorage.getItem(INTENT_KEY)).toBeNull();
   });
 
   it("only drops the flag when the visitor was already going", async () => {
-    window.history.replaceState(null, "", "/events/e1?rsvp=1&utm=x");
+    await clickSignIn();
+    await landOnEvent("/events/e1?rsvp=1&utm=x");
     const api = server({ signedIn: true, going: ["e1"] });
     render(page({ returnTo: "e1" }));
     await screen.findByText("You’re going");
@@ -355,7 +381,8 @@ describe("coming back from sign-in", () => {
   });
 
   it("shows the server's reason when the RSVP is refused on return", async () => {
-    window.history.replaceState(null, "", "/events/e1?rsvp=1");
+    await clickSignIn();
+    await landOnEvent();
     server({
       signedIn: true,
       failWith: { status: 400, message: "This event has already started." },
@@ -369,7 +396,7 @@ describe("coming back from sign-in", () => {
   });
 
   it("does nothing with the flag while signed out", async () => {
-    window.history.replaceState(null, "", "/events/e1?rsvp=1");
+    await landOnEvent();
     const api = server({ signedIn: false });
     render(page({ returnTo: "e1" }));
     await waitFor(() => expect(api.calls).toHaveLength(1));
@@ -379,15 +406,110 @@ describe("coming back from sign-in", () => {
   });
 
   it("ignores the flag on a page that is not the landing spot", async () => {
-    window.history.replaceState(null, "", "/events?rsvp=1");
+    await landOnEvent("/events?rsvp=1");
     const api = server({ signedIn: true });
     render(page({}));
     await screen.findByRole("button", { name: /^RSVP/ });
     expect(api.posts()).toEqual([]);
     expect(search()).toBe("?rsvp=1");
   });
-});
 
+  describe("a link alone never RSVPs", () => {
+    it("does not RSVP a signed-in visitor who arrives with the flag from elsewhere", async () => {
+      await landOnEvent();
+      const api = server({ signedIn: true });
+      render(page({ returnTo: "e1", title: "GBM 4" }));
+      expect(
+        await screen.findByRole("button", { name: "RSVP for GBM 4" }),
+      ).toBeTruthy();
+      expect(api.posts()).toEqual([]);
+      expect(screen.queryByText("You’re going")).toBeNull();
+      // Still gone from the address bar, so sharing the page does not carry it.
+      expect(search()).toBe("");
+    });
+
+    it("does not RSVP for an event the visitor asked about something else", async () => {
+      await clickSignIn("e2");
+      await landOnEvent();
+      const api = server({ signedIn: true });
+      render(page({ returnTo: "e1" }));
+      await screen.findByRole("button", { name: /^RSVP/ });
+      expect(api.posts()).toEqual([]);
+    });
+
+    it("does not RSVP on the strength of a click from long ago", async () => {
+      await clickSignIn();
+      const stored = JSON.parse(window.sessionStorage.getItem(INTENT_KEY)!);
+      window.sessionStorage.setItem(
+        INTENT_KEY,
+        JSON.stringify({ ...stored, at: stored.at - 16 * 60 * 1000 }),
+      );
+      await landOnEvent();
+      const api = server({ signedIn: true });
+      render(page({ returnTo: "e1" }));
+      await screen.findByRole("button", { name: /^RSVP/ });
+      expect(api.posts()).toEqual([]);
+    });
+
+    it("uses up the memory of the click even when it was not needed", async () => {
+      await clickSignIn("e2");
+      await landOnEvent();
+      server({ signedIn: true });
+      render(page({ returnTo: "e1" }));
+      await screen.findByRole("button", { name: /^RSVP/ });
+      expect(window.sessionStorage.getItem(INTENT_KEY)).toBeNull();
+    });
+  });
+
+  describe("remembering the click", () => {
+    it("is the visitor's own click on the sign-in link, for that event", async () => {
+      await clickSignIn("e2");
+      expect(
+        JSON.parse(window.sessionStorage.getItem(INTENT_KEY)!),
+      ).toMatchObject({
+        id: "e2",
+      });
+    });
+
+    it("does not stop the link from working", async () => {
+      server({ signedIn: false });
+      render(page({}));
+      const link = await screen.findByRole("link", { name: "Sign in to RSVP" });
+      let followed = false;
+      const watch = (event: Event) => {
+        followed = true;
+        event.preventDefault();
+      };
+      document.addEventListener("click", watch);
+      await userEvent.click(link);
+      document.removeEventListener("click", watch);
+      expect(followed).toBe(true);
+    });
+
+    it("still works, as an RSVP button on return, when storage is blocked", async () => {
+      const real = window.sessionStorage;
+      Object.defineProperty(window, "sessionStorage", {
+        configurable: true,
+        get() {
+          throw new Error("blocked");
+        },
+      });
+      try {
+        await clickSignIn();
+        await landOnEvent();
+        const api = server({ signedIn: true });
+        render(page({ returnTo: "e1" }));
+        await screen.findByRole("button", { name: /^RSVP/ });
+        expect(api.posts()).toEqual([]);
+      } finally {
+        Object.defineProperty(window, "sessionStorage", {
+          configurable: true,
+          value: real,
+        });
+      }
+    });
+  });
+});
 describe("a list of events", () => {
   it("asks who is signed in and which are RSVPed once for the whole page", async () => {
     const api = server({ signedIn: true, going: ["e2"] });
