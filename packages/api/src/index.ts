@@ -1,5 +1,6 @@
 export { appRouter, createCaller, type AppRouter } from "./root";
 export { createTRPCContext } from "./trpc";
+export { recordAudit } from "./audit";
 export {
   decodeResumeBytes,
   parseResumeUpload,

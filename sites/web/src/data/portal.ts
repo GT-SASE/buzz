@@ -83,6 +83,7 @@ export const adminNav = [
   { href: "/portal/admin/elections", label: "Elections" },
   { href: "/portal/admin/announcement", label: "Banner" },
   { href: "/portal/admin/pages", label: "Pages" },
+  { href: "/portal/admin/audit", label: "Audit" },
 ] as const;
 
 /** Mentorship points only. Event attendance has its own card and tiers. */

@@ -1,5 +1,11 @@
 import { beforeEach, describe, expect, it, mock } from "bun:test";
 import { stubEnv, unstubAllEnvs } from "./helpers/env";
+import {
+  auditRows,
+  ledgerRows,
+  resetWrites,
+  withMemoryAudit,
+} from "./helpers/audit";
 import { resetRateLimits, withMemoryLimiter } from "./helpers/rate-limit";
 
 mock.module("../packages/auth/src/index.ts", () => ({
@@ -28,7 +34,7 @@ function memberCtx(db: unknown): Ctx {
 
 function adminCtx(db: unknown): Ctx {
   return {
-    db: withMemoryLimiter(db),
+    db: withMemoryAudit(withMemoryLimiter(db)),
     session: {
       user: { id: "officer-1", role: "ADMIN", email: "officer@gatech.edu" },
       expires: "2099-01-01T00:00:00.000Z",
@@ -59,7 +65,51 @@ const unreachableDb = new Proxy(
   },
 );
 
-beforeEach(() => resetRateLimits());
+beforeEach(() => {
+  resetRateLimits();
+  resetWrites();
+});
+
+/**
+ * A transaction whose reads answer in the order the router asks them, and
+ * whose writes are only counted. `where()` serves both a bare `await` and a
+ * following `.for()` or `.returning()`.
+ */
+function awardingDb(reads: unknown[][]) {
+  const answers = [...reads];
+  const sets: Record<string, unknown>[] = [];
+  const next = () => Promise.resolve(answers.shift() ?? []);
+  const select = () => {
+    const chain = {
+      from: () => chain,
+      where: () => chain,
+      for: () => next(),
+      then: (
+        onFulfilled?: (value: unknown[]) => unknown,
+        onRejected?: (reason: unknown) => unknown,
+      ) => next().then(onFulfilled, onRejected),
+    };
+    return chain;
+  };
+  const db = {
+    select,
+    update: () => ({
+      set: (values: Record<string, unknown>) => {
+        sets.push(values);
+        const done = {
+          returning: () => Promise.resolve([values]),
+          then: (
+            onFulfilled?: (value: undefined) => unknown,
+            onRejected?: (reason: unknown) => unknown,
+          ) => Promise.resolve(undefined).then(onFulfilled, onRejected),
+        };
+        return { where: () => done };
+      },
+    }),
+    transaction: (run: (tx: unknown) => Promise<unknown>) => run(db),
+  };
+  return { db, sets };
+}
 
 describe("mentorship.list", () => {
   it("refuses a MEMBER session before reading", async () => {
@@ -79,6 +129,112 @@ describe("mentorship.awardPoints", () => {
       }),
     );
     expect(error.code).toBe("FORBIDDEN");
+  });
+});
+
+describe("mentorship.awardPoints writes", () => {
+  it("adds the points to the ledger and logs the total before and after", async () => {
+    const { db } = awardingDb([[{ points: 12 }], []]);
+
+    await createCaller(adminCtx(db)).mentorship.awardPoints({
+      userId: "member-2",
+      points: 5,
+    });
+
+    expect(ledgerRows).toEqual([
+      {
+        userId: "member-2",
+        delta: 5,
+        reason: "KIN points awarded by an officer",
+        source: "kin_award",
+        eventId: null,
+        actedByUserId: "officer-1",
+      },
+    ]);
+    expect(auditRows).toEqual([
+      {
+        actorId: "officer-1",
+        action: "mentorship.award_points",
+        targetType: "member",
+        targetId: "member-2",
+        targetLabel: null,
+        before: { points: 12 },
+        after: { points: 17 },
+      },
+    ]);
+  });
+
+  it("writes nothing for someone who has not signed up", async () => {
+    const { db } = awardingDb([[]]);
+
+    const error = await rejection(
+      createCaller(adminCtx(db)).mentorship.awardPoints({
+        userId: "nobody",
+        points: 5,
+      }),
+    );
+
+    expect(error.code).toBe("NOT_FOUND");
+    expect(auditRows).toEqual([]);
+    expect(ledgerRows).toEqual([]);
+  });
+});
+
+describe("mentorship.awardGroupPoints writes", () => {
+  it("gives every member of the group a ledger row and logs one entry for the group", async () => {
+    const { db } = awardingDb([
+      [{ year: "2026-2027", name: "Hive" }],
+      [
+        { userId: "member-1", semester: "fall-2026", points: 0 },
+        { userId: "member-2", semester: "fall-2026", points: 4 },
+      ],
+      [
+        { userId: "member-1", points: 0 },
+        { userId: "member-2", points: 4 },
+      ],
+    ]);
+
+    const result = await createCaller(adminCtx(db)).mentorship.awardGroupPoints(
+      { groupId: "group-1", points: 3 },
+    );
+
+    expect(result).toEqual({ awarded: 2 });
+    expect(ledgerRows).toEqual(
+      ["member-1", "member-2"].map((userId) => ({
+        userId,
+        delta: 3,
+        reason: "KIN group points: Hive",
+        source: "kin_group_award",
+        eventId: null,
+        actedByUserId: "officer-1",
+      })),
+    );
+    expect(auditRows).toEqual([
+      {
+        actorId: "officer-1",
+        action: "mentorship.award_group_points",
+        targetType: "kin_group",
+        targetId: "group-1",
+        targetLabel: "Hive",
+        before: null,
+        after: { points: 3, members: 2 },
+      },
+    ]);
+  });
+
+  it("writes nothing for an empty group", async () => {
+    const { db } = awardingDb([[{ year: "2026-2027", name: "Hive" }], []]);
+
+    const error = await rejection(
+      createCaller(adminCtx(db)).mentorship.awardGroupPoints({
+        groupId: "group-1",
+        points: 3,
+      }),
+    );
+
+    expect(error.code).toBe("BAD_REQUEST");
+    expect(auditRows).toEqual([]);
+    expect(ledgerRows).toEqual([]);
   });
 });
 

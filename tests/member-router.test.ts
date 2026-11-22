@@ -9,6 +9,7 @@ import {
 } from "drizzle-orm";
 import { afterAll, describe, expect, it, mock, vi } from "bun:test";
 import { stubEnv, unstubAllEnvs } from "./helpers/env";
+import { auditRows, resetWrites, withMemoryAudit } from "./helpers/audit";
 import { resetRateLimits, withMemoryLimiter } from "./helpers/rate-limit";
 
 import { eventCheckIns, events, users } from "../packages/db/src/schema";
@@ -45,7 +46,7 @@ const CALLER_ID = "member-1";
 
 function adminCtx(db: unknown): Ctx {
   return {
-    db: withMemoryLimiter(db),
+    db: withMemoryAudit(withMemoryLimiter(db)),
     session: {
       user: { id: "officer-1", role: "ADMIN", email: "officer@gatech.edu" },
       expires: "2099-01-01T00:00:00.000Z",
@@ -788,11 +789,33 @@ describe("member.exportRoster", () => {
 
   /** Every member's email address, in one file. */
   it("is refused to a member who is not an officer", async () => {
+    resetWrites();
     const error = await rejection(
       createCaller(memberCtx(unreachableDb)).member.exportRoster({}),
     );
 
     expect(error.code).toBe("FORBIDDEN");
+    expect(auditRows).toEqual([]);
+  });
+
+  /** Who took the roster out, what they searched for, and how much of it. */
+  it("logs the export with its search and row count", async () => {
+    resetRateLimits();
+    resetWrites();
+    const { db } = exportDb([REGULAR, NEWCOMER]);
+    await createCaller(adminCtx(db)).member.exportRoster({ search: "ada" });
+
+    expect(auditRows).toEqual([
+      {
+        actorId: "officer-1",
+        action: "export.roster",
+        targetType: "roster",
+        targetId: null,
+        targetLabel: null,
+        before: null,
+        after: { rows: 2, truncated: false, search: "ada" },
+      },
+    ]);
   });
 });
 

@@ -23,6 +23,7 @@ import {
   memberSince,
   pointsSum,
 } from "../aggregates";
+import { recordAudit } from "../audit";
 import { notFound } from "../errors";
 import { rankLeaderboard } from "../leaderboard-rank";
 import { isUndefinedTable } from "../pg-errors";
@@ -277,6 +278,19 @@ export const memberRouter = createTRPCRouter({
         .orderBy(asc(isNull(totalPoints)), desc(totalPoints), asc(users.email))
         .limit(5000);
 
+      // After the read, before the data leaves: an export that cannot be
+      // logged is not handed over.
+      await recordAudit(ctx.db, {
+        actorId: ctx.session.user.id,
+        action: "export.roster",
+        targetType: "roster",
+        after: {
+          rows: rows.length,
+          truncated: rows.length >= 5000,
+          search: input.search ?? null,
+        },
+      });
+
       return {
         members: rows.map((row) => ({
           ...row,
@@ -421,17 +435,45 @@ export const memberRouter = createTRPCRouter({
         });
       }
 
-      const [updated] = await ctx.db
-        .update(users)
-        .set({ role: input.role })
-        .where(eq(users.id, input.userId))
-        .returning({ id: users.id, role: users.role });
+      return ctx.db.transaction(async (tx) => {
+        // Locked so the logged "before" is the role this change replaces, not
+        // one a concurrent change has already moved.
+        const [before] = await tx
+          .select({ role: users.role, email: users.email })
+          .from(users)
+          .where(eq(users.id, input.userId))
+          .for("update");
 
-      if (!updated) {
-        notFound("Member");
-      }
+        if (!before) {
+          notFound("Member");
+        }
 
-      return { success: true, role: updated.role };
+        const [updated] = await tx
+          .update(users)
+          .set({ role: input.role })
+          .where(eq(users.id, input.userId))
+          .returning({ id: users.id, role: users.role });
+
+        if (!updated) {
+          notFound("Member");
+        }
+
+        // Saving the role someone already has changes nothing, so it leaves
+        // nothing in the log either.
+        if (before.role !== updated.role) {
+          await recordAudit(tx, {
+            actorId: ctx.session.user.id,
+            action: "member.set_role",
+            targetType: "member",
+            targetId: input.userId,
+            targetLabel: before.email,
+            before: { role: before.role },
+            after: { role: updated.role },
+          });
+        }
+
+        return { success: true, role: updated.role };
+      });
     }),
 
   // ----------------------------------------------------------------- members

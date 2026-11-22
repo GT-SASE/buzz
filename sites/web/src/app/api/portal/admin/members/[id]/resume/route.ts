@@ -4,10 +4,11 @@ import type { NextRequest } from "next/server";
 import {
   decodeResumeBytes,
   isUndefinedTable,
+  recordAudit,
   resumeDownloadHeaders,
 } from "@buzz/api";
 import { auth } from "@buzz/auth";
-import { db, isOfficerRole, resumes } from "@buzz/db";
+import { db, isOfficerRole, resumes, users } from "@buzz/db";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -35,9 +36,17 @@ export async function GET(
 
   let row;
   try {
-    row = await db.query.resumes.findFirst({
-      where: eq(resumes.userId, id),
-    });
+    [row] = await db
+      .select({
+        userId: resumes.userId,
+        fileName: resumes.fileName,
+        byteSize: resumes.byteSize,
+        fileBytes: resumes.fileBytes,
+        email: users.email,
+      })
+      .from(resumes)
+      .innerJoin(users, eq(users.id, resumes.userId))
+      .where(eq(resumes.userId, id));
   } catch (error) {
     if (isUndefinedTable(error)) {
       return jsonError("Resume not found.", 404);
@@ -48,6 +57,16 @@ export async function GET(
   if (!row) {
     return jsonError("Resume not found.", 404);
   }
+
+  // Before the bytes leave: a download that cannot be logged is not served.
+  await recordAudit(db, {
+    actorId: session.user.id,
+    action: "resume.download",
+    targetType: "member",
+    targetId: row.userId,
+    targetLabel: row.email,
+    after: { fileName: row.fileName, bytes: row.byteSize },
+  });
 
   return new Response(decodeResumeBytes(row.fileBytes), {
     headers: resumeDownloadHeaders(row.fileName),
