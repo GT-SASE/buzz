@@ -36,7 +36,7 @@ export default function BoardPage() {
         <PhotoFrame
           photo={photos.boardPortrait}
           priority
-          sizes="(min-width: 1280px) 72rem, 100vw"
+          sizes="(min-width: 75rem) 72rem, calc(100vw - 3rem)"
           className="aspect-[16/9] sm:aspect-[21/9]"
         />
       </Section>

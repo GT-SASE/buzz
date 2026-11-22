@@ -65,6 +65,22 @@ export function signInPath(from: string) {
   return `/portal/signin?from=${encodeURIComponent(from)}`;
 }
 
+/** The DOM id of one event's row in the member portal's event list. */
+export function eventRowId(eventId: string) {
+  return `event-${eventId}`;
+}
+
+/**
+ * One event in the member portal. The id rides in the query, like
+ * `checkInPath`'s code: a query string is text the server reads and redirects
+ * with, so it survives sign-in. A `#event-<id>` fragment would not be trusted
+ * through the OAuth round trip. The portal page reads `event` and scrolls to
+ * that row.
+ */
+export function eventPath(eventId: string) {
+  return `/portal/events?event=${encodeURIComponent(eventId)}`;
+}
+
 /**
  * Check-in with a code in the query. QR links use `#code=` instead, but a
  * fragment does not survive the OAuth round-trip, so this is what `from`

@@ -1,7 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
 import { signInPath } from "~/app/portal/_lib/paths";
-import sitemap from "~/app/sitemap";
 import { marqueeItems, programs } from "~/data/content";
 import { adminNav, portalNav } from "~/data/portal";
 import { navCta, navGroups, site } from "~/data/site";
@@ -13,6 +12,7 @@ import {
   pageMetadata,
   shareImage,
 } from "~/lib/seo";
+import { buildSitemap } from "~/lib/sitemap";
 import { cn } from "~/lib/utils";
 import { asDate, asInt } from "../packages/api/src/aggregates";
 import {
@@ -151,7 +151,7 @@ describe("cn", () => {
 
 describe("site map and navigation", () => {
   it("lists every public page and no portal page", () => {
-    const urls = sitemap().map((entry) => entry.url);
+    const urls = buildSitemap([]).map((entry) => entry.url);
     for (const path of [
       "/join",
       "/events",
@@ -165,9 +165,17 @@ describe("site map and navigation", () => {
     }
     expect(urls).toContain(site.url);
     expect(urls.some((url) => url.includes("/portal"))).toBe(false);
-    expect(sitemap().every((entry) => entry.lastModified === undefined)).toBe(
-      true,
-    );
+    expect(
+      buildSitemap([]).every((entry) => entry.lastModified === undefined),
+    ).toBe(true);
+  });
+
+  it("appends published CMS pages with their last edit", () => {
+    const updatedAt = new Date("2026-11-01T12:00:00.000Z");
+    const entries = buildSitemap([{ slug: "faq", updatedAt }]);
+    const cms = entries.find((entry) => entry.url === `${site.url}/faq`);
+    expect(cms?.lastModified).toEqual(updatedAt);
+    expect(entries).toHaveLength(buildSitemap([]).length + 1);
   });
 
   it("keeps the public nav on public pages", () => {

@@ -2,6 +2,8 @@ import { describe, expect, it } from "bun:test";
 
 import {
   afterSignIn,
+  eventPath,
+  eventRowId,
   firstParam,
   safeRedirectPath,
   signInPath,
@@ -16,6 +18,37 @@ describe("signInPath", () => {
     expect(signInPath("/portal/events")).toBe(
       "/portal/signin?from=%2Fportal%2Fevents",
     );
+  });
+
+  /**
+   * The event rides in the query, not a `#fragment`: a query is text the server
+   * reads and redirects with, a fragment is not. Sign-in decodes `from` and
+   * hands it on unchanged, so what comes out must still name the event.
+   */
+  it("carries one event through sign-in in the query", () => {
+    const href = signInPath(eventPath("evt-1"));
+    expect(href).toBe("/portal/signin?from=%2Fportal%2Fevents%3Fevent%3Devt-1");
+    const from = new URL(href, "https://example.test").searchParams.get("from");
+    const landing = safeRedirectPath(from ?? undefined);
+    expect(landing).toBe("/portal/events?event=evt-1");
+    expect(landing).not.toContain("#");
+  });
+
+  it("keeps an id with reserved characters whole", () => {
+    const from = new URL(
+      signInPath(eventPath("a&b=c#d")),
+      "https://example.test",
+    ).searchParams.get("from");
+    const landing = new URL(
+      safeRedirectPath(from ?? undefined),
+      "https://x.test",
+    );
+    expect(landing.pathname).toBe("/portal/events");
+    expect(landing.searchParams.get("event")).toBe("a&b=c#d");
+  });
+
+  it("names the row the portal list gives that event", () => {
+    expect(eventRowId("evt-1")).toBe("event-evt-1");
   });
 });
 

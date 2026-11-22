@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { unstable_cache } from "next/cache";
 
 import { isValidPageSlug } from "@buzz/api/page-slug";
@@ -27,6 +27,49 @@ const loadPage = unstable_cache(fetchPage, [PAGES_TAG, "v1"], {
   tags: [PAGES_TAG],
   revalidate: process.env.NODE_ENV === "production" ? 3600 : 60,
 });
+
+// unstable_cache stores JSON, so the date travels as an ISO string.
+async function fetchPublishedList() {
+  if (!process.env.DATABASE_URL) return [];
+  const rows = await db
+    .select({ slug: pages.slug, updatedAt: pages.updatedAt })
+    .from(pages)
+    .where(eq(pages.published, true))
+    .orderBy(asc(pages.slug));
+  return rows.map((row) => ({
+    slug: row.slug,
+    updatedAt: row.updatedAt.toISOString(),
+  }));
+}
+
+const loadPublishedList = unstable_cache(
+  fetchPublishedList,
+  [PAGES_TAG, "list", "v1"],
+  {
+    tags: [PAGES_TAG],
+    revalidate: process.env.NODE_ENV === "production" ? 3600 : 60,
+  },
+);
+
+/** Every published page's slug and last edit, for the sitemap. Empty on a database error. */
+export async function getPublishedPageList() {
+  try {
+    const rows = await loadPublishedList();
+    return rows.map((row) => ({
+      slug: row.slug,
+      updatedAt: new Date(row.updatedAt),
+    }));
+  } catch (error) {
+    console.error(
+      JSON.stringify({
+        level: "error",
+        event: "pages.list",
+        message: error instanceof Error ? error.message : String(error),
+      }),
+    );
+    return [];
+  }
+}
 
 /** A published page's content, or null for a draft, a missing slug, or no database. */
 export async function getPublishedPage(slug: string) {

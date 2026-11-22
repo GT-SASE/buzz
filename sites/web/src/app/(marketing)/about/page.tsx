@@ -9,6 +9,7 @@ import {
 import { JsonLd } from "~/components/site/json-ld";
 import { board, missionPillars } from "~/data/content";
 import { photos } from "~/data/photos";
+import { joinHref } from "~/data/site";
 import { breadcrumbSchema, pageMetadata } from "~/lib/seo";
 
 export const metadata = pageMetadata({
@@ -90,8 +91,8 @@ export default function AboutPage() {
           title="The fastest way to know if this is for you."
           body="Show up once. Membership is free, there is no application, and no prior involvement is assumed."
         >
-          <Button href="/join" variant="solid">
-            Come to a meeting
+          <Button href={joinHref} variant="solid">
+            Join SASE
           </Button>
         </CtaPanel>
       </Section>

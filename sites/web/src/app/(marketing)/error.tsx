@@ -1,14 +1,17 @@
 "use client";
 
-import { TriangleAlert } from "lucide-react";
 import { useEffect } from "react";
 
-import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert";
-import { Button } from "~/components/ui/button";
+import {
+  ErrorAlert,
+  errorButtonOutline,
+  errorButtonPrimary,
+} from "~/components/site/error-alert";
 
 /**
  * Marketing segment boundary. Kept chrome-less: the route-group layout already
- * mounts nav/footer, so this is just a centered panel.
+ * mounts nav/footer, so this is just a centered panel. Plain markup on purpose:
+ * see error-alert.tsx.
  */
 export default function MarketingError({
   error,
@@ -28,30 +31,18 @@ export default function MarketingError({
           This page could not load.
         </h1>
 
-        <Alert variant="destructive" className="border-destructive/30 mt-6">
-          <TriangleAlert />
-          <AlertTitle>Something went wrong</AlertTitle>
-          <AlertDescription>
-            <p>This is usually temporary. Try again in a moment.</p>
-          </AlertDescription>
-        </Alert>
+        <ErrorAlert className="mt-6">
+          <p>This is usually temporary. Try again in a moment.</p>
+        </ErrorAlert>
 
         <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-          <Button
-            type="button"
-            onClick={reset}
-            className="bg-gold-bright text-navy hover:bg-gold min-h-11 w-full rounded-md font-semibold sm:w-auto"
-          >
+          <button type="button" onClick={reset} className={errorButtonPrimary}>
             Try again
-          </Button>
-          <Button
-            asChild
-            variant="outline"
-            className="border-hairline text-navy hover:bg-cream min-h-11 w-full rounded-md font-semibold sm:w-auto"
-          >
-            {/* react-doctor-disable-next-line react-doctor/nextjs-no-a-element -- full reload on purpose: the tree that threw is discarded */}
-            <a href="/">Back to home</a>
-          </Button>
+          </button>
+          {/* react-doctor-disable-next-line react-doctor/nextjs-no-a-element -- full reload on purpose: the tree that threw is discarded */}
+          <a href="/" className={errorButtonOutline}>
+            Back to home
+          </a>
         </div>
 
         {error.digest && (
