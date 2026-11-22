@@ -695,81 +695,47 @@ export const eventRouter = createTRPCRouter({
       let eventTitle = event.title;
       let pointsEarned = event.pointsValue;
 
-      if (event.maxCheckIns === null) {
-        /*
-         * Uncapped: no capacity counter to serialise on, but archive / disable /
-         * window still have to be re-validated under a lock so a concurrent
-         * officer close cannot race the insert.
-         *
-         * `currentCheckIns` is deliberately NOT incremented here. It exists to
-         * settle capacity, this event has none, and a shared counter is a row
-         * every writer must serialise on. `listAll` already reports attendance
-         * with `count(*)`, and `update` recomputes the counter if a capacity is
-         * ever added.
-         */
-        await ctx.db.transaction(async (tx) => {
-          const [locked] = await tx
-            .select()
-            .from(events)
-            .where(eq(events.id, event.id))
-            .for("update");
+      /*
+       * One transaction for both kinds of event, because which kind this is has
+       * to be read off the locked row. The lookup above is unlocked, and an
+       * officer can add or drop a capacity between it and the lock. A scan that
+       * took the uncapped path for an event that is now capped would be
+       * admitted without being counted or checked against the limit, leaving
+       * `currentCheckIns` low for the life of the event.
+       *
+       * The lock is taken either way: archive / disable / window have to be
+       * re-validated under it so a concurrent officer close cannot race the
+       * insert.
+       */
+      await ctx.db.transaction(async (tx) => {
+        const [locked] = await tx
+          .select()
+          .from(events)
+          .where(eq(events.id, event.id))
+          .for("update");
 
-          if (locked?.archivedAt != null || !locked?.checkInEnabled) {
-            throw new TRPCError({
-              code: "BAD_REQUEST",
-              message: "Check-in is closed for this event.",
-            });
-          }
-          assertCheckInWindow(locked.startsAt);
+        if (locked?.archivedAt != null || !locked?.checkInEnabled) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Check-in is closed for this event.",
+          });
+        }
+        assertCheckInWindow(locked.startsAt);
 
-          eventTitle = locked.title;
-          pointsEarned = locked.pointsValue;
+        eventTitle = locked.title;
+        pointsEarned = locked.pointsValue;
 
-          try {
-            // pointsEarned is snapshotted here and never recomputed. Re-pricing
-            // the event later moves nobody's existing total.
-            await tx.insert(eventCheckIns).values({
-              eventId: locked.id,
-              userId,
-              method: "code",
-              pointsEarned,
-            });
-          } catch (error) {
-            // The unique constraint is the arbiter of a double tap, not a read
-            // that preceded it, and the loser has to read as the same conflict a
-            // sequential retry gets rather than an unexplained failure.
-            if (isUniqueViolation(error)) {
-              throw new TRPCError({
-                code: "CONFLICT",
-                message: "You are already checked in to this event.",
-              });
-            }
-            throw error;
-          }
-        });
-      } else {
-        await ctx.db.transaction(async (tx) => {
+        // `currentCheckIns` is capacity bookkeeping. An uncapped event never
+        // reads or writes it: no counter row for every scanner to update,
+        // `listAll` reports attendance with `count(*)`, and `update` recomputes
+        // the counter if a capacity is ever added.
+        const { maxCheckIns } = locked;
+
+        if (maxCheckIns !== null) {
           // Capacity is a shared decision, so here the lock is the point: two
           // phones must not both read the last free seat. Correctness beats
           // throughput on the events that have a limit, which are the small
           // ones where a queue costs least.
-          const [locked] = await tx
-            .select()
-            .from(events)
-            .where(eq(events.id, event.id))
-            .for("update");
-
-          if (locked?.archivedAt != null || !locked?.checkInEnabled) {
-            throw new TRPCError({
-              code: "BAD_REQUEST",
-              message: "Check-in is closed for this event.",
-            });
-          }
-          assertCheckInWindow(locked.startsAt);
-
-          eventTitle = locked.title;
-          pointsEarned = locked.pointsValue;
-
           const existing = await tx.query.eventCheckIns.findFirst({
             where: and(
               eq(eventCheckIns.eventId, locked.id),
@@ -787,40 +753,44 @@ export const eventRouter = createTRPCRouter({
             });
           }
 
-          if (
-            locked.maxCheckIns !== null &&
-            locked.currentCheckIns >= locked.maxCheckIns
-          ) {
+          if (locked.currentCheckIns >= maxCheckIns) {
             throw new TRPCError({
               code: "BAD_REQUEST",
               message: "This event is full.",
             });
           }
+        }
 
-          try {
-            await tx.insert(eventCheckIns).values({
-              eventId: locked.id,
-              userId,
-              method: "code",
-              pointsEarned,
+        try {
+          // pointsEarned is snapshotted here and never recomputed. Re-pricing
+          // the event later moves nobody's existing total.
+          await tx.insert(eventCheckIns).values({
+            eventId: locked.id,
+            userId,
+            method: "code",
+            pointsEarned,
+          });
+        } catch (error) {
+          // The unique constraint is the arbiter of a double tap, not a read
+          // that preceded it, and the loser has to read as the same conflict a
+          // sequential retry gets rather than an unexplained failure.
+          if (isUniqueViolation(error)) {
+            throw new TRPCError({
+              code: "CONFLICT",
+              message: "You are already checked in to this event.",
             });
-          } catch (error) {
-            if (isUniqueViolation(error)) {
-              throw new TRPCError({
-                code: "CONFLICT",
-                message: "You are already checked in to this event.",
-              });
-            }
-            throw error;
           }
+          throw error;
+        }
 
+        if (maxCheckIns !== null) {
           // Row is already locked FOR UPDATE; capacity was checked above.
           await tx
             .update(events)
             .set({ currentCheckIns: locked.currentCheckIns + 1 })
             .where(eq(events.id, locked.id));
-        });
-      }
+        }
+      });
 
       // Totals are read after the write commits, never inside it. Running this
       // aggregate inside the transaction meant every other scanner waited on

@@ -31,7 +31,7 @@ mock.module("../packages/auth/src/index.ts", () => ({
 const { db, eventCheckIns, events, users } =
   await import("../packages/db/src/index");
 const { createCaller } = await import("../packages/api/src/root");
-const { and, eq, inArray } =
+const { and, eq, inArray, sql } =
   await import("../packages/db/node_modules/drizzle-orm/index.js");
 
 /** Integration tests share a database; give them room to finish. */
@@ -152,6 +152,7 @@ describe.skipIf(!process.env.DATABASE_URL)("check-in", () => {
     early: randomCode(),
     counterUncapped: randomCode(),
     counterCapped: randomCode(),
+    lateCap: randomCode(),
   };
   const allCodes = Object.values(code);
 
@@ -293,6 +294,13 @@ describe.skipIf(!process.env.DATABASE_URL)("check-in", () => {
           pointsValue: 10,
           checkInCode: code.counterCapped,
           maxCheckIns: 50,
+          createdById: admin.id,
+        },
+        {
+          title: "vitest late cap",
+          startsAt: new Date(now),
+          pointsValue: 10,
+          checkInCode: code.lateCap,
           createdById: admin.id,
         },
       ])
@@ -640,6 +648,71 @@ describe.skipIf(!process.env.DATABASE_URL)("check-in", () => {
           { rows: 2, counter: 2 },
           { rows: 1, counter: 1 },
         ]);
+      },
+      SLOW,
+    );
+
+    /**
+     * `checkIn` finds the event before it takes the lock, so what it saw there
+     * can be stale by the time it holds the row. An officer adding a capacity in
+     * that gap has to put the scan on the capacity path: counted, and refused if
+     * the event is already full. Reading `maxCheckIns` from the unlocked lookup
+     * instead let the scan in uncounted, leaving the counter low and the gate
+     * admitting past the limit until the event was next edited.
+     *
+     * The gap is held open by a transaction that owns the event row: the scan
+     * does its lookup, blocks on the lock, and the cap is added and committed
+     * before it gets the row.
+     */
+    it(
+      "puts a scan on the capacity path when a cap lands before it takes the lock",
+      async () => {
+        await callerFor(admin).event.manualCheckIn({
+          eventId: id.lateCap,
+          email: gateMember.email,
+        });
+        expect((await readEvent(id.lateCap))?.maxCheckIns).toBeNull();
+
+        const scan = { current: null as Promise<string> | null };
+        await db.transaction(async (tx) => {
+          await tx
+            .select({ id: events.id })
+            .from(events)
+            .where(eq(events.id, id.lateCap))
+            .for("update");
+
+          scan.current = errorOutcome(
+            callerFor(counterMember).event.checkIn({ code: code.lateCap }),
+          );
+
+          // Wait until the scan is queued behind this transaction's lock.
+          for (let attempt = 0; ; attempt++) {
+            const waiting = await tx.execute(
+              sql`select 1 from pg_stat_activity where wait_event_type = 'Lock' and datname = current_database()`,
+            );
+            if (waiting.rows.length > 0) break;
+            if (attempt > 250)
+              throw new Error("the scan never reached the lock");
+            await new Promise((resolve) => setTimeout(resolve, 20));
+          }
+
+          // What `event.update` does when an officer sets a capacity: the
+          // counter is recounted from the rows that exist right now.
+          const [attendance] = await tx
+            .select({ total: sql<number>`count(*)::int` })
+            .from(eventCheckIns)
+            .where(eq(eventCheckIns.eventId, id.lateCap));
+          await tx
+            .update(events)
+            .set({ maxCheckIns: 1, currentCheckIns: attendance?.total ?? 0 })
+            .where(eq(events.id, id.lateCap));
+        });
+
+        expect(await scan.current).toStartWith(
+          "BAD_REQUEST: This event is full",
+        );
+        expect(await countCheckIns(id.lateCap)).toBe(1);
+        expect((await readEvent(id.lateCap))?.currentCheckIns).toBe(1);
       },
       SLOW,
     );
