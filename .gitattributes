@@ -8,4 +8,4 @@
 *.woff2 binary
 
 bun.lock linguist-generated=true -diff
-packages/db/drizzle/meta/*.json linguist-generated=true
+packages/db/drizzle/*/snapshot.json linguist-generated=true

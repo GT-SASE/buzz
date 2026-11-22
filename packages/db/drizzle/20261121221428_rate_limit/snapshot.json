@@ -1,0 +1,146 @@
+{
+  "type": "diff",
+  "version": "10",
+  "dialect": "postgres",
+  "id": "98a09e55-99d2-486e-9974-f2fd4bbfc8e6",
+  "prevIds": [
+    "60925131-83b4-4dce-8ba2-5323d2ec2a5c"
+  ],
+  "footprints": [
+    {
+      "statementType": "create_table",
+      "statementTarget": [
+        "table",
+        "public",
+        "buzz_rate_limit"
+      ],
+      "writes": [
+        "s|tbl|public.buzz_rate_limit",
+        "n|tbl|public.buzz_rate_limit",
+        "e|tbl|public.buzz_rate_limit",
+        "n|rel|public.buzz_rate_limit",
+        "n|type|public.buzz_rate_limit",
+        "n|rel|public.buzz_rate_limit_key_windowStart_pk"
+      ],
+      "reads": [
+        "n|sch|public"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "buzz_rate_limit",
+        "buzz_rate_limit_window_start_idx"
+      ],
+      "writes": [
+        "s|idx|public.buzz_rate_limit_window_start_idx",
+        "n|idx|public.buzz_rate_limit_window_start_idx",
+        "e|idx|public.buzz_rate_limit_window_start_idx",
+        "n|rel|public.buzz_rate_limit_window_start_idx"
+      ],
+      "reads": [
+        "n|tbl|public.buzz_rate_limit",
+        "n|sch|public",
+        "n|col|public.buzz_rate_limit.windowStart"
+      ]
+    }
+  ],
+  "deltas": [
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "name": "buzz_rate_limit",
+        "isRlsEnabled": false,
+        "entityType": "tables"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "buzz_rate_limit",
+        "name": "key",
+        "type": "varchar(255)",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "buzz_rate_limit",
+        "name": "windowStart",
+        "type": "timestamp with time zone",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "buzz_rate_limit",
+        "name": "count",
+        "type": "integer",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "buzz_rate_limit",
+        "name": "buzz_rate_limit_window_start_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "windowStart",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": false,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "buzz_rate_limit",
+        "name": "buzz_rate_limit_key_windowStart_pk",
+        "columns": [
+          "key",
+          "windowStart"
+        ],
+        "nameExplicit": false,
+        "entityType": "pks"
+      }
+    }
+  ]
+}
