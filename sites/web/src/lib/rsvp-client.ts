@@ -44,7 +44,7 @@ async function trpc<T>(path: string, init: RequestInit): Promise<T> {
     if (error?.data?.code === "UNAUTHORIZED") {
       throw new RsvpRequestError(SESSION_ENDED);
     }
-    throw new RsvpRequestError(error?.message ? error.message : OFFLINE);
+    throw new RsvpRequestError(error?.message ?? OFFLINE);
   }
   return body.result.data?.json as T;
 }
