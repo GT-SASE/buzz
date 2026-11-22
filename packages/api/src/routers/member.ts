@@ -35,7 +35,7 @@ import {
   superAdminProcedure,
 } from "../trpc";
 import type * as BuzzDbModule from "@buzz/db";
-import { eventCheckIns, events, resumes, sessions, users } from "@buzz/db";
+import { eventCheckIns, events, sessions, users } from "@buzz/db";
 
 type BuzzDb = typeof BuzzDbModule.db;
 

@@ -31,7 +31,7 @@ mock.module("../packages/auth/src/index.ts", () => ({
 const { db, eventCheckIns, events, users } =
   await import("../packages/db/src/index");
 const { createCaller } = await import("../packages/api/src/root");
-const { and, eq, inArray, sql } =
+const { eq, inArray, sql } =
   await import("../packages/db/node_modules/drizzle-orm/index.js");
 
 /** Integration tests share a database; give them room to finish. */
