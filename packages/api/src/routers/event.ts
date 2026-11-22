@@ -344,7 +344,7 @@ export const eventRouter = createTRPCRouter({
       // missing event just means the other three come back empty and unused.
       const [event, roster, [rosterCount], rsvps] = await Promise.all([
         ctx.db.query.events.findFirst({
-          where: { id: input.id },
+          where: eq(events.id, input.id),
         }),
         ctx.db
           .select({
@@ -416,7 +416,7 @@ export const eventRouter = createTRPCRouter({
       );
 
       const event = await ctx.db.query.events.findFirst({
-        where: { id: input.id },
+        where: eq(events.id, input.id),
         columns: { id: true },
       });
 
@@ -447,7 +447,7 @@ export const eventRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       if (input.enabled) {
         const event = await ctx.db.query.events.findFirst({
-          where: { id: input.id },
+          where: eq(events.id, input.id),
           columns: { startsAt: true },
         });
         if (!event) {
@@ -544,7 +544,7 @@ export const eventRouter = createTRPCRouter({
       const email = input.email.trim().toLowerCase();
 
       const member = await ctx.db.query.users.findFirst({
-        where: { email },
+        where: eq(users.email, email),
         columns: { id: true, name: true, email: true },
       });
 
@@ -685,7 +685,7 @@ export const eventRouter = createTRPCRouter({
       // event" without taking a row lock. Everything mutable is re-checked
       // inside once the event row is locked.
       const event = await ctx.db.query.events.findFirst({
-        where: { checkInCode: code },
+        where: eq(events.checkInCode, code),
       });
 
       if (!event) {
@@ -740,7 +740,10 @@ export const eventRouter = createTRPCRouter({
           // throughput on the events that have a limit, which are the small
           // ones where a queue costs least.
           const existing = await tx.query.eventCheckIns.findFirst({
-            where: { eventId: locked.id, userId },
+            where: and(
+              eq(eventCheckIns.eventId, locked.id),
+              eq(eventCheckIns.userId, userId),
+            ),
           });
 
           // Tested before capacity on purpose: somebody already inside is a
@@ -861,7 +864,7 @@ export const eventRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       await assertRateLimit(ctx.db, `rsvp:${ctx.session.user.id}`, RSVP_LIMIT);
       const event = await ctx.db.query.events.findFirst({
-        where: { id: input.eventId },
+        where: eq(events.id, input.eventId),
         columns: {
           id: true,
           title: true,
@@ -907,7 +910,7 @@ export const eventRouter = createTRPCRouter({
       const event =
         removed &&
         (await ctx.db.query.events.findFirst({
-          where: { id: input.eventId },
+          where: eq(events.id, input.eventId),
           columns: {
             id: true,
             title: true,
@@ -978,7 +981,7 @@ export const eventRouter = createTRPCRouter({
         CHECK_IN_LIMIT,
       );
       const event = await ctx.db.query.events.findFirst({
-        where: { checkInCode: normalizeCode(input.code) },
+        where: eq(events.checkInCode, normalizeCode(input.code)),
       });
       if (!event) return null;
       const now = Date.now();

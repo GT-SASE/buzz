@@ -28,8 +28,7 @@ packages/api/src/routers/*.ts   tRPC routers (chapter committee election event m
 packages/api/src/trpc.ts        context and procedure builders (protected, admin, superAdmin)
 packages/api/src/*.ts           helpers (page-slug, terms, ...) with unit tests; rate-limit.ts is the Postgres rate limiter (`buzz_rate_limit`)
 packages/db/src/schema.ts       Drizzle schema; all tables are prefixed buzz_
-packages/db/src/relations.ts    Drizzle relations (`defineRelations`), passed to `drizzle()` in client.ts
-packages/db/drizzle/            one folder per migration (`<UTC timestamp>_<name>/migration.sql` + `snapshot.json`); commit them
+packages/db/drizzle/            generated SQL migrations + meta; commit them
 packages/db/scripts/            seeds
 packages/auth/src/              NextAuth config and auth()
 packages/mcp/src/               this MCP server
@@ -117,9 +116,8 @@ Add a tRPC procedure
 
 Add a table + migration
 1. Define it in `packages/db/src/schema.ts` with `createTable("name", ...)` and index/constraint names through `idx("...")` (prefix `buzz_`).
-2. `bun run db:generate`, commit the whole new `drizzle/<timestamp>_<name>/` folder, then `bun run db:migrate` on a disposable DB. `bun x drizzle-kit check` (run in `packages/db`) validates the history.
-3. Never edit or rename an applied migration folder; add a new one. The migrator matches applied rows by folder name and applies any local folder the database lacks, whatever its timestamp.
-4. A new relation goes in `packages/db/src/relations.ts`. `db.query` takes object filters: `where: { id }`, not `eq(...)`.
+2. `bun run db:generate`, commit the new SQL and `drizzle/meta`, then `bun run db:migrate` on a disposable DB.
+3. Never edit an applied migration; add a new one.
 
 Add a portal admin page
 1. Create `sites/web/src/app/portal/(member)/admin/<name>/page.tsx`; prefetch with `api.<router>.<proc>.prefetch()` and wrap in `HydrateClient` like `admin/pages/page.tsx`.

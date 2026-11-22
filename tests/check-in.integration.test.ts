@@ -31,7 +31,7 @@ mock.module("../packages/auth/src/index.ts", () => ({
 const { db, eventCheckIns, events, users } =
   await import("../packages/db/src/index");
 const { createCaller } = await import("../packages/api/src/root");
-const { eq, inArray, sql } =
+const { and, eq, inArray, sql } =
   await import("../packages/db/node_modules/drizzle-orm/index.js");
 
 /** Integration tests share a database; give them room to finish. */
@@ -116,12 +116,12 @@ function relaxPoolConnectTimeout() {
 
 function countCheckIns(eventId: string) {
   return db.query.eventCheckIns
-    .findMany({ where: { eventId } })
+    .findMany({ where: eq(eventCheckIns.eventId, eventId) })
     .then((rows) => rows.length);
 }
 
 function readEvent(id: string) {
-  return db.query.events.findFirst({ where: { id } });
+  return db.query.events.findFirst({ where: eq(events.id, id) });
 }
 
 // --------------------------------------------------------------------------
@@ -375,7 +375,10 @@ describe.skipIf(!process.env.DATABASE_URL)("check-in", () => {
         });
 
         const row = await db.query.eventCheckIns.findFirst({
-          where: { eventId: id.snapshot, userId: statsMember.id },
+          where: and(
+            eq(eventCheckIns.eventId, id.snapshot),
+            eq(eventCheckIns.userId, statsMember.id),
+          ),
         });
         expect(row?.pointsEarned).toBe(10);
 
@@ -684,7 +687,7 @@ describe.skipIf(!process.env.DATABASE_URL)("check-in", () => {
 
           // Wait until the scan is queued behind this transaction's lock.
           for (let attempt = 0; ; attempt++) {
-            const waiting = await tx.execute<Record<string, unknown>>(
+            const waiting = await tx.execute(
               sql`select 1 from pg_stat_activity where wait_event_type = 'Lock' and datname = current_database()`,
             );
             if (waiting.rows.length > 0) break;

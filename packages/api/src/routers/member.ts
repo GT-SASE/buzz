@@ -35,7 +35,7 @@ import {
   superAdminProcedure,
 } from "../trpc";
 import type * as BuzzDbModule from "@buzz/db";
-import { eventCheckIns, events, sessions, users } from "@buzz/db";
+import { eventCheckIns, events, resumes, sessions, users } from "@buzz/db";
 
 type BuzzDb = typeof BuzzDbModule.db;
 
@@ -293,7 +293,7 @@ export const memberRouter = createTRPCRouter({
     .input(z.object({ id: z.string().min(1) }))
     .query(async ({ ctx, input }) => {
       const member = await ctx.db.query.users.findFirst({
-        where: { id: input.id },
+        where: eq(users.id, input.id),
         columns: {
           id: true,
           name: true,
@@ -338,7 +338,7 @@ export const memberRouter = createTRPCRouter({
           .limit(200),
         ctx.db.query.resumes
           .findFirst({
-            where: { userId: member.id },
+            where: eq(resumes.userId, member.id),
             columns: {
               fileName: true,
               byteSize: true,
@@ -372,7 +372,7 @@ export const memberRouter = createTRPCRouter({
     .input(z.object({ userId: z.string().min(1) }))
     .mutation(async ({ ctx, input }) => {
       const target = await ctx.db.query.users.findFirst({
-        where: { id: input.userId },
+        where: eq(users.id, input.userId),
         columns: { role: true },
       });
 

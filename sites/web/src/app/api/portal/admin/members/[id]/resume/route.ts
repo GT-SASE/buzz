@@ -1,3 +1,4 @@
+import { eq } from "drizzle-orm";
 import type { NextRequest } from "next/server";
 
 import {
@@ -6,7 +7,7 @@ import {
   resumeDownloadHeaders,
 } from "@buzz/api";
 import { auth } from "@buzz/auth";
-import { db, isOfficerRole } from "@buzz/db";
+import { db, isOfficerRole, resumes } from "@buzz/db";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -35,7 +36,7 @@ export async function GET(
   let row;
   try {
     row = await db.query.resumes.findFirst({
-      where: { userId: id },
+      where: eq(resumes.userId, id),
     });
   } catch (error) {
     if (isUndefinedTable(error)) {

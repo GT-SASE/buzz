@@ -238,7 +238,7 @@ describe.skipIf(!process.env.DATABASE_URL)("event RSVP", () => {
 
     beforeAll(async () => {
       const event = await db.query.events.findFirst({
-        where: { id: id.future },
+        where: eq(events.id, id.future),
       });
       startsAt = event!.startsAt.getTime();
     });

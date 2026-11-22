@@ -7,10 +7,10 @@
  */
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
+import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 
-import { relations } from "../src/relations.ts";
 import * as schema from "../src/schema.ts";
 
 const envFile = resolve(import.meta.dirname, "../../../.env");
@@ -32,14 +32,14 @@ if (!url) {
 }
 
 const sql = postgres(url);
-const db = drizzle({ client: sql, relations });
+const db = drizzle(sql, { schema });
 
 const OFFICER = "officer@dev.local";
 const day = 24 * 60 * 60 * 1000;
 
 async function main() {
   let officer = await db.query.users.findFirst({
-    where: { email: OFFICER },
+    where: eq(schema.users.email, OFFICER),
   });
 
   if (!officer) {
@@ -88,7 +88,7 @@ async function main() {
 
   for (const event of events) {
     const existing = await db.query.events.findFirst({
-      where: { checkInCode: event.checkInCode },
+      where: eq(schema.events.checkInCode, event.checkInCode),
     });
     if (existing) {
       console.log(`already there: ${event.title}`);
