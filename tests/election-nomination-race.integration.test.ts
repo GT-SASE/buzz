@@ -17,7 +17,6 @@ mock.module("../packages/auth/src/index.ts", () => ({
 const { db, electionCandidates, electionPositions, elections, users } =
   await import("../packages/db/src/index");
 const { createCaller } = await import("../packages/api/src/root");
-const { resetRateLimits } = await import("../packages/api/src/rate-limit");
 const { eq, inArray } =
   await import("../packages/db/node_modules/drizzle-orm/index.js");
 
@@ -111,7 +110,6 @@ describe.skipIf(!process.env.DATABASE_URL)(
     }
 
     beforeAll(async () => {
-      resetRateLimits();
       officer = await makeUser("officer", "ADMIN");
       runner = await makeUser("runner", "MEMBER");
     });
