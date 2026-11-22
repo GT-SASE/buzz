@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 
+import { eventPagePath } from "~/app/portal/_lib/paths";
 import { site } from "~/data/site";
 
 /**
@@ -28,10 +29,19 @@ export function pageMetadata({
   title,
   description,
   path,
+  image = shareImage,
 }: {
   title: string;
   description: string;
   path: string;
+  /** This page's own share card, when it has one. Defaults to the chapter's. */
+  image?: {
+    url: string;
+    width: number;
+    height: number;
+    alt: string;
+    type: string;
+  };
 }): Metadata {
   const url = path === "/" ? site.url : `${site.url}${path}`;
 
@@ -46,13 +56,13 @@ export function pageMetadata({
       siteName: site.name,
       locale: "en_US",
       type: "website",
-      images: [shareImage],
+      images: [image],
     },
     twitter: {
       card: "summary_large_image",
       title,
       description,
-      images: [shareImage.url],
+      images: [image.url],
     },
   };
 }
@@ -66,6 +76,13 @@ export function googleSiteVerification(
 ): Metadata["verification"] {
   if (!token) return undefined;
   return { google: token };
+}
+
+/** Cuts copy to `length` characters, ending in an ellipsis, for a tag or a card. */
+export function clipText(text: string, length: number) {
+  return text.length > length
+    ? `${text.slice(0, length - 1).trimEnd()}…`
+    : text;
 }
 
 /** Serialises JSON-LD for a <script type="application/ld+json"> tag. */
@@ -119,16 +136,26 @@ export function organizationSchema() {
  * address that is real.
  */
 export function eventSchema(event: {
+  id?: string;
   title: string;
   startsAt: Date;
   location: string | null;
   description: string | null;
+  /** Absolute URL of the event's share card. */
+  image?: string;
 }) {
   return {
     "@context": "https://schema.org",
     "@type": "Event",
+    ...(event.id
+      ? {
+          "@id": `${site.url}${eventPagePath(event.id)}`,
+          url: `${site.url}${eventPagePath(event.id)}`,
+        }
+      : {}),
     name: event.title,
     startDate: event.startsAt.toISOString(),
+    ...(event.image ? { image: event.image } : {}),
     ...(event.description ? { description: event.description } : {}),
     eventAttendanceMode: "https://schema.org/OfflineEventAttendanceMode",
     eventStatus: "https://schema.org/EventScheduled",

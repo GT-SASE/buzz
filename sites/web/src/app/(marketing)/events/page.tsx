@@ -1,4 +1,11 @@
-import { eventPath, signInPath } from "~/app/portal/_lib/paths";
+import Link from "next/link";
+
+import {
+  eventMonthPath,
+  eventPagePath,
+  eventPath,
+  signInPath,
+} from "~/app/portal/_lib/paths";
 import {
   Button,
   CtaPanel,
@@ -8,12 +15,14 @@ import {
   Section,
   TextLink,
 } from "~/components/site";
+import { EventsToolbar } from "~/components/site/events-toolbar";
 import { JsonLd } from "~/components/site/json-ld";
 import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert";
 import { Badge } from "~/components/ui/badge";
 import { getChapterEvents, type PublicEvent } from "~/data/chapter-events";
 import { discord, instagram, joinHref } from "~/data/site";
 import { googleCalendarUrl } from "~/lib/calendar";
+import { monthKeyOf } from "~/lib/event-time";
 import { breadcrumbSchema, eventSchema, pageMetadata } from "~/lib/seo";
 
 // Hourly: an event published in the portal appears without a deploy.
@@ -66,7 +75,12 @@ function ArchiveRow({ event }: { event: PublicEvent }) {
       </div>
       <div className="min-w-0">
         <h4 className="font-display text-navy text-h3 font-bold">
-          {event.title}
+          <Link
+            href={eventPagePath(event.id)}
+            className="decoration-gold hover:underline hover:decoration-2 hover:underline-offset-4"
+          >
+            {event.title}
+          </Link>
         </h4>
         {event.description && (
           <p className="text-ink-muted text-body mt-2 leading-relaxed break-words">
@@ -112,10 +126,17 @@ export default async function EventsPage() {
       />
 
       <Section title="On the calendar now.">
+        <EventsToolbar
+          view="list"
+          monthHref={eventMonthPath(monthKeyOf(new Date()))}
+        />
         {upcoming.length > 0 ? (
           <div className="grid gap-x-10 gap-y-12 sm:grid-cols-2 lg:grid-cols-3">
             {upcoming.map((event) => (
               <EventCard key={event.id} event={event}>
+                <TextLink href={eventPagePath(event.id)}>
+                  Event details
+                </TextLink>
                 {!event.reminder && (
                   <TextLink href={signInPath(eventPath(event.id))}>
                     Sign in to RSVP

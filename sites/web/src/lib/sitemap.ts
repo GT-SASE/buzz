@@ -1,5 +1,6 @@
 import type { MetadataRoute } from "next";
 
+import { eventPagePath } from "~/app/portal/_lib/paths";
 import { site } from "~/data/site";
 
 /**
@@ -30,8 +31,16 @@ const routes = [
 
 export type PublishedPageEntry = { slug: string; updatedAt: Date };
 
+/** A public event page. `upcoming` ranks it above the archive. */
+export type EventPageEntry = {
+  id: string;
+  modifiedAt: Date;
+  upcoming: boolean;
+};
+
 export function buildSitemap(
   published: readonly PublishedPageEntry[],
+  eventPages: readonly EventPageEntry[] = [],
 ): MetadataRoute.Sitemap {
   // No lastModified on the hand-written routes. They have no per-page content
   // date, and stamping `new Date()` made every URL look edited at build time.
@@ -47,6 +56,14 @@ export function buildSitemap(
       lastModified: page.updatedAt,
       changeFrequency: "monthly" as const,
       priority: 0.5,
+    })),
+    ...eventPages.map((event) => ({
+      url: `${site.url}${eventPagePath(event.id)}`,
+      lastModified: event.modifiedAt,
+      changeFrequency: event.upcoming
+        ? ("weekly" as const)
+        : ("yearly" as const),
+      priority: event.upcoming ? 0.6 : 0.3,
     })),
   ];
 }
