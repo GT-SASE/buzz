@@ -83,6 +83,7 @@ function page(options: {
   returnTo?: string;
   startsAt?: string;
   title?: string;
+  prominent?: boolean;
 }) {
   const ids = options.ids ?? ["e1"];
   return (
@@ -93,6 +94,7 @@ function page(options: {
           eventId={id}
           title={options.title ?? `Event ${id}`}
           startsAt={options.startsAt ?? future()}
+          prominent={options.prominent}
         >
           <a href={rsvpSignInPath(id)}>Sign in to RSVP</a>
         </RsvpControl>
@@ -551,5 +553,34 @@ describe("a list of events", () => {
     render(<RsvpProvider eventIds={[]}>{null}</RsvpProvider>);
     await Promise.resolve();
     expect(api.calls).toEqual([]);
+  });
+});
+
+describe("the lead action on an event page", () => {
+  it("is the same control, in the same states, as the one on a card", async () => {
+    const api = server({ signedIn: true });
+    render(page({ prominent: true, title: "GBM 4" }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: "RSVP for GBM 4" }),
+    );
+    expect(await screen.findByText("You’re going")).toBeTruthy();
+    expect(api.posts()).toHaveLength(1);
+    await userEvent.click(
+      screen.getByRole("button", { name: "Cancel RSVP for GBM 4" }),
+    );
+    expect(
+      await screen.findByRole("button", { name: "RSVP for GBM 4" }),
+    ).toBeTruthy();
+  });
+
+  it("keeps the signed-out link until it knows better", async () => {
+    server({ signedIn: false });
+    render(page({ prominent: true }));
+    expect(screen.getByRole("link", { name: "Sign in to RSVP" })).toBeTruthy();
+    await waitFor(() =>
+      expect(
+        screen.getByRole("link", { name: "Sign in to RSVP" }),
+      ).toBeTruthy(),
+    );
   });
 });

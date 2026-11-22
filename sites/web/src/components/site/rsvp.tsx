@@ -254,6 +254,9 @@ const noSubscription = () => () => undefined;
 
 const primary =
   "bg-navy hover:bg-navy-deep text-body-sm inline-flex min-h-11 items-center justify-center rounded-full px-6 py-3 font-semibold text-white transition disabled:opacity-70";
+/** The site's primary `Button`, resolved, for the one RSVP that leads a page. */
+const primaryLarge =
+  "group bg-navy hover:bg-navy-deep text-body inline-flex items-center justify-center gap-3 rounded-full px-7 py-4 font-bold [font-stretch:112%] text-white transition duration-200 disabled:opacity-70 max-sm:min-w-0 max-sm:whitespace-normal";
 const quiet =
   "text-navy decoration-gold hover:text-gold-ink text-body-sm inline-flex min-h-11 items-center py-3 font-semibold underline decoration-2 underline-offset-4 transition disabled:opacity-60";
 
@@ -283,12 +286,15 @@ export function RsvpControl({
   eventId,
   title,
   startsAt,
+  prominent = false,
   children,
 }: {
   eventId: string;
   title: string;
   /** ISO time. RSVPs close at the start, as the server enforces. */
   startsAt: string;
+  /** The page's lead action: the large pill, with the slot sized to it. */
+  prominent?: boolean;
   children: React.ReactNode;
 }) {
   const rsvp = useContext(RsvpContext);
@@ -343,7 +349,7 @@ export function RsvpControl({
     body = (
       <button
         type="button"
-        className={primary}
+        className={prominent ? primaryLarge : primary}
         disabled={entry.busy}
         onClick={() => void rsvp.act(eventId, true)}
       >
@@ -361,7 +367,9 @@ export function RsvpControl({
 
   return (
     <div className="w-full">
-      <div className="flex min-h-11 flex-wrap items-center gap-x-5 gap-y-1">
+      <div
+        className={`flex flex-wrap items-center gap-x-5 gap-y-1 ${prominent ? "min-h-[3.6rem]" : "min-h-11"}`}
+      >
         {body}
         {entry.detail && (
           <span aria-hidden="true" className="text-ink-muted text-body-sm">

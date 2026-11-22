@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { eventPagePath, rsvpSignInPath } from "~/app/portal/_lib/paths";
-import { Eyebrow, PageHeader, Section, TextLink } from "~/components/site";
+import { Button, Card, Eyebrow, TextLink } from "~/components/site";
 import { JsonLd } from "~/components/site/json-ld";
 import { RsvpControl, RsvpProvider } from "~/components/site/rsvp";
 import { Badge } from "~/components/ui/badge";
@@ -79,97 +79,121 @@ export default async function EventPage({ params }: Params) {
   return (
     <>
       <JsonLd data={eventSchema({ ...event, image: cardImage(event).url })} />
-      <PageHeader title={event.title} />
 
-      <Section size="sm">
-        <nav aria-label="Breadcrumb" className="mb-10">
-          <Link
-            href="/events"
-            className="text-navy decoration-gold hover:text-gold-ink text-body-sm inline-flex min-h-11 items-center font-semibold underline decoration-2 underline-offset-4 transition"
-          >
-            <span aria-hidden="true">&larr;&nbsp;</span>All events
-          </Link>
-        </nav>
-
-        <div className="max-w-measure">
-          {event.reminder && (
-            <Badge
-              variant="outline"
-              className="border-hairline text-ink-muted text-eyebrow tracking-masthead mb-8 w-fit rounded-md px-2.5 py-1 font-semibold uppercase"
+      {/* The header's own geometry (PageHeader's rule, padding and two columns),
+          with the back link above it and the facts and actions beside the title.
+          On a phone the order is title, facts and actions, then the description,
+          so the RSVP is never below a long description. */}
+      <div className="relative overflow-hidden px-5 pt-6 pb-12 sm:px-6 sm:pt-10 sm:pb-20">
+        <div className="max-w-content relative mx-auto">
+          <nav aria-label="Breadcrumb" className="mb-4">
+            <Link
+              href="/events"
+              className="text-navy decoration-gold hover:text-gold-ink text-body-sm inline-flex min-h-11 items-center font-semibold underline decoration-2 underline-offset-4 transition"
             >
-              Campus reminder
-            </Badge>
-          )}
+              <span aria-hidden="true">&larr;&nbsp;</span>All events
+            </Link>
+          </nav>
 
-          <dl className="grid gap-x-10 gap-y-6 sm:grid-cols-[6rem_1fr]">
-            <Eyebrow as="dt" tone="gold" rule={false} className="sm:pt-1.5">
-              When
-            </Eyebrow>
-            <dd className="text-body text-ink">
-              <time
-                dateTime={
-                  event.reminder
-                    ? localDateKey(event.startsAt)
-                    : event.startsAt.toISOString()
-                }
-              >
-                {formatLongDate(event.startsAt)}
-                {time && (
+          <div className="rule-heavy grid gap-x-16 gap-y-8 pt-8 lg:grid-cols-[1.35fr_1fr] lg:grid-rows-[auto_1fr] lg:items-start">
+            <div className="lg:col-start-1 lg:row-start-1">
+              {event.reminder && (
+                <Badge
+                  variant="outline"
+                  className="border-hairline text-ink-muted text-eyebrow tracking-masthead mb-6 w-fit rounded-md px-2.5 py-1 font-semibold uppercase"
+                >
+                  Campus reminder
+                </Badge>
+              )}
+              <h1 className="font-display text-navy text-h1 font-bold tracking-tight text-balance">
+                {event.title}
+              </h1>
+            </div>
+
+            <Card
+              tone="cream"
+              className="lg:col-start-2 lg:row-span-2 lg:row-start-1"
+            >
+              <dl className="grid gap-x-6 gap-y-5 sm:grid-cols-[5rem_1fr]">
+                <Eyebrow as="dt" tone="gold" rule={false} className="sm:pt-1.5">
+                  When
+                </Eyebrow>
+                <dd className="text-body text-ink">
+                  <time
+                    dateTime={
+                      event.reminder
+                        ? localDateKey(event.startsAt)
+                        : event.startsAt.toISOString()
+                    }
+                  >
+                    {formatLongDate(event.startsAt)}
+                    {time && (
+                      <>
+                        <br />
+                        {time}
+                      </>
+                    )}
+                  </time>
+                </dd>
+                {event.location && (
                   <>
-                    <br />
-                    {time}
+                    <Eyebrow
+                      as="dt"
+                      tone="gold"
+                      rule={false}
+                      className="sm:pt-1.5"
+                    >
+                      Where
+                    </Eyebrow>
+                    <dd className="text-body text-ink">{event.location}</dd>
                   </>
                 )}
-              </time>
-            </dd>
-            {event.location && (
-              <>
-                <Eyebrow as="dt" tone="gold" rule={false} className="sm:pt-1.5">
-                  Where
-                </Eyebrow>
-                <dd className="text-body text-ink">{event.location}</dd>
-              </>
-            )}
-          </dl>
+              </dl>
 
-          {event.description && (
-            <p className="text-body text-ink-muted mt-10 leading-relaxed break-words whitespace-pre-line">
-              {event.description}
-            </p>
-          )}
-
-          <div className="border-hairline mt-12 flex flex-wrap gap-x-8 border-t pt-4">
-            {past ? (
-              <TextLink href="/events">See what is coming up</TextLink>
-            ) : (
-              <RsvpProvider
-                eventIds={event.reminder ? [] : [event.id]}
-                returnTo={event.id}
-              >
-                {!event.reminder && (
-                  <RsvpControl
-                    eventId={event.id}
-                    title={event.title}
-                    startsAt={event.startsAt.toISOString()}
+              <div className="border-hairline mt-6 flex flex-col items-start gap-1 border-t pt-5">
+                {past ? (
+                  <>
+                    <p className="text-ink-muted text-body-sm">
+                      This event has passed.
+                    </p>
+                    <TextLink href="/events">See what is coming up</TextLink>
+                  </>
+                ) : (
+                  <RsvpProvider
+                    eventIds={event.reminder ? [] : [event.id]}
+                    returnTo={event.id}
                   >
-                    <TextLink href={rsvpSignInPath(event.id)}>
-                      Sign in to RSVP
+                    {!event.reminder && (
+                      <RsvpControl
+                        eventId={event.id}
+                        title={event.title}
+                        startsAt={event.startsAt.toISOString()}
+                        prominent
+                      >
+                        <Button
+                          href={rsvpSignInPath(event.id)}
+                          variant="primary"
+                        >
+                          Sign in to RSVP
+                        </Button>
+                      </RsvpControl>
+                    )}
+                    <TextLink href={googleCalendarUrl(event)} external>
+                      Add to Google Calendar
                     </TextLink>
-                  </RsvpControl>
+                  </RsvpProvider>
                 )}
-                <TextLink href={googleCalendarUrl(event)} external>
-                  Add to Google Calendar
-                </TextLink>
-              </RsvpProvider>
+              </div>
+            </Card>
+
+            {event.description && (
+              <p className="text-body text-ink-muted max-w-measure leading-relaxed break-words whitespace-pre-line lg:col-start-1 lg:row-start-2">
+                {event.description}
+              </p>
             )}
           </div>
-          {past && (
-            <p className="text-ink-muted text-body-sm mt-2">
-              This event has passed.
-            </p>
-          )}
         </div>
-      </Section>
+      </div>
     </>
   );
 }
