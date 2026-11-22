@@ -3,7 +3,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 
 import { pooledConnectionString } from "./pooled-url";
-import * as schema from "./schema";
+import { relations } from "./relations";
 
 /** Cached in development so HMR does not open a new pool per update. */
 const globalForDb = globalThis as unknown as {
@@ -50,4 +50,4 @@ if (process.env.NODE_ENV !== "production") globalForDb.pool = pool;
 // the pool does not leak across freezes. Skip off-Vercel (tests, `next dev`).
 if (process.env.VERCEL) attachDatabasePool(pool);
 
-export const db = drizzle(pool, { schema });
+export const db = drizzle({ client: pool, relations });

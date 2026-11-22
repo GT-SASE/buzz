@@ -43,7 +43,7 @@
     "@testing-library/user-event": "^14.6.12",
     "@types/bun": "^1.4.5",
     "@types/node": "^26.6.6",
-    "drizzle-orm": "^0.45.4",
+    "drizzle-orm": "1.0.0-rc.6",
     "eslint": "^10.15.0",
     "eslint-config-next": "^16.4.6",
     "eslint-plugin-drizzle": "^0.2.3",
@@ -65,7 +65,9 @@
     "sites/*"
   ],
   "overrides": {
-    "@vercel/cli-config>zod": "^4.6.7",
-    "@esbuild-kit/core-utils>esbuild": "^0.25.12"
+    "@vercel/cli-config>zod": "^4.6.7"
+  },
+  "patchedDependencies": {
+    "@auth/drizzle-adapter@1.11.3": "patches/@auth%2Fdrizzle-adapter@1.11.3.patch"
   }
 }

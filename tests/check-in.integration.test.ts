@@ -116,12 +116,12 @@ function relaxPoolConnectTimeout() {
 
 function countCheckIns(eventId: string) {
   return db.query.eventCheckIns
-    .findMany({ where: eq(eventCheckIns.eventId, eventId) })
+    .findMany({ where: { eventId } })
     .then((rows) => rows.length);
 }
 
 function readEvent(id: string) {
-  return db.query.events.findFirst({ where: eq(events.id, id) });
+  return db.query.events.findFirst({ where: { id } });
 }
 
 // --------------------------------------------------------------------------
@@ -375,10 +375,7 @@ describe.skipIf(!process.env.DATABASE_URL)("check-in", () => {
         });
 
         const row = await db.query.eventCheckIns.findFirst({
-          where: and(
-            eq(eventCheckIns.eventId, id.snapshot),
-            eq(eventCheckIns.userId, statsMember.id),
-          ),
+          where: { eventId: id.snapshot, userId: statsMember.id },
         });
         expect(row?.pointsEarned).toBe(10);
 
@@ -687,7 +684,7 @@ describe.skipIf(!process.env.DATABASE_URL)("check-in", () => {
 
           // Wait until the scan is queued behind this transaction's lock.
           for (let attempt = 0; ; attempt++) {
-            const waiting = await tx.execute(
+            const waiting = await tx.execute<Record<string, unknown>>(
               sql`select 1 from pg_stat_activity where wait_event_type = 'Lock' and datname = current_database()`,
             );
             if (waiting.rows.length > 0) break;

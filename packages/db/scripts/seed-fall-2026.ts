@@ -13,10 +13,11 @@
  */
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { eq, inArray } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 
+import { relations } from "../src/relations.ts";
 import * as schema from "../src/schema.ts";
 
 const envFile = resolve(import.meta.dirname, "../../../.env");
@@ -38,7 +39,7 @@ if (!url) {
 }
 
 const sql = postgres(url);
-const db = drizzle(sql, { schema });
+const db = drizzle({ client: sql, relations });
 
 const CODE_ALPHABET = "23456789ABCDEFGHJKMNPQRSTVWXYZ";
 const CODE_LENGTH = 8;
@@ -229,7 +230,7 @@ const fall2026: Draft[] = [
 
 async function main() {
   const officer = await db.query.users.findFirst({
-    where: inArray(schema.users.role, ["ADMIN", "SUPER_ADMIN"]),
+    where: { role: { in: ["ADMIN", "SUPER_ADMIN"] } },
   });
   if (!officer) {
     throw new Error(
@@ -239,7 +240,7 @@ async function main() {
 
   for (const event of fall2026) {
     const existing = await db.query.events.findFirst({
-      where: eq(schema.events.title, event.title),
+      where: { title: event.title },
     });
     if (existing) {
       await db

@@ -85,7 +85,9 @@ describe("buzz mcp server over stdio", () => {
         arguments: {},
       });
       expect(mig.isError).toBeFalsy();
-      expect(JSON.stringify(mig.content)).toContain("0011_page.sql");
+      expect(JSON.stringify(mig.content)).toContain(
+        "20261118233009_page/migration.sql",
+      );
       expect(JSON.stringify(mig.content)).toContain(
         "20261111000000_baseline.sql",
       );

@@ -139,10 +139,7 @@ export const committeeRouter = createTRPCRouter({
     const cycleId = cycle?.id ?? semester(now);
     const row = await ctx.db.query.committeeApplications
       .findFirst({
-        where: and(
-          eq(committeeApplications.userId, ctx.session.user.id),
-          eq(committeeApplications.cycle, cycleId),
-        ),
+        where: { userId: ctx.session.user.id, cycle: cycleId },
       })
       .catch((error: unknown) => {
         if (!isUndefinedTable(error)) throw error;
@@ -175,10 +172,7 @@ export const committeeRouter = createTRPCRouter({
       const cycle = await openCurrentCycle(ctx.db, new Date());
 
       const existing = await ctx.db.query.committeeApplications.findFirst({
-        where: and(
-          eq(committeeApplications.userId, ctx.session.user.id),
-          eq(committeeApplications.cycle, cycle.id),
-        ),
+        where: { userId: ctx.session.user.id, cycle: cycle.id },
         columns: {
           id: true,
           status: true,
@@ -257,10 +251,10 @@ export const committeeRouter = createTRPCRouter({
     const now = new Date();
     const cycle = await findCurrentCycle(ctx.db, now);
     const existing = await ctx.db.query.committeeApplications.findFirst({
-      where: and(
-        eq(committeeApplications.userId, ctx.session.user.id),
-        eq(committeeApplications.cycle, cycle?.id ?? semester(now)),
-      ),
+      where: {
+        userId: ctx.session.user.id,
+        cycle: cycle?.id ?? semester(now),
+      },
       columns: { id: true, status: true },
     });
 

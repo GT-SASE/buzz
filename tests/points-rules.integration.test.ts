@@ -98,10 +98,7 @@ describe.skipIf(!process.env.DATABASE_URL)("points rules", () => {
 
   async function pointsOf(eventId: string, user: TestUser) {
     const row = await db.query.eventCheckIns.findFirst({
-      where: and(
-        eq(eventCheckIns.eventId, eventId),
-        eq(eventCheckIns.userId, user.id),
-      ),
+      where: { eventId, userId: user.id },
     });
     return row?.pointsEarned;
   }
@@ -326,10 +323,7 @@ describe.skipIf(!process.env.DATABASE_URL)("points rules", () => {
       const caller = callerFor(deputy);
       await caller.event.checkIn({ code });
       const saved = await db.query.eventCheckIns.findFirst({
-        where: and(
-          eq(eventCheckIns.eventId, row!.id),
-          eq(eventCheckIns.userId, deputy.id),
-        ),
+        where: { eventId: row!.id, userId: deputy.id },
       });
       expect(saved).toMatchObject({
         method: "code",
