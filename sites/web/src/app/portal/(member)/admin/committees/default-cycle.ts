@@ -1,4 +1,4 @@
-/** This semester's cycle if officers opened it, else the newest one. */
+/** The current cycle (open now, else this semester's) if it exists, else the newest. */
 export function defaultCycle(data: {
   current: string;
   cycles: readonly { id: string }[];

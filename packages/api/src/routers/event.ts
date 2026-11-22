@@ -3,7 +3,7 @@ import { and, asc, count, desc, eq, gte, isNull } from "drizzle-orm";
 import { z } from "zod";
 
 import { asDate, asInt, totalsColumns } from "../aggregates";
-import { sendCalendarInvite } from "../calendar-invite";
+import { sendCalendarInvite, type InviteEvent } from "../calendar-invite";
 import { notFound } from "../errors";
 import { isUniqueViolation } from "../pg-errors";
 import {
@@ -15,7 +15,13 @@ import {
   RSVP_LIMIT,
 } from "../rate-limit";
 import { adminProcedure, createTRPCRouter, protectedProcedure } from "../trpc";
-import { eventCheckIns, eventRsvps, events, users } from "@buzz/db";
+import {
+  eventCheckIns,
+  eventRsvps,
+  events,
+  users,
+  type db as Db,
+} from "@buzz/db";
 
 /**
  * How long after an event starts the door stays open. The member-facing list
@@ -97,6 +103,35 @@ const publicEventColumns = {
   pointsValue: events.pointsValue,
   checkInEnabled: events.checkInEnabled,
 } as const;
+
+/** Sends in small batches: Gmail throttles a burst of parallel connections. */
+const INVITE_BATCH = 5;
+
+/**
+ * Re-sends the calendar invite (same UID, later SEQUENCE) to everyone who
+ * RSVPed, after the event's time or place changed. A failed send does not fail
+ * the edit; the officer gets the count instead.
+ */
+async function sendUpdateInvites(db: typeof Db, event: InviteEvent) {
+  const rsvps = await db
+    .select({ email: users.email })
+    .from(eventRsvps)
+    .innerJoin(users, eq(users.id, eventRsvps.userId))
+    .where(eq(eventRsvps.eventId, event.id));
+
+  let failed = 0;
+  for (let i = 0; i < rsvps.length; i += INVITE_BATCH) {
+    const results = await Promise.all(
+      rsvps
+        .slice(i, i + INVITE_BATCH)
+        .map(({ email }) =>
+          sendCalendarInvite("REQUEST", event, email, { updated: true }),
+        ),
+    );
+    failed += results.filter((sent) => !sent).length;
+  }
+  return { sent: rsvps.length - failed, failed };
+}
 
 const eventInput = z.object({
   title: z.string().trim().min(1).max(200),
@@ -183,7 +218,11 @@ export const eventRouter = createTRPCRouter({
       // UPDATE cannot leave the counter low of the real attendance.
       const updated = await ctx.db.transaction(async (tx) => {
         const [locked] = await tx
-          .select({ id: events.id })
+          .select({
+            id: events.id,
+            startsAt: events.startsAt,
+            location: events.location,
+          })
           .from(events)
           .where(eq(events.id, id))
           .for("update");
@@ -214,13 +253,28 @@ export const eventRouter = createTRPCRouter({
           .where(eq(events.id, id))
           .returning();
 
-        return row ?? null;
+        return row ? { row, before: locked } : null;
       });
 
       if (!updated) {
         notFound("Event");
       }
-      return updated;
+      const { row, before } = updated;
+
+      // Members who RSVPed have the old time or place on their calendar.
+      // Past events and archived ones are left alone: nobody is planning
+      // around them, and a typo fix there should not email the whole list.
+      const moved =
+        before.startsAt.getTime() !== row.startsAt.getTime() ||
+        before.location !== row.location;
+      const notify =
+        moved && row.archivedAt === null && row.startsAt.getTime() > Date.now();
+      return {
+        ...row,
+        invites: notify
+          ? await sendUpdateInvites(ctx.db, row)
+          : { sent: 0, failed: 0 },
+      };
     }),
 
   /** Every event with its attendance count, in one query rather than N+1. */
@@ -534,12 +588,15 @@ export const eventRouter = createTRPCRouter({
             pointsEarned: locked.pointsValue,
             actedByUserId: ctx.session.user.id,
           });
-          // Honest override: officers may exceed capacity, and the counter
-          // still tracks every body in the room.
-          await tx
-            .update(events)
-            .set({ currentCheckIns: locked.currentCheckIns + 1 })
-            .where(eq(events.id, locked.id));
+          // Officers may exceed capacity, and a capped event's counter still
+          // tracks every body in the room. An uncapped event has no counter to
+          // keep: the code path skips it, so this one does too.
+          if (locked.maxCheckIns !== null) {
+            await tx
+              .update(events)
+              .set({ currentCheckIns: locked.currentCheckIns + 1 })
+              .where(eq(events.id, locked.id));
+          }
         });
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -568,7 +625,11 @@ export const eventRouter = createTRPCRouter({
         // Same lock order as the capped check-in path: event row first, then
         // the attendance row. Taking them the other way deadlocks under load.
         const [locked] = await tx
-          .select({ id: events.id, currentCheckIns: events.currentCheckIns })
+          .select({
+            id: events.id,
+            currentCheckIns: events.currentCheckIns,
+            maxCheckIns: events.maxCheckIns,
+          })
           .from(events)
           .where(eq(events.id, input.eventId))
           .for("update");
@@ -587,7 +648,8 @@ export const eventRouter = createTRPCRouter({
           )
           .returning({ id: eventCheckIns.id });
 
-        if (removed.length === 0) return;
+        // Only a capped event keeps a counter (see manualCheckIn).
+        if (removed.length === 0 || locked.maxCheckIns === null) return;
 
         await tx
           .update(events)
@@ -633,81 +695,47 @@ export const eventRouter = createTRPCRouter({
       let eventTitle = event.title;
       let pointsEarned = event.pointsValue;
 
-      if (event.maxCheckIns === null) {
-        /*
-         * Uncapped: no capacity counter to serialise on, but archive / disable /
-         * window still have to be re-validated under a lock so a concurrent
-         * officer close cannot race the insert.
-         *
-         * `currentCheckIns` is deliberately NOT incremented here. It exists to
-         * settle capacity, this event has none, and a shared counter is a row
-         * every writer must serialise on. `listAll` already reports attendance
-         * with `count(*)`, and `update` recomputes the counter if a capacity is
-         * ever added.
-         */
-        await ctx.db.transaction(async (tx) => {
-          const [locked] = await tx
-            .select()
-            .from(events)
-            .where(eq(events.id, event.id))
-            .for("update");
+      /*
+       * One transaction for both kinds of event, because which kind this is has
+       * to be read off the locked row. The lookup above is unlocked, and an
+       * officer can add or drop a capacity between it and the lock. A scan that
+       * took the uncapped path for an event that is now capped would be
+       * admitted without being counted or checked against the limit, leaving
+       * `currentCheckIns` low for the life of the event.
+       *
+       * The lock is taken either way: archive / disable / window have to be
+       * re-validated under it so a concurrent officer close cannot race the
+       * insert.
+       */
+      await ctx.db.transaction(async (tx) => {
+        const [locked] = await tx
+          .select()
+          .from(events)
+          .where(eq(events.id, event.id))
+          .for("update");
 
-          if (locked?.archivedAt != null || !locked?.checkInEnabled) {
-            throw new TRPCError({
-              code: "BAD_REQUEST",
-              message: "Check-in is closed for this event.",
-            });
-          }
-          assertCheckInWindow(locked.startsAt);
+        if (locked?.archivedAt != null || !locked?.checkInEnabled) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Check-in is closed for this event.",
+          });
+        }
+        assertCheckInWindow(locked.startsAt);
 
-          eventTitle = locked.title;
-          pointsEarned = locked.pointsValue;
+        eventTitle = locked.title;
+        pointsEarned = locked.pointsValue;
 
-          try {
-            // pointsEarned is snapshotted here and never recomputed. Re-pricing
-            // the event later moves nobody's existing total.
-            await tx.insert(eventCheckIns).values({
-              eventId: locked.id,
-              userId,
-              method: "code",
-              pointsEarned,
-            });
-          } catch (error) {
-            // The unique constraint is the arbiter of a double tap, not a read
-            // that preceded it, and the loser has to read as the same conflict a
-            // sequential retry gets rather than an unexplained failure.
-            if (isUniqueViolation(error)) {
-              throw new TRPCError({
-                code: "CONFLICT",
-                message: "You are already checked in to this event.",
-              });
-            }
-            throw error;
-          }
-        });
-      } else {
-        await ctx.db.transaction(async (tx) => {
+        // `currentCheckIns` is capacity bookkeeping. An uncapped event never
+        // reads or writes it: no counter row for every scanner to update,
+        // `listAll` reports attendance with `count(*)`, and `update` recomputes
+        // the counter if a capacity is ever added.
+        const { maxCheckIns } = locked;
+
+        if (maxCheckIns !== null) {
           // Capacity is a shared decision, so here the lock is the point: two
           // phones must not both read the last free seat. Correctness beats
           // throughput on the events that have a limit, which are the small
           // ones where a queue costs least.
-          const [locked] = await tx
-            .select()
-            .from(events)
-            .where(eq(events.id, event.id))
-            .for("update");
-
-          if (locked?.archivedAt != null || !locked?.checkInEnabled) {
-            throw new TRPCError({
-              code: "BAD_REQUEST",
-              message: "Check-in is closed for this event.",
-            });
-          }
-          assertCheckInWindow(locked.startsAt);
-
-          eventTitle = locked.title;
-          pointsEarned = locked.pointsValue;
-
           const existing = await tx.query.eventCheckIns.findFirst({
             where: and(
               eq(eventCheckIns.eventId, locked.id),
@@ -725,40 +753,44 @@ export const eventRouter = createTRPCRouter({
             });
           }
 
-          if (
-            locked.maxCheckIns !== null &&
-            locked.currentCheckIns >= locked.maxCheckIns
-          ) {
+          if (locked.currentCheckIns >= maxCheckIns) {
             throw new TRPCError({
               code: "BAD_REQUEST",
               message: "This event is full.",
             });
           }
+        }
 
-          try {
-            await tx.insert(eventCheckIns).values({
-              eventId: locked.id,
-              userId,
-              method: "code",
-              pointsEarned,
+        try {
+          // pointsEarned is snapshotted here and never recomputed. Re-pricing
+          // the event later moves nobody's existing total.
+          await tx.insert(eventCheckIns).values({
+            eventId: locked.id,
+            userId,
+            method: "code",
+            pointsEarned,
+          });
+        } catch (error) {
+          // The unique constraint is the arbiter of a double tap, not a read
+          // that preceded it, and the loser has to read as the same conflict a
+          // sequential retry gets rather than an unexplained failure.
+          if (isUniqueViolation(error)) {
+            throw new TRPCError({
+              code: "CONFLICT",
+              message: "You are already checked in to this event.",
             });
-          } catch (error) {
-            if (isUniqueViolation(error)) {
-              throw new TRPCError({
-                code: "CONFLICT",
-                message: "You are already checked in to this event.",
-              });
-            }
-            throw error;
           }
+          throw error;
+        }
 
+        if (maxCheckIns !== null) {
           // Row is already locked FOR UPDATE; capacity was checked above.
           await tx
             .update(events)
             .set({ currentCheckIns: locked.currentCheckIns + 1 })
             .where(eq(events.id, locked.id));
-        });
-      }
+        }
+      });
 
       // Totals are read after the write commits, never inside it. Running this
       // aggregate inside the transaction meant every other scanner waited on

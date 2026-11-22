@@ -88,6 +88,8 @@ function mailer() {
 
 /**
  * Puts the event on the member's calendar (REQUEST) or takes it off (CANCEL).
+ * `updated` marks a REQUEST that revises an entry already sent: same UID and a
+ * later SEQUENCE, so the calendar replaces the entry instead of adding one.
  * Returns false when sending is not configured or fails; the RSVP itself has
  * already been saved either way.
  */
@@ -95,6 +97,7 @@ export async function sendCalendarInvite(
   method: "REQUEST" | "CANCEL",
   event: InviteEvent,
   attendee: string,
+  { updated = false }: { updated?: boolean } = {},
 ) {
   const mail = mailer();
   if (!mail) return false;
@@ -104,13 +107,17 @@ export async function sendCalendarInvite(
       replyTo: mail.replyTo,
       to: attendee,
       subject:
-        method === "REQUEST"
-          ? `You're going: ${event.title}`
-          : `Cancelled: ${event.title}`,
+        method === "CANCEL"
+          ? `Cancelled: ${event.title}`
+          : updated
+            ? `Updated: ${event.title}`
+            : `You're going: ${event.title}`,
       text:
-        method === "REQUEST"
-          ? `See you at ${event.title}. It's on your calendar.`
-          : `Your RSVP for ${event.title} is cancelled.`,
+        method === "CANCEL"
+          ? `Your RSVP for ${event.title} is cancelled.`
+          : updated
+            ? `The time or place of ${event.title} changed. Your calendar entry is updated.`
+            : `See you at ${event.title}. It's on your calendar.`,
       icalEvent: {
         method,
         content: inviteIcs({ method, event, organizer: mail.user, attendee }),

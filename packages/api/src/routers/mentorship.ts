@@ -115,42 +115,36 @@ export const mentorshipRouter = createTRPCRouter({
         MENTORSHIP_ENROLL_LIMIT,
       );
 
-      const [existing, seat] = await Promise.all([
-        ctx.db.query.mentorshipEnrollments.findFirst({
-          where: signupOf(ctx.session.user.id),
-        }),
-        ctx.db.query.kinMemberships.findFirst({
-          where: seatOf(ctx.session.user.id),
-        }),
-      ]);
+      const seat = await ctx.db.query.kinMemberships.findFirst({
+        where: seatOf(ctx.session.user.id),
+      });
       if (seat) inGroupThisSemester();
 
       const note = input.note ?? null;
 
-      if (!existing) {
-        const [created] = await ctx.db
-          .insert(mentorshipEnrollments)
-          .values({
-            userId: ctx.session.user.id,
-            year: schoolYear(new Date()),
-            role: input.role,
-            status: "interested",
-            note,
-          })
-          .returning();
-        return created;
-      }
-
-      const [updated] = await ctx.db
-        .update(mentorshipEnrollments)
-        .set({
+      // One statement, so a double click (two requests, neither seeing the
+      // other's row) converges on the same row instead of one hitting the
+      // (user, year) primary key. An enrolled member stays enrolled.
+      const [signup] = await ctx.db
+        .insert(mentorshipEnrollments)
+        .values({
+          userId: ctx.session.user.id,
+          year: schoolYear(new Date()),
           role: input.role,
-          status: existing.status === "enrolled" ? "enrolled" : "interested",
+          status: "interested",
           note,
         })
-        .where(signupOf(ctx.session.user.id))
+        .onConflictDoUpdate({
+          target: [mentorshipEnrollments.userId, mentorshipEnrollments.year],
+          set: {
+            role: input.role,
+            status: sql`case when ${mentorshipEnrollments.status} = 'enrolled' then 'enrolled' else 'interested' end`,
+            note,
+            updatedAt: new Date(),
+          },
+        })
         .returning();
-      return updated;
+      return signup;
     }),
 
   withdraw: protectedProcedure.mutation(async ({ ctx }) => {

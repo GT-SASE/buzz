@@ -2,10 +2,13 @@ import {
   afterAll,
   afterEach,
   beforeAll,
+  beforeEach,
   describe,
   expect,
   it,
   mock,
+  setSystemTime,
+  vi,
 } from "bun:test";
 import { stubEnv, unstubAllEnvs } from "./helpers/env";
 
@@ -18,17 +21,24 @@ mock.module("../packages/auth/src/index.ts", () => ({
 }));
 
 /** Captures what would be emailed instead of talking to Gmail. */
-const sent: { to: string; method: string; content: string }[] = [];
+const sent: { to: string; method: string; subject: string; content: string }[] =
+  [];
+/** Recipients whose send the fake transport rejects, like a bounced address. */
+const rejected = new Set<string>();
 mock.module("nodemailer", () => ({
   default: {
     createTransport: () => ({
       sendMail: async (message: {
         to: string;
+        subject: string;
         icalEvent: { method: string; content: string };
       }) => {
+        if (rejected.has(message.to))
+          throw new Error("550 mailbox unavailable");
         sent.push({
           to: message.to,
           method: message.icalEvent.method,
+          subject: message.subject,
           content: message.icalEvent.content,
         });
       },
@@ -39,7 +49,7 @@ mock.module("nodemailer", () => ({
 const { db, eventRsvps, events, users } =
   await import("../packages/db/src/index");
 const { createCaller } = await import("../packages/api/src/root");
-const { inArray } =
+const { eq, inArray } =
   await import("../packages/db/node_modules/drizzle-orm/index.js");
 
 const SLOW = 30_000;
@@ -80,6 +90,7 @@ describe.skipIf(!process.env.DATABASE_URL)("event RSVP", () => {
   const eventIds: string[] = [];
   let admin: TestUser;
   let member: TestUser;
+  let member2: TestUser;
   const id = { future: "", started: "", archived: "" };
 
   async function makeUser(tag: string, role: "MEMBER" | "ADMIN") {
@@ -99,6 +110,7 @@ describe.skipIf(!process.env.DATABASE_URL)("event RSVP", () => {
   beforeAll(async () => {
     admin = await makeUser("officer", "ADMIN");
     member = await makeUser("member", "MEMBER");
+    member2 = await makeUser("member2", "MEMBER");
     const now = Date.now();
     const rows = await db
       .insert(events)
@@ -198,6 +210,117 @@ describe.skipIf(!process.env.DATABASE_URL)("event RSVP", () => {
       expect(result).toMatchObject({ rsvped: true, invited: false });
       expect(sent).toHaveLength(0);
       await caller.event.cancelRsvp({ eventId: id.future });
+    });
+  });
+
+  describe("calendar updates when an officer edits the event", () => {
+    const edit = (
+      patch: Partial<{
+        title: string;
+        startsAt: Date;
+        location: string;
+        pointsValue: number;
+      }> = {},
+    ) =>
+      callerFor(admin).event.update({
+        id: id.future,
+        title: "vitest rsvp future",
+        startsAt: new Date(startsAt),
+        pointsValue: 10,
+        ...patch,
+      });
+    const uid = (content: string) => /UID:(.*)/.exec(content)?.[1];
+    const sequence = (content: string) =>
+      Number(/SEQUENCE:(\d+)/.exec(content)?.[1]);
+    let startsAt = 0;
+    /** What each member's calendar was sent when they RSVPed. */
+    let invites: typeof sent = [];
+
+    beforeAll(async () => {
+      const event = await db.query.events.findFirst({
+        where: eq(events.id, id.future),
+      });
+      startsAt = event!.startsAt.getTime();
+    });
+
+    beforeEach(async () => {
+      stubEnv("GMAIL_USER", "chapter@example.com");
+      stubEnv("GMAIL_APP_PASSWORD", "app-password");
+      rejected.clear();
+      await db
+        .update(events)
+        .set({
+          title: "vitest rsvp future",
+          startsAt: new Date(startsAt),
+          location: null,
+        })
+        .where(eq(events.id, id.future));
+      await db.delete(eventRsvps).where(eq(eventRsvps.eventId, id.future));
+      sent.length = 0;
+      for (const who of [member, member2]) {
+        await callerFor(who).event.rsvp({ eventId: id.future });
+      }
+      invites = [...sent];
+      sent.length = 0;
+    });
+
+    afterEach(() => {
+      setSystemTime();
+      unstubAllEnvs();
+    });
+
+    it("re-sends the same calendar entry with a later sequence when the time moves", async () => {
+      setSystemTime(new Date(Date.now() + 60_000));
+      const moved = new Date(startsAt + 2 * HOUR_MS);
+      const result = await edit({ startsAt: moved });
+
+      expect(result.invites).toEqual({ sent: 2, failed: 0 });
+      expect(sent.map((mail) => mail.to).sort()).toEqual(
+        [member.email, member2.email].sort(),
+      );
+      for (const mail of sent) {
+        const first = invites.find((invite) => invite.to === mail.to)!;
+        expect(first.method).toBe("REQUEST");
+        expect(mail.method).toBe("REQUEST");
+        expect(mail.subject).toStartWith("Updated:");
+        expect(uid(mail.content)).toBe(uid(first.content));
+        expect(sequence(mail.content)).toBeGreaterThan(sequence(first.content));
+        expect(mail.content).toContain(
+          `DTSTART:${moved
+            .toISOString()
+            .replace(/[-:]/g, "")
+            .replace(/\.\d{3}/, "")}`,
+        );
+      }
+    });
+
+    it("re-sends when only the location changes", async () => {
+      const result = await edit({ location: "Klaus 1443" });
+      expect(result.invites).toEqual({ sent: 2, failed: 0 });
+      expect(sent[0]!.content).toContain("LOCATION:Klaus 1443");
+    });
+
+    it("stays quiet when time and place are unchanged", async () => {
+      const result = await edit({ title: "vitest rsvp future, renamed" });
+      expect(result.invites).toEqual({ sent: 0, failed: 0 });
+      expect(sent).toHaveLength(0);
+    });
+
+    it("saves the edit and reports how many sends failed", async () => {
+      rejected.add(member2.email);
+      vi.spyOn(console, "error").mockImplementation(() => undefined);
+      const result = await edit({ startsAt: new Date(startsAt + HOUR_MS) });
+
+      expect(result.invites).toEqual({ sent: 1, failed: 1 });
+      expect(result.startsAt.getTime()).toBe(startsAt + HOUR_MS);
+      expect(sent.map((mail) => mail.to)).toEqual([member.email]);
+    });
+
+    it("reports every RSVP as failed when sending is not configured", async () => {
+      stubEnv("GMAIL_USER", "");
+      stubEnv("GMAIL_APP_PASSWORD", "");
+      const result = await edit({ startsAt: new Date(startsAt + 3 * HOUR_MS) });
+      expect(result.invites).toEqual({ sent: 0, failed: 2 });
     });
   });
 

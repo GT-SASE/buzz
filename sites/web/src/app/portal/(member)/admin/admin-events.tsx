@@ -91,8 +91,19 @@ function EventForm({
     onError: (e) => toast.error(e.message),
   });
   const update = api.event.update.useMutation({
-    onSuccess: async () => {
-      toast.success("Changes saved.");
+    onSuccess: async ({ invites }) => {
+      const total = invites.sent + invites.failed;
+      if (invites.failed > 0) {
+        toast.warning(
+          `Changes saved, but ${invites.failed} of ${total} calendar updates did not send. Tell those members the new time or place.`,
+        );
+      } else if (total > 0) {
+        toast.success(
+          `Changes saved. Calendar update sent to ${total} ${total === 1 ? "RSVP" : "RSVPs"}.`,
+        );
+      } else {
+        toast.success("Changes saved.");
+      }
       await refresh();
     },
     onError: (e) => toast.error(e.message),

@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { semester } from "./terms";
+
 export const COMMITTEE_IDS = [
   "events",
   "marketing",
@@ -54,6 +56,43 @@ export function closedCommitteePicks(
 /** A cycle takes applications until its close instant, exclusive. */
 export function isCommitteeCycleOpen(closesAt: Date, now: Date) {
   return now.getTime() < closesAt.getTime();
+}
+
+/**
+ * A recruiting window. `id` names the semester it recruits for and is chosen
+ * when an officer opens it, never recomputed from the clock. It opens when it
+ * is created (`createdAt`) and closes at `closesAt`.
+ */
+export type CommitteeCycleWindow = {
+  id: string;
+  createdAt: Date;
+  closesAt: Date;
+};
+
+/**
+ * The cycle members apply to at `now`: the newest one open (`createdAt <= now
+ * < closesAt`), else the one named for the current semester (a closed cycle
+ * still shows its result), else none. Looking up `semester(now)` alone loses a
+ * spring cycle opened in December the moment January starts.
+ */
+export function currentCommitteeCycle<T extends CommitteeCycleWindow>(
+  cycles: readonly T[],
+  now: Date,
+): T | null {
+  const open = cycles
+    .filter(
+      (cycle) =>
+        cycle.createdAt.getTime() <= now.getTime() &&
+        isCommitteeCycleOpen(cycle.closesAt, now),
+    )
+    .reduce<T | null>(
+      (newest, cycle) =>
+        !newest || cycle.createdAt.getTime() > newest.createdAt.getTime()
+          ? cycle
+          : newest,
+      null,
+    );
+  return open ?? cycles.find((cycle) => cycle.id === semester(now)) ?? null;
 }
 
 export function isCommitteeApplicationLocked(
