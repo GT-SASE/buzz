@@ -1,15 +1,17 @@
-import type { Metadata } from "next";
-
-import { Button, SaseDino } from "~/components/site";
+import {
+  NotFoundBody,
+  notFoundMetadata,
+} from "~/components/site/not-found-body";
 import { SiteFooter } from "~/components/site/site-footer";
 import { SiteNav } from "~/components/site/site-nav";
 
-export const metadata: Metadata = {
-  title: "Page not found",
-  robots: { index: false },
-};
+export const metadata = notFoundMetadata;
 
-/** Global 404: outside (marketing), so it mounts the public chrome itself. */
+/**
+ * Global 404 for URLs that match no route, so it runs under the root layout
+ * alone and mounts the public chrome itself. A notFound() thrown inside
+ * (marketing) renders (marketing)/not-found.tsx instead.
+ */
 export default function NotFound() {
   return (
     <>
@@ -25,38 +27,7 @@ export default function NotFound() {
         tabIndex={-1}
         className="flex-1 focus:shadow-none focus:outline-none"
       >
-        <section className="flex min-h-[60vh] items-center px-5 py-20 sm:px-6">
-          <div className="max-w-content mx-auto w-full">
-            {/* gold-ink, not gold: real text at display size, not decoration. */}
-            <div className="flex items-end justify-between gap-6">
-              <p className="font-display text-gold-ink text-hero font-bold">
-                404
-              </p>
-              <SaseDino className="h-28 sm:h-40" />
-            </div>
-            <div className="rule-heavy mt-10 grid gap-x-16 gap-y-6 pt-8 lg:grid-cols-[1.35fr_1fr] lg:items-end">
-              <h1 className="font-display text-navy text-h2 font-bold tracking-tight text-balance">
-                This page took the Tech Trolley somewhere else.
-              </h1>
-              <p className="text-lead text-ink-muted max-w-measure lg:pb-2">
-                The link may be outdated. Try the calendar or head back to the
-                homepage.
-              </p>
-            </div>
-            <div className="mt-12 flex flex-col items-stretch gap-4 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-8 sm:gap-y-4">
-              <Button href="/" className="w-full justify-center sm:w-auto">
-                Back home
-              </Button>
-              <Button
-                href="/events"
-                variant="outline"
-                className="w-full justify-center sm:w-auto"
-              >
-                See events
-              </Button>
-            </div>
-          </div>
-        </section>
+        <NotFoundBody />
       </main>
       <SiteFooter dino={false} />
     </>
