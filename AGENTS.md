@@ -74,6 +74,14 @@ Use `bun`, `bun run`, `bun x`. Never npm, pnpm, npx, bunx. Spell out `bun run te
 
 Remote cache (Vercel, team `sasegt`) is optional and off by default. Locally: `bun x turbo login`, then `bun x turbo link` and pick `sasegt`. CI reads repo secret `TURBO_TOKEN` (Vercel access token scoped to `sasegt`) and repo variable `TURBO_TEAM` (team slug); when either is empty, e.g. fork PRs, turbo uses the local cache that `actions/cache` restores. `remoteCache.signature` stays off: with it on and no `TURBO_REMOTE_CACHE_SIGNATURE_KEY`, uploads fail with "artifact signature error". `bun run vercel-build` runs `next build` directly, not turbo, so Vercel builds do not use the remote cache.
 
+## Dependencies
+
+- `bunfig.toml` uses the isolated linker, so a package imported by a root file (tests, `eslint.config.ts`, `prettier.config.ts`) must be declared in the root `package.json`, and one only a workspace imports must not be. `bun why <pkg>` lists who needs it. Root keeps `drizzle-orm`, `react` and `@modelcontextprotocol/sdk` because tests import them; `nodemailer`, `react-dom`, `@types/react*` and `typescript-7` reach root code through the workspaces and are not repeated there.
+- TypeScript is split on purpose. Root and `packages/mcp` run TypeScript 6.0.x: typescript-eslint reads the compiler API and its peer range stops below 6.1.0, and the MCP server imports `typescript` at runtime (`packages/mcp/src/procedures.ts`). Every other workspace runs TypeScript 7 `tsc` through the `typescript-7` alias; `sites/web` declares `typescript` `^7` itself because Next looks it up by that name. `tsrs` is the Rust port of TypeScript 7.1 beta: kept as the fast local check (`bun run typecheck`, about 3.5 s for the root program against 41 s for tsc) and run in CI with `continue-on-error`, so only `typecheck:tsc` gates a merge. Dependabot ignores `typescript`, `typescript-7` and `tsrs`; move them by hand, together.
+- `next-auth` stays on `5.0.0-beta.32`, pinned exactly in every workspace and ignored by Dependabot: there is no stable v5 (npm `latest` is still 4.24.x, `beta` is 5.0.0-beta.32), so a range would drift between betas and `latest` would be a downgrade to v4.
+- `nodemailer` 10 ships its own types, so there is no `@types/nodemailer`. Only `packages/api` declares it; `tests/rsvp.integration.test.ts` mocks it by name without a root entry.
+- `postgres` (postgres.js) is a devDependency of `@buzz/db` for the two seed scripts only. The app and the migrations use `pg`.
+
 ## Safety
 
 - The repo-root `.env` is the PRODUCTION database. Never run tests, migrations or scripts against it. `bunfig.toml` sets `env = false` so Bun does not auto-load it.

@@ -13,22 +13,17 @@
         "@testing-library/user-event": "^14.6.12",
         "@types/bun": "^1.4.5",
         "@types/node": "^26.6.6",
-        "@types/react": "^19.3.0",
-        "@types/react-dom": "^19.3.0",
         "drizzle-orm": "^0.45.4",
         "eslint": "^10.15.0",
         "eslint-config-next": "^16.4.6",
         "eslint-plugin-drizzle": "^0.2.3",
         "jiti": "^2.7.0",
-        "nodemailer": "^10.3.1",
         "prettier": "^3.10.1",
         "prettier-plugin-tailwindcss": "^0.8.1",
         "react": "^19.3.1",
-        "react-dom": "^19.3.1",
         "tsrs": "0.20.1-ts7.1.0-beta",
         "turbo": "^2.11.11",
         "typescript": "^6.0.2",
-        "typescript-7": "npm:typescript@^7.0.0",
         "typescript-eslint": "^8.73.0",
       },
     },
@@ -40,13 +35,12 @@
         "@buzz/db": "workspace:*",
         "@trpc/server": "^11.28.3",
         "drizzle-orm": "^0.45.4",
-        "nodemailer": "^10.3.1",
+        "nodemailer": "^10.6.1",
         "superjson": "^2.2.6",
         "zod": "^4.6.7",
       },
       "devDependencies": {
         "@types/node": "^26.6.6",
-        "@types/nodemailer": "^8.0.2",
         "tsrs": "0.20.1-ts7.1.0-beta",
         "typescript-7": "npm:typescript@^7.0.0",
       },
@@ -77,12 +71,12 @@
         "drizzle-orm": "^0.45.4",
         "next-auth": "5.0.0-beta.32",
         "pg": "^8.23.1",
-        "postgres": "^4.0.0",
       },
       "devDependencies": {
         "@types/node": "^26.6.6",
         "@types/pg": "^8.23.1",
         "drizzle-kit": "^0.31.11",
+        "postgres": "^4.0.0",
         "tsrs": "0.20.1-ts7.1.0-beta",
         "typescript-7": "npm:typescript@^7.0.0",
       },
@@ -731,8 +725,6 @@
     "@types/ms": ["@types/ms@2.1.0", "", {}, "sha512-GsCCIZDE/p3i96vtEqx+7dBUGXrc7zeSK3wwPHIaRThS+9OhWIXRqzs4d6k1SVU8g91DrNRWxWUGhp5KXQb2VA=="],
 
     "@types/node": ["@types/node@26.6.6", "", { "dependencies": { "undici-types": "8.9.0" } }, "sha512-MzQj+8Kx3XI40OmUAE6Qoh58ZMNstNNMwn2nfd3qWsfe7nDNSqJNzes4njhz6AHwrSHOffSLwXU6yb474Q4aog=="],
-
-    "@types/nodemailer": ["@types/nodemailer@8.0.2", "", { "dependencies": { "@types/node": "26.6.6" } }, "sha512-c7M5ox8p0nEOfbJ2E9Qcmt8/QCu/VzsiAhzBiZbvky2PhKZDHpKB3sQHBM5MEZNkCfBOaS6S9//AGPRTNB7IaA=="],
 
     "@types/pg": ["@types/pg@8.23.1", "", { "dependencies": { "@types/node": "26.6.6", "pg-protocol": "1.16.0", "pg-types": "2.2.0" } }, "sha512-fKVHpikPdg4GKks3JuLEhvwSyvwzF23hnabPy6DD8ljVbC7+6J5dQzdv4arV6jqq57djnMgs1HKBxX4P8aBI3A=="],
 
@@ -1596,7 +1588,7 @@
 
     "node-releases": ["node-releases@2.0.60", "", {}, "sha512-OmO8+GM1JUZqXET720VrJCwkjUCXmCMQm0Z3UDDRbfNLHS4NEAvY60j5jiFv0tkKw2PNNlqOLhahVmwJIOLDIQ=="],
 
-    "nodemailer": ["nodemailer@10.5.0", "", {}, "sha512-L/w/HH5MqpzMDuZD7fQdt/+KqymuvrpaApaIjAH2XA3ILePwlcvXCVVvP75xVrXCEt2ggK2marrrHHFB5Qu0kA=="],
+    "nodemailer": ["nodemailer@10.6.1", "", {}, "sha512-d7kfFfS/tR4Aca+SBvRaQ+MXKNv7d2JiRe5TxaRcFT/kYMh4GGPnW9aKksTIEvyEbA7d/7HYWE4YPDEHxzJj/g=="],
 
     "npm-run-path": ["npm-run-path@6.0.0", "", { "dependencies": { "path-key": "4.0.0", "unicorn-magic": "0.3.0" } }, "sha512-9qny7Z9DsQU8Ou39ERsPU4OZQlSTP47ShQzuKZ6PRXpYLtIFgl/DEBYEXKlvcEa+9tHVcK8CF81Y2V72qaZhWA=="],
 

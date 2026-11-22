@@ -34,6 +34,7 @@ updates:
       tooling:
         patterns:
           - eslint
+          - "@eslint/js"
           - typescript-eslint
           - prettier
           - "prettier-plugin-*"
@@ -45,10 +46,6 @@ updates:
       - dependency-name: typescript-7
       # Beta, pinned exactly in every workspace. Move it by hand.
       - dependency-name: tsrs
-      # ESLint 10 crashes with eslint-config-next 16 / react-hooks 7
-      # (scopeManager.addGlobals). Stay on 9 until those plugins support 10.
-      - dependency-name: eslint
-        update-types: ["version-update:semver-major"]
       # Newer majors add many runtime packages for one function, waitUntil.
       - dependency-name: "@vercel/functions"
         update-types: ["version-update:semver-major"]

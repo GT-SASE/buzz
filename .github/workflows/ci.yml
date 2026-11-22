@@ -51,10 +51,12 @@ jobs:
           path: .turbo/cache
           key: turbo-${{ github.job }}-${{ github.sha }}
           restore-keys: turbo-${{ github.job }}-
-      - run: bun x turbo run //#format:check typecheck //#typecheck:self
-      # tsrs is still a beta. Keep tsc as the deciding check until tsrs has a
-      # stable release.
-      - run: bun x turbo run typecheck:tsc //#typecheck:tsc:self
+      # tsrs is a beta Rust port of TypeScript 7.1: an early look that never
+      # gates a merge. Its false positives have forced code workarounds before.
+      - run: bun x turbo run typecheck //#typecheck:self
+        continue-on-error: true
+      # tsc is the deciding check until tsrs has a stable release.
+      - run: bun x turbo run //#format:check typecheck:tsc //#typecheck:tsc:self
 
   test:
     runs-on: ubuntu-latest

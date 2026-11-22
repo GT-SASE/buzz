@@ -24,13 +24,13 @@
     "@vercel/functions": "^3.11.3",
     "drizzle-orm": "^0.45.4",
     "next-auth": "5.0.0-beta.32",
-    "pg": "^8.23.1",
-    "postgres": "^4.0.0"
+    "pg": "^8.23.1"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",
     "@types/pg": "^8.23.1",
     "drizzle-kit": "^0.31.11",
+    "postgres": "^4.0.0",
     "tsrs": "0.20.1-ts7.1.0-beta",
     "typescript-7": "npm:typescript@^7.0.0"
   }
