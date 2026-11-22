@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useRef } from "react";
 import { toast } from "sonner";
 
 import { formatEventTime } from "~/app/portal/_lib/format";
@@ -12,7 +13,19 @@ import { api, type RouterOutputs } from "~/trpc/react";
 
 type Upcoming = RouterOutputs["event"]["upcoming"][number];
 
-function EventRow({ event }: { event: Upcoming }) {
+function EventRow({
+  event,
+  focused,
+}: {
+  event: Upcoming;
+  /** The row a public "Sign in to RSVP" link asked for. */
+  focused: boolean;
+}) {
+  const rowRef = useRef<HTMLLIElement>(null);
+  useEffect(() => {
+    if (focused) rowRef.current?.scrollIntoView({ block: "center" });
+  }, [focused]);
+
   const utils = api.useUtils();
   const refresh = () =>
     Promise.all([
@@ -43,8 +56,10 @@ function EventRow({ event }: { event: Upcoming }) {
 
   return (
     <li
+      ref={rowRef}
       id={eventRowId(event.id)}
-      className="border-hairline bg-paper/80 target:border-navy scroll-mt-20 rounded-xl border p-5 shadow-xs sm:p-6"
+      data-focused={focused || undefined}
+      className="border-hairline bg-paper/80 data-[focused]:border-navy scroll-mt-20 rounded-xl border p-5 shadow-xs sm:p-6"
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
@@ -115,7 +130,7 @@ function EventRow({ event }: { event: Upcoming }) {
   );
 }
 
-export function UpcomingEvents() {
+export function UpcomingEvents({ focusId }: { focusId?: string }) {
   const upcoming = api.event.upcoming.useQuery();
 
   return (
@@ -142,7 +157,11 @@ export function UpcomingEvents() {
       ) : (
         <ul className="mt-8 grid gap-4">
           {upcoming.data.map((event) => (
-            <EventRow key={event.id} event={event} />
+            <EventRow
+              key={event.id}
+              event={event}
+              focused={event.id === focusId}
+            />
           ))}
         </ul>
       )}
