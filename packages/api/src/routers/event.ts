@@ -1,5 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import { and, asc, count, desc, eq, gte, isNull } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, inArray, isNull } from "drizzle-orm";
 import { z } from "zod";
 
 import { asDate, asInt, totalsColumns } from "../aggregates";
@@ -925,6 +925,26 @@ export const eventRouter = createTRPCRouter({
           ? await sendCalendarInvite("CANCEL", event, email)
           : false;
       return { eventId: input.eventId, rsvped: false, uninvited };
+    }),
+
+  /**
+   * Which of these events this member has RSVPed to. The public event pages
+   * are static, so they ask after paint instead of reading the session.
+   */
+  myRsvps: protectedProcedure
+    .input(z.object({ eventIds: z.array(z.string().min(1).max(255)).max(100) }))
+    .query(async ({ ctx, input }) => {
+      if (input.eventIds.length === 0) return [];
+      const rows = await ctx.db
+        .select({ eventId: eventRsvps.eventId })
+        .from(eventRsvps)
+        .where(
+          and(
+            eq(eventRsvps.userId, ctx.session.user.id),
+            inArray(eventRsvps.eventId, input.eventIds),
+          ),
+        );
+      return rows.map((row) => row.eventId);
     }),
 
   /** What is still open, marked with whether this member has been or RSVPed. */

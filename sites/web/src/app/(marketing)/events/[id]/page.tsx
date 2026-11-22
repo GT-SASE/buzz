@@ -2,9 +2,10 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { eventPagePath, eventPath, signInPath } from "~/app/portal/_lib/paths";
+import { eventPagePath, rsvpSignInPath } from "~/app/portal/_lib/paths";
 import { Eyebrow, PageHeader, Section, TextLink } from "~/components/site";
 import { JsonLd } from "~/components/site/json-ld";
+import { RsvpControl, RsvpProvider } from "~/components/site/rsvp";
 import { Badge } from "~/components/ui/badge";
 import {
   getChapterEvent,
@@ -141,16 +142,25 @@ export default async function EventPage({ params }: Params) {
             {past ? (
               <TextLink href="/events">See what is coming up</TextLink>
             ) : (
-              <>
+              <RsvpProvider
+                eventIds={event.reminder ? [] : [event.id]}
+                returnTo={event.id}
+              >
                 {!event.reminder && (
-                  <TextLink href={signInPath(eventPath(event.id))}>
-                    Sign in to RSVP
-                  </TextLink>
+                  <RsvpControl
+                    eventId={event.id}
+                    title={event.title}
+                    startsAt={event.startsAt.toISOString()}
+                  >
+                    <TextLink href={rsvpSignInPath(event.id)}>
+                      Sign in to RSVP
+                    </TextLink>
+                  </RsvpControl>
                 )}
                 <TextLink href={googleCalendarUrl(event)} external>
                   Add to Google Calendar
                 </TextLink>
-              </>
+              </RsvpProvider>
             )}
           </div>
           {past && (

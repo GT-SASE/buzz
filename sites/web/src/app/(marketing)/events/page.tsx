@@ -3,8 +3,7 @@ import Link from "next/link";
 import {
   eventMonthPath,
   eventPagePath,
-  eventPath,
-  signInPath,
+  rsvpSignInPath,
 } from "~/app/portal/_lib/paths";
 import {
   Button,
@@ -17,6 +16,7 @@ import {
 } from "~/components/site";
 import { EventsToolbar } from "~/components/site/events-toolbar";
 import { JsonLd } from "~/components/site/json-ld";
+import { RsvpControl, RsvpProvider } from "~/components/site/rsvp";
 import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert";
 import { Badge } from "~/components/ui/badge";
 import { getChapterEvents, type PublicEvent } from "~/data/chapter-events";
@@ -131,23 +131,35 @@ export default async function EventsPage() {
           monthHref={eventMonthPath(monthKeyOf(new Date()))}
         />
         {upcoming.length > 0 ? (
-          <div className="grid gap-x-10 gap-y-12 sm:grid-cols-2 lg:grid-cols-3">
-            {upcoming.map((event) => (
-              <EventCard key={event.id} event={event}>
-                <TextLink href={eventPagePath(event.id)}>
-                  Event details
-                </TextLink>
-                {!event.reminder && (
-                  <TextLink href={signInPath(eventPath(event.id))}>
-                    Sign in to RSVP
+          <RsvpProvider
+            eventIds={upcoming
+              .filter((event) => !event.reminder)
+              .map((event) => event.id)}
+          >
+            <div className="grid gap-x-10 gap-y-12 sm:grid-cols-2 lg:grid-cols-3">
+              {upcoming.map((event) => (
+                <EventCard key={event.id} event={event}>
+                  {!event.reminder && (
+                    <RsvpControl
+                      eventId={event.id}
+                      title={event.title}
+                      startsAt={event.startsAt.toISOString()}
+                    >
+                      <TextLink href={rsvpSignInPath(event.id)}>
+                        Sign in to RSVP
+                      </TextLink>
+                    </RsvpControl>
+                  )}
+                  <TextLink href={eventPagePath(event.id)}>
+                    Event details
                   </TextLink>
-                )}
-                <TextLink href={googleCalendarUrl(event)} external>
-                  Add to Google Calendar
-                </TextLink>
-              </EventCard>
-            ))}
-          </div>
+                  <TextLink href={googleCalendarUrl(event)} external>
+                    Add to Google Calendar
+                  </TextLink>
+                </EventCard>
+              ))}
+            </div>
+          </RsvpProvider>
         ) : (
           <div className="flex flex-col items-start gap-6 sm:flex-row sm:items-end sm:gap-10">
             <SaseDino className="h-28 sm:h-36" />
