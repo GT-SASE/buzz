@@ -580,8 +580,9 @@ export async function markEventReminderSkipped(
 /**
  * Closes a stale event reminder claim that no plan named, once its event is read again
  * and shows it can never go out: the event is gone, deleted or closed, its post is gone,
- * or it was dated before `beforeDate`, a day already past in every guild. Anything else
- * is left exactly as it is, with no takeover and no rise in `attempts`: a guild with
+ * or it was dated before `beforeDate`, a day already past in every guild. A kind that may
+ * go out after its event, Engage picture late, is judged by its own day instead. Anything
+ * else is left exactly as it is, with no takeover and no rise in `attempts`: a guild with
  * reminders off, whatever its events, and a live event the candidate read left out, such
  * as one in a forum no longer managed, which may be added back. "closed" only when this
  * call recorded it skipped.

@@ -62,7 +62,16 @@ CREATE FUNCTION discord_bot.close_stale_event_reminder(p_event_id uuid, p_kind d
           AND event.status = 'active'
           AND event.deleted_at IS NULL
           AND event.thread_status <> 'missing'
-          AND event.event_date >= p_before_date
+          -- The event is not past in every guild, or the claim's own day is not and the
+          -- kind may go out that day after the event, as Engage picture late may. That
+          -- ping goes out on one day only, so a claim closed here is never sent.
+          AND (
+            event.event_date >= p_before_date
+            OR (
+              p_reminder_date >= p_before_date
+              AND discord_bot.event_reminder_day_open(p_kind, p_reminder_date, event.event_date)
+            )
+          )
       )
     RETURNING 1
   )

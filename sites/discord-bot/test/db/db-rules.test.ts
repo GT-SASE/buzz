@@ -673,6 +673,62 @@ describe("closing a stale claim", () => {
     expect(await closeEvent(eventId, token, "2031-01-01")).toBe(true);
     expect(await stateOf()).toBe("skipped");
   });
+
+  it("leaves an Engage picture late claim whose own day is not past, though its event is, and closes the rest", async () => {
+    const eventId = await insertEvent(db, guild);
+    // The event was a week before the ping's day, 2030-01-15, so the ping is today and
+    // 2030-01-14 is the earliest a guild's today can be.
+    await asOwner(
+      `UPDATE discord_bot.events SET event_date = '2030-01-08' WHERE id = $1`,
+      [eventId],
+    );
+    const claimFor = async (kind: string, day: string) => {
+      await asOwner(
+        `INSERT INTO discord_bot.event_reminder_log (event_id, kind, reminder_date)
+         VALUES ($1, $2::discord_bot.event_reminder_kind, $3)`,
+        [eventId, kind, day],
+      );
+      const { rows } = await db.query<{ claim_token: string }>(
+        `SELECT claim_token FROM discord_bot.event_reminder_log
+         WHERE event_id = $1 AND kind = $2::discord_bot.event_reminder_kind AND reminder_date = $3`,
+        [eventId, kind, day],
+      );
+      return present(rows[0]).claim_token;
+    };
+    const closeOf = async (kind: string, day: string, token: string) =>
+      (
+        await asBot<{ closed: boolean }>(
+          `SELECT discord_bot.close_stale_event_reminder($1, $2::discord_bot.event_reminder_kind, $3, $4, '2030-01-14') AS closed`,
+          [eventId, kind, day, token],
+        )
+      )[0]?.closed;
+
+    const late = await claimFor("engage_picture_late", "2030-01-15");
+    const lateGone = await claimFor("engage_picture_late", "2030-01-12");
+    const today = await claimFor("event_today", "2030-01-08");
+
+    expect(await closeOf("engage_picture_late", "2030-01-15", late)).toBe(
+      false,
+    );
+    // A day already past in every guild, and a kind that stops with the event.
+    expect(await closeOf("engage_picture_late", "2030-01-12", lateGone)).toBe(
+      true,
+    );
+    expect(await closeOf("event_today", "2030-01-08", today)).toBe(true);
+    expect(
+      (
+        await db.query<{ kind: string; state: string }>(
+          `SELECT kind, state FROM discord_bot.event_reminder_log WHERE event_id = $1
+           ORDER BY kind, reminder_date`,
+          [eventId],
+        )
+      ).rows,
+    ).toEqual([
+      { kind: "engage_picture_late", state: "skipped" },
+      { kind: "engage_picture_late", state: "claimed" },
+      { kind: "event_today", state: "skipped" },
+    ]);
+  });
 });
 
 describe("event reminder claims", () => {
