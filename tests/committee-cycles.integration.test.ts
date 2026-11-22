@@ -219,7 +219,7 @@ describe.skipIf(!process.env.DATABASE_URL)(
       const opened = await callerFor(officer).committee.openCycle({
         closesAt: CLOSES,
       });
-      expect(opened.id).toBe("spring-2095");
+      expect(opened?.id).toBe("spring-2095");
       expect(await callerFor(member).committee.mine()).toMatchObject({
         cycle: "spring-2095",
         open: true,
@@ -266,7 +266,7 @@ describe.skipIf(!process.env.DATABASE_URL)(
         semester: "spring-2096",
         closesAt: new Date("2096-01-01T04:00:00.000Z"),
       });
-      expect(opened.id).toBe("spring-2096");
+      expect(opened?.id).toBe("spring-2096");
       expect(
         await errorCode(
           callerFor(officer).committee.openCycle({
