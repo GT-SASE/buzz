@@ -26,7 +26,7 @@
     "@electric-sql/pglite": "0.5.16",
     "@types/node": "^26.6.6",
     "@types/pg": "^8.23.1",
-    "dbmate": "2.38.1",
+    "dbmate": "2.38.2",
     "pg": "^8.23.1",
     "tsrs": "0.20.1-ts7.1.0-beta",
     "typescript-7": "npm:typescript@^7.0.0"
