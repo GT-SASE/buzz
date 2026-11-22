@@ -81,6 +81,7 @@ export const adminNav = [
   { href: "/portal/admin/mentorship", label: "SASE KIN" },
   { href: "/portal/admin/committees", label: "Committees" },
   { href: "/portal/admin/elections", label: "Elections" },
+  { href: "/portal/admin/announcement", label: "Banner" },
   { href: "/portal/admin/pages", label: "Pages" },
 ] as const;
 

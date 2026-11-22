@@ -7,8 +7,9 @@ import { Badge } from "~/components/ui/badge";
 import { meeting } from "~/data/content";
 import { getCommitteeRecruiting, listNames } from "~/data/committee-recruiting";
 import { committeeExpectations } from "~/data/committees";
+import { faqsById } from "~/data/faq";
 import { discord, engage, instagram, joinHref, site } from "~/data/site";
-import { breadcrumbSchema, pageMetadata } from "~/lib/seo";
+import { breadcrumbSchema, faqSchema, pageMetadata } from "~/lib/seo";
 
 export const metadata = pageMetadata({
   title: "Join SASE at Georgia Tech",
@@ -50,20 +51,7 @@ const meetingRows = [
   { term: "Where", detail: meeting.location },
 ];
 
-const faqs = [
-  {
-    q: "Do I have to be Asian to join?",
-    a: "No. SASE is open to every Georgia Tech student regardless of heritage, major, or year.",
-  },
-  {
-    q: "Do I need a technical major?",
-    a: "No. Our members study everything from computer science to business to public policy.",
-  },
-  {
-    q: "What if I join mid-semester?",
-    a: "Come anyway. You can join a SASE KIN group any time during the school year, and project teams have rolling spots most semesters.",
-  },
-] as const;
+const faqs = faqsById("heritage", "major", "mid-semester");
 
 const stepLink =
   "text-navy decoration-gold hover:text-gold-ink underline decoration-2 underline-offset-4 transition";
@@ -106,17 +94,7 @@ export default async function JoinPage() {
   return (
     <>
       <JsonLd data={breadcrumbSchema("Join", "/join")} />
-      <JsonLd
-        data={{
-          "@context": "https://schema.org",
-          "@type": "FAQPage",
-          mainEntity: faqs.map((faq) => ({
-            "@type": "Question",
-            name: faq.q,
-            acceptedAnswer: { "@type": "Answer", text: faq.a },
-          })),
-        }}
-      />
+      <JsonLd data={faqSchema(faqs)} />
       <PageHeader
         title="Join SASE GT."
         body="Open to every Georgia Tech student: any major, any year, any background."
@@ -291,6 +269,14 @@ export default async function JoinPage() {
             </Disclosure>
           ))}
         </div>
+        <p className="text-body-sm mt-8 font-semibold">
+          <Link
+            href="/faq"
+            className={`${stepLink} inline-flex min-h-11 items-center`}
+          >
+            More questions and answers
+          </Link>
+        </p>
       </Section>
 
       <Section title="Find us here." size="sm">

@@ -21,6 +21,7 @@ const routes = [
   { path: "/events", priority: 0.9, changeFrequency: "weekly" },
   { path: "/programs", priority: 0.8, changeFrequency: "monthly" },
   { path: "/about", priority: 0.7, changeFrequency: "yearly" },
+  { path: "/faq", priority: 0.7, changeFrequency: "monthly" },
   { path: "/sponsors", priority: 0.7, changeFrequency: "monthly" },
   { path: "/board", priority: 0.6, changeFrequency: "yearly" },
   { path: "/contact", priority: 0.6, changeFrequency: "yearly" },

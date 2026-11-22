@@ -22,9 +22,30 @@ const lean = [
 const heavy =
   /from "(lucide-react|~\/lib\/utils|~\/components\/ui\/[^"]+|~\/components\/site)"/;
 
+/**
+ * Public additions that must stay server markup: the announcement banner (its
+ * dismiss is an inline script, not a client component), the sponsor wall and
+ * the pages that carry them. A "use client" here would ship them, and their
+ * imports, to every visitor.
+ */
+const serverOnly = [
+  "components/site/announcement.tsx",
+  "components/site/announcement-slot.tsx",
+  "components/site/sponsor-wall.tsx",
+  "app/(marketing)/layout.tsx",
+  "app/(marketing)/faq/page.tsx",
+  "app/(marketing)/sponsors/page.tsx",
+];
+
 describe("public client bundle", () => {
   it.each(lean)("%s imports no icon library, cn or ui kit", (file) => {
     expect(readFileSync(join(src, file), "utf8")).not.toMatch(heavy);
+  });
+
+  it.each(serverOnly)("%s is not a client module", (file) => {
+    expect(readFileSync(join(src, file), "utf8")).not.toMatch(
+      /^\s*["']use client["']/m,
+    );
   });
 });
 
