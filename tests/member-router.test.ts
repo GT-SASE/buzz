@@ -1,5 +1,6 @@
 import {
   Column,
+  getColumnTable,
   getTableName,
   is,
   Param,
@@ -118,8 +119,9 @@ function sqlText(value: unknown): string {
   if (is(value, SQL)) return value.queryChunks.map(sqlText).join("");
   if (is(value, SQL.Aliased))
     return `${sqlText(value.sql)} as ${value.fieldAlias}`;
-  if (is(value, StringChunk)) return value.value.join("");
-  if (is(value, Column)) return `${getTableName(value.table)}.${value.name}`;
+  if (is(value, StringChunk)) return value.value;
+  if (is(value, Column))
+    return `${getTableName(getColumnTable(value))}.${value.name}`;
   if (is(value, Table)) return getTableName(value);
   if (Array.isArray(value)) return value.map(sqlText).join(", ");
   return "?";

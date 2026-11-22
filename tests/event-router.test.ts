@@ -775,17 +775,7 @@ describe("normalizeCode (through event.checkIn)", () => {
     );
     expect(error.code).toBe("NOT_FOUND");
 
-    // The `where` is a drizzle SQL fragment; its bound parameters are the
-    // chunks carrying a `value`. If that shape ever changes this finds nothing
-    // and the assertion fails rather than passing vacuously.
-    const chunks =
-      (lookup as { queryChunks?: unknown[] } | undefined)?.queryChunks ?? [];
-    const bound = chunks
-      .filter(
-        (chunk): chunk is { value: unknown } =>
-          typeof chunk === "object" && chunk !== null && "value" in chunk,
-      )
-      .map((chunk) => chunk.value);
-    expect(bound).toContain("SASEGT26");
+    // Relational Queries v2 takes `where` as a plain filter object.
+    expect(lookup).toEqual({ checkInCode: "SASEGT26" });
   });
 });

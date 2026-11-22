@@ -1,4 +1,4 @@
-import { relations, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import {
   check,
   index,
@@ -92,11 +92,6 @@ export const users = createTable(
   ],
 );
 
-export const usersRelations = relations(users, ({ many }) => ({
-  accounts: many(accounts),
-  checkIns: many(eventCheckIns),
-}));
-
 export const accounts = createTable(
   "account",
   (d) => ({
@@ -121,10 +116,6 @@ export const accounts = createTable(
   ],
 );
 
-export const accountsRelations = relations(accounts, ({ one }) => ({
-  user: one(users, { fields: [accounts.userId], references: [users.id] }),
-}));
-
 export const sessions = createTable(
   "session",
   (d) => ({
@@ -137,10 +128,6 @@ export const sessions = createTable(
   }),
   (t) => [index(idx("session_user_id_idx")).on(t.userId)],
 );
-
-export const sessionsRelations = relations(sessions, ({ one }) => ({
-  user: one(users, { fields: [sessions.userId], references: [users.id] }),
-}));
 
 export const verificationTokens = createTable(
   "verification_token",
@@ -269,22 +256,6 @@ export const eventCheckIns = createTable(
   ],
 );
 
-export const eventsRelations = relations(events, ({ one, many }) => ({
-  createdBy: one(users, {
-    fields: [events.createdById],
-    references: [users.id],
-  }),
-  checkIns: many(eventCheckIns),
-}));
-
-export const eventCheckInsRelations = relations(eventCheckIns, ({ one }) => ({
-  event: one(events, {
-    fields: [eventCheckIns.eventId],
-    references: [events.id],
-  }),
-  user: one(users, { fields: [eventCheckIns.userId], references: [users.id] }),
-}));
-
 /** A member saying they plan to come. Separate from check-in, which is proof. */
 export const eventRsvps = createTable(
   "event_rsvp",
@@ -396,16 +367,6 @@ export const mentorshipEnrollments = createTable(
   ],
 );
 
-export const mentorshipEnrollmentsRelations = relations(
-  mentorshipEnrollments,
-  ({ one }) => ({
-    user: one(users, {
-      fields: [mentorshipEnrollments.userId],
-      references: [users.id],
-    }),
-  }),
-);
-
 /**
  * One member in one kin group for one semester. The primary key keeps a
  * member to a single group per semester. `points` is what they earned with
@@ -436,18 +397,6 @@ export const kinMemberships = createTable(
     check(idx("kin_membership_points_check"), sql`${t.points} >= 0`),
   ],
 );
-
-export const kinGroupsRelations = relations(kinGroups, ({ many }) => ({
-  members: many(kinMemberships),
-}));
-
-export const kinMembershipsRelations = relations(kinMemberships, ({ one }) => ({
-  group: one(kinGroups, {
-    fields: [kinMemberships.groupId],
-    references: [kinGroups.id],
-  }),
-  user: one(users, { fields: [kinMemberships.userId], references: [users.id] }),
-}));
 
 export type CommitteeId = "events" | "marketing" | "treasury";
 export type CommitteeApplicationStatus =
@@ -517,16 +466,6 @@ export const committeeApplications = createTable(
   ],
 );
 
-export const committeeApplicationsRelations = relations(
-  committeeApplications,
-  ({ one }) => ({
-    user: one(users, {
-      fields: [committeeApplications.userId],
-      references: [users.id],
-    }),
-  }),
-);
-
 /** 2 MiB. The CHECK below must stay at 2097152. */
 export const RESUME_MAX_BYTES = 2 * 1024 * 1024;
 
@@ -561,10 +500,6 @@ export const resumes = createTable(
     check(idx("resume_mime_check"), sql`${t.mimeType} = 'application/pdf'`),
   ],
 );
-
-export const resumesRelations = relations(resumes, ({ one }) => ({
-  user: one(users, { fields: [resumes.userId], references: [users.id] }),
-}));
 
 /**
  * One committee recruiting window per semester, keyed `fall-2026`. Officers

@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "bun:test";
 
 import { site } from "~/data/site";
@@ -42,10 +42,8 @@ describe("vercel deploy", () => {
     const ci = readFileSync(".github/workflows/ci.yml", "utf8");
     expect(ci).toContain("bun run vercel-build");
 
-    const journal = readFileSync(
-      "packages/db/drizzle/meta/_journal.json",
-      "utf8",
+    expect(readdirSync("packages/db/drizzle")).toContain(
+      "20260831064826_wandering_queen_noir",
     );
-    expect(journal).toContain("0002_wandering_queen_noir");
   });
 });

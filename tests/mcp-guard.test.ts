@@ -163,6 +163,8 @@ describe("workspace versions and migrations", () => {
     expect(m).toContain("== bot database (dbmate");
     expect(m).toContain("20261111000000_baseline.sql");
     expect(m).toContain("manual owner step");
-    expect(m).toContain("packages/db/drizzle/0011_page.sql");
+    expect(m).toContain(
+      "packages/db/drizzle/20261118233009_page/migration.sql",
+    );
   });
 });

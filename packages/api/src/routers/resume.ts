@@ -17,7 +17,7 @@ export const resumeRouter = createTRPCRouter({
   mine: protectedProcedure.query(async ({ ctx }) => {
     try {
       const row = await ctx.db.query.resumes.findFirst({
-        where: eq(resumes.userId, ctx.session.user.id),
+        where: { userId: ctx.session.user.id },
         columns: {
           fileName: true,
           mimeType: true,

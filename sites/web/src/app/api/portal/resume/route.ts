@@ -1,4 +1,3 @@
-import { eq } from "drizzle-orm";
 import type { NextRequest } from "next/server";
 
 import {
@@ -47,7 +46,7 @@ export async function GET() {
   let row;
   try {
     row = await db.query.resumes.findFirst({
-      where: eq(resumes.userId, session.user.id),
+      where: { userId: session.user.id },
     });
   } catch (error) {
     if (isUndefinedTable(error)) {

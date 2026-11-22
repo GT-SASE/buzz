@@ -1,0 +1,327 @@
+{
+  "type": "diff",
+  "version": "10",
+  "dialect": "postgres",
+  "id": "60925131-83b4-4dce-8ba2-5323d2ec2a5c",
+  "prevIds": [
+    "a91c4e20-6b17-4f8a-9d33-0c5e7b2a18f4"
+  ],
+  "footprints": [
+    {
+      "statementType": "create_table",
+      "statementTarget": [
+        "table",
+        "public",
+        "buzz_page"
+      ],
+      "writes": [
+        "s|tbl|public.buzz_page",
+        "n|tbl|public.buzz_page",
+        "e|tbl|public.buzz_page",
+        "n|rel|public.buzz_page",
+        "n|type|public.buzz_page",
+        "n|rel|public.buzz_page_pkey"
+      ],
+      "reads": [
+        "n|sch|public"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "buzz_page",
+        "buzz_page_slug_idx"
+      ],
+      "writes": [
+        "s|idx|public.buzz_page_slug_idx",
+        "n|idx|public.buzz_page_slug_idx",
+        "e|idx|public.buzz_page_slug_idx",
+        "n|rel|public.buzz_page_slug_idx"
+      ],
+      "reads": [
+        "n|tbl|public.buzz_page",
+        "n|sch|public",
+        "n|col|public.buzz_page.slug"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "buzz_page",
+        "buzz_page_updated_at_idx"
+      ],
+      "writes": [
+        "s|idx|public.buzz_page_updated_at_idx",
+        "n|idx|public.buzz_page_updated_at_idx",
+        "e|idx|public.buzz_page_updated_at_idx",
+        "n|rel|public.buzz_page_updated_at_idx"
+      ],
+      "reads": [
+        "n|tbl|public.buzz_page",
+        "n|sch|public",
+        "n|col|public.buzz_page.updatedAt"
+      ]
+    },
+    {
+      "statementType": "create_fk",
+      "statementTarget": [
+        "table",
+        "public",
+        "buzz_page"
+      ],
+      "writes": [
+        "s|fk|public.buzz_page.buzz_page_createdById_buzz_user_id_fk",
+        "n|fk|public.buzz_page.buzz_page_createdById_buzz_user_id_fk",
+        "e|fk|public.buzz_page.buzz_page_createdById_buzz_user_id_fk",
+        "n|con|public.buzz_page.buzz_page_createdById_buzz_user_id_fk"
+      ],
+      "reads": [
+        "n|tbl|public.buzz_page",
+        "n|sch|public",
+        "n|tbl|public.buzz_user",
+        "n|sch|public",
+        "n|col|public.buzz_page.createdById",
+        "n|col|public.buzz_user.id",
+        "e|uniqueness|public.buzz_user.id"
+      ]
+    }
+  ],
+  "deltas": [
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "name": "buzz_page",
+        "isRlsEnabled": false,
+        "entityType": "tables"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "buzz_page",
+        "name": "id",
+        "type": "varchar(255)",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "buzz_page",
+        "name": "slug",
+        "type": "varchar(60)",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "buzz_page",
+        "name": "title",
+        "type": "varchar(200)",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "buzz_page",
+        "name": "description",
+        "type": "varchar(300)",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "''",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "buzz_page",
+        "name": "body",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "''",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "buzz_page",
+        "name": "published",
+        "type": "boolean",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "false",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "buzz_page",
+        "name": "createdById",
+        "type": "varchar(255)",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "buzz_page",
+        "name": "createdAt",
+        "type": "timestamp with time zone",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "buzz_page",
+        "name": "updatedAt",
+        "type": "timestamp with time zone",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "buzz_page",
+        "name": "buzz_page_slug_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "slug",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": true,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "buzz_page",
+        "name": "buzz_page_updated_at_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "updatedAt",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": false,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "buzz_page",
+        "name": "buzz_page_createdById_buzz_user_id_fk",
+        "nameExplicit": false,
+        "columns": [
+          "createdById"
+        ],
+        "schemaTo": "public",
+        "tableTo": "buzz_user",
+        "columnsTo": [
+          "id"
+        ],
+        "onUpdate": "NO ACTION",
+        "onDelete": "SET NULL",
+        "entityType": "fks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "buzz_page",
+        "name": "buzz_page_pkey",
+        "columns": [
+          "id"
+        ],
+        "nameExplicit": false,
+        "entityType": "pks"
+      }
+    }
+  ]
+}

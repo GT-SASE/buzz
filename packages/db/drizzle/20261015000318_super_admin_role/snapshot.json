@@ -1,0 +1,38 @@
+{
+  "type": "diff",
+  "version": "10",
+  "dialect": "postgres",
+  "id": "87b4d17c-ff97-4b43-9713-f1b3c9d8477d",
+  "prevIds": [
+    "d5645567-627d-4e89-ba9d-168af8272efc"
+  ],
+  "footprints": [
+    {
+      "statementType": "alter_check",
+      "statementTarget": [
+        "table",
+        "public",
+        "buzz_user"
+      ],
+      "writes": [
+        "s|ck|public.buzz_user.buzz_user_role_check"
+      ],
+      "reads": [
+        "n|tbl|public.buzz_user",
+        "n|sch|public",
+        "n|col|public.buzz_user.role",
+        "e|col|public.buzz_user.role"
+      ],
+      "sqlHash": "ca616962d0a1258f"
+    }
+  ],
+  "deltas": [
+    {
+      "op": "alter",
+      "key": "checks\u0000[\"public\",\"buzz_user\",\"buzz_user_role_check\"]",
+      "set": {
+        "value": "\"role\" in ('MEMBER', 'ADMIN', 'SUPER_ADMIN')"
+      }
+    }
+  ]
+}

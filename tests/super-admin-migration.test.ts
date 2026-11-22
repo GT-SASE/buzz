@@ -10,7 +10,7 @@ import { describe, expect, it } from "bun:test";
 describe("super admin migration", () => {
   const sql = readFileSync(
     new URL(
-      "../packages/db/drizzle/0008_super_admin_role.sql",
+      "../packages/db/drizzle/20261015000318_super_admin_role/migration.sql",
       import.meta.url,
     ),
     "utf8",

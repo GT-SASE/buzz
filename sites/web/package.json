@@ -30,7 +30,7 @@
     "@vercel/speed-insights": "^2.1.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "drizzle-orm": "^0.45.4",
+    "drizzle-orm": "1.0.0-rc.6",
     "jsqr": "^1.4.0",
     "lucide-react": "^1.72.0",
     "next": "^16.4.6",
