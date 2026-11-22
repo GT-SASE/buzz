@@ -45,7 +45,7 @@ export function withMemoryLimiter<T>(fake: T): T {
             ? { where: () => Promise.resolve() }
             : forward("delete", table);
       }
-      return Reflect.get(target, property, receiver);
+      return Reflect.get(target, property, receiver) as unknown;
     },
   }) as T;
 }
