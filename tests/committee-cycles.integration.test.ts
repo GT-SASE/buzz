@@ -193,7 +193,6 @@ describe.skipIf(!process.env.DATABASE_URL)(
     }
 
     beforeAll(async () => {
-      resetRateLimits();
       await db
         .delete(committeeCycles)
         .where(inArray(committeeCycles.id, cycleIds));
