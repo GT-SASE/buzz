@@ -20,7 +20,7 @@
     "@buzz/auth": "workspace:*",
     "@buzz/db": "workspace:*",
     "@trpc/server": "^11.28.3",
-    "drizzle-orm": "1.0.0-rc.6",
+    "drizzle-orm": "^0.45.4",
     "nodemailer": "^10.6.1",
     "superjson": "^2.2.6",
     "zod": "^4.6.7"

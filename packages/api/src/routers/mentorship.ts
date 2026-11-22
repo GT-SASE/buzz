@@ -62,34 +62,19 @@ function rethrowDuplicateName(error: unknown): never {
   throw error;
 }
 
-/**
- * This school year's signup for one member. Points and role live here.
- * `signupKey` is the `db.query` form, `signupOf` the query-builder form.
- */
-const signupKey = (userId: string) => ({
-  userId,
-  year: schoolYear(new Date()),
-});
-const signupOf = (userId: string) => {
-  const key = signupKey(userId);
-  return and(
-    eq(mentorshipEnrollments.userId, key.userId),
-    eq(mentorshipEnrollments.year, key.year),
+/** This school year's signup for one member. Points and role live here. */
+const signupOf = (userId: string) =>
+  and(
+    eq(mentorshipEnrollments.userId, userId),
+    eq(mentorshipEnrollments.year, schoolYear(new Date())),
   );
-};
 
-/** This semester's group seat for one member, in the same two forms. */
-const seatKey = (userId: string) => ({
-  userId,
-  semester: semester(new Date()),
-});
-const seatOf = (userId: string) => {
-  const key = seatKey(userId);
-  return and(
-    eq(kinMemberships.userId, key.userId),
-    eq(kinMemberships.semester, key.semester),
+/** This semester's group seat for one member. */
+const seatOf = (userId: string) =>
+  and(
+    eq(kinMemberships.userId, userId),
+    eq(kinMemberships.semester, semester(new Date())),
   );
-};
 
 function inGroupThisSemester(): never {
   throw new TRPCError({
@@ -106,10 +91,10 @@ export const mentorshipRouter = createTRPCRouter({
   mine: protectedProcedure.query(async ({ ctx }) => {
     const [row, seat] = await Promise.all([
       ctx.db.query.mentorshipEnrollments.findFirst({
-        where: signupKey(ctx.session.user.id),
+        where: signupOf(ctx.session.user.id),
       }),
       ctx.db.query.kinMemberships.findFirst({
-        where: seatKey(ctx.session.user.id),
+        where: seatOf(ctx.session.user.id),
       }),
     ]);
     if (!row) return null;
@@ -132,7 +117,7 @@ export const mentorshipRouter = createTRPCRouter({
       );
 
       const seat = await ctx.db.query.kinMemberships.findFirst({
-        where: seatKey(ctx.session.user.id),
+        where: seatOf(ctx.session.user.id),
       });
       if (seat) inGroupThisSemester();
 
@@ -172,10 +157,10 @@ export const mentorshipRouter = createTRPCRouter({
 
     const [existing, seat] = await Promise.all([
       ctx.db.query.mentorshipEnrollments.findFirst({
-        where: signupKey(ctx.session.user.id),
+        where: signupOf(ctx.session.user.id),
       }),
       ctx.db.query.kinMemberships.findFirst({
-        where: seatKey(ctx.session.user.id),
+        where: seatOf(ctx.session.user.id),
       }),
     ]);
     if (!existing) notFound("Signup");

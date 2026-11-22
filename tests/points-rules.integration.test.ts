@@ -10,7 +10,7 @@ mock.module("../packages/auth/src/index.ts", () => ({
 const { db, eventCheckIns, events, users } =
   await import("../packages/db/src/index");
 const { createCaller } = await import("../packages/api/src/root");
-const { inArray } =
+const { and, eq, inArray } =
   await import("../packages/db/node_modules/drizzle-orm/index.js");
 
 const SLOW = 60_000;
@@ -98,7 +98,10 @@ describe.skipIf(!process.env.DATABASE_URL)("points rules", () => {
 
   async function pointsOf(eventId: string, user: TestUser) {
     const row = await db.query.eventCheckIns.findFirst({
-      where: { eventId, userId: user.id },
+      where: and(
+        eq(eventCheckIns.eventId, eventId),
+        eq(eventCheckIns.userId, user.id),
+      ),
     });
     return row?.pointsEarned;
   }
@@ -323,7 +326,10 @@ describe.skipIf(!process.env.DATABASE_URL)("points rules", () => {
       const caller = callerFor(deputy);
       await caller.event.checkIn({ code });
       const saved = await db.query.eventCheckIns.findFirst({
-        where: { eventId: row!.id, userId: deputy.id },
+        where: and(
+          eq(eventCheckIns.eventId, row!.id),
+          eq(eventCheckIns.userId, deputy.id),
+        ),
       });
       expect(saved).toMatchObject({
         method: "code",

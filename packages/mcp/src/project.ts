@@ -25,23 +25,24 @@ function workspaceDirs(): string[] {
 }
 
 export function migrations(): string {
-  // One folder per migration: `<UTC YYYYMMDDHHMMSS>_<name>/migration.sql`.
-  const folders = listDir("packages/db/drizzle").filter((f) =>
-    /^\d{14}_/.test(f),
+  const files = listDir("packages/db/drizzle").filter((f) =>
+    f.endsWith(".sql"),
   );
+  const latest = files.at(-1);
+  const n = Number(latest?.slice(0, 4));
   const botFiles = listDir(BOT_MIGRATIONS_DIR).filter((f) =>
     f.endsWith(".sql"),
   );
   return [
     "== buzz database (Drizzle, packages/db/drizzle) ==",
-    ...folders.map((f) => `packages/db/drizzle/${f}/migration.sql`),
+    ...files.map((f) => `packages/db/drizzle/${f}`),
     "",
-    `latest: ${folders.at(-1) ?? "none"}; next folder: a new \`<UTC YYYYMMDDHHMMSS>_<name>\` made by drizzle-kit generate`,
+    `latest: ${latest ?? "none"}; next number: ${String(n + 1).padStart(4, "0")}`,
     "",
     "Process:",
-    "1. Edit packages/db/src/schema.ts (relations live in packages/db/src/relations.ts).",
-    "2. bun run db:generate (writes a migration folder with migration.sql and snapshot.json into packages/db/drizzle).",
-    "3. Commit the whole generated folder with the schema change; never edit or delete an applied one.",
+    "1. Edit packages/db/src/schema.ts.",
+    "2. bun run db:generate (writes SQL + meta into packages/db/drizzle).",
+    "3. Commit the generated SQL and meta with the schema change.",
     "4. bun run db:migrate (against a disposable DB, never the repo .env one).",
     "Production migrates during the Vercel production build via scripts/vercel-build.mjs (previews skip it).",
     "",
