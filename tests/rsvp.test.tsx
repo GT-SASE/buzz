@@ -573,6 +573,51 @@ describe("the lead action on an event page", () => {
     ).toBeTruthy();
   });
 
+  it("shows going as a gold pill the size of the RSVP pill, with a full-size cancel", async () => {
+    server({ signedIn: true });
+    render(page({ prominent: true, title: "GBM 4" }));
+    const rsvp = await screen.findByRole("button", { name: "RSVP for GBM 4" });
+    const size = ["rounded-full", "px-7", "py-4", "text-body", "font-bold"];
+    for (const token of size) expect(rsvp.classList.contains(token)).toBe(true);
+
+    await userEvent.click(rsvp);
+    const going = await screen.findByText("You’re going");
+    for (const token of size)
+      expect(going.classList.contains(token)).toBe(true);
+    // The colour the portal's "Going" badge uses, and no icon the badge lacks.
+    expect(going.classList.contains("bg-gold-bright")).toBe(true);
+    expect(going.classList.contains("text-navy")).toBe(true);
+    expect(going.querySelector("svg")).toBeNull();
+
+    const cancel = screen.getByRole("button", {
+      name: "Cancel RSVP for GBM 4",
+    });
+    expect(cancel.classList.contains("text-body")).toBe(true);
+    expect(cancel.classList.contains("text-body-sm")).toBe(false);
+  });
+
+  it("keeps the pill and drops the cancel once the event has started", async () => {
+    server({ signedIn: true, going: ["e1"] });
+    render(page({ prominent: true, startsAt: started() }));
+    const going = await screen.findByText("You’re going");
+    expect(going.classList.contains("bg-gold-bright")).toBe(true);
+    expect(screen.queryByRole("button")).toBeNull();
+  });
+
+  it("leaves the card's going state compact", async () => {
+    server({ signedIn: true, going: ["e1"] });
+    render(page({ title: "GBM 4" }));
+    const going = await screen.findByText("You’re going");
+    expect(going.classList.contains("bg-gold-bright")).toBe(false);
+    expect(going.classList.contains("text-body-sm")).toBe(true);
+    expect(going.querySelector("svg")).not.toBeNull();
+    expect(
+      screen
+        .getByRole("button", { name: "Cancel RSVP for GBM 4" })
+        .classList.contains("text-body-sm"),
+    ).toBe(true);
+  });
+
   it("keeps the signed-out link until it knows better", async () => {
     server({ signedIn: false });
     render(page({ prominent: true }));

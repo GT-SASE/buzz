@@ -259,6 +259,10 @@ const primaryLarge =
   "group bg-navy hover:bg-navy-deep text-body inline-flex items-center justify-center gap-3 rounded-full px-7 py-4 font-bold [font-stretch:112%] text-white transition duration-200 disabled:opacity-70 max-sm:min-w-0 max-sm:whitespace-normal";
 const quiet =
   "text-navy decoration-gold hover:text-gold-ink text-body-sm inline-flex min-h-11 items-center py-3 font-semibold underline decoration-2 underline-offset-4 transition disabled:opacity-60";
+/** Going, at the pill's size, in the gold of the portal's "Going" badge. */
+const goingLarge =
+  "bg-gold-bright text-navy text-body inline-flex items-center justify-center rounded-full px-7 py-4 font-bold [font-stretch:112%]";
+const quietLarge = quiet.replace("text-body-sm", "text-body");
 
 function Check() {
   return (
@@ -328,14 +332,18 @@ export function RsvpControl({
   } else if (going) {
     body = (
       <>
-        <span className="text-navy text-body-sm inline-flex items-center gap-2 py-3 font-semibold">
-          <Check />
-          You&rsquo;re going
-        </span>
+        {prominent ? (
+          <span className={goingLarge}>You&rsquo;re going</span>
+        ) : (
+          <span className="text-navy text-body-sm inline-flex items-center gap-2 py-3 font-semibold">
+            <Check />
+            You&rsquo;re going
+          </span>
+        )}
         {!closed && (
           <button
             type="button"
-            className={quiet}
+            className={prominent ? quietLarge : quiet}
             disabled={entry.busy}
             onClick={() => void rsvp.act(eventId, false)}
           >
