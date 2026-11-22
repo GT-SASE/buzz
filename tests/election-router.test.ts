@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, mock } from "bun:test";
 import { stubEnv, unstubAllEnvs } from "./helpers/env";
+import { resetRateLimits, withMemoryLimiter } from "./helpers/rate-limit";
 
 mock.module("../packages/auth/src/index.ts", () => ({
   auth: () => Promise.resolve(null),
@@ -10,14 +11,17 @@ mock.module("../packages/auth/src/index.ts", () => ({
 
 stubEnv("NODE_ENV", "production");
 const { createCaller } = await import("../packages/api/src/root");
-const { resetRateLimits } = await import("../packages/api/src/rate-limit");
 unstubAllEnvs();
 
 type Ctx = Parameters<typeof createCaller>[0];
 type Caller = ReturnType<typeof createCaller>;
 
 function ctxFor(session: unknown): Ctx {
-  return { db: unreachableDb, session, headers: new Headers() } as Ctx;
+  return {
+    db: withMemoryLimiter(unreachableDb),
+    session,
+    headers: new Headers(),
+  } as Ctx;
 }
 
 const member = {

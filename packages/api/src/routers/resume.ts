@@ -33,7 +33,8 @@ export const resumeRouter = createTRPCRouter({
   }),
 
   remove: protectedProcedure.mutation(async ({ ctx }) => {
-    assertRateLimit(
+    await assertRateLimit(
+      ctx.db,
       `resume-upload:${ctx.session.user.id}`,
       RESUME_UPLOAD_LIMIT,
     );

@@ -166,7 +166,8 @@ export const committeeRouter = createTRPCRouter({
   submit: protectedProcedure
     .input(committeeApplySchema)
     .mutation(async ({ ctx, input }) => {
-      assertRateLimit(
+      await assertRateLimit(
+        ctx.db,
         `committee-apply:${ctx.session.user.id}`,
         COMMITTEE_APPLY_LIMIT,
       );
@@ -247,7 +248,8 @@ export const committeeRouter = createTRPCRouter({
     }),
 
   withdraw: protectedProcedure.mutation(async ({ ctx }) => {
-    assertRateLimit(
+    await assertRateLimit(
+      ctx.db,
       `committee-apply:${ctx.session.user.id}`,
       COMMITTEE_APPLY_LIMIT,
     );
@@ -389,7 +391,8 @@ export const committeeRouter = createTRPCRouter({
   exportCycle: adminProcedure
     .input(cycleInput)
     .query(async ({ ctx, input }) => {
-      assertRateLimit(
+      await assertRateLimit(
+        ctx.db,
         `export-committee:${ctx.session.user.id}`,
         EXPORT_COMMITTEE_LIMIT,
       );

@@ -314,7 +314,11 @@ export const electionRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      assertRateLimit(`election:${ctx.session.user.id}`, ELECTION_ACTION_LIMIT);
+      await assertRateLimit(
+        ctx.db,
+        `election:${ctx.session.user.id}`,
+        ELECTION_ACTION_LIMIT,
+      );
       const position = await positionWithElection(ctx.db, input.positionId);
       try {
         return await whileNominating(
@@ -350,7 +354,11 @@ export const electionRouter = createTRPCRouter({
   withdrawNomination: protectedProcedure
     .input(z.object({ candidateId: z.string().min(1) }))
     .mutation(async ({ ctx, input }) => {
-      assertRateLimit(`election:${ctx.session.user.id}`, ELECTION_ACTION_LIMIT);
+      await assertRateLimit(
+        ctx.db,
+        `election:${ctx.session.user.id}`,
+        ELECTION_ACTION_LIMIT,
+      );
       const [candidate] = await ctx.db
         .select({
           id: electionCandidates.id,
@@ -382,7 +390,11 @@ export const electionRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      assertRateLimit(`election:${ctx.session.user.id}`, ELECTION_ACTION_LIMIT);
+      await assertRateLimit(
+        ctx.db,
+        `election:${ctx.session.user.id}`,
+        ELECTION_ACTION_LIMIT,
+      );
       const now = new Date();
       const position = await positionWithElection(ctx.db, input.positionId);
       if (position.phase !== "voting") {

@@ -1,15 +1,6 @@
-import {
-  afterAll,
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  mock,
-  setSystemTime,
-  vi,
-} from "bun:test";
+import { afterAll, beforeEach, describe, expect, it, mock, vi } from "bun:test";
 import { stubEnv, unstubAllEnvs } from "./helpers/env";
+import { resetRateLimits, withMemoryLimiter } from "./helpers/rate-limit";
 
 mock.module("../packages/auth/src/index.ts", () => ({
   auth: () => Promise.resolve(null),
@@ -20,19 +11,15 @@ mock.module("../packages/auth/src/index.ts", () => ({
 
 stubEnv("NODE_ENV", "production");
 const { createCaller } = await import("../packages/api/src/root");
-const {
-  EXPORT_ATTENDANCE_LIMIT,
-  rateLimitBucketCount,
-  resetRateLimits,
-  takeToken,
-} = await import("../packages/api/src/rate-limit");
+const { EXPORT_ATTENDANCE_LIMIT } =
+  await import("../packages/api/src/rate-limit");
 unstubAllEnvs();
 
 type Ctx = Parameters<typeof createCaller>[0];
 
 function adminCtx(db: unknown): Ctx {
   return {
-    db,
+    db: withMemoryLimiter(db),
     session: {
       user: { id: "officer-1", role: "ADMIN", email: "officer@gatech.edu" },
       expires: "2099-01-01T00:00:00.000Z",
@@ -43,7 +30,7 @@ function adminCtx(db: unknown): Ctx {
 
 function superAdminCtx(db: unknown): Ctx {
   return {
-    db,
+    db: withMemoryLimiter(db),
     session: {
       user: {
         id: "super-1",
@@ -58,7 +45,7 @@ function superAdminCtx(db: unknown): Ctx {
 
 function memberCtx(db: unknown): Ctx {
   return {
-    db,
+    db: withMemoryLimiter(db),
     session: {
       user: { id: "member-1", role: "MEMBER", email: "member@gatech.edu" },
       expires: "2099-01-01T00:00:00.000Z",
@@ -605,65 +592,5 @@ describe("member.setRole", () => {
     );
 
     expect(error.code).toBe("FORBIDDEN");
-  });
-});
-
-describe("token bucket", () => {
-  const OPTIONS = { limit: 3, intervalMs: 60_000 };
-  const T0 = new Date("2026-09-01T12:00:00.000Z").getTime();
-
-  beforeEach(() => {
-    vi.useFakeTimers();
-    setSystemTime(T0);
-    resetRateLimits();
-  });
-
-  afterEach(() => vi.useRealTimers());
-
-  it("spends the bucket and then refuses", () => {
-    expect(takeToken("k", OPTIONS)).toBe(true);
-    expect(takeToken("k", OPTIONS)).toBe(true);
-    expect(takeToken("k", OPTIONS)).toBe(true);
-    expect(takeToken("k", OPTIONS)).toBe(false);
-  });
-
-  it("restores one token per interval, not the whole bucket", () => {
-    for (let call = 0; call < OPTIONS.limit; call++) takeToken("k", OPTIONS);
-    expect(takeToken("k", OPTIONS)).toBe(false);
-
-    setSystemTime(T0 + 59_999);
-    expect(takeToken("k", OPTIONS)).toBe(false);
-
-    setSystemTime(T0 + 60_000);
-    expect(takeToken("k", OPTIONS)).toBe(true);
-    expect(takeToken("k", OPTIONS)).toBe(false);
-  });
-
-  it("keeps callers in separate buckets", () => {
-    for (let call = 0; call < OPTIONS.limit; call++) takeToken("a", OPTIONS);
-    expect(takeToken("a", OPTIONS)).toBe(false);
-    expect(takeToken("b", OPTIONS)).toBe(true);
-  });
-
-  it("evicts a bucket that has refilled, so the map stays bounded", () => {
-    takeToken("a", OPTIONS);
-    expect(rateLimitBucketCount()).toBe(1);
-
-    setSystemTime(T0 + 61_000);
-    takeToken("b", OPTIONS);
-
-    expect(rateLimitBucketCount()).toBe(1);
-    expect(takeToken("a", OPTIONS)).toBe(true);
-  });
-
-  it("never evicts a bucket that is still over its limit", () => {
-    const slow = { limit: 3, intervalMs: 600_000 };
-    for (let call = 0; call < slow.limit; call++) takeToken("heavy", slow);
-    expect(takeToken("heavy", slow)).toBe(false);
-
-    setSystemTime(T0 + 61_000);
-    takeToken("other", slow);
-
-    expect(takeToken("heavy", slow)).toBe(false);
   });
 });

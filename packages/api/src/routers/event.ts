@@ -409,7 +409,8 @@ export const eventRouter = createTRPCRouter({
   exportAttendance: adminProcedure
     .input(z.object({ id: z.string().min(1) }))
     .query(async ({ ctx, input }) => {
-      assertRateLimit(
+      await assertRateLimit(
+        ctx.db,
         `export-attendance:${ctx.session.user.id}`,
         EXPORT_ATTENDANCE_LIMIT,
       );
@@ -492,7 +493,8 @@ export const eventRouter = createTRPCRouter({
   regenerateCode: adminProcedure
     .input(z.object({ id: z.string().min(1) }))
     .mutation(async ({ ctx, input }) => {
-      assertRateLimit(
+      await assertRateLimit(
+        ctx.db,
         `regenerate-code:${ctx.session.user.id}`,
         REGENERATE_CODE_LIMIT,
       );
@@ -533,7 +535,8 @@ export const eventRouter = createTRPCRouter({
   manualCheckIn: adminProcedure
     .input(z.object({ eventId: z.string().min(1), email: z.string().email() }))
     .mutation(async ({ ctx, input }) => {
-      assertRateLimit(
+      await assertRateLimit(
+        ctx.db,
         `manual-check-in:${ctx.session.user.id}`,
         MANUAL_CHECK_IN_LIMIT,
       );
@@ -676,7 +679,7 @@ export const eventRouter = createTRPCRouter({
       const code = normalizeCode(input.code);
       const userId = ctx.session.user.id;
 
-      assertRateLimit(`check-in:${userId}`, CHECK_IN_LIMIT);
+      await assertRateLimit(ctx.db, `check-in:${userId}`, CHECK_IN_LIMIT);
 
       // Lookup outside the transaction — the code index settles "no such
       // event" without taking a row lock. Everything mutable is re-checked
@@ -859,7 +862,7 @@ export const eventRouter = createTRPCRouter({
   rsvp: protectedProcedure
     .input(z.object({ eventId: z.string().min(1) }))
     .mutation(async ({ ctx, input }) => {
-      assertRateLimit(`rsvp:${ctx.session.user.id}`, RSVP_LIMIT);
+      await assertRateLimit(ctx.db, `rsvp:${ctx.session.user.id}`, RSVP_LIMIT);
       const event = await ctx.db.query.events.findFirst({
         where: eq(events.id, input.eventId),
         columns: {
@@ -894,7 +897,7 @@ export const eventRouter = createTRPCRouter({
   cancelRsvp: protectedProcedure
     .input(z.object({ eventId: z.string().min(1) }))
     .mutation(async ({ ctx, input }) => {
-      assertRateLimit(`rsvp:${ctx.session.user.id}`, RSVP_LIMIT);
+      await assertRateLimit(ctx.db, `rsvp:${ctx.session.user.id}`, RSVP_LIMIT);
       const [removed] = await ctx.db
         .delete(eventRsvps)
         .where(
@@ -972,7 +975,11 @@ export const eventRouter = createTRPCRouter({
   peek: protectedProcedure
     .input(z.object({ code: z.string().min(4).max(16) }))
     .query(async ({ ctx, input }) => {
-      assertRateLimit(`check-in-peek:${ctx.session.user.id}`, CHECK_IN_LIMIT);
+      await assertRateLimit(
+        ctx.db,
+        `check-in-peek:${ctx.session.user.id}`,
+        CHECK_IN_LIMIT,
+      );
       const event = await ctx.db.query.events.findFirst({
         where: eq(events.checkInCode, normalizeCode(input.code)),
       });
