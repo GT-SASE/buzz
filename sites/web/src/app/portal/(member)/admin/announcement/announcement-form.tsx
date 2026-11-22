@@ -38,8 +38,10 @@ function AnnouncementFields({
     linkLabel: saved.linkLabel,
     linkHref: saved.linkHref,
   });
-  const set = <K extends keyof typeof draft>(key: K, value: (typeof draft)[K]) =>
-    setDraft((current) => ({ ...current, [key]: value }));
+  const set = <K extends keyof typeof draft>(
+    key: K,
+    value: (typeof draft)[K],
+  ) => setDraft((current) => ({ ...current, [key]: value }));
 
   const save = api.announcement.set.useMutation({
     onSuccess: async () => {
@@ -55,7 +57,8 @@ function AnnouncementFields({
   });
 
   const message = draft.message.trim();
-  const showsLink = draft.linkLabel.trim() !== "" && draft.linkHref.trim() !== "";
+  const showsLink =
+    draft.linkLabel.trim() !== "" && draft.linkHref.trim() !== "";
 
   return (
     <form
