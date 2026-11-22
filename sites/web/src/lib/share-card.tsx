@@ -57,11 +57,17 @@ async function getAssets() {
   return loaded;
 }
 
+/** The badge is 260px of type wide, and the uppercase face runs about 0.95em a letter. */
+function labelSize(label: string) {
+  return Math.max(24, Math.min(44, Math.floor(250 / (label.length * 0.95))));
+}
+
 /** Long titles step down so two or three lines still fit the left column. */
 function titleSize(title: string) {
-  if (title.length <= 18) return 84;
-  if (title.length <= 34) return 68;
-  return 56;
+  if (title.length <= 12) return 84;
+  if (title.length <= 20) return 64;
+  if (title.length <= 34) return 60;
+  return 52;
 }
 
 /**
@@ -194,7 +200,7 @@ export async function renderShareCard({
             <div
               style={{
                 display: "flex",
-                fontSize: label.length > 10 ? 32 : 40,
+                fontSize: labelSize(label),
                 fontWeight: 800,
                 color: "#ffffff",
                 marginTop: 16,

@@ -4,13 +4,16 @@ import { Button, Card, PageHeader, Section } from "~/components/site";
 import { JsonLd } from "~/components/site/json-ld";
 import { discord } from "~/data/site";
 import { breadcrumbSchema, pageMetadata } from "~/lib/seo";
+import { withOwnShareImage } from "~/lib/own-share-image";
 
-export const metadata = pageMetadata({
-  title: "Discord | SASE at Georgia Tech",
-  description:
-    "Join the SASE at Georgia Tech Discord for weekly meeting rooms, project team channels, conference ride shares, and quick answers from the board.",
-  path: "/discord",
-});
+export const metadata = withOwnShareImage(
+  pageMetadata({
+    title: "Discord | SASE at Georgia Tech",
+    description:
+      "Join the SASE at Georgia Tech Discord for weekly meeting rooms, project team channels, conference ride shares, and quick answers from the board.",
+    path: "/discord",
+  }),
+);
 
 const reasons = [
   {

@@ -4,13 +4,16 @@ import { getCommitteeRecruiting } from "~/data/committee-recruiting";
 import { committeeExpectations, committees } from "~/data/committees";
 import { discord } from "~/data/site";
 import { breadcrumbSchema, pageMetadata } from "~/lib/seo";
+import { withOwnShareImage } from "~/lib/own-share-image";
 
-export const metadata = pageMetadata({
-  title: "Website Team | SASE at Georgia Tech",
-  description:
-    "Join the SASE at Georgia Tech website team. Build the chapter site and Buzz, the member portal. Any experience level.",
-  path: "/website-team",
-});
+export const metadata = withOwnShareImage(
+  pageMetadata({
+    title: "Website Team | SASE at Georgia Tech",
+    description:
+      "Join the SASE at Georgia Tech website team. Build the chapter site and Buzz, the member portal. Any experience level.",
+    path: "/website-team",
+  }),
+);
 
 const team = committees.find((committee) => committee.id === "website")!;
 

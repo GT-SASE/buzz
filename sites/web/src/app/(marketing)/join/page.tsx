@@ -10,13 +10,16 @@ import { committeeExpectations } from "~/data/committees";
 import { faqsById } from "~/data/faq";
 import { discord, engage, instagram, joinHref, site } from "~/data/site";
 import { breadcrumbSchema, faqSchema, pageMetadata } from "~/lib/seo";
+import { withOwnShareImage } from "~/lib/own-share-image";
 
-export const metadata = pageMetadata({
-  title: "Join SASE at Georgia Tech",
-  description:
-    "How to join SASE at Georgia Tech in three steps. Membership is free: no application, no dues, and no major requirement.",
-  path: "/join",
-});
+export const metadata = withOwnShareImage(
+  pageMetadata({
+    title: "Join SASE at Georgia Tech",
+    description:
+      "How to join SASE at Georgia Tech in three steps. Membership is free: no application, no dues, and no major requirement.",
+    path: "/join",
+  }),
+);
 
 type StepLink = { label: string; href: string; external?: boolean };
 

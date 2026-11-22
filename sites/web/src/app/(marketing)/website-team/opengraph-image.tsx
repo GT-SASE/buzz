@@ -6,7 +6,7 @@ export const contentType = "image/png";
 
 export default function OpengraphImage() {
   return renderShareCard({
-    label: "Website team",
+    label: "Web team",
     title: "Join the website team.",
     subtitle: "Build the chapter site and Buzz, the member portal.",
   });

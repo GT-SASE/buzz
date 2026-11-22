@@ -21,17 +21,20 @@ import { sponsorTiers } from "~/data/content";
 import { site } from "~/data/site";
 import { packetAction, sponsors } from "~/data/sponsors";
 import { breadcrumbSchema, pageMetadata } from "~/lib/seo";
+import { withOwnShareImage } from "~/lib/own-share-image";
 import { schoolYear } from "@buzz/api/terms";
 
 // The school year below rolls over on its own, without a deploy.
 export const revalidate = 3600;
 
-export const metadata = pageMetadata({
-  title: "Sponsors | SASE at Georgia Tech",
-  description:
-    "Sponsor SASE at Georgia Tech and recruit from hundreds of Georgia Tech engineering, computing, science, and business students. Tiers, perks, and how to start.",
-  path: "/sponsors",
-});
+export const metadata = withOwnShareImage(
+  pageMetadata({
+    title: "Sponsors | SASE at Georgia Tech",
+    description:
+      "Sponsor SASE at Georgia Tech and recruit from hundreds of Georgia Tech engineering, computing, science, and business students. Tiers, perks, and how to start.",
+    path: "/sponsors",
+  }),
+);
 
 const reach = [
   {

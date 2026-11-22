@@ -13,13 +13,16 @@ import { board } from "~/data/content";
 import { photos } from "~/data/photos";
 import { site } from "~/data/site";
 import { breadcrumbSchema, pageMetadata } from "~/lib/seo";
+import { withOwnShareImage } from "~/lib/own-share-image";
 
-export const metadata = pageMetadata({
-  title: "Board | SASE at Georgia Tech",
-  description:
-    "The elected executive board of SASE at Georgia Tech, what each officer handles, and how to reach them.",
-  path: "/board",
-});
+export const metadata = withOwnShareImage(
+  pageMetadata({
+    title: "Board | SASE at Georgia Tech",
+    description:
+      "The elected executive board of SASE at Georgia Tech, what each officer handles, and how to reach them.",
+    path: "/board",
+  }),
+);
 
 export default function BoardPage() {
   const openSeats = board.filter((member) => !member.name).length;

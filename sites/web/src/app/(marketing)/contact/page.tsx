@@ -12,13 +12,16 @@ import { meeting } from "~/data/content";
 import { discord, instagram, site } from "~/data/site";
 import { packetAction } from "~/data/sponsors";
 import { breadcrumbSchema, pageMetadata } from "~/lib/seo";
+import { withOwnShareImage } from "~/lib/own-share-image";
 
-export const metadata = pageMetadata({
-  title: "Contact | SASE at Georgia Tech",
-  description:
-    "How to reach SASE at Georgia Tech: general body meetings for prospective members, Discord, the mailing list, and sponsorship contacts for companies.",
-  path: "/contact",
-});
+export const metadata = withOwnShareImage(
+  pageMetadata({
+    title: "Contact | SASE at Georgia Tech",
+    description:
+      "How to reach SASE at Georgia Tech: general body meetings for prospective members, Discord, the mailing list, and sponsorship contacts for companies.",
+    path: "/contact",
+  }),
+);
 
 const meetingRows = [
   { term: "Cadence", detail: meeting.cadence },

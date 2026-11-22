@@ -4,13 +4,16 @@ import { JsonLd } from "~/components/site/json-ld";
 import { faqs } from "~/data/faq";
 import { joinHref, site } from "~/data/site";
 import { breadcrumbSchema, faqSchema, pageMetadata } from "~/lib/seo";
+import { withOwnShareImage } from "~/lib/own-share-image";
 
-export const metadata = pageMetadata({
-  title: "FAQ | SASE at Georgia Tech",
-  description:
-    "Answers about SASE at Georgia Tech: how to join, dues, when and where we meet, what to bring, and how chapter points work.",
-  path: "/faq",
-});
+export const metadata = withOwnShareImage(
+  pageMetadata({
+    title: "FAQ | SASE at Georgia Tech",
+    description:
+      "Answers about SASE at Georgia Tech: how to join, dues, when and where we meet, what to bring, and how chapter points work.",
+    path: "/faq",
+  }),
+);
 
 export default function FaqPage() {
   return (

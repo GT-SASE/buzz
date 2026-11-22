@@ -53,7 +53,9 @@ function AnnouncementFields({
         revalidateAnnouncement(),
       ]);
     },
-    onError: (error) => toast.error(error.message),
+    // A refused input arrives as a JSON list of issues; show the first sentence.
+    onError: (error) =>
+      toast.error(error.data?.zodError?.formErrors[0] ?? error.message),
   });
 
   const message = draft.message.trim();

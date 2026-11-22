@@ -4,13 +4,16 @@ import { JsonLd } from "~/components/site/json-ld";
 import { programs } from "~/data/content";
 import { joinHref } from "~/data/site";
 import { breadcrumbSchema, pageMetadata } from "~/lib/seo";
+import { withOwnShareImage } from "~/lib/own-share-image";
 
-export const metadata = pageMetadata({
-  title: "Programs | SASE at Georgia Tech",
-  description:
-    "Six standing programs at SASE Georgia Tech: professional development, SASE KIN, technical projects, community service, socials, and national conferences.",
-  path: "/programs",
-});
+export const metadata = withOwnShareImage(
+  pageMetadata({
+    title: "Programs | SASE at Georgia Tech",
+    description:
+      "Six standing programs at SASE Georgia Tech: professional development, SASE KIN, technical projects, community service, socials, and national conferences.",
+    path: "/programs",
+  }),
+);
 
 export default function ProgramsPage() {
   return (
