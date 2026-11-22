@@ -135,6 +135,7 @@ describe.skipIf(!process.env.DATABASE_URL)("check-in", () => {
   let statsMember: TestUser;
   let gateMember: TestUser;
   let extraMember: TestUser;
+  let counterMember: TestUser;
 
   const code = {
     snapshot: randomCode(),
@@ -149,7 +150,8 @@ describe.skipIf(!process.env.DATABASE_URL)("check-in", () => {
     spaced: randomCode(),
     editable: randomCode(),
     early: randomCode(),
-    counter: randomCode(),
+    counterUncapped: randomCode(),
+    counterCapped: randomCode(),
   };
   const allCodes = Object.values(code);
 
@@ -178,6 +180,7 @@ describe.skipIf(!process.env.DATABASE_URL)("check-in", () => {
     statsMember = await makeUser("member-a", "MEMBER");
     gateMember = await makeUser("member-b", "MEMBER");
     extraMember = await makeUser("member-c", "MEMBER");
+    counterMember = await makeUser("member-d", "MEMBER");
 
     const now = Date.now();
     const rows = await db
@@ -278,10 +281,18 @@ describe.skipIf(!process.env.DATABASE_URL)("check-in", () => {
           createdById: admin.id,
         },
         {
-          title: "vitest counter",
+          title: "vitest counter uncapped",
           startsAt: new Date(now),
           pointsValue: 10,
-          checkInCode: code.counter,
+          checkInCode: code.counterUncapped,
+          createdById: admin.id,
+        },
+        {
+          title: "vitest counter capped",
+          startsAt: new Date(now),
+          pointsValue: 10,
+          checkInCode: code.counterCapped,
+          maxCheckIns: 50,
           createdById: admin.id,
         },
       ])
@@ -421,8 +432,10 @@ describe.skipIf(!process.env.DATABASE_URL)("check-in", () => {
         ).toBe("CONFLICT");
 
         expect(await countCheckIns(id.duplicate)).toBe(1);
-        // Uncapped, and the counter still counts the one body that got in.
-        expect((await readEvent(id.duplicate))?.currentCheckIns).toBe(1);
+        // This event is uncapped, so the counter is deliberately never touched:
+        // it exists only to settle capacity, and maintaining it would make
+        // every scanner serialise on one row. Attendance is the row count.
+        expect((await readEvent(id.duplicate))?.currentCheckIns).toBe(0);
 
         const stats = await caller.event.myStats();
         expect(stats.totalPoints).toBe(5);
@@ -575,40 +588,58 @@ describe.skipIf(!process.env.DATABASE_URL)("check-in", () => {
         expect(results.filter((r) => r === "NO_ERROR")).toHaveLength(1);
         expect(results.filter((r) => r.startsWith("CONFLICT"))).toHaveLength(1);
         expect(await countCheckIns(id.raceDuplicate)).toBe(1);
-        // Uncapped, and the loser of the race did not move the counter.
-        expect((await readEvent(id.raceDuplicate))?.currentCheckIns).toBe(1);
+        // Uncapped: counter untouched by design, row count is the truth.
+        expect((await readEvent(id.raceDuplicate))?.currentCheckIns).toBe(0);
       },
       SLOW,
     );
   });
 
-  describe("the attendance counter on an uncapped event", () => {
+  describe("the capacity counter", () => {
     /**
-     * Code check-in, manual check-in and removal all move `currentCheckIns`,
-     * whether or not the event has a capacity. Code check-in used to skip it on
-     * an uncapped event while the other two did not, so the counter matched
-     * neither the rows nor the door.
+     * `currentCheckIns` exists to settle capacity, so only an event with a
+     * capacity maintains it. An uncapped event never touches it, on any path:
+     * a shared counter is a row every scanner would have to write, and the
+     * attendance reads count the rows instead. Manual check-in and removal used
+     * to move it on every event while the code path skipped it, so the counter
+     * matched neither the rows nor the door.
      */
+    async function walkEveryPath(key: "counterUncapped" | "counterCapped") {
+      const observed: { rows: number; counter: number | undefined }[] = [];
+      const observe = async () =>
+        observed.push({
+          rows: await countCheckIns(id[key]),
+          counter: (await readEvent(id[key]))?.currentCheckIns,
+        });
+
+      await callerFor(counterMember).event.checkIn({ code: code[key] });
+      await observe();
+      await callerFor(admin).event.manualCheckIn({
+        eventId: id[key],
+        email: gateMember.email,
+      });
+      await observe();
+      await callerFor(admin).event.removeCheckIn({
+        eventId: id[key],
+        userId: counterMember.id,
+      });
+      await observe();
+      return observed;
+    }
+
     it(
-      "tracks every way in and out",
+      "is left alone on an uncapped event and tracks the rows on a capped one",
       async () => {
-        // extraMember: gateMember has used up the check-in rate limit by now.
-        await callerFor(extraMember).event.checkIn({ code: code.counter });
-        expect((await readEvent(id.counter))?.currentCheckIns).toBe(1);
-
-        await callerFor(admin).event.manualCheckIn({
-          eventId: id.counter,
-          email: gateMember.email,
-        });
-        expect((await readEvent(id.counter))?.currentCheckIns).toBe(2);
-        expect(await countCheckIns(id.counter)).toBe(2);
-
-        await callerFor(admin).event.removeCheckIn({
-          eventId: id.counter,
-          userId: extraMember.id,
-        });
-        expect((await readEvent(id.counter))?.currentCheckIns).toBe(1);
-        expect(await countCheckIns(id.counter)).toBe(1);
+        expect(await walkEveryPath("counterUncapped")).toEqual([
+          { rows: 1, counter: 0 },
+          { rows: 2, counter: 0 },
+          { rows: 1, counter: 0 },
+        ]);
+        expect(await walkEveryPath("counterCapped")).toEqual([
+          { rows: 1, counter: 1 },
+          { rows: 2, counter: 2 },
+          { rows: 1, counter: 1 },
+        ]);
       },
       SLOW,
     );

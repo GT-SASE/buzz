@@ -140,13 +140,15 @@ describe.skipIf(!HAS_DB)("a room scanning at once", () => {
       .where(eq(eventCheckIns.eventId, event.id));
     expect(rows).toHaveLength(ROOM);
 
-    // The counter is maintained on an uncapped event too, and a burst loses
-    // none of the increments: each scan holds the event row lock for its own.
+    // The counter is deliberately NOT maintained on an uncapped event: it
+    // exists to settle capacity, and a shared counter would reintroduce the
+    // very serialisation this path removes. Attendance is counted from the
+    // rows, which the assertion above already checks.
     const [after] = await db
       .select({ currentCheckIns: events.currentCheckIns })
       .from(events)
       .where(eq(events.id, event.id));
-    expect(after?.currentCheckIns).toBe(ROOM);
+    expect(after?.currentCheckIns).toBe(0);
 
     // Throughput, recorded rather than asserted tightly: this runs against a
     // remote Neon instance from a laptop, so the absolute number is mostly
@@ -239,11 +241,12 @@ describe.skipIf(!HAS_DB)("a room scanning at once", () => {
       );
     expect(rows).toHaveLength(1);
 
-    // The counter agrees with the one row.
+    // Uncapped, so the counter stays at its default; the row count is the
+    // thing that must be exactly one.
     const [after] = await db
       .select({ currentCheckIns: events.currentCheckIns })
       .from(events)
       .where(eq(events.id, event.id));
-    expect(after?.currentCheckIns).toBe(1);
+    expect(after?.currentCheckIns).toBe(0);
   }, 120_000);
 });

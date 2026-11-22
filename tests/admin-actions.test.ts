@@ -272,7 +272,9 @@ function removeCheckInDb({
   locked,
   deleted,
 }: {
-  locked: { id: string; currentCheckIns: number } | undefined;
+  locked:
+    | { id: string; currentCheckIns: number; maxCheckIns: number | null }
+    | undefined;
   deleted: { id: string }[];
 }) {
   const sets: Record<string, unknown>[] = [];
@@ -328,7 +330,7 @@ function removeCheckInDb({
 describe("event.removeCheckIn", () => {
   it("removes the row and gives the seat back", async () => {
     const { db, sets, order } = removeCheckInDb({
-      locked: { id: "event-1", currentCheckIns: 4 },
+      locked: { id: "event-1", currentCheckIns: 4, maxCheckIns: 10 },
       deleted: [{ id: "check-in-1" }],
     });
 
@@ -342,9 +344,25 @@ describe("event.removeCheckIn", () => {
     expect(order).toEqual(["lock", "delete", "update"]);
   });
 
+  it("leaves the counter alone on an uncapped event", async () => {
+    const { db, sets, order } = removeCheckInDb({
+      locked: { id: "event-1", currentCheckIns: 0, maxCheckIns: null },
+      deleted: [{ id: "check-in-1" }],
+    });
+
+    const result = await createCaller(adminCtx(db)).event.removeCheckIn({
+      eventId: "event-1",
+      userId: "member-1",
+    });
+
+    expect(result).toEqual({ success: true });
+    expect(sets).toEqual([]);
+    expect(order).toEqual(["lock", "delete"]);
+  });
+
   it("leaves the counter alone when there was nothing to remove", async () => {
     const { db, sets, order } = removeCheckInDb({
-      locked: { id: "event-1", currentCheckIns: 4 },
+      locked: { id: "event-1", currentCheckIns: 4, maxCheckIns: 10 },
       deleted: [],
     });
 
@@ -359,7 +377,7 @@ describe("event.removeCheckIn", () => {
 
   it("floors the counter at zero rather than going negative", async () => {
     const { db, sets } = removeCheckInDb({
-      locked: { id: "event-1", currentCheckIns: 0 },
+      locked: { id: "event-1", currentCheckIns: 0, maxCheckIns: 10 },
       deleted: [{ id: "check-in-1" }],
     });
 
