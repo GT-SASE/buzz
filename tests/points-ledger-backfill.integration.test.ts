@@ -25,7 +25,7 @@ const { sql } =
   await import("../packages/db/node_modules/drizzle-orm/index.js");
 
 const MIGRATIONS = new URL("../packages/db/drizzle/", import.meta.url);
-const LEDGER_MIGRATION = "0013_audit_log_points_ledger";
+const LEDGER_MIGRATION = "0014_audit_log_points_ledger";
 
 class Rollback extends Error {}
 
@@ -82,10 +82,12 @@ describe.skipIf(!process.env.DATABASE_URL)("points ledger backfill", () => {
             `ALTER TABLE ${table} ALTER COLUMN "${column}" SET DEFAULT now()`,
           );
         }
-        // Production has check-ins and signups with negative points (as low as
-        // INT_MIN) because it lacks the `>= 0` checks the schema declares. The
-        // migration must copy them as they are, so the scratch schema drops
-        // the same checks. Dropped by definition, not by name.
+        // Production had check-ins and signups with negative points (as low as
+        // INT_MIN) because it lacked the `>= 0` checks the schema declares;
+        // 0013_points_drift repaired them and restored the checks. The ledger
+        // migration must still copy such rows as they are, whatever state a
+        // database is in, so the scratch schema drops the checks again.
+        // Dropped by definition, not by name.
         await run(
           tx,
           `DO $$
