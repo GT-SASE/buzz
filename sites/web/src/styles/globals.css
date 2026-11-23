@@ -1,4 +1,6 @@
+@layer ui-sdk;
 @import "tailwindcss";
+@import "@ui-sdk/core/web.css" layer(ui-sdk);
 @import "tw-animate-css";
 
 /* Pins `dark:` to an explicit class. Without this Tailwind v4 maps it to
@@ -367,6 +369,9 @@
   html {
     /* Sticky header clearance for #anchor jumps. */
     scroll-padding-top: 6rem;
+    /* web.css sets `light dark`; the palette is light-only, so native controls
+       (checkbox, scrollbar) must not follow a dark OS. */
+    color-scheme: light;
   }
 
   @media (prefers-reduced-motion: no-preference) {
