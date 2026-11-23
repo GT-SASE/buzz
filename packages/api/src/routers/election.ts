@@ -5,6 +5,7 @@ import { z } from "zod";
 import { recordAudit } from "../audit";
 import {
   advanceElection,
+  runScheduledFlips,
   badRequest,
   checkInsThisYear,
   ELECTION_PHASES,
@@ -190,6 +191,9 @@ export const electionRouter = createTRPCRouter({
    * once an officer has published.
    */
   current: protectedProcedure.query(async ({ ctx }) => {
+    // A scheduled time that has passed takes effect on this request, not at
+    // the next cron run. Notices go out after the response.
+    await runScheduledFlips(ctx.db, new Date(), ctx.defer);
     const now = new Date();
     const userId = ctx.session.user.id;
     const year = schoolYear(now);
@@ -369,6 +373,7 @@ export const electionRouter = createTRPCRouter({
         `election:${userId}`,
         ELECTION_ACTION_LIMIT,
       );
+      await runScheduledFlips(ctx.db, new Date(), ctx.defer);
       const position = await positionWithElection(ctx.db, input.positionId);
       if (position.phase !== "voting") {
         badRequest("Voting is not open for this election.");
@@ -455,6 +460,7 @@ export const electionRouter = createTRPCRouter({
    * running the election watches the race; turnout is shown throughout.
    */
   list: adminProcedure.input(yearInput).query(async ({ ctx, input }) => {
+    await runScheduledFlips(ctx.db, new Date(), ctx.defer);
     const year = input?.year ?? schoolYear(new Date());
     const [{ rows, positions, candidates }, votes, rolls] = await Promise.all([
       electionTree(ctx.db, year),

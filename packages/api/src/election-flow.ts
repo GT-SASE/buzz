@@ -10,6 +10,7 @@ import {
   lt,
   lte,
   or,
+  sql,
 } from "drizzle-orm";
 
 import { recordAudit } from "./audit";
@@ -139,6 +140,31 @@ async function freezeRoll(tx: Tx, electionId: string, min: number, now: Date) {
   return rows.length;
 }
 
+/**
+ * Rewrites an election's ballots in random order under new random ids. While
+ * voting, a ballot and its voter were written in one transaction, so a reader
+ * of the database could pair them by `xmin` or physical order. After this
+ * every ballot shares one `xmin` and the order says nothing. The caller holds
+ * the election row FOR UPDATE, so no ballot can be cast meanwhile.
+ */
+async function shuffleBallots(tx: Tx, electionId: string) {
+  await tx.execute(sql`
+    with moved as (
+      delete from ${electionBallots}
+      where ${electionBallots.positionId} in (
+        select ${electionPositions.id} from ${electionPositions}
+        where ${electionPositions.electionId} = ${electionId}
+      )
+      returning ${electionBallots.positionId} as "positionId",
+                ${electionBallots.candidateId} as "candidateId"
+    )
+    insert into ${electionBallots} (id, "positionId", "candidateId")
+    select gen_random_uuid()::text, "positionId", "candidateId"
+    from moved
+    order by random()
+  `);
+}
+
 export type AdvanceOptions = {
   electionId: string;
   to: ElectionPhase;
@@ -147,6 +173,11 @@ export type AdvanceOptions = {
   /** Cron flips only act when the schedule says they are due. */
   scheduled?: boolean;
   now?: Date;
+  /**
+   * Send the notice after the response instead of awaiting it, so the
+   * member's request that happened to trigger a flip never waits on mail.
+   */
+  defer?: (task: () => Promise<unknown>) => void;
 };
 
 export type AdvanceResult =
@@ -175,6 +206,10 @@ export async function advanceElection(
 
     const forward = nextPhase[election.phase] === options.to;
     const back = election.phase === "voting" && options.to === "nominating";
+    // Someone else (the cron, a manual flip, another request) got here first.
+    if (options.scheduled && !forward) {
+      return { changed: false as const, reason: "already moved" };
+    }
     if (!forward && !back) {
       badRequest(
         `An election cannot go from ${election.phase} to ${options.to}.`,
@@ -253,6 +288,7 @@ export async function advanceElection(
         ...(rollSize === null ? {} : { voters: rollSize }),
       },
     });
+    if (options.to === "closed") await shuffleBallots(tx, election.id);
     return {
       changed: true as const,
       updated: updated!,
@@ -262,11 +298,15 @@ export async function advanceElection(
 
   if (!outcome.changed) return outcome;
   // After the commit: a failed send never undoes the phase change.
-  const notice = outcome.announce
-    ? await notifyElectionPhase(db, outcome.updated, options.to, () =>
-        electionRecipients(db, outcome.updated, now),
-      )
-    : noNotice;
+  const send = () =>
+    notifyElectionPhase(db, outcome.updated, options.to, () =>
+      electionRecipients(db, outcome.updated, now),
+    );
+  let notice = noNotice;
+  if (outcome.announce) {
+    if (options.defer) options.defer(send);
+    else notice = await send();
+  }
   return {
     changed: true,
     id: outcome.updated.id,
@@ -289,6 +329,7 @@ export type ScheduledRun = {
 export async function runScheduledFlips(
   db: Database,
   now = new Date(),
+  defer?: AdvanceOptions["defer"],
 ): Promise<ScheduledRun> {
   const due = await db
     .select({ id: elections.id })
@@ -317,6 +358,7 @@ export async function runScheduledFlips(
           actorId: null,
           scheduled: true,
           now,
+          defer,
         });
         if (!result.changed) {
           if (step === 0) run.skipped.push({ id, reason: result.reason });

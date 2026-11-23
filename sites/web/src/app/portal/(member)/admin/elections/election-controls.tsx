@@ -86,9 +86,10 @@ export function ScheduleFields({
           className="text-base"
         />
         <p className="text-ink-muted text-body-sm">
-          Left blank, you open and close voting by hand. Set, the daily
-          scheduler flips the phase (around 4 to 5 AM Atlanta time) and emails
-          members like a manual flip. Ballots stop at the closing time itself.
+          Left blank, you open and close voting by hand. Set, the phase flips
+          the first time anyone opens elections or votes after that moment, and
+          a daily run catches the rest. Members are emailed like a manual flip.
+          Ballots stop at the closing time itself.
         </p>
       </div>
       {only !== "closesAt" && (

@@ -65,9 +65,13 @@ const CRON_SECRET = "c".repeat(40);
 type Role = "MEMBER" | "ADMIN";
 type TestUser = { id: string; email: string; role: Role };
 
-function callerFor(user: TestUser) {
+function callerFor(
+  user: TestUser,
+  defer?: (task: () => Promise<unknown>) => void,
+) {
   return createCaller({
     db,
+    defer,
     session: {
       user: { id: user.id, role: user.role, email: user.email, name: user.id },
       expires: new Date(Date.now() + 86_400_000).toISOString(),
@@ -504,7 +508,7 @@ describe.skipIf(!process.env.DATABASE_URL)("elections v2", () => {
     );
 
     it(
-      "refuses ballots after the closing time even before the cron has flipped the phase",
+      "refuses ballots after the closing time, whether or not anything has flipped the phase yet",
       async () => {
         const runner = await makeUser("late-runner");
         const voter = await makeUser("late-voter");
@@ -527,7 +531,9 @@ describe.skipIf(!process.env.DATABASE_URL)("elections v2", () => {
             }),
           ),
         ).toBe("BAD_REQUEST");
-        expect(await phaseOf(election.id)).toBe("voting");
+        expect(await ballotsFor(election.positions[0]!.id)).toHaveLength(0);
+        // The refused request also closed it: the lazy flip, not the cron.
+        expect(await phaseOf(election.id)).toBe("closed");
       },
       SLOW,
     );
@@ -1010,6 +1016,183 @@ describe.skipIf(!process.env.DATABASE_URL)("elections v2", () => {
           },
           { role: "Secretary" },
         ]);
+      },
+      SLOW,
+    );
+  });
+
+  describe("the ballot shuffle at close", () => {
+    it(
+      "gives every ballot a new id and leaves every tally identical",
+      async () => {
+        const runner = await makeUser("sh-runner");
+        const rival = await makeUser("sh-rival");
+        const voters: TestUser[] = [];
+        await checkIn(runner);
+        await checkIn(rival);
+        for (let i = 0; i < 8; i++) {
+          const voter = await makeUser(`sh-${i}`);
+          await checkIn(voter);
+          voters.push(voter);
+        }
+        const election = await makeElection("shuffle", {
+          candidates: [runner, rival],
+        });
+        await open(election.id);
+        const position = election.positions[0]!.id;
+        for (const [i, voter] of voters.entries()) {
+          await callerFor(voter).election.vote({
+            positionId: position,
+            candidateId: election.candidateIds[i % 3 === 0 ? 1 : 0]!,
+          });
+        }
+        const tally = async () =>
+          (
+            await db
+              .select({
+                candidateId: electionBallots.candidateId,
+                n: sql<number>`count(*)::int`,
+              })
+              .from(electionBallots)
+              .where(eq(electionBallots.positionId, position))
+              .groupBy(electionBallots.candidateId)
+              .orderBy(electionBallots.candidateId)
+          ).map((row) => [row.candidateId, row.n]);
+        const idsBefore = (await ballotsFor(position)).map((b) => b.id);
+        const tallyBefore = await tally();
+        expect(idsBefore).toHaveLength(8);
+
+        await callerFor(officer).election.setPhase({
+          electionId: election.id,
+          phase: "closed",
+        });
+
+        const idsAfter = (await ballotsFor(position)).map((b) => b.id);
+        expect(idsAfter).toHaveLength(8);
+        expect(idsAfter.filter((id) => idsBefore.includes(id))).toEqual([]);
+        for (const id of idsAfter) expect(id).toMatch(/^[0-9a-f-]{36}$/);
+        expect(await tally()).toEqual(tallyBefore);
+        // The voters are untouched: only the choices were rewritten.
+        expect(
+          await db
+            .select()
+            .from(electionVoters)
+            .where(eq(electionVoters.positionId, position)),
+        ).toHaveLength(8);
+        // One transaction wrote them all, so no ballot stands out by xmin.
+        const xmins = await db.execute(
+          sql`select count(distinct xmin::text)::int as n
+              from buzz_election_ballot where "positionId" = ${position}`,
+        );
+        expect((xmins.rows[0] as { n: number }).n).toBe(1);
+      },
+      SLOW,
+    );
+  });
+
+  describe("the lazy flip", () => {
+    const deferred = () => {
+      const tasks: (() => Promise<unknown>)[] = [];
+      return {
+        tasks,
+        defer: (task: () => Promise<unknown>) => void tasks.push(task),
+      };
+    };
+
+    it(
+      "opens a due election on the first request, sends the notice only after the response, and once",
+      async () => {
+        const runner = await makeUser("lazy-runner");
+        const first = await makeUser("lazy-a");
+        const second = await makeUser("lazy-b");
+        for (const user of [runner, first, second]) await checkIn(user);
+        const election = await makeElection("lazy", {
+          candidates: [runner],
+          opensAt: new Date(Date.now() - 60_000),
+        });
+        sent.length = 0;
+        const later = deferred();
+
+        // Two requests arrive together; neither is the cron.
+        await Promise.all([
+          callerFor(first, later.defer).election.current(),
+          callerFor(second, later.defer).election.current(),
+        ]);
+
+        expect(await phaseOf(election.id)).toBe("voting");
+        const audit = await db
+          .select()
+          .from(auditLog)
+          .where(
+            and(
+              eq(auditLog.targetId, election.id),
+              eq(auditLog.action, "election.set_phase"),
+            ),
+          );
+        expect(audit).toHaveLength(1);
+        // Nothing was sent inside either request; exactly one notice is queued.
+        expect(sent.filter((m) => m.to.includes(suffix))).toHaveLength(0);
+        expect(later.tasks).toHaveLength(1);
+
+        probe = () => phaseOf(election.id);
+        await later.tasks[0]!();
+        const mail = sent.filter((m) => m.to.includes(suffix));
+        expect(mail.length).toBeGreaterThanOrEqual(3);
+        for (const m of mail) {
+          expect(m.subject).toBe(`Voting is open: ${election.title}`);
+          expect(m.phase).toBe("voting");
+        }
+        expect(new Set(mail.map((m) => m.to)).size).toBe(mail.length);
+
+        // A later request, or the cron, finds nothing left to do.
+        const again = deferred();
+        await callerFor(first, again.defer).election.current();
+        expect(again.tasks).toHaveLength(0);
+        expect((await runScheduledFlips(db)).flipped).not.toContainEqual({
+          id: election.id,
+          phase: "voting",
+        });
+      },
+      SLOW,
+    );
+
+    it(
+      "lets a ballot through at the scheduled moment, before any cron",
+      async () => {
+        const runner = await makeUser("lv-runner");
+        const voter = await makeUser("lv-voter");
+        await checkIn(runner);
+        await checkIn(voter);
+        const election = await makeElection("lazy-vote", {
+          candidates: [runner],
+          opensAt: new Date(Date.now() - 1000),
+        });
+        expect(await phaseOf(election.id)).toBe("nominating");
+
+        await callerFor(voter).election.vote({
+          positionId: election.positions[0]!.id,
+          candidateId: election.candidateIds[0]!,
+        });
+
+        expect(await phaseOf(election.id)).toBe("voting");
+        expect(await ballotsFor(election.positions[0]!.id)).toHaveLength(1);
+      },
+      SLOW,
+    );
+
+    it(
+      "shows the officer list a due election already moved",
+      async () => {
+        const runner = await makeUser("ll-runner");
+        await checkIn(runner);
+        const election = await makeElection("lazy-list", {
+          candidates: [runner],
+          opensAt: new Date(Date.now() - 1000),
+        });
+        const listed = (await callerFor(officer).election.list()).find(
+          (row) => row.id === election.id,
+        )!;
+        expect(listed.phase).toBe("voting");
       },
       SLOW,
     );

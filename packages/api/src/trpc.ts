@@ -26,7 +26,16 @@ import { db, isOfficerRole } from "@buzz/db";
  *
  * @see https://trpc.io/docs/server/context
  */
-export const createTRPCContext = async (opts: { headers: Headers }) => {
+export type Defer = (task: () => Promise<unknown>) => void;
+
+export const createTRPCContext = async (opts: {
+  headers: Headers;
+  /**
+   * Runs work after the response has gone out (Next's `after`). Absent in
+   * tests and scripts, where the work is awaited in place.
+   */
+  defer?: Defer;
+}) => {
   const session = await auth();
 
   return {
