@@ -21,6 +21,7 @@
         "prettier": "^3.10.1",
         "prettier-plugin-tailwindcss": "^0.8.1",
         "react": "^19.3.1",
+        "react-dom": "^19.3.1",
         "tsrs": "0.20.1-ts7.1.0-beta",
         "turbo": "^2.11.11",
         "typescript": "^6.0.2",
