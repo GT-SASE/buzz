@@ -7,6 +7,7 @@ import {
   advanceElection,
   runScheduledFlips,
   badRequest,
+  NOT_READY,
   checkInsThisYear,
   ELECTION_PHASES,
   electionRecipients,
@@ -487,6 +488,22 @@ export const electionRouter = createTRPCRouter({
         closesAt: election.closesAt,
         minCheckIns: election.minCheckIns,
         rollFrozenAt: election.rollFrozenAt,
+        // Its opening time has passed but it cannot open: say why.
+        stuck:
+          election.phase === "nominating" &&
+          election.opensAt !== null &&
+          election.opensAt <= new Date() &&
+          !candidates.some(
+            (candidate) =>
+              candidate.status === "approved" &&
+              positions.some(
+                (position) =>
+                  position.id === candidate.positionId &&
+                  position.electionId === election.id,
+              ),
+          )
+            ? NOT_READY
+            : null,
         rollSize: election.rollFrozenAt
           ? (rollSize.get(election.id) ?? 0)
           : null,

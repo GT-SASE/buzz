@@ -383,6 +383,11 @@ export function Schedule({ election }: { election: Election }) {
     <ul className="text-ink-muted text-body-sm mt-2 grid gap-0.5">
       <li>Voting opens: {opensAt ? formatDeadline(opensAt) : "by hand"}</li>
       <li>Voting closes: {closesAt ? formatDeadline(closesAt) : "by hand"}</li>
+      {election.stuck && (
+        <li className="text-destructive font-semibold" role="status">
+          Voting should have opened already. {election.stuck}
+        </li>
+      )}
       <li>
         {rollSize === null
           ? `Voters: ${minCheckIns}+ check-in${minCheckIns === 1 ? "" : "s"} this school year, list frozen when voting opens`

@@ -39,6 +39,10 @@ import {
 export type Database = typeof Db;
 export type Tx = Parameters<Parameters<Database["transaction"]>[0]>[0];
 
+/** Why a due election stays in nominations; the officer page shows it too. */
+export const NOT_READY =
+  "Approve at least one candidate before opening voting.";
+
 /** Who the audit log names for a flip no officer clicked. */
 export const CRON_ACTOR = "system:cron";
 
@@ -256,7 +260,7 @@ export async function advanceElection(
           ),
         );
       if ((approved?.n ?? 0) === 0) {
-        badRequest("Approve at least one candidate before opening voting.");
+        badRequest(NOT_READY);
       }
       rollSize = await freezeRoll(tx, election.id, election.minCheckIns, now);
     }
@@ -332,7 +336,7 @@ export async function runScheduledFlips(
   defer?: AdvanceOptions["defer"],
 ): Promise<ScheduledRun> {
   const due = await db
-    .select({ id: elections.id })
+    .select({ id: elections.id, phase: elections.phase })
     .from(elections)
     .where(
       or(
@@ -343,7 +347,39 @@ export async function runScheduledFlips(
     .orderBy(asc(elections.createdAt));
 
   const run: ScheduledRun = { flipped: [], skipped: [] };
-  for (const { id } of due) {
+
+  // A read-only look first: an election that cannot open (nobody approved)
+  // is passed over without a transaction, so every page load while it waits
+  // costs one cheap query, not a lock and a failed write.
+  const opening = due.filter((row) => row.phase === "nominating");
+  const ready = new Set(
+    opening.length === 0
+      ? []
+      : (
+          await db
+            .selectDistinct({ id: electionPositions.electionId })
+            .from(electionCandidates)
+            .innerJoin(
+              electionPositions,
+              eq(electionPositions.id, electionCandidates.positionId),
+            )
+            .where(
+              and(
+                eq(electionCandidates.status, "approved"),
+                inArray(
+                  electionPositions.electionId,
+                  opening.map((row) => row.id),
+                ),
+              ),
+            )
+        ).map((row) => row.id),
+  );
+
+  for (const { id, phase } of due) {
+    if (phase === "nominating" && !ready.has(id)) {
+      run.skipped.push({ id, reason: NOT_READY });
+      continue;
+    }
     for (let step = 0; step < 2; step++) {
       const [current] = await db
         .select({ phase: elections.phase })
