@@ -47,17 +47,18 @@ describe.skipIf(!process.env.DATABASE_URL)("migration 0017", () => {
 
   it("is newer than the one before it, so prod applies it", () => {
     const entries = journalTags();
-    const last = entries.at(-1)!;
-    expect(last.tag.startsWith("0017_")).toBe(true);
-    expect(last.when).toBeGreaterThan(entries.at(-2)!.when);
+    const at = entries.findIndex((entry) => entry.tag.startsWith("0017_"));
+    expect(at).toBeGreaterThan(0);
+    expect(entries[at]!.when).toBeGreaterThan(entries[at - 1]!.when);
   });
 
   it(
     "keeps every tally identical and loses no vote",
     async () => {
       const entries = journalTags();
-      const last = entries.at(-1)!;
-      for (const entry of entries.slice(0, -1)) {
+      const at = entries.findIndex((entry) => entry.tag.startsWith("0017_"));
+      const last = entries[at]!;
+      for (const entry of entries.slice(0, at)) {
         for (const statement of statements(entry.tag)) {
           await scratch.unsafe(statement);
         }
