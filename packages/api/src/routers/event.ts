@@ -50,6 +50,7 @@ import {
   lockEvent,
   promoteWaitlist,
   seatStates,
+  tolerateMissingWaitlist,
   waitlistFor,
   type Promoted,
   type SeatState,
@@ -505,7 +506,11 @@ export const eventRouter = createTRPCRouter({
           results.push({
             row,
             before: current,
-            promoted: seatsGrew ? await promoteWaitlist(tx, row) : [],
+            promoted: seatsGrew
+              ? await tolerateMissingWaitlist(tx, [], (sp) =>
+                  promoteWaitlist(sp, row),
+                )
+              : [],
           });
         }
 
@@ -1412,34 +1417,48 @@ export const eventRouter = createTRPCRouter({
             .from(eventRsvps)
             .where(eq(eventRsvps.eventId, event.id));
           if (Number(taken?.total ?? 0) >= event.maxCheckIns) {
-            await tx
-              .insert(eventWaitlist)
-              .values({ eventId: event.id, userId })
-              .onConflictDoNothing();
-            const [mine] = await tx
-              .select({ joinedAt: eventWaitlist.createdAt })
-              .from(eventWaitlist)
-              .where(
-                and(
-                  eq(eventWaitlist.eventId, event.id),
-                  eq(eventWaitlist.userId, userId),
-                ),
-              );
-            const [ahead] = await tx
-              .select({ total: count() })
-              .from(eventWaitlist)
-              .where(
-                and(
-                  eq(eventWaitlist.eventId, event.id),
-                  lte(eventWaitlist.createdAt, mine?.joinedAt ?? new Date()),
-                ),
-              );
-            return {
-              event,
-              status: "waitlisted" as const,
-              added: false,
-              position: Math.max(Number(ahead?.total ?? 1), 1),
-            };
+            // No waitlist table yet (a preview ahead of its migration) means
+            // no waitlist: the member is seated as before.
+            const position = await tolerateMissingWaitlist(
+              tx,
+              null,
+              async (sp) => {
+                await sp
+                  .insert(eventWaitlist)
+                  .values({ eventId: event.id, userId })
+                  .onConflictDoNothing();
+                const [mine] = await sp
+                  .select({ joinedAt: eventWaitlist.createdAt })
+                  .from(eventWaitlist)
+                  .where(
+                    and(
+                      eq(eventWaitlist.eventId, event.id),
+                      eq(eventWaitlist.userId, userId),
+                    ),
+                  );
+                const [ahead] = await sp
+                  .select({ total: count() })
+                  .from(eventWaitlist)
+                  .where(
+                    and(
+                      eq(eventWaitlist.eventId, event.id),
+                      lte(
+                        eventWaitlist.createdAt,
+                        mine?.joinedAt ?? new Date(),
+                      ),
+                    ),
+                  );
+                return Math.max(Number(ahead?.total ?? 1), 1);
+              },
+            );
+            if (position !== null) {
+              return {
+                event,
+                status: "waitlisted" as const,
+                added: false,
+                position,
+              };
+            }
           }
         }
 
@@ -1498,24 +1517,27 @@ export const eventRouter = createTRPCRouter({
             ),
           )
           .returning({ eventId: eventRsvps.eventId });
-        // An uncapped event never has a waitlist (and the table may not exist
-        // yet on a preview), so there is nothing more to do for it.
+        // An uncapped event never has a waitlist, so there is nothing more
+        // to do for it.
         if (event.maxCheckIns === null && !removed) {
           return { event, removed: false, promoted: [] as Promoted[] };
         }
-        await tx
-          .delete(eventWaitlist)
-          .where(
-            and(
-              eq(eventWaitlist.eventId, event.id),
-              eq(eventWaitlist.userId, userId),
-            ),
-          );
-        return {
-          event,
-          removed: Boolean(removed),
-          promoted: removed ? await promoteWaitlist(tx, event) : [],
-        };
+        const promoted = await tolerateMissingWaitlist(
+          tx,
+          [] as Promoted[],
+          async (sp) => {
+            await sp
+              .delete(eventWaitlist)
+              .where(
+                and(
+                  eq(eventWaitlist.eventId, event.id),
+                  eq(eventWaitlist.userId, userId),
+                ),
+              );
+            return removed ? await promoteWaitlist(sp, event) : [];
+          },
+        );
+        return { event, removed: Boolean(removed), promoted };
       });
 
       const email = ctx.session.user.email;

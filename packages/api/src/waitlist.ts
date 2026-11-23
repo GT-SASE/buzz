@@ -26,6 +26,26 @@ import {
 type Transaction = Parameters<Parameters<typeof Db.transaction>[0]>[0];
 type Reader = Pick<typeof Db, "select">;
 
+/**
+ * Runs waitlist work in a savepoint and, if the waitlist table does not exist
+ * yet, answers `fallback` instead of failing. A preview build runs against
+ * the production database before its migration has; without this, one missing
+ * table would abort the whole RSVP transaction (Postgres refuses every later
+ * statement in it) and break RSVPs on every capped event there.
+ */
+export async function tolerateMissingWaitlist<T>(
+  tx: Transaction,
+  fallback: T,
+  run: (savepoint: Transaction) => Promise<T>,
+): Promise<T> {
+  try {
+    return await tx.transaction(run);
+  } catch (error) {
+    if (isUndefinedTable(error)) return fallback;
+    throw error;
+  }
+}
+
 export type Promoted = { id: string; email: string };
 
 export function lockEvent(tx: Transaction, eventId: string) {

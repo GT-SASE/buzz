@@ -52,7 +52,7 @@ const {
 } = await import("../packages/db/src/index");
 const { createCaller } = await import("../packages/api/src/root");
 const { WINDOW_MS } = await import("../packages/api/src/check-in-code");
-const { and, asc, eq, inArray } =
+const { and, asc, eq, inArray, sql } =
   await import("../packages/db/node_modules/drizzle-orm/index.js");
 
 const SLOW = 30_000;
@@ -841,6 +841,59 @@ describe.skipIf(!process.env.DATABASE_URL)("events v2b", () => {
           callerFor(walker).event.rsvp({ eventId: past!.id }),
         );
         expect(started.code).toBe("BAD_REQUEST");
+      },
+      SLOW,
+    );
+  });
+
+  // ------------------------------------------------- before the migration
+
+  describe("a preview running ahead of migration 0018", () => {
+    it(
+      "keeps RSVPs, cancels and the officer pages working when the new tables are absent",
+      async () => {
+        const created = await createEvent({
+          title: `ahead ${suffix}`,
+          maxCheckIns: 1,
+          repeat: { cadence: "weekly", count: 2 },
+        });
+        await trackSeries(created.id);
+        const a = await makeUser("ahead-a");
+        const b = await makeUser("ahead-b");
+        // Seat a, so b would be queued on a migrated database.
+        await callerFor(a).event.rsvp({ eventId: created.id });
+
+        const hide = (table: string, to: string) =>
+          db.execute(sql.raw(`alter table "${table}" rename to "${to}"`));
+        await hide("buzz_event_waitlist", "hidden_waitlist");
+        await hide("buzz_event_series_member", "hidden_series");
+        try {
+          // Full, and no waitlist to join: seated as before the feature.
+          const seated = await callerFor(b).event.rsvp({
+            eventId: created.id,
+          });
+          expect(seated).toMatchObject({ rsvped: true, waitlisted: false });
+          await callerFor(b).event.cancelRsvp({ eventId: created.id });
+          await callerFor(a).event.cancelRsvp({ eventId: created.id });
+
+          const list = await callerFor(admin).event.listAll({ limit: 200 });
+          expect(list.events.find((row) => row.id === created.id)?.series).toBe(
+            null,
+          );
+          const detail = await callerFor(admin).event.getById({
+            id: created.id,
+          });
+          expect(detail.waitlist).toEqual([]);
+          expect(detail.series).toBeNull();
+          const state = await callerFor(a).event.rsvpState({
+            eventIds: [created.id],
+          });
+          expect(state.waitlisted).toEqual([]);
+          await callerFor(a).event.upcoming();
+        } finally {
+          await hide("hidden_waitlist", "buzz_event_waitlist");
+          await hide("hidden_series", "buzz_event_series_member");
+        }
       },
       SLOW,
     );
