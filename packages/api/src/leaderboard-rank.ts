@@ -1,7 +1,9 @@
 /**
- * Shapes the board rows the database ranked. The SQL window (points desc,
- * earlier first check-in, user id) is the ranking and `rank` is its row
- * number, so a viewer outside the top N still gets their true place.
+ * Shapes the board rows the database ranked. `rank` is SQL `rank()` on points,
+ * so ties share a place and the next place skips (1, 1, 1, 4); a viewer
+ * outside the top N still gets their true one. Which tied members fill the
+ * last of the N rows is the stable order points desc, earlier first check-in,
+ * user id, and `position` is where a row sits in it.
  *
  * A member who hides their name arrives with `name: null` and keeps their
  * rank: dropping the row would shift everyone below up a place and make the
@@ -9,7 +11,10 @@
  */
 type BoardRow = {
   userId: string;
+  /** Competition rank: members tied on points share it (1, 1, 1, 4). */
   rank: number;
+  /** Place in the stable listing order, 1-based. The `limit` cuts here. */
+  position: number;
   name: string | null;
   hidden: boolean;
   totalPoints: number;
@@ -32,7 +37,7 @@ export function shapeLeaderboard(
   const you = shaped.find((row) => row.isYou);
 
   return {
-    top: shaped.filter((row) => row.rank <= limit),
+    top: shaped.filter((_, index) => rows[index]!.position <= limit),
     you: you
       ? {
           rank: you.rank,

@@ -7,7 +7,16 @@ const row = (
   rank: number,
   name: string | null,
   hidden = false,
-) => ({ userId, rank, name, hidden, totalPoints: 100 - rank, totalEvents: 1 });
+  position = rank,
+) => ({
+  userId,
+  rank,
+  position,
+  name,
+  hidden,
+  totalPoints: 100 - rank,
+  totalEvents: 1,
+});
 
 describe("shapeLeaderboard", () => {
   it("keeps the rank the database gave, and marks the viewer", () => {
@@ -22,6 +31,27 @@ describe("shapeLeaderboard", () => {
     ]);
     expect(board.top[1]?.isYou).toBe(true);
     expect(board.you).toEqual({ rank: 2, totalPoints: 98, totalEvents: 1 });
+  });
+
+  it("keeps tied members on one rank and cuts at N rows by position", () => {
+    const board = shapeLeaderboard(
+      [
+        row("a", 1, "Ada", false, 1),
+        row("b", 2, "Bea", false, 2),
+        row("c", 2, "Cy", false, 3),
+        row("d", 2, "Di", false, 4),
+        row("e", 5, "Eve", false, 5),
+      ],
+      "d",
+      3,
+    );
+    expect(board.top.map((entry) => [entry.name, entry.rank])).toEqual([
+      ["Ada", 1],
+      ["Bea", 2],
+      ["Cy", 2],
+    ]);
+    // The viewer is tied at 2 but past the cut: still told the shared rank.
+    expect(board.you).toMatchObject({ rank: 2 });
   });
 
   it("falls back to Member when the account has no name", () => {

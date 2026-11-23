@@ -558,9 +558,13 @@ export const memberRouter = createTRPCRouter({
             userId: totals.userId,
             totalPoints: totals.totalPoints,
             totalEvents: totals.totalEvents,
-            rank: sql<number>`row_number() over (order by ${totals.totalPoints} desc, ${totals.firstAt} asc, ${totals.userId} asc)`.as(
+            rank: sql<number>`rank() over (order by ${totals.totalPoints} desc)`.as(
               "rank",
             ),
+            position:
+              sql<number>`row_number() over (order by ${totals.totalPoints} desc, ${totals.firstAt} asc, ${totals.userId} asc)`.as(
+                "position",
+              ),
           })
           .from(totals)
           .as("ranked");
@@ -573,6 +577,7 @@ export const memberRouter = createTRPCRouter({
           .select({
             userId: ranked.userId,
             rank: ranked.rank,
+            position: ranked.position,
             name: users.name,
             hidden: hidden.as("hidden"),
             totalPoints: ranked.totalPoints,
@@ -589,8 +594,10 @@ export const memberRouter = createTRPCRouter({
               )
             : query
         )
-          .where(or(lte(ranked.rank, input.limit), eq(ranked.userId, viewerId)))
-          .orderBy(asc(ranked.rank))
+          .where(
+            or(lte(ranked.position, input.limit), eq(ranked.userId, viewerId)),
+          )
+          .orderBy(asc(ranked.position))
           .limit(input.limit + 1);
       };
 
@@ -607,6 +614,7 @@ export const memberRouter = createTRPCRouter({
         rows.map((row) => ({
           userId: row.userId,
           rank: asInt(row.rank),
+          position: asInt(row.position),
           name: row.name,
           hidden: row.hidden,
           totalPoints: asInt(row.totalPoints),

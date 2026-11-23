@@ -302,6 +302,45 @@ describe.skipIf(!process.env.DATABASE_URL)("leaderboard", () => {
   );
 
   it(
+    "ties share a rank, the next rank skips, and the cut stays at N rows",
+    async () => {
+      await db
+        .delete(pointsLedger)
+        .where(inArray(pointsLedger.userId, userIds));
+      const top = await makeUser("tiea");
+      const tied = [
+        await makeUser("tieb"),
+        await makeUser("tiec"),
+        await makeUser("tied"),
+      ];
+      const last = await makeUser("tiee");
+      const event = await makeEvent("2031-11-10T18:00:00Z", 1_000_000);
+      await grant(top, event, 900_000_000);
+      for (const member of tied) await grant(member, event, 500_000_000);
+      await grant(last, event, 100_000_000);
+
+      const result = await callerFor(tied[2]!).member.leaderboard({
+        period: "semester",
+        limit: 3,
+      });
+
+      // Strict N rows: the third tied member falls past the cut.
+      expect(result.top.map((row) => row.rank)).toEqual([1, 2, 2]);
+      expect(result.top).toHaveLength(3);
+      // The viewer shares rank 2 whichever side of the cut they fall on.
+      expect(result.you).toMatchObject({ rank: 2, totalPoints: 500_000_000 });
+
+      const all = await callerFor(last).member.leaderboard({
+        period: "semester",
+        limit: 10,
+      });
+      expect(all.top.map((row) => row.rank)).toEqual([1, 2, 2, 2, 5]);
+      expect(all.you?.rank).toBe(5);
+    },
+    SLOW,
+  );
+
+  it(
     "limits in SQL: the top N plus the viewer, never the whole board",
     async () => {
       // Earlier tests left big scores in the same school year; clear them

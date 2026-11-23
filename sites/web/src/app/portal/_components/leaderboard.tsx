@@ -19,15 +19,17 @@ const columnHeading =
 function Board({
   children,
   heading,
+  label,
 }: {
   children: React.ReactNode;
   heading: boolean;
+  label: string;
 }) {
   return (
     <section className={heading ? "mt-12" : "mt-6"}>
       {heading && (
         <h2 className="text-eyebrow tracking-caps text-ink-muted border-hairline border-b pb-3 font-semibold uppercase">
-          Leaderboard
+          {label}
         </h2>
       )}
       {children}
@@ -103,19 +105,22 @@ function Standing({
 export function Leaderboard({
   data,
   heading = true,
+  label = "Leaderboard",
   emptyMessage,
   footer,
 }: {
   data: RouterOutputs["member"]["leaderboard"] | null;
   /** Off where the page already titles the board. */
   heading?: boolean;
+  /** The heading text, when the board is not the default one. */
+  label?: string;
   /** Shown when nobody has points; without it an empty board renders nothing. */
   emptyMessage?: string;
   footer?: React.ReactNode;
 }) {
   if (!data) {
     return (
-      <Board heading={heading}>
+      <Board heading={heading} label={label}>
         <p className="text-ink-muted text-body-sm mt-4">
           Leaderboard could not be loaded. Refresh and try again.
         </p>
@@ -129,7 +134,7 @@ export function Leaderboard({
   if (top.length === 0) {
     if (!emptyMessage) return null;
     return (
-      <Board heading={heading}>
+      <Board heading={heading} label={label}>
         <p className="text-ink-muted text-body-sm mt-4">{emptyMessage}</p>
         {footer}
       </Board>
@@ -139,7 +144,7 @@ export function Leaderboard({
   const pinned = you && !top.some((row) => row.isYou) ? you : null;
 
   return (
-    <Board heading={heading}>
+    <Board heading={heading} label={label}>
       <ul className="mt-4 grid gap-3 md:hidden">
         {top.map((row) => (
           <li
