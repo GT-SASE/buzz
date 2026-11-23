@@ -92,6 +92,13 @@
       "when": 1795299268188,
       "tag": "0012_rate_limit",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1795394657980,
+      "tag": "0013_points_drift",
+      "breakpoints": true
     }
   ]
 }
