@@ -9,6 +9,7 @@ import {
   fromLocalInputValue,
   toLocalInputValue,
 } from "~/app/portal/_lib/format";
+import { noticeToast } from "~/app/portal/_lib/notice";
 import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert";
 import { ConfirmDialog } from "~/app/portal/_components/confirm-dialog";
 import { Badge } from "~/components/ui/badge";
@@ -92,18 +93,13 @@ function EventForm({
   });
   const update = api.event.update.useMutation({
     onSuccess: async ({ invites }) => {
-      const total = invites.sent + invites.failed;
-      if (invites.failed > 0) {
-        toast.warning(
-          `Changes saved, but ${invites.failed} of ${total} calendar updates did not send. Tell those members the new time or place.`,
-        );
-      } else if (total > 0) {
-        toast.success(
-          `Changes saved. Calendar update sent to ${total} ${total === 1 ? "RSVP" : "RSVPs"}.`,
-        );
-      } else {
-        toast.success("Changes saved.");
-      }
+      const { kind, message } = noticeToast(invites, {
+        done: "Changes saved.",
+        unit: "calendar update",
+        audience: "RSVPs",
+        followUp: "Tell those members the new time or place.",
+      });
+      toast[kind](message);
       await refresh();
     },
     onError: (e) => toast.error(e.message),
@@ -391,7 +387,15 @@ function EventActions({ event }: { event: AdminEvent }) {
   });
   const archive = api.event.setArchived.useMutation({
     onSuccess: async (updated) => {
-      toast.success(updated.archivedAt ? "Event archived." : "Event restored.");
+      const { kind, message } = noticeToast(updated.invites, {
+        done: updated.archivedAt ? "Event archived." : "Event restored.",
+        unit: "calendar update",
+        audience: "RSVPs",
+        followUp: updated.archivedAt
+          ? "Tell those members it is cancelled."
+          : "Tell those members it is back on.",
+      });
+      toast[kind](message);
       await invalidate();
     },
     onError: (e) => toast.error(e.message),
@@ -453,8 +457,8 @@ function EventActions({ event }: { event: AdminEvent }) {
         title={archived ? "Restore this event?" : "Archive this event?"}
         body={
           archived
-            ? `"${event.title}" goes back on the members' list, its code works again, and its check-ins count toward points, the leaderboard, and voting.`
-            : `"${event.title}" keeps its ${event.attendees} recorded check-ins, but members stop seeing it, its code stops working, and those check-ins stop counting toward points, the leaderboard, and voting until you restore it.`
+            ? `"${event.title}" goes back on the members' list, its code works again, and its check-ins count toward points, the leaderboard, and voting. If it has not started yet, members who RSVPed get their calendar entry back.`
+            : `"${event.title}" keeps its ${event.attendees} recorded check-ins, but members stop seeing it, its code stops working, and those check-ins stop counting toward points, the leaderboard, and voting until you restore it. If it has not started yet, members who RSVPed get a cancellation.`
         }
         action={archived ? "Yes, restore" : "Yes, archive"}
         danger={!archived}

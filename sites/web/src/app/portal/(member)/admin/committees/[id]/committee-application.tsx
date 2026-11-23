@@ -1,10 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { toast } from "sonner";
 
+import { ConfirmDialog } from "~/app/portal/_components/confirm-dialog";
 import { Action } from "~/app/portal/_components/controls";
 import { formatDate } from "~/app/portal/_lib/format";
+import { noticeToast } from "~/app/portal/_lib/notice";
 import { Badge } from "~/components/ui/badge";
 import { Label } from "~/components/ui/label";
 import { Skeleton } from "~/components/ui/skeleton";
@@ -55,8 +57,14 @@ export function CommitteeApplication({
   const utils = api.useUtils();
   const query = api.committee.byId.useQuery({ id: applicationId });
   const setStatus = api.committee.setStatus.useMutation({
-    onSuccess: async () => {
-      toast.success("Status updated.");
+    onSuccess: async ({ notice }) => {
+      const { kind, message } = noticeToast(notice, {
+        done: "Status updated.",
+        unit: "email",
+        audience: "the applicant",
+        followUp: "Tell them the decision yourself.",
+      });
+      toast[kind](message);
       await Promise.all([
         utils.committee.byId.invalidate({ id: applicationId }),
         utils.committee.list.invalidate(),
@@ -180,16 +188,34 @@ function ApplicationBody({
             Status
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
-            {statuses.map((status) => (
-              <Action
-                key={status}
-                tone={status === row.status ? "solid" : "quiet"}
-                disabled={statusPending || status === row.status}
-                onClick={() => onStatus(status)}
-              >
-                {statusLabel[status]}
-              </Action>
-            ))}
+            {statuses.map((status) => {
+              const decision = status === "accepted" || status === "declined";
+              const button = (
+                <Action
+                  tone={status === row.status ? "solid" : "quiet"}
+                  disabled={statusPending || status === row.status}
+                  onClick={decision ? undefined : () => onStatus(status)}
+                >
+                  {statusLabel[status]}
+                </Action>
+              );
+              // A decision emails the applicant and cannot be recalled, so it
+              // asks first.
+              return decision ? (
+                <ConfirmDialog
+                  key={status}
+                  title={`Mark this application ${statusLabel[status].toLowerCase()}?`}
+                  body={`${row.name ?? row.email} gets an email with the decision.`}
+                  action={`Mark ${statusLabel[status].toLowerCase()}`}
+                  danger={status === "declined"}
+                  onConfirm={() => onStatus(status)}
+                >
+                  {button}
+                </ConfirmDialog>
+              ) : (
+                <Fragment key={status}>{button}</Fragment>
+              );
+            })}
           </div>
         </div>
 
