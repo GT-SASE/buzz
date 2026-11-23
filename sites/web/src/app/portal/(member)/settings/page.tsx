@@ -34,6 +34,18 @@ async function SettingsBody() {
 
   return (
     <HydrateClient>
+      <header className="mx-auto w-full max-w-lg px-5 pt-10 pb-8 sm:px-6 sm:pt-14">
+        <p className="text-eyebrow tracking-caps text-gold-ink font-semibold uppercase">
+          Settings
+        </p>
+        <h1 className="font-display text-navy text-h2 mt-3 font-bold tracking-tight">
+          Your account.
+        </h1>
+        <p className="text-ink-muted text-body mt-4">
+          Email, your details and how you show up on the leaderboard. Each
+          section saves on its own.
+        </p>
+      </header>
       <NotificationSettings />
       <ProfileSettings />
       <LeaderboardSettings />

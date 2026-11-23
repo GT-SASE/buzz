@@ -17,20 +17,18 @@ export function NotificationSettings() {
       <div
         aria-busy="true"
         aria-live="polite"
-        className="mx-auto w-full max-w-lg px-5 py-10 sm:px-6 sm:py-14"
+        className="mx-auto w-full max-w-lg px-5 pb-10 sm:px-6"
       >
         <span className="sr-only">Loading settings.</span>
-        <Skeleton className="h-4 w-24 rounded-full" />
-        <Skeleton className="mt-3 h-10 w-64 rounded-lg" />
-        <Skeleton className="mt-4 h-16 w-full rounded-lg" />
-        <Skeleton className="mt-8 h-24 w-full rounded-lg" />
+        <Skeleton className="h-8 w-48 rounded-lg" />
+        <Skeleton className="mt-4 h-24 w-full rounded-lg" />
       </div>
     );
   }
 
   if (mine.error) {
     return (
-      <p className="text-destructive mx-auto max-w-lg px-5 py-10">
+      <p className="text-destructive mx-auto max-w-lg px-5 pb-10">
         {mine.error.message}
       </p>
     );
@@ -75,18 +73,15 @@ function SettingsFields({ saved }: { saved: Prefs }) {
   }
 
   return (
-    <div className="mx-auto w-full max-w-lg px-5 py-10 sm:px-6 sm:py-14">
-      <p className="text-eyebrow tracking-caps text-gold-ink font-semibold uppercase">
-        Settings
-      </p>
-      <h1 className="font-display text-navy text-h2 mt-3 font-bold tracking-tight">
+    <div className="mx-auto w-full max-w-lg px-5 pb-10 sm:px-6">
+      <h2 className="font-display text-navy text-h3 font-bold tracking-tight">
         Email from the chapter.
-      </h1>
-      <p className="text-ink-muted text-body mt-4">
+      </h2>
+      <p className="text-ink-muted text-body-sm mt-2">
         Choose which updates reach your inbox.
       </p>
 
-      <form className="mt-8 grid gap-4" onSubmit={onSubmit}>
+      <form className="mt-4 grid gap-4" onSubmit={onSubmit}>
         <fieldset className="grid gap-3">
           <legend className="sr-only">Optional emails</legend>
           {switches.map(({ name, title, body }) => (
@@ -127,7 +122,7 @@ function SettingsFields({ saved }: { saved: Prefs }) {
           disabled={save.isPending || !changed}
           className="bg-navy hover:bg-navy-deep h-12 w-full rounded-md font-semibold text-white sm:w-auto"
         >
-          {save.isPending ? "Saving..." : "Save settings"}
+          {save.isPending ? "Saving..." : "Save email settings"}
         </Button>
       </form>
     </div>

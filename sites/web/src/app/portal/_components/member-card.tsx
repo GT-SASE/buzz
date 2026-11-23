@@ -98,7 +98,8 @@ export function MemberCard({
             className="bg-sand [&_[data-slot=progress-indicator]]:bg-navy h-1"
           />
           <p className="text-ink-muted text-body-sm mt-2.5">
-            {tier.pointsToNext} more to reach {tier.next}.
+            All-time {tierPoints} pts · {tier.pointsToNext} more to reach{" "}
+            {tier.next}.
             <span className="hidden sm:inline">
               {" "}
               Keep showing up and each event pays a little more.

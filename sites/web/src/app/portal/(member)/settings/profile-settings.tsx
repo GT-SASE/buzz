@@ -91,7 +91,7 @@ function ProfileFields({ saved }: { saved: number | null }) {
           disabled={save.isPending || !changed || invalid}
           className="bg-navy hover:bg-navy-deep h-12 w-full rounded-md font-semibold text-white sm:w-auto"
         >
-          {save.isPending ? "Saving..." : "Save profile"}
+          {save.isPending ? "Saving..." : "Save about you"}
         </Button>
       </form>
     </div>
