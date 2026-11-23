@@ -65,3 +65,36 @@ export function periodSince(period: Period, now: Date): Date | null {
   if (period === "90d") return new Date(now.getTime() - 90 * DAY_MS);
   return schoolYearStart(now);
 }
+
+export type LeaderboardPeriod = "semester" | "year" | "all";
+
+/**
+ * The half-open window `[from, to)` of the semester `now` falls in, Atlanta
+ * time: fall is August 1st to January 1st, spring (summer included) is
+ * January 1st to August 1st.
+ */
+export function semesterWindow(now: Date) {
+  const { year, month } = atlantaParts(now);
+  return month >= 8
+    ? {
+        from: atlantaStartOfDay(year, 8, 1),
+        to: atlantaStartOfDay(year + 1, 1, 1),
+      }
+    : {
+        from: atlantaStartOfDay(year, 1, 1),
+        to: atlantaStartOfDay(year, 8, 1),
+      };
+}
+
+/** The half-open window `[from, to)` of the school year `now` falls in. */
+export function schoolYearWindow(now: Date) {
+  const from = schoolYearStart(now);
+  const { year } = atlantaParts(from);
+  return { from, to: atlantaStartOfDay(year + 1, 8, 1) };
+}
+
+/** `null` means no bounds, every event ever. */
+export function leaderboardWindow(period: LeaderboardPeriod, now: Date) {
+  if (period === "all") return null;
+  return period === "semester" ? semesterWindow(now) : schoolYearWindow(now);
+}

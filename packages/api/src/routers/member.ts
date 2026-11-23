@@ -8,9 +8,11 @@ import {
   ilike,
   inArray,
   isNull,
+  lte,
   max,
   min,
   or,
+  sql,
   sum,
   type SQL,
 } from "drizzle-orm";
@@ -23,12 +25,22 @@ import {
   memberSince,
   pointsSum,
 } from "../aggregates";
+import {
+  attendanceEvents,
+  attendanceFilter,
+  attendancePoints,
+} from "../attendance";
 import { recordAudit } from "../audit";
 import { notFound } from "../errors";
-import { rankLeaderboard } from "../leaderboard-rank";
+import { shapeLeaderboard } from "../leaderboard-rank";
 import { isUndefinedTable } from "../pg-errors";
-import { schoolYearStart } from "../periods";
-import { assertRateLimit, EXPORT_ROSTER_LIMIT } from "../rate-limit";
+import { leaderboardWindow, schoolYearStart } from "../periods";
+import {
+  assertRateLimit,
+  EXPORT_ROSTER_LIMIT,
+  LEADERBOARD_PREF_LIMIT,
+  PROFILE_LIMIT,
+} from "../rate-limit";
 import {
   adminProcedure,
   createTRPCRouter,
@@ -36,7 +48,16 @@ import {
   superAdminProcedure,
 } from "../trpc";
 import type * as BuzzDbModule from "@buzz/db";
-import { eventCheckIns, events, resumes, sessions, users } from "@buzz/db";
+import {
+  eventCheckIns,
+  events,
+  leaderboardPreferences,
+  memberProfiles,
+  pointsLedger,
+  resumes,
+  sessions,
+  users,
+} from "@buzz/db";
 
 type BuzzDb = typeof BuzzDbModule.db;
 
@@ -56,6 +77,9 @@ function rosterFilter(search: string | undefined) {
   const pattern = `%${escapeLikePattern(search)}%`;
   return or(ilike(users.name, pattern), ilike(users.email, pattern));
 }
+
+/** Empty in the form means unset, which arrives here as null. */
+const graduationYearSchema = z.number().int().min(2000).max(2100).nullable();
 
 const rosterSort = z.enum(["points", "name", "recent"]);
 
@@ -479,58 +503,263 @@ export const memberRouter = createTRPCRouter({
   // ----------------------------------------------------------------- members
 
   /**
-   * Ranked by points over every member with live attendance (archived events
-   * count for nothing, and count again once restored), highest first.
-   * Each check-in contributes the event's pointsValue, snapshotted at the door.
-   * Remaining ties break on who checked in earlier.
+   * Attendance standings for one period, ranked in SQL from the points
+   * ledger: the check-in rows net of removals, on events that are not
+   * archived (archived events count for nothing, and count again once
+   * restored). Equal points break on who checked in first, then on id.
+   *
+   * A check-in belongs to the period its event started in, not the moment it
+   * was recorded or taken back: a removal logged next semester still nets
+   * against the grant in the semester it was earned.
+   *
+   * The ledger holds one row per check-in plus one per removal, so a member's
+   * event count is the grants minus the removals, and a member whose every
+   * check-in was removed is off the board.
+   *
+   * Only `limit` rows, plus the viewer's own when they rank lower, leave the
+   * database. A member who hid their name stays at their true rank with no
+   * name in the payload.
    */
   leaderboard: protectedProcedure
-    .input(z.object({ limit: z.number().int().min(1).max(50).default(10) }))
+    .input(
+      z.object({
+        limit: z.number().int().min(1).max(50).default(10),
+        period: z.enum(["semester", "year", "all"]).default("all"),
+      }),
+    )
     .query(async ({ ctx, input }) => {
-      const userId = ctx.session.user.id;
-      const totalPoints = sum(eventCheckIns.pointsEarned);
-      const totalEvents = count(eventCheckIns.id);
-      const firstCheckIn = min(eventCheckIns.checkedInAt);
+      const viewerId = ctx.session.user.id;
+      const window = leaderboardWindow(input.period, new Date());
 
-      const rows = await ctx.db
-        .select({
-          userId: users.id,
-          name: users.name,
-          totalPoints,
-          totalEvents,
-          firstCheckInAt: firstCheckIn,
-        })
-        .from(users)
-        .innerJoin(eventCheckIns, eq(eventCheckIns.userId, users.id))
-        .innerJoin(events, eq(events.id, eventCheckIns.eventId))
-        .where(isNull(events.archivedAt))
-        .groupBy(users.id)
-        .orderBy(desc(totalPoints), asc(firstCheckIn), asc(users.id));
+      const board = (withPreferences: boolean) => {
+        const totalPoints = attendancePoints;
+        const totalEvents = attendanceEvents;
+        const firstAt = sql<Date>`min(${pointsLedger.at})`;
 
-      const ranked = rankLeaderboard(
+        const totals = ctx.db
+          .select({
+            userId: pointsLedger.userId,
+            totalPoints: totalPoints.as("total_points"),
+            totalEvents: totalEvents.as("total_events"),
+            firstAt: firstAt.as("first_at"),
+          })
+          .from(pointsLedger)
+          .innerJoin(events, eq(events.id, pointsLedger.eventId))
+          .where(attendanceFilter(window))
+          .groupBy(pointsLedger.userId)
+          .having(sql`${totalEvents} > 0`)
+          .as("totals");
+
+        const ranked = ctx.db
+          .select({
+            userId: totals.userId,
+            totalPoints: totals.totalPoints,
+            totalEvents: totals.totalEvents,
+            rank: sql<number>`rank() over (order by ${totals.totalPoints} desc)`.as(
+              "rank",
+            ),
+            position:
+              sql<number>`row_number() over (order by ${totals.totalPoints} desc, ${totals.firstAt} asc, ${totals.userId} asc)`.as(
+                "position",
+              ),
+          })
+          .from(totals)
+          .as("ranked");
+
+        const hidden = withPreferences
+          ? sql<boolean>`coalesce(${leaderboardPreferences.hideName}, false)`
+          : sql<boolean>`false`;
+
+        const query = ctx.db
+          .select({
+            userId: ranked.userId,
+            rank: ranked.rank,
+            position: ranked.position,
+            name: users.name,
+            hidden: hidden.as("hidden"),
+            totalPoints: ranked.totalPoints,
+            totalEvents: ranked.totalEvents,
+          })
+          .from(ranked)
+          .innerJoin(users, eq(users.id, ranked.userId));
+
+        return (
+          withPreferences
+            ? query.leftJoin(
+                leaderboardPreferences,
+                eq(leaderboardPreferences.userId, ranked.userId),
+              )
+            : query
+        )
+          .where(
+            or(lte(ranked.position, input.limit), eq(ranked.userId, viewerId)),
+          )
+          .orderBy(asc(ranked.position))
+          .limit(input.limit + 1);
+      };
+
+      let rows;
+      try {
+        rows = await board(true);
+      } catch (error) {
+        // A preview built before 0016 ran: nobody can have opted out yet.
+        if (!isUndefinedTable(error)) throw error;
+        rows = await board(false);
+      }
+
+      return shapeLeaderboard(
         rows.map((row) => ({
           userId: row.userId,
+          rank: asInt(row.rank),
+          position: asInt(row.position),
           name: row.name,
+          hidden: row.hidden,
           totalPoints: asInt(row.totalPoints),
           totalEvents: asInt(row.totalEvents),
         })),
-        userId,
+        viewerId,
+        input.limit,
       );
+    }),
 
-      const top = ranked
-        .slice(0, input.limit)
-        .map(({ userId: _id, ...rest }) => rest);
-      const youRow = ranked.find((row) => row.isYou);
+  /** The caller's own profile. Nothing saved means unset. */
+  profile: protectedProcedure.query(async ({ ctx }) => {
+    try {
+      const [row] = await ctx.db
+        .select({ graduationYear: memberProfiles.graduationYear })
+        .from(memberProfiles)
+        .where(eq(memberProfiles.userId, ctx.session.user.id));
+      return { graduationYear: row?.graduationYear ?? null };
+    } catch (error) {
+      // A preview built before 0016 ran: no one has a profile yet.
+      if (isUndefinedTable(error)) return { graduationYear: null };
+      throw error;
+    }
+  }),
 
-      return {
-        top,
-        you: youRow
-          ? {
-              rank: youRow.rank,
-              totalPoints: youRow.totalPoints,
-              totalEvents: youRow.totalEvents,
-            }
-          : null,
+  setProfile: protectedProcedure
+    .input(z.object({ graduationYear: graduationYearSchema }))
+    .mutation(async ({ ctx, input }) => {
+      await assertRateLimit(
+        ctx.db,
+        `member-profile:${ctx.session.user.id}`,
+        PROFILE_LIMIT,
+      );
+      const values = {
+        graduationYear: input.graduationYear,
+        updatedAt: new Date(),
       };
+      await ctx.db
+        .insert(memberProfiles)
+        .values({ userId: ctx.session.user.id, ...values })
+        .onConflictDoUpdate({ target: memberProfiles.userId, set: values });
+      return { graduationYear: input.graduationYear };
+    }),
+
+  /** For the roster: graduation years of the members on the page. */
+  graduationYears: adminProcedure
+    .input(z.object({ userIds: z.array(z.string().min(1)).max(100) }))
+    .query(async ({ ctx, input }) => {
+      if (input.userIds.length === 0) return {};
+      try {
+        const rows = await ctx.db
+          .select({
+            userId: memberProfiles.userId,
+            graduationYear: memberProfiles.graduationYear,
+          })
+          .from(memberProfiles)
+          .where(inArray(memberProfiles.userId, input.userIds));
+        const years: Record<string, number> = {};
+        for (const row of rows) {
+          if (row.graduationYear !== null)
+            years[row.userId] = row.graduationYear;
+        }
+        return years;
+      } catch (error) {
+        if (isUndefinedTable(error)) return {};
+        throw error;
+      }
+    }),
+
+  /** An officer's correction. Logged like every other officer edit. */
+  setGraduationYear: adminProcedure
+    .input(
+      z.object({
+        userId: z.string().min(1),
+        graduationYear: graduationYearSchema,
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      return ctx.db.transaction(async (tx) => {
+        const [member] = await tx
+          .select({ email: users.email })
+          .from(users)
+          .where(eq(users.id, input.userId));
+        if (!member) notFound("Member");
+
+        // Locked so the logged "before" is the year this edit replaces.
+        const [before] = await tx
+          .select({ graduationYear: memberProfiles.graduationYear })
+          .from(memberProfiles)
+          .where(eq(memberProfiles.userId, input.userId))
+          .for("update");
+        const was = before?.graduationYear ?? null;
+
+        const values = {
+          graduationYear: input.graduationYear,
+          updatedAt: new Date(),
+        };
+        await tx
+          .insert(memberProfiles)
+          .values({ userId: input.userId, ...values })
+          .onConflictDoUpdate({ target: memberProfiles.userId, set: values });
+
+        // The same year again changes nothing, so it logs nothing.
+        if (was !== input.graduationYear) {
+          await recordAudit(tx, {
+            actorId: ctx.session.user.id,
+            action: "member.set_graduation_year",
+            targetType: "member",
+            targetId: input.userId,
+            targetLabel: member.email,
+            before: { graduationYear: was },
+            after: { graduationYear: input.graduationYear },
+          });
+        }
+        return { graduationYear: input.graduationYear };
+      });
+    }),
+
+  /** Whether the caller's name is hidden on the board. Unsaved means shown. */
+  leaderboardPreference: protectedProcedure.query(async ({ ctx }) => {
+    try {
+      const [row] = await ctx.db
+        .select({ hideName: leaderboardPreferences.hideName })
+        .from(leaderboardPreferences)
+        .where(eq(leaderboardPreferences.userId, ctx.session.user.id));
+      return { hideName: row?.hideName ?? false };
+    } catch (error) {
+      if (isUndefinedTable(error)) return { hideName: false };
+      throw error;
+    }
+  }),
+
+  setLeaderboardPreference: protectedProcedure
+    .input(z.object({ hideName: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      await assertRateLimit(
+        ctx.db,
+        `leaderboard-pref:${ctx.session.user.id}`,
+        LEADERBOARD_PREF_LIMIT,
+      );
+      const values = { hideName: input.hideName, updatedAt: new Date() };
+      await ctx.db
+        .insert(leaderboardPreferences)
+        .values({ userId: ctx.session.user.id, ...values })
+        .onConflictDoUpdate({
+          target: leaderboardPreferences.userId,
+          set: values,
+        });
+      return { hideName: input.hideName };
     }),
 });

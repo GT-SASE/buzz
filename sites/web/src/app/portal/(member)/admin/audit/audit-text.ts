@@ -8,11 +8,13 @@ export const PAGE_SIZE = 25;
 
 export const actionLabels: Record<AuditAction, string> = {
   "member.set_role": "Changed a role",
+  "member.set_graduation_year": "Changed a graduation year",
   "committee.set_status": "Moved an application",
   "event.manual_check_in": "Checked someone in",
   "event.remove_check_in": "Removed a check-in",
   "mentorship.award_points": "Awarded KIN points",
   "mentorship.award_group_points": "Awarded group KIN points",
+  "kin_group.carry_forward": "Copied kin groups forward",
   "export.roster": "Exported the roster",
   "export.attendance": "Exported attendance",
   "export.committee": "Exported applications",
@@ -44,6 +46,9 @@ const text = (value: unknown) =>
 const role = (value: unknown) =>
   typeof value === "string" ? roleLabel(value as UserRole) : "?";
 
+const year = (value: unknown) =>
+  typeof value === "number" ? String(value) : "unset";
+
 const rows = (value: unknown) => {
   const count = typeof value === "number" ? value : 0;
   return `${count} ${count === 1 ? "row" : "rows"}`;
@@ -60,6 +65,8 @@ export function describeChange(row: {
   switch (row.action) {
     case "member.set_role":
       return `${role(before?.role)} to ${role(after?.role)}`;
+    case "member.set_graduation_year":
+      return `${year(before?.graduationYear)} to ${year(after?.graduationYear)}`;
     case "committee.set_status":
       return `${text(before?.status)} to ${text(after?.status)}, ${text(after?.cycle)}`;
     case "event.manual_check_in":
@@ -70,6 +77,8 @@ export function describeChange(row: {
       return `${text(before?.points)} to ${text(after?.points)} points`;
     case "mentorship.award_group_points":
       return `+${text(after?.points)} points each to ${text(after?.members)} members`;
+    case "kin_group.carry_forward":
+      return `${text(after?.from)} to ${text(after?.to)}, ${text(after?.created)} new, ${text(after?.skipped)} already there`;
     case "export.roster": {
       const search = typeof after?.search === "string" ? after.search : "";
       return `${rows(after?.rows)}${after?.truncated ? ", cut off at the limit" : ""}${search ? `, search "${search}"` : ""}`;

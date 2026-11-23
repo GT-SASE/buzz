@@ -99,7 +99,7 @@ function RosterTable({
 }) {
   return (
     <div className="border-hairline bg-paper/50 overflow-hidden rounded-xl border shadow-xs">
-      <Table label="Members" className="min-w-[46rem] text-left">
+      <Table label="Members" className="min-w-[52rem] text-left">
         <TableHeader className="bg-cream/40 border-hairline border-b">
           <TableRow className="border-hairline">
             {/* w-full on the one elastic column; the rest hug their text. */}
@@ -116,8 +116,11 @@ function RosterTable({
             <TableHead className={cn(columnHeading, "pr-6 font-semibold")}>
               Role
             </TableHead>
+            <TableHead className={cn(columnHeading, "pr-6 font-semibold")}>
+              Class of
+            </TableHead>
             <SortHeader
-              label="Points"
+              label="All-time points"
               sortKey="points"
               sort={sort}
               onSort={onSort}
@@ -143,7 +146,13 @@ function RosterTable({
   );
 }
 
-function MemberCard({ member }: { member: Member }) {
+function MemberCard({
+  member,
+  graduationYear,
+}: {
+  member: Member;
+  graduationYear: number | undefined;
+}) {
   return (
     <li>
       <Link
@@ -161,8 +170,9 @@ function MemberCard({ member }: { member: Member }) {
         </p>
         <div className="border-hairline text-ink-muted text-body-sm mt-3 flex items-center justify-between border-t pt-2.5 tabular-nums">
           <span>
-            {member.totalPoints} pts · {member.totalEvents}{" "}
+            {member.totalPoints} pts all time · {member.totalEvents}{" "}
             {member.totalEvents === 1 ? "event" : "events"}
+            {graduationYear ? ` · Class of ${graduationYear}` : ""}
           </span>
           <span>
             Last:{" "}
@@ -174,7 +184,13 @@ function MemberCard({ member }: { member: Member }) {
   );
 }
 
-function MemberRow({ member }: { member: Member }) {
+function MemberRow({
+  member,
+  graduationYear,
+}: {
+  member: Member;
+  graduationYear: number | undefined;
+}) {
   return (
     <TableRow className="border-hairline hover:bg-cream/30 transition-colors">
       <TableCell className="py-3.5 pr-6 whitespace-normal">
@@ -195,6 +211,10 @@ function MemberRow({ member }: { member: Member }) {
 
       <TableCell className="py-3.5 pr-6">
         <RoleBadge role={member.role} />
+      </TableCell>
+
+      <TableCell className="text-ink-muted text-body-sm py-3.5 pr-6 tabular-nums">
+        {graduationYear ?? "—"}
       </TableCell>
 
       <TableCell className="text-navy py-3.5 pr-6 text-right font-bold tabular-nums">
@@ -225,6 +245,9 @@ function SkeletonRows() {
           </TableCell>
           <TableCell className="py-4 pr-6">
             <Skeleton className="h-5 w-16 rounded-full" />
+          </TableCell>
+          <TableCell className="py-4 pr-6">
+            <Skeleton className="h-4 w-10" />
           </TableCell>
           <TableCell className="py-4 pr-6">
             <Skeleton className="ml-auto h-4 w-8" />
@@ -284,6 +307,12 @@ export function MembersTable() {
   );
 
   const members = listing.data?.members ?? [];
+  // Its own read, so a database that has not run the profile migration still
+  // lists the roster; the column is then just empty.
+  const years = api.member.graduationYears.useQuery(
+    { userIds: members.map((member) => member.id) },
+    { enabled: members.length > 0, placeholderData: keepPreviousData },
+  ).data;
   const total = listing.data?.total ?? 0;
   const stale = listing.isPlaceholderData;
 
@@ -452,13 +481,21 @@ export function MembersTable() {
           >
             <ul className="grid gap-3 md:hidden">
               {members.map((member) => (
-                <MemberCard key={member.id} member={member} />
+                <MemberCard
+                  key={member.id}
+                  member={member}
+                  graduationYear={years?.[member.id]}
+                />
               ))}
             </ul>
             <div className="hidden md:block">
               <RosterTable sort={sort} onSort={changeSort}>
                 {members.map((member) => (
-                  <MemberRow key={member.id} member={member} />
+                  <MemberRow
+                    key={member.id}
+                    member={member}
+                    graduationYear={years?.[member.id]}
+                  />
                 ))}
               </RosterTable>
             </div>

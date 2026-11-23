@@ -30,6 +30,12 @@ describe("describeChange", () => {
         "Member to Officer",
       ],
       [
+        "member.set_graduation_year",
+        { graduationYear: null },
+        { graduationYear: 2028 },
+        "unset to 2028",
+      ],
+      [
         "committee.set_status",
         { status: "submitted", cycle: "fall-2026" },
         { status: "accepted", cycle: "fall-2026" },
@@ -58,6 +64,12 @@ describe("describeChange", () => {
         {},
         { points: 3, members: 6 },
         "+3 points each to 6 members",
+      ],
+      [
+        "kin_group.carry_forward",
+        {},
+        { from: "spring-2027", to: "fall-2027", created: 3, skipped: 1 },
+        "spring-2027 to fall-2027, 3 new, 1 already there",
       ],
       [
         "export.roster",
