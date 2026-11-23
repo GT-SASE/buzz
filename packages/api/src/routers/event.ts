@@ -3,11 +3,17 @@ import { and, asc, count, desc, eq, gte, inArray, isNull } from "drizzle-orm";
 import { z } from "zod";
 
 import { asDate, asInt, totalsColumns } from "../aggregates";
+import {
+  attendanceEvents,
+  attendanceFilter,
+  attendancePoints,
+} from "../attendance";
 import { recordAudit, recordPoints } from "../audit";
 import { sendCalendarInvite } from "../calendar-invite";
 import { notFound } from "../errors";
 import { noNotice, notifyEventChange } from "../notify";
 import { isUniqueViolation } from "../pg-errors";
+import { semesterWindow } from "../periods";
 import {
   assertRateLimit,
   CHECK_IN_LIMIT,
@@ -21,6 +27,7 @@ import {
   eventCheckIns,
   eventRsvps,
   events,
+  pointsLedger,
   users,
   type db as Db,
 } from "@buzz/db";
@@ -1125,7 +1132,7 @@ export const eventRouter = createTRPCRouter({
     const userId = ctx.session.user.id;
     const cutoff = new Date(Date.now() - CHECK_IN_WINDOW_MS);
 
-    const [attended, totals, upcoming] = await Promise.all([
+    const [attended, totals, thisSemester, upcoming] = await Promise.all([
       ctx.db
         .select({
           id: events.id,
@@ -1147,6 +1154,18 @@ export const eventRouter = createTRPCRouter({
         .innerJoin(events, eq(events.id, eventCheckIns.eventId))
         .where(
           and(eq(eventCheckIns.userId, userId), isNull(events.archivedAt)),
+        ),
+      // Same ledger definition as the leaderboard, so the card and the board
+      // always agree on this semester.
+      ctx.db
+        .select({ points: attendancePoints, events: attendanceEvents })
+        .from(pointsLedger)
+        .innerJoin(events, eq(events.id, pointsLedger.eventId))
+        .where(
+          and(
+            eq(pointsLedger.userId, userId),
+            attendanceFilter(semesterWindow(new Date())),
+          ),
         ),
       ctx.db
         .select({
@@ -1188,6 +1207,11 @@ export const eventRouter = createTRPCRouter({
         totalEvents: asInt(row?.totalEvents),
         totalPoints: asInt(row?.totalPoints),
         memberSince: asDate(row?.memberSince),
+        /** What the card shows: this semester only, from the ledger. */
+        semester: {
+          totalPoints: asInt(thisSemester[0]?.points),
+          totalEvents: asInt(thisSemester[0]?.events),
+        },
       },
     };
   }),

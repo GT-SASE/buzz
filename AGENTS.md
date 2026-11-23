@@ -37,7 +37,7 @@ sites/discord-bot/              the events Discord bot: api/ (Vercel functions),
 sites/web/src/app/(marketing)/  public pages, prerendered; [slug] serves CMS pages
 sites/web/src/app/portal/(member)/        member portal pages (needs a session)
 sites/web/src/app/portal/(member)/admin/  officer pages; adminNav lives in sites/web/src/data/portal.ts
-sites/web/src/app/api/          route handlers (trpc, auth, health; portal/ holds the resume downloads)
+sites/web/src/app/api/          route handlers (trpc, auth, health, resume, cron/elections: the scheduled election flips, `Authorization: Bearer $CRON_SECRET`, schedule in sites/web/vercel.json)
 sites/web/src/components/ui/    vendored Watermelon UI (do not hand-fix; `bun run ui:add`)
 sites/web/src/components/site/  editorial components built on ui
 sites/web/src/data/             content constants and cached loaders (chapter-events.ts, pages.ts)

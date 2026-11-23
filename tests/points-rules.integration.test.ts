@@ -7,7 +7,7 @@ mock.module("../packages/auth/src/index.ts", () => ({
   signOut: async () => undefined,
 }));
 
-const { db, eventCheckIns, events, users } =
+const { db, eventCheckIns, events, pointsLedger, users } =
   await import("../packages/db/src/index");
 const { createCaller } = await import("../packages/api/src/root");
 const { and, eq, inArray } = await import("drizzle-orm");
@@ -85,6 +85,15 @@ describe.skipIf(!process.env.DATABASE_URL)("points rules", () => {
     await db
       .insert(eventCheckIns)
       .values({ eventId, userId: user.id, pointsEarned });
+    // Every real writer appends the ledger row in the same transaction, and
+    // the leaderboard reads it.
+    await db.insert(pointsLedger).values({
+      userId: user.id,
+      delta: pointsEarned,
+      reason: "test history",
+      source: "check_in",
+      eventId,
+    });
   }
 
   async function stamp(eventId: string, user: TestUser) {
@@ -350,16 +359,16 @@ describe.skipIf(!process.env.DATABASE_URL)("points rules", () => {
       await attend(event, voter);
 
       const caller = callerFor(voter);
-      expect((await caller.election.current()).eligible).toBe(true);
+      expect((await caller.election.current()).checkIns).toBe(1);
 
       await callerFor(officer).event.setArchived({ id: event, archived: true });
-      expect((await caller.election.current()).eligible).toBe(false);
+      expect((await caller.election.current()).checkIns).toBe(0);
 
       await callerFor(officer).event.setArchived({
         id: event,
         archived: false,
       });
-      expect((await caller.election.current()).eligible).toBe(true);
+      expect((await caller.election.current()).checkIns).toBe(1);
     },
     SLOW,
   );

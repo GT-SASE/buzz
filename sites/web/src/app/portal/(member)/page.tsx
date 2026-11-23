@@ -5,6 +5,7 @@ import { Suspense } from "react";
 
 import { EventRows } from "~/app/portal/_components/event-rows";
 import { KinCard } from "~/app/portal/_components/kin-card";
+import { semester, semesterLabel } from "@buzz/api";
 import { Leaderboard } from "~/app/portal/_components/leaderboard";
 import { MemberCard } from "~/app/portal/_components/member-card";
 import { SignOutButton } from "~/app/portal/_components/portal-ui";
@@ -38,10 +39,12 @@ async function DashboardBody() {
   const [home, board, kin, kinGroup, recruiting, committee] = await Promise.all(
     [
       api.event.home(),
-      api.member.leaderboard({ limit: 10 }).catch((error) => {
-        console.error("Leaderboard failed:", error);
-        return null;
-      }),
+      api.member
+        .leaderboard({ period: "semester", limit: 10 })
+        .catch((error) => {
+          console.error("Leaderboard failed:", error);
+          return null;
+        }),
       api.mentorship.mine().catch((error) => {
         console.error("KIN prefetch failed:", error);
         return null;
@@ -97,8 +100,10 @@ async function DashboardBody() {
             memberSince={
               stats.memberSince ? formatMonth(stats.memberSince) : null
             }
-            totalPoints={stats.totalPoints}
-            totalEvents={stats.totalEvents}
+            totalPoints={stats.semester.totalPoints}
+            totalEvents={stats.semester.totalEvents}
+            tierPoints={stats.totalPoints}
+            term={semesterLabel(semester(new Date()))}
           />
           <div className="xl:hidden">{checkInCard}</div>
           {kin && kin.status !== "withdrawn" && (
@@ -272,7 +277,18 @@ async function DashboardBody() {
             }))}
           />
 
-          <Leaderboard data={board} />
+          <Leaderboard
+            data={board}
+            label={`Leaderboard, ${semesterLabel(semester(new Date()))}`}
+            footer={
+              <Link
+                href="/portal/leaderboard"
+                className="text-navy mt-4 inline-flex min-h-11 items-center font-semibold underline underline-offset-4"
+              >
+                School year and all time
+              </Link>
+            }
+          />
 
           <Separator className="mt-12" />
           <div className="flex flex-wrap items-center justify-between gap-4 pt-6">

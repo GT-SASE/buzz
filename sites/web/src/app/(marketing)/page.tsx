@@ -22,9 +22,9 @@ import {
   CardDescription,
   CardHeader,
 } from "~/components/ui/card";
+import { getBoard } from "~/data/board";
 import { getChapterEvents } from "~/data/chapter-events";
 import {
-  board,
   firstMonth,
   marqueeItems,
   meeting,
@@ -49,7 +49,10 @@ export const metadata = pageMetadata({
 });
 
 export default async function Home() {
-  const { upcoming } = await getChapterEvents();
+  const [{ upcoming }, board] = await Promise.all([
+    getChapterEvents(),
+    getBoard(),
+  ]);
   const hosted = upcoming.filter((event) => !event.reminder);
   const nextUp = hosted[0];
   // The hero already prints the soonest event, so the band starts after it.

@@ -21,6 +21,7 @@ import {
 } from "../rate-limit";
 import {
   schoolYear,
+  previousSemester,
   schoolYearOfSemester,
   semester,
   semesterPattern,
@@ -554,6 +555,70 @@ export const mentorshipRouter = createTRPCRouter({
         rethrowDuplicateName(error);
       }
     }),
+
+  /**
+   * Copies last semester's groups (name, description, seats, open or not)
+   * into this one. Nobody is seated: members join again, so a seat is never
+   * filled by someone who did not ask for it. Safe to repeat or to send twice
+   * at once: a group whose name already exists this semester is left alone
+   * (the unique index decides, so two racing calls cannot both insert it),
+   * and only a call that created something writes an audit row.
+   */
+  carryForwardGroups: adminProcedure.mutation(async ({ ctx }) => {
+    const now = new Date();
+    const to = semester(now);
+    const from = previousSemester(to);
+
+    return ctx.db.transaction(async (tx) => {
+      const source = await tx
+        .select({
+          name: kinGroups.name,
+          description: kinGroups.description,
+          capacity: kinGroups.capacity,
+          isOpen: kinGroups.isOpen,
+        })
+        .from(kinGroups)
+        .where(eq(kinGroups.semester, from))
+        .orderBy(asc(kinGroups.name));
+
+      const created =
+        source.length === 0
+          ? []
+          : await tx
+              .insert(kinGroups)
+              .values(
+                source.map((group) => ({
+                  ...group,
+                  year: schoolYear(now),
+                  semester: to,
+                })),
+              )
+              .onConflictDoNothing()
+              .returning({ id: kinGroups.id });
+
+      if (created.length > 0) {
+        await recordAudit(tx, {
+          actorId: ctx.session.user.id,
+          action: "kin_group.carry_forward",
+          targetType: "kin_group",
+          targetLabel: to,
+          after: {
+            from,
+            to,
+            created: created.length,
+            skipped: source.length - created.length,
+          },
+        });
+      }
+
+      return {
+        from,
+        to,
+        created: created.length,
+        skipped: source.length - created.length,
+      };
+    });
+  }),
 
   updateGroup: adminProcedure
     .input(groupInput.extend({ id: z.string().min(1) }))

@@ -2,6 +2,7 @@ import "server-only";
 
 import { createHydrationHelpers } from "@trpc/react-query/rsc";
 import { headers } from "next/headers";
+import { after } from "next/server";
 import { cache } from "react";
 
 import { createCaller, createTRPCContext, type AppRouter } from "@buzz/api";
@@ -17,6 +18,7 @@ const createContext = cache(async () => {
 
   return createTRPCContext({
     headers: heads,
+    defer: (task) => after(() => task().catch(() => undefined)),
   });
 });
 

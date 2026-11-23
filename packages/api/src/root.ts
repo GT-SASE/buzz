@@ -4,6 +4,7 @@ import { chapterRouter } from "./routers/chapter";
 import { electionRouter } from "./routers/election";
 import { committeeRouter } from "./routers/committee";
 import { eventRouter } from "./routers/event";
+import { headshotRouter } from "./routers/headshot";
 import { memberRouter } from "./routers/member";
 import { mentorshipRouter } from "./routers/mentorship";
 import { notificationRouter } from "./routers/notification";
@@ -23,6 +24,7 @@ export const appRouter = createTRPCRouter({
   committee: committeeRouter,
   election: electionRouter,
   event: eventRouter,
+  headshot: headshotRouter,
   member: memberRouter,
   mentorship: mentorshipRouter,
   notification: notificationRouter,

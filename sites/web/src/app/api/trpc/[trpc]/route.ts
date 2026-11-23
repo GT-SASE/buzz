@@ -1,5 +1,5 @@
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
-import { type NextRequest } from "next/server";
+import { after, type NextRequest } from "next/server";
 
 import { appRouter, createTRPCContext } from "@buzz/api";
 import { env } from "~/env";
@@ -31,6 +31,7 @@ function sameOriginRejection(req: NextRequest): Response | null {
 const createContext = async (req: NextRequest) => {
   return createTRPCContext({
     headers: req.headers,
+    defer: (task) => after(() => task().catch(() => undefined)),
   });
 };
 
