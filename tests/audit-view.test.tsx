@@ -6,6 +6,7 @@ import {
   screen,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, mock } from "bun:test";
+import { AUDIT_ACTIONS } from "../packages/db/src/schema";
 
 type Query = { input: Record<string, unknown>; data: unknown };
 
@@ -197,7 +198,8 @@ describe("AuditView audit log", () => {
       "off@gatech.edu",
     ]);
     const actions = screen.getByLabelText("Action") as HTMLSelectElement;
-    expect(actions.options.length).toBe(13);
+    // "Any action" plus every audited action, so a new one cannot slip by unlabeled.
+    expect(actions.options.length).toBe(1 + AUDIT_ACTIONS.length);
   });
 });
 
