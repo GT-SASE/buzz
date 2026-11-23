@@ -13,6 +13,7 @@ import {
   isCommitteeCycleOpen,
   LOCKED_COMMITTEE_STATUSES,
 } from "../committee-cycle";
+import { recordAudit } from "../audit";
 import { notFound } from "../errors";
 import { isUndefinedTable, isUniqueViolation } from "../pg-errors";
 import {
@@ -337,23 +338,46 @@ export const committeeRouter = createTRPCRouter({
         status: statusSchema,
       }),
     )
-    .mutation(async ({ ctx, input }) => {
-      const [existing] = await ctx.db
-        .select({ id: committeeApplications.id })
-        .from(committeeApplications)
-        .where(eq(committeeApplications.id, input.id));
+    .mutation(async ({ ctx, input }) =>
+      ctx.db.transaction(async (tx) => {
+        // Locked, so the logged "before" is the status this change replaces.
+        const [existing] = await tx
+          .select({
+            id: committeeApplications.id,
+            status: committeeApplications.status,
+            cycle: committeeApplications.cycle,
+            email: users.email,
+          })
+          .from(committeeApplications)
+          .innerJoin(users, eq(users.id, committeeApplications.userId))
+          .where(eq(committeeApplications.id, input.id))
+          .for("update", { of: committeeApplications });
 
-      if (!existing) {
-        notFound("Application");
-      }
+        if (!existing) {
+          notFound("Application");
+        }
 
-      const [updated] = await ctx.db
-        .update(committeeApplications)
-        .set({ status: input.status })
-        .where(eq(committeeApplications.id, input.id))
-        .returning(applicationSelect);
-      return updated;
-    }),
+        const [updated] = await tx
+          .update(committeeApplications)
+          .set({ status: input.status })
+          .where(eq(committeeApplications.id, input.id))
+          .returning(applicationSelect);
+
+        if (existing.status !== input.status) {
+          await recordAudit(tx, {
+            actorId: ctx.session.user.id,
+            action: "committee.set_status",
+            targetType: "application",
+            targetId: input.id,
+            targetLabel: existing.email,
+            before: { status: existing.status, cycle: existing.cycle },
+            after: { status: input.status, cycle: existing.cycle },
+          });
+        }
+
+        return updated;
+      }),
+    ),
 
   setNotes: adminProcedure
     .input(
@@ -426,6 +450,14 @@ export const committeeRouter = createTRPCRouter({
         .where(eq(committeeApplications.cycle, cycleId))
         .orderBy(desc(committeeApplications.submittedAt))
         .limit(5000);
+
+      await recordAudit(ctx.db, {
+        actorId: ctx.session.user.id,
+        action: "export.committee",
+        targetType: "cycle",
+        targetId: cycleId,
+        after: { rows: rows.length, truncated: rows.length >= 5000 },
+      });
 
       return { cycle: cycleId, rows, truncated: rows.length >= 5000 };
     }),

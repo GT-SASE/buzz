@@ -3,6 +3,7 @@ import { and, asc, count, desc, eq, gte, inArray, isNull } from "drizzle-orm";
 import { z } from "zod";
 
 import { asDate, asInt, totalsColumns } from "../aggregates";
+import { recordAudit, recordPoints } from "../audit";
 import { sendCalendarInvite, type InviteEvent } from "../calendar-invite";
 import { notFound } from "../errors";
 import { isUniqueViolation } from "../pg-errors";
@@ -417,7 +418,7 @@ export const eventRouter = createTRPCRouter({
 
       const event = await ctx.db.query.events.findFirst({
         where: eq(events.id, input.id),
-        columns: { id: true },
+        columns: { id: true, title: true },
       });
 
       if (!event) {
@@ -438,6 +439,15 @@ export const eventRouter = createTRPCRouter({
         .where(eq(eventCheckIns.eventId, event.id))
         .orderBy(desc(eventCheckIns.checkedInAt))
         .limit(5000);
+
+      await recordAudit(ctx.db, {
+        actorId: ctx.session.user.id,
+        action: "export.attendance",
+        targetType: "event",
+        targetId: event.id,
+        targetLabel: event.title,
+        after: { rows: rows.length, truncated: rows.length >= 5000 },
+      });
 
       return { rows, truncated: rows.length >= 5000 };
     }),
@@ -591,6 +601,28 @@ export const eventRouter = createTRPCRouter({
             pointsEarned: locked.pointsValue,
             actedByUserId: ctx.session.user.id,
           });
+          await recordPoints(tx, [
+            {
+              userId: member.id,
+              delta: locked.pointsValue,
+              reason: `Checked in by an officer: ${locked.title}`,
+              source: "manual_check_in",
+              eventId: locked.id,
+              actedByUserId: ctx.session.user.id,
+            },
+          ]);
+          await recordAudit(tx, {
+            actorId: ctx.session.user.id,
+            action: "event.manual_check_in",
+            targetType: "member",
+            targetId: member.id,
+            targetLabel: member.email,
+            after: {
+              eventId: locked.id,
+              event: locked.title,
+              points: locked.pointsValue,
+            },
+          });
           // Officers may exceed capacity, and a capped event's counter still
           // tracks every body in the room. An uncapped event has no counter to
           // keep: the code path skips it, so this one does too.
@@ -630,6 +662,7 @@ export const eventRouter = createTRPCRouter({
         const [locked] = await tx
           .select({
             id: events.id,
+            title: events.title,
             currentCheckIns: events.currentCheckIns,
             maxCheckIns: events.maxCheckIns,
           })
@@ -649,10 +682,48 @@ export const eventRouter = createTRPCRouter({
               eq(eventCheckIns.userId, input.userId),
             ),
           )
-          .returning({ id: eventCheckIns.id });
+          .returning({
+            id: eventCheckIns.id,
+            pointsEarned: eventCheckIns.pointsEarned,
+            method: eventCheckIns.method,
+          });
+
+        const [gone] = removed;
+        if (!gone) return;
+
+        const [member] = await tx
+          .select({ email: users.email })
+          .from(users)
+          .where(eq(users.id, input.userId));
+
+        // The ledger takes the grant back with a row of its own: it is
+        // append-only, so the earlier grant stays and the pair nets to zero.
+        await recordPoints(tx, [
+          {
+            userId: input.userId,
+            delta: 0 - gone.pointsEarned,
+            reason: `Check-in removed: ${locked.title}`,
+            source: "check_in_removed",
+            eventId: locked.id,
+            actedByUserId: ctx.session.user.id,
+          },
+        ]);
+        await recordAudit(tx, {
+          actorId: ctx.session.user.id,
+          action: "event.remove_check_in",
+          targetType: "member",
+          targetId: input.userId,
+          targetLabel: member?.email ?? null,
+          before: {
+            eventId: locked.id,
+            event: locked.title,
+            method: gone.method,
+            points: gone.pointsEarned,
+          },
+        });
 
         // Only a capped event keeps a counter (see manualCheckIn).
-        if (removed.length === 0 || locked.maxCheckIns === null) return;
+        if (locked.maxCheckIns === null) return;
 
         await tx
           .update(events)
@@ -785,6 +856,18 @@ export const eventRouter = createTRPCRouter({
           }
           throw error;
         }
+
+        // Same transaction as the check-in, so the ledger and the attendance
+        // row cannot disagree about whether this scan happened.
+        await recordPoints(tx, [
+          {
+            userId,
+            delta: pointsEarned,
+            reason: `Checked in: ${locked.title}`,
+            source: "check_in",
+            eventId: locked.id,
+          },
+        ]);
 
         if (maxCheckIns !== null) {
           // Row is already locked FOR UPDATE; capacity was checked above.

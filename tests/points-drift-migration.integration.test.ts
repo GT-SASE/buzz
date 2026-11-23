@@ -49,7 +49,7 @@ describe("0013_points_drift journal entry", () => {
   it("is registered after 0012", () => {
     expect(entry).toBeDefined();
     expect(entry!.idx).toBe(13);
-    expect(journal.entries[journal.entries.length - 2]!.tag).toBe(
+    expect(journal.entries[journal.entries.indexOf(entry!) - 1]!.tag).toBe(
       "0012_rate_limit",
     );
   });
