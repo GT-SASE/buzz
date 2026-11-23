@@ -49,7 +49,11 @@ export function PageList() {
                   variant={page.published ? "default" : "secondary"}
                   className="ml-auto"
                 >
-                  {page.published ? "Published" : "Draft"}
+                  {!page.published
+                    ? "Draft"
+                    : page.hasDraft
+                      ? "Published, unpublished changes"
+                      : "Published"}
                 </Badge>
                 <span className="text-ink-muted text-body-sm tabular-nums">
                   Updated {formatDate(page.updatedAt)}

@@ -151,6 +151,22 @@ describe("describeChange", () => {
       ["election.delete", {}, {}, "Deleted"],
       ["export.election_tally", {}, { rows: 9, truncated: false }, "9 rows"],
       ["board.remove_photo", { photo: true }, {}, "Headshot taken down"],
+      ["page.create", {}, { slug: "faq-2" }, "/faq-2"],
+      [
+        "page.publish",
+        { slug: "old" },
+        { slug: "new", version: 3 },
+        "v3, /old to /new",
+      ],
+      ["page.unpublish", { slug: "new" }, {}, "/new is a draft again"],
+      ["page.restore", {}, { restoredFrom: 2, version: 5 }, "v2 as draft v5"],
+      ["page.delete", { slug: "new" }, {}, "/new deleted"],
+      [
+        "page.upload_image",
+        {},
+        { width: 1600, height: 900, bytes: 120000 },
+        "1600 x 900, 120000 bytes",
+      ],
       [
         "export.roster",
         {},

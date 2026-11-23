@@ -3,6 +3,7 @@ import { after, type NextRequest } from "next/server";
 
 import { appRouter, createTRPCContext } from "@buzz/api";
 import { env } from "~/env";
+import { revalidatePages } from "~/lib/revalidate-pages";
 
 /**
  * Reject cross-site mutating requests. Queries (GET) are allowed so RSC and
@@ -32,6 +33,7 @@ const createContext = async (req: NextRequest) => {
   return createTRPCContext({
     headers: req.headers,
     defer: (task) => after(() => task().catch(() => undefined)),
+    revalidatePages,
   });
 };
 

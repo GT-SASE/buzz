@@ -24,7 +24,7 @@ export async function generateMetadata({
 
   try {
     const page = await pageForEditor(id);
-    return { title: page.title };
+    return { title: page.draft.title };
   } catch {
     return { title: "Page" };
   }
@@ -43,7 +43,7 @@ export default async function EditPagePage({
   return (
     <HydrateClient>
       <Section size="sm">
-        <PageBreadcrumb current={page.title} />
+        <PageBreadcrumb current={page.draft.title} />
         <PageEditor pageId={id} />
       </Section>
     </HydrateClient>

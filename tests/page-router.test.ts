@@ -47,7 +47,6 @@ const input = {
   title: "Spring kickoff",
   description: "",
   body: "Hello",
-  published: false,
 };
 
 describe("page router authz", () => {
@@ -57,7 +56,11 @@ describe("page router authz", () => {
     ["list", () => member.page.list()],
     ["byId", () => member.page.byId({ id: "p1" })],
     ["create", () => member.page.create(input)],
-    ["update", () => member.page.update({ id: "p1", ...input })],
+    ["saveDraft", () => member.page.saveDraft({ id: "p1", ...input })],
+    ["publish", () => member.page.publish({ id: "p1" })],
+    ["unpublish", () => member.page.unpublish({ id: "p1" })],
+    ["restore", () => member.page.restore({ id: "p1", number: 1 })],
+    ["versions", () => member.page.versions({ id: "p1" })],
     ["delete", () => member.page.delete({ id: "p1" })],
   ])("refuses a MEMBER on %s before reading", async (_name, call) => {
     expect((await rejection(call())).code).toBe("FORBIDDEN");
