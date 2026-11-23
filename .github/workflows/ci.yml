@@ -106,7 +106,8 @@ jobs:
           path: .turbo/cache
           key: turbo-${{ github.job }}-${{ github.sha }}
           restore-keys: turbo-${{ github.job }}-
-      - run: bun x turbo run test test:db
+      # The filter keeps the root package's //#test out: turbo adds it to any `test` run.
+      - run: bun x turbo run test test:db --filter=@buzz/discord-bot
 
   build:
     runs-on: ubuntu-latest
