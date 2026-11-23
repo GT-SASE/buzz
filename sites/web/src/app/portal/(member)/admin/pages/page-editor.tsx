@@ -159,16 +159,8 @@ function PageForm({ saved }: { saved: RouterOutputs["page"]["byId"] | null }) {
         // An image is a block: keep it on its own paragraph.
         const before = current.body.slice(0, start);
         const after = current.body.slice(end);
-        const lead = before && !before.endsWith("
-
-") ? "
-
-" : "";
-        const trail = after && !after.startsWith("
-
-") ? "
-
-" : "";
+        const lead = before && !before.endsWith("\n\n") ? "\n\n" : "";
+        const trail = after && !after.startsWith("\n\n") ? "\n\n" : "";
         return {
           ...current,
           body: `${before}${lead}${markdown}${trail}${after}`,
