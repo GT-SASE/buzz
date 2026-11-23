@@ -38,6 +38,11 @@ export const env = createEnv({
     GMAIL_USER: z.string().optional(),
     GMAIL_APP_PASSWORD: z.string().optional(),
     MAIL_REPLY_TO: z.string().optional(),
+    /**
+     * Discord channel webhook for event changes and election announcements.
+     * Optional: unset means no channel post, never a failed build.
+     */
+    NOTIFY_DISCORD_WEBHOOK_URL: z.string().optional(),
     NODE_ENV: z
       .enum(["development", "test", "production"])
       .default("development"),
@@ -63,6 +68,7 @@ export const env = createEnv({
     GMAIL_USER: process.env.GMAIL_USER,
     GMAIL_APP_PASSWORD: process.env.GMAIL_APP_PASSWORD,
     MAIL_REPLY_TO: process.env.MAIL_REPLY_TO,
+    NOTIFY_DISCORD_WEBHOOK_URL: process.env.NOTIFY_DISCORD_WEBHOOK_URL,
     NODE_ENV: process.env.NODE_ENV,
     VERCEL_ENV: process.env.VERCEL_ENV,
     NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION:

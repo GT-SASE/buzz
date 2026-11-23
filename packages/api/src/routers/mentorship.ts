@@ -11,6 +11,7 @@ import {
 } from "drizzle-orm";
 import { z } from "zod";
 
+import { recordAudit, recordPoints } from "../audit";
 import { notFound } from "../errors";
 import { isUniqueViolation } from "../pg-errors";
 import {
@@ -300,6 +301,31 @@ export const mentorshipRouter = createTRPCRouter({
           .set({ points: existing.points + input.points })
           .where(signupOf(input.userId))
           .returning();
+
+        await recordPoints(tx, [
+          {
+            userId: input.userId,
+            delta: input.points,
+            reason: "KIN points awarded by an officer",
+            source: "kin_award",
+            actedByUserId: ctx.session.user.id,
+          },
+        ]);
+        // Named by email like every other member-targeted entry, so the log
+        // still says who it was after the account is renamed or deleted.
+        const [member] = await tx
+          .select({ email: users.email })
+          .from(users)
+          .where(eq(users.id, input.userId));
+        await recordAudit(tx, {
+          actorId: ctx.session.user.id,
+          action: "mentorship.award_points",
+          targetType: "member",
+          targetId: input.userId,
+          targetLabel: member?.email ?? null,
+          before: { points: existing.points },
+          after: { points: existing.points + input.points },
+        });
         return updated;
       });
     }),
@@ -670,7 +696,7 @@ export const mentorshipRouter = createTRPCRouter({
 
       return ctx.db.transaction(async (tx) => {
         const [group] = await tx
-          .select({ year: kinGroups.year })
+          .select({ year: kinGroups.year, name: kinGroups.name })
           .from(kinGroups)
           .where(eq(kinGroups.id, input.groupId));
         if (!group) notFound("Kin group");
@@ -730,6 +756,29 @@ export const mentorshipRouter = createTRPCRouter({
               ),
             );
         }
+        // One row per member whose yearly total moved, which is the number
+        // every screen reads. A seat with no signup for the year has no total
+        // to move, so it gets no row either.
+        await recordPoints(
+          tx,
+          totals.map((total) => ({
+            userId: total.userId,
+            delta: input.points,
+            reason: `KIN group points: ${group.name}`,
+            source: "kin_group_award" as const,
+            actedByUserId: ctx.session.user.id,
+          })),
+        );
+        await recordAudit(tx, {
+          actorId: ctx.session.user.id,
+          action: "mentorship.award_group_points",
+          targetType: "kin_group",
+          targetId: input.groupId,
+          targetLabel: group.name,
+          // The members whose yearly total moved, the same set the ledger got
+          // rows for. A seat with no signup for the year is not one of them.
+          after: { points: input.points, members: totals.length },
+        });
         return { awarded: seats.length };
       });
     }),

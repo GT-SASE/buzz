@@ -8,6 +8,7 @@ import {
   vi,
 } from "bun:test";
 import { stubEnv, unstubAllEnvs } from "./helpers/env";
+import { auditRows, resetWrites, withMemoryAudit } from "./helpers/audit";
 import { resetRateLimits, withMemoryLimiter } from "./helpers/rate-limit";
 
 mock.module("../packages/auth/src/index.ts", () => ({
@@ -36,7 +37,7 @@ function memberCtx(db: unknown): Ctx {
 
 function adminCtx(db: unknown): Ctx {
   return {
-    db: withMemoryLimiter(db),
+    db: withMemoryAudit(withMemoryLimiter(db)),
     session: {
       user: { id: "officer-1", role: "ADMIN", email: "officer@gatech.edu" },
       expires: "2099-01-01T00:00:00.000Z",
@@ -89,6 +90,7 @@ const treasuryInput = {
 };
 
 beforeEach(() => {
+  resetWrites();
   resetRateLimits();
   vi.useRealTimers();
 });
@@ -299,15 +301,19 @@ describe("committee.withdraw", () => {
   });
 });
 
-describe("committee.setStatus", () => {
-  it("lets an officer move a row to interviewing", async () => {
-    const sets: unknown[] = [];
-    const db = {
-      select: () => ({
-        from: () => ({
-          where: () => Promise.resolve([{ id: "app-1" }]),
-        }),
-      }),
+/** `select().from().innerJoin().where().for()`: the locked application row. */
+function applicationDb(existing: object | undefined) {
+  const sets: Record<string, unknown>[] = [];
+  const chain = {
+    from: () => chain,
+    innerJoin: () => chain,
+    where: () => chain,
+    for: () => Promise.resolve(existing ? [existing] : []),
+  };
+  return {
+    sets,
+    db: {
+      select: () => chain,
       update: () => ({
         set: (row: Record<string, unknown>) => {
           sets.push(row);
@@ -318,7 +324,20 @@ describe("committee.setStatus", () => {
           };
         },
       }),
-    };
+    },
+  };
+}
+
+const SUBMITTED = {
+  id: "app-1",
+  status: "submitted",
+  cycle: "fall-2026",
+  email: "applicant@gatech.edu",
+};
+
+describe("committee.setStatus", () => {
+  it("lets an officer move a row to interviewing", async () => {
+    const { db, sets } = applicationDb(SUBMITTED);
 
     await createCaller(adminCtx(db)).committee.setStatus({
       id: "app-1",
@@ -326,6 +345,81 @@ describe("committee.setStatus", () => {
     });
 
     expect(sets[0]).toMatchObject({ status: "interviewing" });
+  });
+
+  it("logs the decision with the status it replaced", async () => {
+    const { db } = applicationDb(SUBMITTED);
+
+    await createCaller(adminCtx(db)).committee.setStatus({
+      id: "app-1",
+      status: "accepted",
+    });
+
+    expect(auditRows).toEqual([
+      {
+        actorId: "officer-1",
+        action: "committee.set_status",
+        targetType: "application",
+        targetId: "app-1",
+        targetLabel: "applicant@gatech.edu",
+        before: { status: "submitted", cycle: "fall-2026" },
+        after: { status: "accepted", cycle: "fall-2026" },
+      },
+    ]);
+  });
+
+  it("logs nothing when the status is the one it already had", async () => {
+    const { db } = applicationDb({ ...SUBMITTED, status: "accepted" });
+
+    await createCaller(adminCtx(db)).committee.setStatus({
+      id: "app-1",
+      status: "accepted",
+    });
+
+    expect(auditRows).toEqual([]);
+  });
+
+  it("is NOT_FOUND, and logs nothing, for an application that is not there", async () => {
+    const { db } = applicationDb(undefined);
+
+    const error = await rejection(
+      createCaller(adminCtx(db)).committee.setStatus({
+        id: "missing",
+        status: "accepted",
+      }),
+    );
+
+    expect(error.code).toBe("NOT_FOUND");
+    expect(auditRows).toEqual([]);
+  });
+});
+
+describe("committee.exportCycle", () => {
+  it("logs the export with its cycle and row count", async () => {
+    const chain = {
+      from: () => chain,
+      innerJoin: () => chain,
+      where: () => chain,
+      orderBy: () => chain,
+      limit: () => Promise.resolve([{ name: "Ada" }, { name: "Grace" }]),
+    };
+
+    const result = await createCaller(
+      adminCtx({ select: () => chain }),
+    ).committee.exportCycle({ cycle: "fall-2026" });
+
+    expect(result.rows).toHaveLength(2);
+    expect(auditRows).toEqual([
+      {
+        actorId: "officer-1",
+        action: "export.committee",
+        targetType: "cycle",
+        targetId: "fall-2026",
+        targetLabel: null,
+        before: null,
+        after: { rows: 2, truncated: false },
+      },
+    ]);
   });
 });
 

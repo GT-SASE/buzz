@@ -5,6 +5,7 @@ import { toast } from "sonner";
 
 import { ConfirmDialog } from "~/app/portal/_components/confirm-dialog";
 import { Action } from "~/app/portal/_components/controls";
+import { noticeToast } from "~/app/portal/_lib/notice";
 import { Badge } from "~/components/ui/badge";
 import {
   Dialog,
@@ -48,7 +49,7 @@ const advance: Partial<
   nominating: {
     to: "voting",
     label: "Open voting",
-    body: "Only approved candidates go on the ballot, and the ballot is locked once voting opens.",
+    body: "Only approved candidates go on the ballot, and the ballot is locked once voting opens. Members who checked in this school year are emailed.",
   },
   voting: {
     to: "closed",
@@ -58,9 +59,17 @@ const advance: Partial<
   closed: {
     to: "published",
     label: "Publish results",
-    body: "Every member will see the counts for each position.",
+    body: "Every member will see the counts for each position. Members who checked in this school year are emailed.",
   },
 };
+
+/** Voters hear about an election by email; a failed send is the officer's to follow up. */
+const electionNotice = (done: string) => ({
+  done,
+  unit: "email",
+  audience: "eligible members",
+  followUp: "Post the news in Discord so nobody misses it.",
+});
 
 function useRefresh() {
   const utils = api.useUtils();
@@ -75,8 +84,12 @@ function CreateElection() {
   const refresh = useRefresh();
   const [open, setOpen] = useState(false);
   const create = api.election.create.useMutation({
-    onSuccess: async () => {
-      toast.success("Election created. Nominations are open.");
+    onSuccess: async ({ notice }) => {
+      const { kind, message } = noticeToast(
+        notice,
+        electionNotice("Election created. Nominations are open."),
+      );
+      toast[kind](message);
       setOpen(false);
       await refresh();
     },
@@ -92,7 +105,8 @@ function CreateElection() {
         <DialogHeader>
           <DialogTitle>New election</DialogTitle>
           <DialogDescription>
-            Nominations open as soon as you create it.
+            Nominations open as soon as you create it, and members who checked
+            in this school year are emailed.
           </DialogDescription>
         </DialogHeader>
         <form
@@ -188,8 +202,12 @@ function ElectionPanel({
   const refresh = useRefresh();
   const onError = (error: { message: string }) => toast.error(error.message);
   const setPhase = api.election.setPhase.useMutation({
-    onSuccess: async () => {
-      toast.success("Election updated.");
+    onSuccess: async ({ notice }) => {
+      const { kind, message } = noticeToast(
+        notice,
+        electionNotice("Election updated."),
+      );
+      toast[kind](message);
       await refresh();
     },
     onError,

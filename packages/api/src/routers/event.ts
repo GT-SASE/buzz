@@ -3,8 +3,10 @@ import { and, asc, count, desc, eq, gte, inArray, isNull } from "drizzle-orm";
 import { z } from "zod";
 
 import { asDate, asInt, totalsColumns } from "../aggregates";
-import { sendCalendarInvite, type InviteEvent } from "../calendar-invite";
+import { recordAudit, recordPoints } from "../audit";
+import { sendCalendarInvite } from "../calendar-invite";
 import { notFound } from "../errors";
+import { noNotice, notifyEventChange } from "../notify";
 import { isUniqueViolation } from "../pg-errors";
 import {
   assertRateLimit,
@@ -104,33 +106,14 @@ const publicEventColumns = {
   checkInEnabled: events.checkInEnabled,
 } as const;
 
-/** Sends in small batches: Gmail throttles a burst of parallel connections. */
-const INVITE_BATCH = 5;
-
-/**
- * Re-sends the calendar invite (same UID, later SEQUENCE) to everyone who
- * RSVPed, after the event's time or place changed. A failed send does not fail
- * the edit; the officer gets the count instead.
- */
-async function sendUpdateInvites(db: typeof Db, event: InviteEvent) {
-  const rsvps = await db
-    .select({ email: users.email })
-    .from(eventRsvps)
-    .innerJoin(users, eq(users.id, eventRsvps.userId))
-    .where(eq(eventRsvps.eventId, event.id));
-
-  let failed = 0;
-  for (let i = 0; i < rsvps.length; i += INVITE_BATCH) {
-    const results = await Promise.all(
-      rsvps
-        .slice(i, i + INVITE_BATCH)
-        .map(({ email }) =>
-          sendCalendarInvite("REQUEST", event, email, { updated: true }),
-        ),
-    );
-    failed += results.filter((sent) => !sent).length;
-  }
-  return { sent: rsvps.length - failed, failed };
+/** Who RSVPed: the members told when an event changes or is cancelled. */
+function rsvpRecipients(db: typeof Db, eventId: string) {
+  return () =>
+    db
+      .select({ id: users.id, email: users.email })
+      .from(eventRsvps)
+      .innerJoin(users, eq(users.id, eventRsvps.userId))
+      .where(eq(eventRsvps.eventId, eventId));
 }
 
 const eventInput = z.object({
@@ -271,9 +254,16 @@ export const eventRouter = createTRPCRouter({
         moved && row.archivedAt === null && row.startsAt.getTime() > Date.now();
       return {
         ...row,
+        // After the commit. The calendar invite is the email, so a member is
+        // told once, and a failed send never undoes the edit.
         invites: notify
-          ? await sendUpdateInvites(ctx.db, row)
-          : { sent: 0, failed: 0 },
+          ? await notifyEventChange(
+              ctx.db,
+              row,
+              "moved",
+              rsvpRecipients(ctx.db, row.id),
+            )
+          : noNotice,
       };
     }),
 
@@ -417,7 +407,7 @@ export const eventRouter = createTRPCRouter({
 
       const event = await ctx.db.query.events.findFirst({
         where: eq(events.id, input.id),
-        columns: { id: true },
+        columns: { id: true, title: true },
       });
 
       if (!event) {
@@ -438,6 +428,15 @@ export const eventRouter = createTRPCRouter({
         .where(eq(eventCheckIns.eventId, event.id))
         .orderBy(desc(eventCheckIns.checkedInAt))
         .limit(5000);
+
+      await recordAudit(ctx.db, {
+        actorId: ctx.session.user.id,
+        action: "export.attendance",
+        targetType: "event",
+        targetId: event.id,
+        targetLabel: event.title,
+        after: { rows: rows.length, truncated: rows.length >= 5000 },
+      });
 
       return { rows, truncated: rows.length >= 5000 };
     }),
@@ -474,19 +473,46 @@ export const eventRouter = createTRPCRouter({
       return updated;
     }),
 
+  /**
+   * Archiving an event that has not started is how an officer cancels it, so
+   * members who RSVPed are told, and told again if it is restored. A past
+   * event, or one already in the state asked for, tells nobody.
+   */
   setArchived: adminProcedure
     .input(z.object({ id: z.string().min(1), archived: z.boolean() }))
     .mutation(async ({ ctx, input }) => {
-      const [updated] = await ctx.db
-        .update(events)
-        .set({ archivedAt: input.archived ? new Date() : null })
-        .where(eq(events.id, input.id))
-        .returning({ id: events.id, archivedAt: events.archivedAt });
+      const result = await ctx.db.transaction(async (tx) => {
+        const [before] = await tx
+          .select({ archivedAt: events.archivedAt })
+          .from(events)
+          .where(eq(events.id, input.id))
+          .for("update");
+        if (!before) return null;
 
-      if (!updated) {
+        const [row] = await tx
+          .update(events)
+          .set({ archivedAt: input.archived ? new Date() : null })
+          .where(eq(events.id, input.id))
+          .returning();
+        return row
+          ? { row, changed: (before.archivedAt !== null) !== input.archived }
+          : null;
+      });
+
+      if (!result) {
         notFound("Event");
       }
-      return updated;
+      const { row, changed } = result;
+      const invites =
+        changed && row.startsAt.getTime() > Date.now()
+          ? await notifyEventChange(
+              ctx.db,
+              row,
+              input.archived ? "cancelled" : "restored",
+              rsvpRecipients(ctx.db, row.id),
+            )
+          : noNotice;
+      return { id: row.id, archivedAt: row.archivedAt, invites };
     }),
 
   /** Revocation: rotating the code kills a photographed poster immediately. */
@@ -591,6 +617,28 @@ export const eventRouter = createTRPCRouter({
             pointsEarned: locked.pointsValue,
             actedByUserId: ctx.session.user.id,
           });
+          await recordPoints(tx, [
+            {
+              userId: member.id,
+              delta: locked.pointsValue,
+              reason: `Checked in by an officer: ${locked.title}`,
+              source: "manual_check_in",
+              eventId: locked.id,
+              actedByUserId: ctx.session.user.id,
+            },
+          ]);
+          await recordAudit(tx, {
+            actorId: ctx.session.user.id,
+            action: "event.manual_check_in",
+            targetType: "member",
+            targetId: member.id,
+            targetLabel: member.email,
+            after: {
+              eventId: locked.id,
+              event: locked.title,
+              points: locked.pointsValue,
+            },
+          });
           // Officers may exceed capacity, and a capped event's counter still
           // tracks every body in the room. An uncapped event has no counter to
           // keep: the code path skips it, so this one does too.
@@ -630,6 +678,7 @@ export const eventRouter = createTRPCRouter({
         const [locked] = await tx
           .select({
             id: events.id,
+            title: events.title,
             currentCheckIns: events.currentCheckIns,
             maxCheckIns: events.maxCheckIns,
           })
@@ -649,10 +698,48 @@ export const eventRouter = createTRPCRouter({
               eq(eventCheckIns.userId, input.userId),
             ),
           )
-          .returning({ id: eventCheckIns.id });
+          .returning({
+            id: eventCheckIns.id,
+            pointsEarned: eventCheckIns.pointsEarned,
+            method: eventCheckIns.method,
+          });
+
+        const [gone] = removed;
+        if (!gone) return;
+
+        const [member] = await tx
+          .select({ email: users.email })
+          .from(users)
+          .where(eq(users.id, input.userId));
+
+        // The ledger takes the grant back with a row of its own: it is
+        // append-only, so the earlier grant stays and the pair nets to zero.
+        await recordPoints(tx, [
+          {
+            userId: input.userId,
+            delta: 0 - gone.pointsEarned,
+            reason: `Check-in removed: ${locked.title}`,
+            source: "check_in_removed",
+            eventId: locked.id,
+            actedByUserId: ctx.session.user.id,
+          },
+        ]);
+        await recordAudit(tx, {
+          actorId: ctx.session.user.id,
+          action: "event.remove_check_in",
+          targetType: "member",
+          targetId: input.userId,
+          targetLabel: member?.email ?? null,
+          before: {
+            eventId: locked.id,
+            event: locked.title,
+            method: gone.method,
+            points: gone.pointsEarned,
+          },
+        });
 
         // Only a capped event keeps a counter (see manualCheckIn).
-        if (removed.length === 0 || locked.maxCheckIns === null) return;
+        if (locked.maxCheckIns === null) return;
 
         await tx
           .update(events)
@@ -785,6 +872,18 @@ export const eventRouter = createTRPCRouter({
           }
           throw error;
         }
+
+        // Same transaction as the check-in, so the ledger and the attendance
+        // row cannot disagree about whether this scan happened.
+        await recordPoints(tx, [
+          {
+            userId,
+            delta: pointsEarned,
+            reason: `Checked in: ${locked.title}`,
+            source: "check_in",
+            eventId: locked.id,
+          },
+        ]);
 
         if (maxCheckIns !== null) {
           // Row is already locked FOR UPDATE; capacity was checked above.

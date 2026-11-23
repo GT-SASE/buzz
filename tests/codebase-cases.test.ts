@@ -204,6 +204,7 @@ describe("site map and navigation", () => {
     expect(admin).not.toContain("/portal/check-in");
     expect(admin).toContain("/portal/admin/committees");
     expect(admin).toContain("/portal/admin/pages");
+    expect(admin).toContain("/portal/admin/audit");
   });
 });
 

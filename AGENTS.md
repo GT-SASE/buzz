@@ -27,6 +27,7 @@ packages/api/src/root.ts        appRouter; every router must be added here by ha
 packages/api/src/routers/*.ts   tRPC routers (chapter committee election event member mentorship page resume)
 packages/api/src/trpc.ts        context and procedure builders (protected, admin, superAdmin)
 packages/api/src/*.ts           helpers (page-slug, terms, ...) with unit tests; rate-limit.ts is the Postgres rate limiter (`buzz_rate_limit`)
+packages/api/src/notify.ts      every email and Discord channel post the chapter sends on its own (committee decisions, event changes, election phases); `mail.ts` is the Gmail transport; call after the transaction commits, never inside it
 packages/db/src/schema.ts       Drizzle schema; all tables are prefixed buzz_
 packages/db/drizzle/            generated SQL migrations + meta; commit them
 packages/db/scripts/            seeds

@@ -771,3 +771,160 @@ export const rateLimits = createTable(
     index(idx("rate_limit_window_start_idx")).on(t.windowStart),
   ],
 );
+
+/**
+ * What an officer did, for the audit page. The vocabulary is open on purpose:
+ * a feature that adds an officer action adds a name here, with no migration,
+ * because nothing reads this column except the filter on that page.
+ */
+export const AUDIT_ACTIONS = [
+  "member.set_role",
+  "committee.set_status",
+  "event.manual_check_in",
+  "event.remove_check_in",
+  "mentorship.award_points",
+  "mentorship.award_group_points",
+  "export.roster",
+  "export.attendance",
+  "export.committee",
+  "resume.download",
+] as const;
+export type AuditAction = (typeof AUDIT_ACTIONS)[number];
+
+export type AuditTargetType =
+  "member" | "application" | "event" | "kin_group" | "roster" | "cycle";
+
+/**
+ * Append-only record of officer actions. A row is written in the same
+ * transaction as the change it describes, so a change with no row, or a row
+ * for a change that rolled back, cannot exist.
+ *
+ * `actorId` and `targetId` carry no foreign key: history has to outlive the
+ * account or event it names. `targetLabel` is what the target was called at
+ * the time (a member's email, an event's title), so the page still reads
+ * after a rename or a deletion. `before` and `after` hold the fields that
+ * changed; an export or a download has no before, and puts what was asked
+ * for and how many rows came back in `after`. Never put a secret, a resume
+ * or a check-in code in either.
+ */
+export const auditLog = createTable(
+  "audit_log",
+  (d) => ({
+    id: d
+      .varchar({ length: 255 })
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    actorId: d.varchar({ length: 255 }).notNull(),
+    action: d.varchar({ length: 48 }).$type<AuditAction>().notNull(),
+    targetType: d.varchar({ length: 24 }).$type<AuditTargetType>().notNull(),
+    targetId: d.varchar({ length: 255 }),
+    targetLabel: d.varchar({ length: 255 }),
+    before: d.jsonb().$type<Record<string, unknown>>(),
+    after: d.jsonb().$type<Record<string, unknown>>(),
+    at: d.timestamp({ withTimezone: true }).defaultNow().notNull(),
+  }),
+  (t) => [
+    index(idx("audit_log_at_idx")).on(t.at.desc()),
+    index(idx("audit_log_actor_at_idx")).on(t.actorId, t.at.desc()),
+    index(idx("audit_log_action_at_idx")).on(t.action, t.at.desc()),
+  ],
+);
+
+/**
+ * Where a ledger row came from. `check_in` and `manual_check_in` are an
+ * attendance grant, `check_in_removed` takes one back; `kin_award` and
+ * `kin_group_award` are SASE KIN points an officer gave; `opening_balance`
+ * is the KIN total a member already held when the ledger began, which was
+ * only ever stored as a number, never as separate awards.
+ */
+export const POINTS_SOURCES = [
+  "check_in",
+  "manual_check_in",
+  "check_in_removed",
+  "kin_award",
+  "kin_group_award",
+  "opening_balance",
+] as const;
+export type PointsSource = (typeof POINTS_SOURCES)[number];
+
+/**
+ * Every change to a member's points, one signed row each. Event attendance
+ * and KIN points are separate scores that never add together, so a reader
+ * sums one family of sources, not the whole table.
+ *
+ * The stores a member's totals are read from (`event_check_in.pointsEarned`,
+ * `mentorship_enrollment.points`) stay the source of truth for the screens,
+ * and every writer updates them and appends here in one transaction. That
+ * keeps every existing read as it was, and `points-ledger.integration.test.ts`
+ * holds the two equal.
+ *
+ * Archiving an event is a read-time rule (its check-ins count for nothing,
+ * and count again on restore), so the ledger keeps those rows too. A reader
+ * that wants live attendance joins `eventId` to `event` and drops archived
+ * events, the way the roster does.
+ */
+export const pointsLedger = createTable(
+  "points_ledger",
+  (d) => ({
+    id: d
+      .varchar({ length: 255 })
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    userId: d
+      .varchar({ length: 255 })
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** Signed. A zero-point event still gets its row, one per check-in. */
+    delta: d.integer().notNull(),
+    reason: d.varchar({ length: 255 }).notNull(),
+    source: d.varchar({ length: 24 }).$type<PointsSource>().notNull(),
+    /** Set for the attendance sources. Gone with the event, like its check-ins. */
+    eventId: d.varchar({ length: 255 }).references(() => events.id, {
+      onDelete: "cascade",
+    }),
+    /** The officer behind a manual grant, a removal or a KIN award. */
+    actedByUserId: d.varchar({ length: 255 }).references(() => users.id, {
+      onDelete: "set null",
+    }),
+    at: d.timestamp({ withTimezone: true }).defaultNow().notNull(),
+  }),
+  (t) => [
+    index(idx("points_ledger_user_at_idx")).on(t.userId, t.at.desc()),
+    index(idx("points_ledger_at_idx")).on(t.at.desc()),
+    index(idx("points_ledger_source_at_idx")).on(t.source, t.at.desc()),
+    index(idx("points_ledger_event_idx")).on(t.eventId),
+    check(
+      idx("points_ledger_source_check"),
+      sql`${t.source} in ('check_in', 'manual_check_in', 'check_in_removed', 'kin_award', 'kin_group_award', 'opening_balance')`,
+    ),
+  ],
+);
+
+/**
+ * Which optional emails a member has switched off. A row exists only once a
+ * member has saved a choice; no row means every switch is on, so adding a
+ * member or a category needs no backfill. Application decisions are not here
+ * on purpose: they answer something the member did and are always sent.
+ *
+ * A table beside `user` rather than columns on it: Auth.js reads whole user
+ * rows on every sign-in, and a preview build shares the production database
+ * before its migration has run, so a new `user` column would break sign-in
+ * there. Nothing but the notify module reads this table.
+ */
+export const notificationPreferences = createTable(
+  "notification_preference",
+  (d) => ({
+    userId: d
+      .varchar({ length: 255 })
+      .primaryKey()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** Time or place changes and cancellations of an event the member RSVPed to. */
+    eventEmails: d.boolean().notNull().default(true),
+    /** Nominations open, voting open and results published. */
+    electionEmails: d.boolean().notNull().default(true),
+    updatedAt: d
+      .timestamp({ withTimezone: true })
+      .$defaultFn(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  }),
+);

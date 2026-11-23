@@ -49,6 +49,7 @@ mock.module("nodemailer", () => ({
 const { db, eventRsvps, events, users } =
   await import("../packages/db/src/index");
 const { createCaller } = await import("../packages/api/src/root");
+const { noNotice } = await import("../packages/api/src/notify");
 const { eq, inArray } = await import("drizzle-orm");
 
 const SLOW = 30_000;
@@ -273,7 +274,7 @@ describe.skipIf(!process.env.DATABASE_URL)("event RSVP", () => {
       const moved = new Date(startsAt + 2 * HOUR_MS);
       const result = await edit({ startsAt: moved });
 
-      expect(result.invites).toEqual({ sent: 2, failed: 0 });
+      expect(result.invites).toEqual({ ...noNotice, sent: 2 });
       expect(sent.map((mail) => mail.to).sort()).toEqual(
         [member.email, member2.email].sort(),
       );
@@ -295,13 +296,13 @@ describe.skipIf(!process.env.DATABASE_URL)("event RSVP", () => {
 
     it("re-sends when only the location changes", async () => {
       const result = await edit({ location: "Klaus 1443" });
-      expect(result.invites).toEqual({ sent: 2, failed: 0 });
+      expect(result.invites).toEqual({ ...noNotice, sent: 2 });
       expect(sent[0]!.content).toContain("LOCATION:Klaus 1443");
     });
 
     it("stays quiet when time and place are unchanged", async () => {
       const result = await edit({ title: "vitest rsvp future, renamed" });
-      expect(result.invites).toEqual({ sent: 0, failed: 0 });
+      expect(result.invites).toEqual(noNotice);
       expect(sent).toHaveLength(0);
     });
 
@@ -310,7 +311,7 @@ describe.skipIf(!process.env.DATABASE_URL)("event RSVP", () => {
       vi.spyOn(console, "error").mockImplementation(() => undefined);
       const result = await edit({ startsAt: new Date(startsAt + HOUR_MS) });
 
-      expect(result.invites).toEqual({ sent: 1, failed: 1 });
+      expect(result.invites).toEqual({ ...noNotice, sent: 1, failed: 1 });
       expect(result.startsAt.getTime()).toBe(startsAt + HOUR_MS);
       expect(sent.map((mail) => mail.to)).toEqual([member.email]);
     });
@@ -319,7 +320,7 @@ describe.skipIf(!process.env.DATABASE_URL)("event RSVP", () => {
       stubEnv("GMAIL_USER", "");
       stubEnv("GMAIL_APP_PASSWORD", "");
       const result = await edit({ startsAt: new Date(startsAt + 3 * HOUR_MS) });
-      expect(result.invites).toEqual({ sent: 0, failed: 2 });
+      expect(result.invites).toEqual({ ...noNotice, failed: 2 });
     });
   });
 

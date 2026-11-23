@@ -1,5 +1,11 @@
 import { afterAll, beforeEach, describe, expect, it, mock, vi } from "bun:test";
 import { stubEnv, unstubAllEnvs } from "./helpers/env";
+import {
+  auditRows,
+  ledgerRows,
+  resetWrites,
+  withMemoryAudit,
+} from "./helpers/audit";
 import { resetRateLimits, withMemoryLimiter } from "./helpers/rate-limit";
 
 mock.module("../packages/auth/src/index.ts", () => ({
@@ -19,7 +25,7 @@ type Ctx = Parameters<typeof createCaller>[0];
 
 function adminCtx(db: unknown): Ctx {
   return {
-    db: withMemoryLimiter(db),
+    db: withMemoryAudit(withMemoryLimiter(db)),
     session: {
       user: { id: "officer-1", role: "ADMIN", email: "officer@gatech.edu" },
       expires: "2099-01-01T00:00:00.000Z",
@@ -30,7 +36,7 @@ function adminCtx(db: unknown): Ctx {
 
 function superAdminCtx(db: unknown): Ctx {
   return {
-    db: withMemoryLimiter(db),
+    db: withMemoryAudit(withMemoryLimiter(db)),
     session: {
       user: {
         id: "super-1",
@@ -79,7 +85,10 @@ const unreachableDb = new Proxy(
 const consoleLog = vi.spyOn(console, "log").mockImplementation(() => undefined);
 afterAll(() => consoleLog.mockRestore());
 
-beforeEach(() => resetRateLimits());
+beforeEach(() => {
+  resetRateLimits();
+  resetWrites();
+});
 
 type AttendanceRow = {
   userId: string;
@@ -103,7 +112,7 @@ function attendanceRow(index: number): AttendanceRow {
 
 function attendanceDb(
   rows: AttendanceRow[],
-  event: { id: string } | undefined,
+  event: { id: string; title?: string } | undefined,
 ) {
   const limits: number[] = [];
   const chain = {
@@ -137,6 +146,35 @@ describe("event.exportAttendance", () => {
     expect(result.rows).toHaveLength(2);
     expect(result.truncated).toBe(false);
     expect(limits).toEqual([5000]);
+  });
+
+  it("logs the export with the event, the row count and whether it was cut off", async () => {
+    const { db } = attendanceDb([attendanceRow(1), attendanceRow(2)], {
+      id: "event-1",
+      title: "GBM 3",
+    });
+    await createCaller(adminCtx(db)).event.exportAttendance({ id: "event-1" });
+
+    expect(auditRows).toEqual([
+      {
+        actorId: "officer-1",
+        action: "export.attendance",
+        targetType: "event",
+        targetId: "event-1",
+        targetLabel: "GBM 3",
+        before: null,
+        after: { rows: 2, truncated: false },
+      },
+    ]);
+  });
+
+  it("logs nothing when the event does not exist", async () => {
+    const { db } = attendanceDb([], undefined);
+    await rejection(
+      createCaller(adminCtx(db)).event.exportAttendance({ id: "missing" }),
+    );
+
+    expect(auditRows).toEqual([]);
   });
 
   it("flags truncation once the query comes back full", async () => {
@@ -260,9 +298,14 @@ function removeCheckInDb({
   deleted,
 }: {
   locked:
-    | { id: string; currentCheckIns: number; maxCheckIns: number | null }
+    | {
+        id: string;
+        title?: string;
+        currentCheckIns: number;
+        maxCheckIns: number | null;
+      }
     | undefined;
-  deleted: { id: string }[];
+  deleted: { id: string; pointsEarned?: number; method?: string }[];
 }) {
   const sets: Record<string, unknown>[] = [];
   const order: string[] = [];
@@ -274,13 +317,22 @@ function removeCheckInDb({
       order.push("lock");
       return Promise.resolve(locked ? [locked] : []);
     },
+    // The member's email, read once something was actually removed.
+    then: (
+      onFulfilled?: (value: { email: string }[]) => unknown,
+      onRejected?: (reason: unknown) => unknown,
+    ) =>
+      Promise.resolve([{ email: "member@gatech.edu" }]).then(
+        onFulfilled,
+        onRejected,
+      ),
   };
 
   type StubDb = {
     transaction: (fn: (tx: StubDb) => Promise<unknown>) => Promise<unknown>;
     select: () => typeof selectChain;
     delete: () => {
-      where: () => { returning: () => Promise<{ id: string }[]> };
+      where: () => { returning: () => Promise<unknown[]> };
     };
     update: () => {
       set: (values: Record<string, unknown>) => {
@@ -331,6 +383,50 @@ describe("event.removeCheckIn", () => {
     expect(order).toEqual(["lock", "delete", "update"]);
   });
 
+  it("takes the points back in the ledger and logs who removed what", async () => {
+    const { db } = removeCheckInDb({
+      locked: {
+        id: "event-1",
+        title: "GBM 3",
+        currentCheckIns: 4,
+        maxCheckIns: 10,
+      },
+      deleted: [{ id: "check-in-1", pointsEarned: 10, method: "code" }],
+    });
+
+    await createCaller(adminCtx(db)).event.removeCheckIn({
+      eventId: "event-1",
+      userId: "member-1",
+    });
+
+    expect(ledgerRows).toEqual([
+      {
+        userId: "member-1",
+        delta: -10,
+        reason: "Check-in removed: GBM 3",
+        source: "check_in_removed",
+        eventId: "event-1",
+        actedByUserId: "officer-1",
+      },
+    ]);
+    expect(auditRows).toEqual([
+      {
+        actorId: "officer-1",
+        action: "event.remove_check_in",
+        targetType: "member",
+        targetId: "member-1",
+        targetLabel: "member@gatech.edu",
+        before: {
+          eventId: "event-1",
+          event: "GBM 3",
+          method: "code",
+          points: 10,
+        },
+        after: null,
+      },
+    ]);
+  });
+
   it("leaves the counter alone on an uncapped event", async () => {
     const { db, sets, order } = removeCheckInDb({
       locked: { id: "event-1", currentCheckIns: 0, maxCheckIns: null },
@@ -360,6 +456,8 @@ describe("event.removeCheckIn", () => {
 
     expect(sets).toEqual([]);
     expect(order).toEqual(["lock", "delete"]);
+    expect(auditRows).toEqual([]);
+    expect(ledgerRows).toEqual([]);
   });
 
   it("floors the counter at zero rather than going negative", async () => {
@@ -498,11 +596,25 @@ describe("member.revokeSessions", () => {
   });
 });
 
+type Role = "MEMBER" | "ADMIN" | "SUPER_ADMIN";
+
 function setRoleDb(
-  returned: { id: string; role: "MEMBER" | "ADMIN" | "SUPER_ADMIN" }[],
+  returned: { id: string; role: Role }[],
+  before: { role: Role; email: string } | undefined = {
+    role: "MEMBER",
+    email: "member@gatech.edu",
+  },
 ) {
   const sets: unknown[] = [];
   const db = {
+    select: () => {
+      const chain = {
+        from: () => chain,
+        where: () => chain,
+        for: () => Promise.resolve(before ? [before] : []),
+      };
+      return chain;
+    },
     update: () => ({
       set: (value: unknown) => {
         sets.push(value);
@@ -525,6 +637,42 @@ describe("member.setRole", () => {
 
     expect(sets).toEqual([{ role: "ADMIN" }]);
     expect(result).toEqual({ success: true, role: "ADMIN" });
+  });
+
+  it("logs the change with the role it replaced", async () => {
+    const { db } = setRoleDb([{ id: "member-1", role: "ADMIN" }], {
+      role: "MEMBER",
+      email: "member@gatech.edu",
+    });
+    await createCaller(superAdminCtx(db)).member.setRole({
+      userId: "member-1",
+      role: "ADMIN",
+    });
+
+    expect(auditRows).toEqual([
+      {
+        actorId: "super-1",
+        action: "member.set_role",
+        targetType: "member",
+        targetId: "member-1",
+        targetLabel: "member@gatech.edu",
+        before: { role: "MEMBER" },
+        after: { role: "ADMIN" },
+      },
+    ]);
+  });
+
+  it("logs nothing when the role does not change", async () => {
+    const { db } = setRoleDb([{ id: "member-1", role: "ADMIN" }], {
+      role: "ADMIN",
+      email: "member@gatech.edu",
+    });
+    await createCaller(superAdminCtx(db)).member.setRole({
+      userId: "member-1",
+      role: "ADMIN",
+    });
+
+    expect(auditRows).toEqual([]);
   });
 
   it("demotes an officer to MEMBER", async () => {
@@ -561,7 +709,7 @@ describe("member.setRole", () => {
   });
 
   it("404s when the user row is missing", async () => {
-    const { db } = setRoleDb([]);
+    const { db } = setRoleDb([], undefined);
     const error = await rejection(
       createCaller(superAdminCtx(db)).member.setRole({
         userId: "missing",
@@ -570,6 +718,7 @@ describe("member.setRole", () => {
     );
 
     expect(error.code).toBe("NOT_FOUND");
+    expect(auditRows).toEqual([]);
   });
 
   it("refuses an ADMIN before writing", async () => {

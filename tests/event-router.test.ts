@@ -1,5 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it, mock, vi } from "bun:test";
 import { stubEnv, unstubAllEnvs } from "./helpers/env";
+import {
+  auditRows,
+  ledgerRows,
+  resetWrites,
+  withMemoryAudit,
+} from "./helpers/audit";
 import { resetRateLimits, withMemoryLimiter } from "./helpers/rate-limit";
 
 /**
@@ -34,7 +40,7 @@ type Ctx = Parameters<typeof createCaller>[0];
 
 function adminCtx(db: unknown): Ctx {
   return {
-    db: withMemoryLimiter(db),
+    db: withMemoryAudit(withMemoryLimiter(db)),
     session: {
       user: { id: "officer-1", role: "ADMIN", email: "officer@gatech.edu" },
       expires: "2099-01-01T00:00:00.000Z",
@@ -102,7 +108,10 @@ function updateCapturingDb() {
     const chain = {
       from: () => chain,
       where: () => chain,
-      for: () => Promise.resolve([{ id: "event-1", startsAt, location: null }]),
+      for: () =>
+        Promise.resolve([
+          { id: "event-1", startsAt, location: null, archivedAt: null },
+        ]),
       then: (
         onFulfilled?: (value: { total: number }[]) => unknown,
         onRejected?: (reason: unknown) => unknown,
@@ -129,7 +138,8 @@ function updateCapturingDb() {
         sets.push(values);
         return {
           where: () => ({
-            returning: () => Promise.resolve([{ id: "event-1", ...values }]),
+            returning: () =>
+              Promise.resolve([{ id: "event-1", startsAt, ...values }]),
           }),
         };
       },
@@ -197,6 +207,110 @@ function manualCheckInWith(thrown: unknown) {
     }),
   );
 }
+
+/**
+ * A transaction that locks one live event, takes the check-in insert, and
+ * leaves the audit and ledger inserts to the in-memory sinks.
+ */
+function manualCheckInDb(locked: Record<string, unknown>) {
+  const checkIns: Record<string, unknown>[] = [];
+  const chain = {
+    from: () => chain,
+    where: () => chain,
+    for: () => Promise.resolve([locked]),
+  };
+  const tx = {
+    select: () => chain,
+    insert: () => ({
+      values: (values: Record<string, unknown>) => {
+        checkIns.push(values);
+        return Promise.resolve();
+      },
+    }),
+    update: () => ({ set: () => ({ where: () => Promise.resolve() }) }),
+  };
+  const db = {
+    query: {
+      users: {
+        findFirst: () =>
+          Promise.resolve({
+            id: "member-1",
+            name: "Ada Lovelace",
+            email: "member@gatech.edu",
+          }),
+      },
+    },
+    transaction: (run: (tx: unknown) => Promise<unknown>) => run(tx),
+  };
+  return { db, checkIns };
+}
+
+describe("event.manualCheckIn writes", () => {
+  it("adds the points to the ledger and logs the officer's action with the check-in", async () => {
+    resetRateLimits();
+    resetWrites();
+    const { db, checkIns } = manualCheckInDb({
+      id: "event-1",
+      title: "GBM 3",
+      pointsValue: 5,
+      archivedAt: null,
+      maxCheckIns: null,
+      currentCheckIns: 0,
+    });
+
+    await createCaller(adminCtx(db)).event.manualCheckIn({
+      eventId: "event-1",
+      email: "member@gatech.edu",
+    });
+
+    expect(checkIns).toHaveLength(1);
+    expect(ledgerRows).toEqual([
+      {
+        userId: "member-1",
+        delta: 5,
+        reason: "Checked in by an officer: GBM 3",
+        source: "manual_check_in",
+        eventId: "event-1",
+        actedByUserId: "officer-1",
+      },
+    ]);
+    expect(auditRows).toEqual([
+      {
+        actorId: "officer-1",
+        action: "event.manual_check_in",
+        targetType: "member",
+        targetId: "member-1",
+        targetLabel: "member@gatech.edu",
+        before: null,
+        after: { eventId: "event-1", event: "GBM 3", points: 5 },
+      },
+    ]);
+  });
+
+  it("writes neither row when the event is archived", async () => {
+    resetRateLimits();
+    resetWrites();
+    const { db } = manualCheckInDb({
+      id: "event-1",
+      title: "GBM 3",
+      pointsValue: 5,
+      archivedAt: new Date(),
+      maxCheckIns: null,
+      currentCheckIns: 0,
+    });
+
+    const error = await rejection(
+      createCaller(adminCtx(db)).event.manualCheckIn({
+        eventId: "event-1",
+        email: "member@gatech.edu",
+      }),
+    );
+
+    expect(error.code).toBe("BAD_REQUEST");
+    expect(auditRows).toEqual([]);
+    expect(ledgerRows).toEqual([]);
+  });
+});
 
 describe("isUniqueViolation (through event.manualCheckIn)", () => {
   beforeAll(() => {
