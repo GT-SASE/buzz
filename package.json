@@ -17,7 +17,6 @@
     "test:node": "bun test --isolate --path-ignore-patterns \"**/*.tsx\" --path-ignore-patterns \"sites/discord-bot/**\"",
     "test:dom": "bun test --isolate --preload ./tests/setup/dom.ts .test.tsx",
     "test:watch": "bun test --watch --isolate --path-ignore-patterns \"**/*.tsx\" --path-ignore-patterns \"sites/discord-bot/**\"",
-    "test:ci": "bun scripts/ci-test.mjs",
     "lint": "bun run --cwd sites/web next typegen && eslint",
     "lint:fix": "bun run --cwd sites/web next typegen && eslint --fix",
     "typecheck": "turbo run typecheck //#typecheck:self",
