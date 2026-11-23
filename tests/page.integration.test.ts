@@ -57,7 +57,7 @@ describe.skipIf(!process.env.DATABASE_URL)("page builder", () => {
       revalidatePages: (slugs: string[]) => {
         revalidated.push(slugs);
       },
-    } as never);
+    });
   }
   const officer = () => callerFor(officerId, "ADMIN");
 

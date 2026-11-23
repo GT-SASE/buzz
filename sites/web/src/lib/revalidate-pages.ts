@@ -11,7 +11,9 @@ import { isValidPageSlug } from "@buzz/api/page-slug";
  * the page mutations call it themselves after they commit.
  */
 export function revalidatePages(slugs: string[]) {
-  revalidateTag(PAGES_TAG, "max");
+  // Expire at once, not stale-while-revalidate: the page the path drops would
+  // otherwise be rebuilt from the stale cached row and stay stale for an hour.
+  revalidateTag(PAGES_TAG, { expire: 0 });
   revalidatePath("/sitemap.xml");
   for (const slug of new Set(slugs)) {
     if (isValidPageSlug(slug)) revalidatePath(`/${slug}`);
