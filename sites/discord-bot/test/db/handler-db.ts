@@ -57,9 +57,9 @@ function migratedTemplate(): Promise<File | Blob> {
 }
 
 // Every file that imports this builds the template before its first test, in a
-// hook with room. Left to the first handlerDb call, the boot and every
-// migration counted against that one test's 30 seconds and timed it out on a
-// busy machine.
+// hook with HOOK_TIMEOUT_MS to do it. Left to the first handlerDb call, the
+// PGlite boot and every migration counted against that one test's timeout and
+// failed it on a busy machine.
 beforeAll(migratedTemplate, HOOK_TIMEOUT_MS);
 
 async function migratedCopy(): Promise<PGlite> {
