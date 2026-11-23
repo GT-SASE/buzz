@@ -60,6 +60,12 @@ describe("describeChange", () => {
         "+3 points each to 6 members",
       ],
       [
+        "kin_group.carry_forward",
+        {},
+        { from: "spring-2027", to: "fall-2027", created: 3, skipped: 1 },
+        "spring-2027 to fall-2027, 3 new, 1 already there",
+      ],
+      [
         "export.roster",
         {},
         { rows: 120, truncated: false, search: "ada" },

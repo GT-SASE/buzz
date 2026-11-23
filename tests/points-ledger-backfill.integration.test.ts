@@ -186,8 +186,7 @@ describe.skipIf(!process.env.DATABASE_URL)("points ledger backfill", () => {
               kin.set(row.userId, (kin.get(row.userId) ?? 0) + row.points);
             }
           }
-          const board = await caller.member.leaderboard({ limit: 50 });
-          return { events, kin, board };
+          return { events, kin };
         };
 
         const readLedger = async () => {
@@ -241,10 +240,30 @@ describe.skipIf(!process.env.DATABASE_URL)("points ledger backfill", () => {
           await run(tx, statement);
         }
 
+        // The board also reads the opt-out table, which 0016 adds.
+        for (const statement of statementsOf("0016_leaderboard_preferences")) {
+          await run(tx, statement);
+        }
+
         const second = await totals();
         expect(second.events).toEqual(first.events);
         expect(second.kin).toEqual(first.kin);
-        expect(second.board).toEqual(first.board);
+        // The board reads the ledger, so it can only be read once the
+        // migration has made one. Everyone on it carries the total the
+        // roster showed before.
+        const board = await caller.member.leaderboard({ limit: 50 });
+        expect(board.top.length).toBeGreaterThan(0);
+        const names = new Map(
+          (await caller.member.list({ limit: 100 })).members.map((m) => [
+            m.name,
+            m.id,
+          ]),
+        );
+        for (const row of board.top) {
+          const id = names.get(row.name);
+          expect(id).toBeDefined();
+          expect(row.totalPoints).toBe(first.events.get(id!)?.points ?? 0);
+        }
 
         // ----------------------------- the ledger agrees with them
         const ledger = await readLedger();

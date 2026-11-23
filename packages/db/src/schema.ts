@@ -784,11 +784,11 @@ export const AUDIT_ACTIONS = [
   "event.remove_check_in",
   "mentorship.award_points",
   "mentorship.award_group_points",
+  "kin_group.carry_forward",
   "export.roster",
   "export.attendance",
   "export.committee",
   "resume.download",
-  "kin_group.carry_forward",
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
