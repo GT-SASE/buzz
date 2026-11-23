@@ -1,7 +1,9 @@
 name: CI
 
+# A branch with an open PR is tested once, by the PR. Pushes run only on main.
 on:
   push:
+    branches: [main]
   pull_request:
 
 concurrency:
@@ -85,9 +87,9 @@ jobs:
           key: turbo-${{ github.job }}-${{ github.sha }}
           restore-keys: turbo-${{ github.job }}-
       - run: bun run db:migrate
-      - run: bun x turbo run //#test
-      # The bot's unit tests and its PGlite database tests need no server.
-      - run: bun x turbo run test test:db
+      # The root tests need the database; the bot's unit tests and its PGlite
+      # database tests need no server, so all three run side by side.
+      - run: bun x turbo run //#test test test:db
 
   build:
     runs-on: ubuntu-latest
@@ -97,6 +99,17 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version-file: package.json
+      # Next's incremental build cache (turbo leaves .next/cache out of its own).
+      # The exact key hits when nothing changed; otherwise the newest cache for
+      # this lockfile, then any, seeds the build and Next recompiles what moved.
+      # Before the install, so hashFiles never walks node_modules.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: sites/web/.next/cache
+          key: next-${{ hashFiles('bun.lock') }}-${{ hashFiles('sites/web/**', 'packages/*/src/**', '!**/node_modules/**') }}
+          restore-keys: |
+            next-${{ hashFiles('bun.lock') }}-
+            next-
       - run: bun install --frozen-lockfile
       - run: bun run vercel-build
       # Builds the bot's functions, then loads them from a folder outside the repo.
