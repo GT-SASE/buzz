@@ -3,6 +3,7 @@
   "buildCommand": "cd ../.. && bun run vercel-build",
   "bunVersion": "1.4.x",
   "regions": ["cle1"],
+  "crons": [{ "path": "/api/cron/elections", "schedule": "0 9 * * *" }],
   "env": {
     "AUTH_REDIRECT_PROXY_URL": "https://buzzsase.vercel.app/api/auth"
   }

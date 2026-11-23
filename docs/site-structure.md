@@ -156,7 +156,7 @@ flowchart LR
     events["events<br/>event, event_check_in, event_rsvp"]
     mentorship["mentorship<br/>kin_group, mentorship_enrollment,<br/>kin_membership"]
     committees["committees<br/>committee_cycle, committee_application"]
-    elections["elections<br/>election, election_position,<br/>election_candidate, election_vote"]
+    elections["elections<br/>election, election_position,<br/>election_candidate, election_roll,<br/>election_voter, election_ballot"]
     resume["resume<br/>PDF bytes, max 2 MB"]
   end
 ```

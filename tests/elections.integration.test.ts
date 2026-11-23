@@ -211,10 +211,12 @@ describe.skipIf(!process.env.DATABASE_URL)("elections", () => {
 
     const memberView = await callerFor(voter).election.current();
     const view = memberView.elections.find((row) => row.id === election.id)!;
-    expect(memberView.eligible).toBe(true);
-    expect(view.positions[0]!.myVote).toBe(nominated!.id);
+    expect(view.eligible).toBe(true);
+    expect(view.positions[0]!.voted).toBe(true);
     expect(view.positions[0]!.candidates[0]!.votes).toBeNull();
     expect(JSON.stringify(memberView)).not.toContain("voterId");
+    // A secret ballot: the member is told that they voted, never for whom.
+    expect(JSON.stringify(memberView)).not.toContain("myVote");
 
     await callerFor(officer).election.setPhase({
       electionId: election.id,
@@ -232,7 +234,9 @@ describe.skipIf(!process.env.DATABASE_URL)("elections", () => {
     });
     const published = await callerFor(newcomer).election.current();
     expect(newcomer.id).not.toBe(voter.id);
-    expect(published.eligible).toBe(false);
+    expect(
+      published.elections.find((row) => row.id === election.id)!.eligible,
+    ).toBe(false);
     expect(
       published.elections.find((row) => row.id === election.id)!.positions[0]!
         .candidates[0]!.votes,
