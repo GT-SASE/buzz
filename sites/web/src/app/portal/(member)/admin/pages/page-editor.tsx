@@ -155,10 +155,25 @@ function PageForm({ saved }: { saved: RouterOutputs["page"]["byId"] | null }) {
       const area = bodyRef.current;
       const start = area?.selectionStart ?? draft.body.length;
       const end = area?.selectionEnd ?? draft.body.length;
-      setDraft((current) => ({
-        ...current,
-        body: `${current.body.slice(0, start)}${markdown}${current.body.slice(end)}`,
-      }));
+      setDraft((current) => {
+        // An image is a block: keep it on its own paragraph.
+        const before = current.body.slice(0, start);
+        const after = current.body.slice(end);
+        const lead = before && !before.endsWith("
+
+") ? "
+
+" : "";
+        const trail = after && !after.startsWith("
+
+") ? "
+
+" : "";
+        return {
+          ...current,
+          body: `${before}${lead}${markdown}${trail}${after}`,
+        };
+      });
       toast.success("Image added. Edit its description in the text.");
     } catch {
       toast.error("The upload failed.");
