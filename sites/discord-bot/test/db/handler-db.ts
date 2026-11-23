@@ -15,7 +15,7 @@ import {
   type DraftRow,
 } from "../support/interactions.ts";
 import { names, pgliteSql, serverError } from "../support/sql-client.ts";
-import { createMigratedDb, fakeId, HOOK_TIMEOUT_MS } from "./harness.ts";
+import { fakeId, HOOK_TIMEOUT_MS, migratedDump } from "./harness.ts";
 
 export interface Seed {
   config?: ConfigRow | null;
@@ -45,25 +45,14 @@ export interface HandlerDb {
   readonly claims: () => Promise<number>;
 }
 
-let template: Promise<File | Blob> | undefined;
-
-function migratedTemplate(): Promise<File | Blob> {
-  template ??= createMigratedDb().then(async (db) => {
-    const dump = await db.dumpDataDir("none");
-    await db.close();
-    return dump;
-  });
-  return template;
-}
-
-// Every file that imports this builds the template before its first test, in a
+// Every file that imports this loads the migrated tar before its first test, in a
 // hook with HOOK_TIMEOUT_MS to do it. Left to the first handlerDb call, the
 // PGlite boot and every migration counted against that one test's timeout and
 // failed it on a busy machine.
-beforeAll(migratedTemplate, HOOK_TIMEOUT_MS);
+beforeAll(migratedDump, HOOK_TIMEOUT_MS);
 
 async function migratedCopy(): Promise<PGlite> {
-  const db = new PGlite({ loadDataDir: await migratedTemplate() });
+  const db = new PGlite({ loadDataDir: await migratedDump() });
   await db.waitReady;
   return db;
 }

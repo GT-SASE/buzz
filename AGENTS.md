@@ -67,7 +67,7 @@ Use `bun`, `bun run`, `bun x`. Never npm, pnpm, npx, bunx. Spell out `bun run te
 - Router tests use a fake `db`; `*.integration.test.ts` use a real Postgres through `TEST_DATABASE_URL` only and wrap the suite in `describe.skipIf(!process.env.DATABASE_URL)`.
 - `tests/setup/env.ts` (bunfig preload) copies `TEST_DATABASE_URL` into `DATABASE_URL` and deletes it when unset, so unset means DB suites skip.
 - `.tsx` tests need the happy-dom preload; they only run in `test:dom`.
-- The bot's database tests each boot PGlite and apply every migration, about 10 s on a busy machine. A file that imports `test/db/handler-db.ts` builds that template in a `beforeAll` with `HOOK_TIMEOUT_MS`, and the other files pass `HOOK_TIMEOUT_MS` to the hook that calls `createMigratedDb`. Do the same in a new file: built inside a test, the boot counted against that test's timeout and failed the first test of the file under load.
+- The bot's database tests start from one migrated PGlite data directory. `migratedDump()` in `test/db/harness.ts` builds it once (about 10 s on a busy machine) and keeps it in `sites/discord-bot/node_modules/.cache/pglite-migrated`, named by a hash of the harness, the migrations and the PGlite version; every other test file loads it. `createMigratedDb()` restores it unless a `beforeMigrations` step needs a database built from nothing. Call it from a `beforeAll` with `HOOK_TIMEOUT_MS`, as `handler-db.ts` does: built inside a test, the boot counted against that test's timeout and failed the first test of the file under load. `test:db` runs with bun's default 5 s test timeout.
 - `tests/check-in.load.test.ts` writes its throughput JSON only when `BENCH_JSON` names a file; `scripts/bench-procedures.ts` takes the same variable.
 
 ## Turbo
