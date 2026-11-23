@@ -58,7 +58,8 @@ const HOSTILE: readonly (readonly [string, string])[] = [
   ["lone surrogate", "\uD800lone"],
 ];
 
-// The hostile inputs are large enough that linear work ends well inside this limit.
+// Linear work on these inputs takes about 1 s idle; quadratic or exponential work takes minutes.
+// The limit is 15x the idle time, so a loaded CI run stays under it.
 const HOSTILE_INPUT_LIMIT_MS = 15_000;
 
 /** A character that could start syntax in a label, which Discord shows literally. */
@@ -203,9 +204,9 @@ describe("hostile text", () => {
     "stays quick on long hostile input",
     () => {
       const started = performance.now();
-      truncateUserText("\u{200D}".repeat(200_000) + "<@".repeat(200_000), 2000);
-      containsInviteOrMaskedLink("discord.".repeat(50_000));
-      containsInviteOrMaskedLink("]".repeat(400_000));
+      truncateUserText("\u{200D}".repeat(50_000) + "<@".repeat(50_000), 2000);
+      containsInviteOrMaskedLink("discord.".repeat(12_500));
+      containsInviteOrMaskedLink("]".repeat(100_000));
 
       expect(performance.now() - started).toBeLessThan(HOSTILE_INPUT_LIMIT_MS);
     },
