@@ -14,3 +14,16 @@ if (testDatabaseUrl) {
 } else {
   delete process.env.DATABASE_URL;
 }
+
+/**
+ * No test sends real mail or posts to a real channel. A test that exercises
+ * sending stubs these itself, against a mocked transport or `fetch`.
+ */
+for (const name of [
+  "GMAIL_USER",
+  "GMAIL_APP_PASSWORD",
+  "MAIL_REPLY_TO",
+  "NOTIFY_DISCORD_WEBHOOK_URL",
+]) {
+  delete process.env[name];
+}

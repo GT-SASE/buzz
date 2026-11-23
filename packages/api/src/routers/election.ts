@@ -3,6 +3,7 @@ import { and, asc, count, desc, eq, gte, inArray, isNull } from "drizzle-orm";
 import { z } from "zod";
 
 import { notFound } from "../errors";
+import { noNotice, notifyElectionPhase, type Recipient } from "../notify";
 import { schoolYearStart } from "../periods";
 import { isUniqueViolation } from "../pg-errors";
 import { assertRateLimit, ELECTION_ACTION_LIMIT } from "../rate-limit";
@@ -38,19 +39,31 @@ function badRequest(message: string): never {
   throw new TRPCError({ code: "BAD_REQUEST", message });
 }
 
+/** The one rule for who may take part: a counted check-in this school year. */
+function checkedInThisYear(now: Date) {
+  return and(
+    gte(eventCheckIns.checkedInAt, schoolYearStart(now)),
+    isNull(events.archivedAt),
+  );
+}
+
 async function eligibility(db: Database, userId: string, now: Date) {
   const [row] = await db
     .select({ n: count() })
     .from(eventCheckIns)
     .innerJoin(events, eq(events.id, eventCheckIns.eventId))
-    .where(
-      and(
-        eq(eventCheckIns.userId, userId),
-        gte(eventCheckIns.checkedInAt, schoolYearStart(now)),
-        isNull(events.archivedAt),
-      ),
-    );
+    .where(and(eq(eventCheckIns.userId, userId), checkedInThisYear(now)));
   return (row?.n ?? 0) > 0;
+}
+
+/** Everyone `eligibility` passes: who an announcement goes to. */
+function eligibleMembers(db: Database, now: Date): Promise<Recipient[]> {
+  return db
+    .selectDistinct({ id: users.id, email: users.email })
+    .from(eventCheckIns)
+    .innerJoin(events, eq(events.id, eventCheckIns.eventId))
+    .innerJoin(users, eq(users.id, eventCheckIns.userId))
+    .where(checkedInThisYear(now));
 }
 
 async function loadElection(db: Database, electionId: string) {
@@ -511,7 +524,7 @@ export const electionRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      return ctx.db.transaction(async (tx) => {
+      const created = await ctx.db.transaction(async (tx) => {
         const [created] = await tx
           .insert(elections)
           .values({
@@ -535,6 +548,15 @@ export const electionRouter = createTRPCRouter({
         );
         return created;
       });
+
+      // A new election opens for nominations. Told after the commit.
+      const notice = await notifyElectionPhase(
+        ctx.db,
+        created,
+        created.phase,
+        () => eligibleMembers(ctx.db, new Date()),
+      );
+      return { ...created, notice };
     }),
 
   /** The ballot is fixed once voting opens, so review happens while nominating. */
@@ -577,9 +599,9 @@ export const electionRouter = createTRPCRouter({
         phase: z.enum(phases),
       }),
     )
-    .mutation(async ({ ctx, input }) =>
+    .mutation(async ({ ctx, input }) => {
       // FOR UPDATE: no ballot can land between the vote count and the update.
-      ctx.db.transaction(async (tx) => {
+      const { updated, announce } = await ctx.db.transaction(async (tx) => {
         const [election] = await tx
           .select()
           .from(elections)
@@ -635,9 +657,18 @@ export const electionRouter = createTRPCRouter({
           .set({ phase: input.phase })
           .where(eq(elections.id, election.id))
           .returning({ id: elections.id, phase: elections.phase });
-        return updated;
-      }),
-    ),
+        // Forward steps are announced; reopening nominations is a correction.
+        return { updated, announce: forward ? election : null };
+      });
+
+      // After the commit: a failed send never undoes the phase change.
+      const notice = announce
+        ? await notifyElectionPhase(ctx.db, announce, input.phase, () =>
+            eligibleMembers(ctx.db, new Date()),
+          )
+        : noNotice;
+      return { ...updated, notice };
+    }),
 
   delete: adminProcedure
     .input(z.object({ electionId: z.string().min(1) }))

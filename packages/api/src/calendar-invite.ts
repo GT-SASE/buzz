@@ -1,8 +1,5 @@
-import nodemailer from "nodemailer";
-
 import { EVENT_CALENDAR_LENGTH_MS } from "./event-length";
-
-const SENDER_NAME = "GT SASE";
+import { deliver, mailer, SENDER_NAME, type Mailer } from "./mail";
 
 export type InviteEvent = {
   id: string;
@@ -71,21 +68,6 @@ export function inviteIcs({
   return lines.filter((line) => line !== null).join("\r\n");
 }
 
-function mailer() {
-  const user = process.env.GMAIL_USER;
-  const pass = process.env.GMAIL_APP_PASSWORD;
-  if (!user || !pass) return null;
-  return {
-    user,
-    replyTo:
-      process.env.MAIL_REPLY_TO === "" ? undefined : process.env.MAIL_REPLY_TO,
-    transport: nodemailer.createTransport({
-      service: "gmail",
-      auth: { user, pass },
-    }),
-  };
-}
-
 /**
  * Puts the event on the member's calendar (REQUEST) or takes it off (CANCEL).
  * `updated` marks a REQUEST that revises an entry already sent: same UID and a
@@ -97,14 +79,15 @@ export async function sendCalendarInvite(
   method: "REQUEST" | "CANCEL",
   event: InviteEvent,
   attendee: string,
-  { updated = false }: { updated?: boolean } = {},
+  {
+    updated = false,
+    mail = mailer(),
+  }: { updated?: boolean; mail?: Mailer | null } = {},
 ) {
-  const mail = mailer();
   if (!mail) return false;
-  try {
-    await mail.transport.sendMail({
-      from: { name: SENDER_NAME, address: mail.user },
-      replyTo: mail.replyTo,
+  return deliver(
+    mail,
+    {
       to: attendee,
       subject:
         method === "CANCEL"
@@ -122,10 +105,7 @@ export async function sendCalendarInvite(
         method,
         content: inviteIcs({ method, event, organizer: mail.user, attendee }),
       },
-    });
-    return true;
-  } catch (error) {
-    console.error("Calendar invite failed:", error);
-    return false;
-  }
+    },
+    "Calendar invite",
+  );
 }

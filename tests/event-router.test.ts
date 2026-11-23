@@ -108,7 +108,10 @@ function updateCapturingDb() {
     const chain = {
       from: () => chain,
       where: () => chain,
-      for: () => Promise.resolve([{ id: "event-1", startsAt, location: null }]),
+      for: () =>
+        Promise.resolve([
+          { id: "event-1", startsAt, location: null, archivedAt: null },
+        ]),
       then: (
         onFulfilled?: (value: { total: number }[]) => unknown,
         onRejected?: (reason: unknown) => unknown,
@@ -135,7 +138,8 @@ function updateCapturingDb() {
         sets.push(values);
         return {
           where: () => ({
-            returning: () => Promise.resolve([{ id: "event-1", ...values }]),
+            returning: () =>
+              Promise.resolve([{ id: "event-1", startsAt, ...values }]),
           }),
         };
       },

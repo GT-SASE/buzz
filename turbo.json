@@ -39,6 +39,7 @@
         "GMAIL_USER",
         "GMAIL_APP_PASSWORD",
         "MAIL_REPLY_TO",
+        "NOTIFY_DISCORD_WEBHOOK_URL",
         "VERCEL_URL"
       ]
     },
