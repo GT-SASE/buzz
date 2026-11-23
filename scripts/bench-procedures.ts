@@ -163,9 +163,9 @@ async function seed() {
            'bench-u' || (10 + el * 50 + p * 5 + c), 'I would be great', 'approved', now()
     from generate_series(0, 1) el, generate_series(0, 4) p, generate_series(0, 2) c`);
   await db.execute(sql`
-    insert into buzz_election_vote ("positionId", "voterId", "candidateId", "castAt")
-    select 'bench-p' || el || '-' || p, 'bench-u' || v,
-           'bench-k' || el || '-' || p || '-' || (v % 3), now()
+    insert into buzz_election_ballot (id, "positionId", "candidateId")
+    select 'bench-b' || el || '-' || p || '-' || v, 'bench-p' || el || '-' || p,
+           'bench-k' || el || '-' || p || '-' || (v % 3)
     from generate_series(0, 1) el, generate_series(0, 4) p, generate_series(100, 399) v`);
   await db
     .execute(

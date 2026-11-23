@@ -6,6 +6,7 @@ import { Toaster } from "~/components/ui/sonner";
 import { HydrateClient } from "~/trpc/hydrate";
 import { api } from "~/trpc/server";
 import PortalLoading from "../loading";
+import { HeadshotSettings } from "./headshot-settings";
 import { LeaderboardSettings } from "./leaderboard-settings";
 import { ProfileSettings } from "./profile-settings";
 import { NotificationSettings } from "./notification-settings";
@@ -23,11 +24,12 @@ export default function SettingsPage() {
 }
 
 async function SettingsBody() {
-  await requireSession("/portal/settings");
+  const session = await requireSession("/portal/settings");
   await Promise.all([
     api.notification.mine.prefetch(),
     api.member.leaderboardPreference.prefetch(),
     api.member.profile.prefetch(),
+    api.headshot.mine.prefetch(),
   ]);
 
   return (
@@ -35,6 +37,9 @@ async function SettingsBody() {
       <NotificationSettings />
       <ProfileSettings />
       <LeaderboardSettings />
+      <HeadshotSettings
+        name={session.user.name ?? session.user.email ?? "Member"}
+      />
       <Toaster position="bottom-center" />
     </HydrateClient>
   );

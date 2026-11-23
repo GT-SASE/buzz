@@ -17,8 +17,9 @@ const {
   db,
   electionCandidates,
   electionPositions,
+  electionBallots,
   elections,
-  electionVotes,
+  electionVoters,
   users,
 } = await import("../packages/db/src/index");
 const { createCaller } = await import("../packages/api/src/root");
@@ -124,13 +125,26 @@ describe.skipIf(!process.env.DATABASE_URL)("election phases", () => {
       });
     for (const row of cands) cand[row.statement] = row.id;
 
-    await db.insert(electionVotes).values([
+    const cast = [
       { positionId: votingPos, voterId: voterA, candidateId: cand["v-a"]! },
       { positionId: votingPos, voterId: voterB, candidateId: cand["v-a"]! },
       { positionId: votingPos, voterId: voterC, candidateId: cand["v-b"]! },
       { positionId: publishedPos, voterId: voterA, candidateId: cand["p-b"]! },
       { positionId: publishedPos, voterId: voterB, candidateId: cand["p-b"]! },
-    ]);
+    ];
+    await db.insert(electionVoters).values(
+      cast.map((vote) => ({
+        electionId: vote.positionId === votingPos ? votingId : publishedId,
+        positionId: vote.positionId,
+        voterId: vote.voterId,
+      })),
+    );
+    await db.insert(electionBallots).values(
+      cast.map((vote) => ({
+        positionId: vote.positionId,
+        candidateId: vote.candidateId,
+      })),
+    );
   }, SLOW);
 
   afterAll(async () => {
@@ -185,8 +199,8 @@ describe.skipIf(!process.env.DATABASE_URL)("election phases", () => {
         published.positions[0]!.candidates.map((c) => c.votes).sort(),
       ).toEqual([0, 2]);
       // voterC voted only in the voting election.
-      expect(voting.positions[0]!.myVote).toBe(cand["v-b"]!);
-      expect(published.positions[0]!.myVote).toBeNull();
+      expect(voting.positions[0]!.voted).toBe(true);
+      expect(published.positions[0]!.voted).toBe(false);
     },
     SLOW,
   );

@@ -360,16 +360,16 @@ describe.skipIf(!process.env.DATABASE_URL)("points rules", () => {
       await attend(event, voter);
 
       const caller = callerFor(voter);
-      expect((await caller.election.current()).eligible).toBe(true);
+      expect((await caller.election.current()).checkIns).toBe(1);
 
       await callerFor(officer).event.setArchived({ id: event, archived: true });
-      expect((await caller.election.current()).eligible).toBe(false);
+      expect((await caller.election.current()).checkIns).toBe(0);
 
       await callerFor(officer).event.setArchived({
         id: event,
         archived: false,
       });
-      expect((await caller.election.current()).eligible).toBe(true);
+      expect((await caller.election.current()).checkIns).toBe(1);
     },
     SLOW,
   );
