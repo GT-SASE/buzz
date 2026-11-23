@@ -1,9 +1,9 @@
 import "server-only";
 
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, ne } from "drizzle-orm";
 import { unstable_cache } from "next/cache";
 
-import { isValidPageSlug } from "@buzz/api/page-slug";
+import { ANNOUNCEMENT_SLUG, isValidPageSlug } from "@buzz/api/page-slug";
 import { db, pages } from "@buzz/db";
 
 export const PAGES_TAG = "pages";
@@ -34,7 +34,8 @@ async function fetchPublishedList() {
   const rows = await db
     .select({ slug: pages.slug, updatedAt: pages.updatedAt })
     .from(pages)
-    .where(eq(pages.published, true))
+    // The site banner is a published row too, but not a page.
+    .where(and(eq(pages.published, true), ne(pages.slug, ANNOUNCEMENT_SLUG)))
     .orderBy(asc(pages.slug));
   return rows.map((row) => ({
     slug: row.slug,

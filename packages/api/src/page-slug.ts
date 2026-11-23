@@ -1,5 +1,13 @@
 export const PAGE_SLUG_MAX = 60;
 
+/**
+ * The site-wide announcement banner is stored as a row of the page table under
+ * this slug, so it needs no table of its own. The slug is reserved: an officer
+ * cannot create a page here, `/site-banner` is never served as one, and the
+ * page list and the sitemap skip the row.
+ */
+export const ANNOUNCEMENT_SLUG = "site-banner";
+
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 /**
@@ -16,9 +24,11 @@ export const RESERVED_PAGE_SLUGS: ReadonlySet<string> = new Set([
   "discord",
   "events",
   "events.ics",
+  "faq",
   "join",
   "portal",
   "programs",
+  "site-banner",
   "sponsors",
   "status",
   "website-team",

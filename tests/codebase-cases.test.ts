@@ -172,8 +172,10 @@ describe("site map and navigation", () => {
 
   it("appends published CMS pages with their last edit", () => {
     const updatedAt = new Date("2026-11-01T12:00:00.000Z");
-    const entries = buildSitemap([{ slug: "faq", updatedAt }]);
-    const cms = entries.find((entry) => entry.url === `${site.url}/faq`);
+    const entries = buildSitemap([{ slug: "spring-kickoff", updatedAt }]);
+    const cms = entries.find(
+      (entry) => entry.url === `${site.url}/spring-kickoff`,
+    );
     expect(cms?.lastModified).toEqual(updatedAt);
     expect(entries).toHaveLength(buildSitemap([]).length + 1);
   });

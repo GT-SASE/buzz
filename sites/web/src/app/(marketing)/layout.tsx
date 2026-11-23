@@ -1,3 +1,4 @@
+import { AnnouncementSlot } from "~/components/site/announcement-slot";
 import { SiteFooter } from "~/components/site/site-footer";
 import { SiteNav } from "~/components/site/site-nav";
 
@@ -20,6 +21,8 @@ export default function MarketingLayout({
       >
         Skip to content
       </a>
+      {/* The officers' notice sits above the nav, in the prerendered HTML. */}
+      <AnnouncementSlot />
       <SiteNav />
       {/* tabIndex makes the skip link actually move focus in Safari. The global
           :focus-visible ring is two properties, so both have to go or the whole
