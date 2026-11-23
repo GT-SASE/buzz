@@ -64,6 +64,15 @@ const officerOnly: Record<string, (caller: Caller) => Promise<unknown>> = {
   setPhase: (caller) =>
     caller.election.setPhase({ electionId: "e1", phase: "voting" }),
   delete: (caller) => caller.election.delete({ electionId: "e1" }),
+  configure: (caller) =>
+    caller.election.configure({ electionId: "e1", minCheckIns: 2 }),
+  addPosition: (caller) =>
+    caller.election.addPosition({ electionId: "e1", title: "Chair" }),
+  renamePosition: (caller) =>
+    caller.election.renamePosition({ positionId: "p1", title: "Chair" }),
+  removePosition: (caller) =>
+    caller.election.removePosition({ positionId: "p1" }),
+  exportTally: (caller) => caller.election.exportTally({ electionId: "e1" }),
 };
 
 describe("election officer procedures", () => {

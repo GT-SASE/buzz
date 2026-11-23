@@ -72,6 +72,47 @@ describe("describeChange", () => {
         "spring-2027 to fall-2027, 3 new, 1 already there",
       ],
       [
+        "election.create",
+        {},
+        {
+          positions: 4,
+          opensAt: "2027-03-01T14:00:00.000Z",
+          closesAt: null,
+          minCheckIns: 2,
+        },
+        "4 positions, opens 2027-03-01 14:00 UTC, closes unset, 2+ check-ins",
+      ],
+      [
+        "election.configure",
+        { opensAt: null, closesAt: null, minCheckIns: 1 },
+        {
+          opensAt: "2027-03-01T14:00:00.000Z",
+          closesAt: "2027-03-05T14:00:00.000Z",
+          minCheckIns: 3,
+        },
+        "opens unset, closes unset, 1+ check-ins to opens 2027-03-01 14:00 UTC, closes 2027-03-05 14:00 UTC, 3+ check-ins",
+      ],
+      [
+        "election.set_phase",
+        { phase: "nominating" },
+        { phase: "voting", scheduled: true, voters: 41 },
+        "nominating to voting by schedule, 41 voters frozen",
+      ],
+      [
+        "election.edit_positions",
+        {},
+        { added: "Treasurer" },
+        "Added Treasurer",
+      ],
+      [
+        "election.review_candidate",
+        { status: "pending" },
+        { status: "approved", candidate: "Ada" },
+        "Ada: pending to approved",
+      ],
+      ["election.delete", {}, {}, "Deleted"],
+      ["export.election_tally", {}, { rows: 9, truncated: false }, "9 rows"],
+      [
         "export.roster",
         {},
         { rows: 120, truncated: false, search: "ada" },

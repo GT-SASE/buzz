@@ -161,7 +161,7 @@ function Ballot({
     );
   }
 
-  const voted = position.myVote;
+  const voted = position.voted;
   const chosen = position.candidates.find(
     (candidate) => candidate.id === choice,
   );
@@ -181,7 +181,7 @@ function Ballot({
               type="radio"
               name={`vote-${position.id}`}
               value={candidate.id}
-              checked={(voted ?? choice) === candidate.id}
+              checked={!voted && choice === candidate.id}
               onChange={() => setChoice(candidate.id)}
               className="accent-navy mt-1 size-4 shrink-0"
             />
@@ -198,7 +198,8 @@ function Ballot({
       </fieldset>
       {voted ? (
         <p className="text-ink-muted text-body-sm">
-          You voted. Ballots are final and secret.
+          Your vote is recorded. Ballots are final and secret: nobody, you
+          included, can look up which candidate you chose.
         </p>
       ) : (
         eligible && (
@@ -268,13 +269,47 @@ function Results({ position }: { position: Position }) {
   );
 }
 
+const when = new Intl.DateTimeFormat("en-US", {
+  weekday: "short",
+  month: "short",
+  day: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
+  timeZoneName: "short",
+  timeZone: "America/New_York",
+});
+
+const needed = (n: number) =>
+  `at least ${n} event check-in${n === 1 ? "" : "s"}`;
+
+function Schedule({ election }: { election: Election }) {
+  const { phase, opensAt, closesAt } = election;
+  if (phase === "nominating" && opensAt) {
+    return (
+      <p className="text-ink-muted text-body-sm mt-3">
+        Voting opens {when.format(opensAt)}
+        {closesAt && ` and closes ${when.format(closesAt)}`}.
+      </p>
+    );
+  }
+  if (phase === "voting" && closesAt) {
+    return (
+      <p className="text-ink-muted text-body-sm mt-3">
+        Voting closes {when.format(closesAt)}.
+      </p>
+    );
+  }
+  return null;
+}
+
 function ElectionCard({
   election,
-  eligible,
+  checkIns,
 }: {
   election: Election;
-  eligible: boolean;
+  checkIns: number;
 }) {
+  const { eligible } = election;
   return (
     <section className="border-hairline bg-paper/80 mt-8 rounded-xl border p-5 shadow-xs sm:p-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -284,10 +319,20 @@ function ElectionCard({
         <Badge variant="secondary">{phaseLabel[election.phase]}</Badge>
       </div>
 
+      <Schedule election={election} />
       {election.phase === "voting" && !eligible && (
         <p className="text-ink-muted text-body-sm mt-3">
-          Voting needs at least one event check-in this school year. Check in at
-          a GBM or event, then come back.
+          {election.rollFrozen
+            ? "The voter list was frozen when voting opened, and you were not on it."
+            : `Voting needs ${needed(election.minCheckIns)} this school year.`}{" "}
+          Check-ins after voting opens do not change the list.
+        </p>
+      )}
+      {election.phase === "nominating" && (
+        <p className="text-ink-muted text-body-sm mt-3">
+          {eligible
+            ? `You have ${needed(election.minCheckIns)}, so you will be on the voter list when voting opens.`
+            : `Voting will need ${needed(election.minCheckIns)} this school year, counted when voting opens. You have ${checkIns}.`}
         </p>
       )}
       {election.phase === "closed" && (
@@ -346,7 +391,7 @@ export function ElectionsView() {
     );
   }
 
-  const { year, eligible, elections } = current.data;
+  const { year, checkIns, elections } = current.data;
   return (
     <div className="mx-auto w-full max-w-2xl px-5 py-10 sm:px-6 sm:py-14">
       <p className="text-eyebrow tracking-caps text-gold-ink font-semibold uppercase">
@@ -357,12 +402,8 @@ export function ElectionsView() {
       </h1>
       <p className="text-ink-muted text-body mt-4">
         Run for a position with a short statement; officers approve the ballot.
-        Anyone with an event check-in this school year can vote, once per
-        position.
-        {elections.length > 0 &&
-          (eligible
-            ? " You are eligible to vote."
-            : " You have no check-in this school year yet, so you cannot vote.")}
+        Members with enough event check-ins this school year can vote, once per
+        position. Ballots are secret.
       </p>
 
       {elections.length === 0 ? (
@@ -379,7 +420,7 @@ export function ElectionsView() {
           <ElectionCard
             key={election.id}
             election={election}
-            eligible={eligible}
+            checkIns={checkIns}
           />
         ))
       )}

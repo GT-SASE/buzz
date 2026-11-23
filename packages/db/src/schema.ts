@@ -649,6 +649,14 @@ export const elections = createTable(
       .$type<ElectionPhase>()
       .notNull()
       .default("nominating"),
+    /** When the cron opens voting. Null: officers flip by hand. */
+    opensAt: d.timestamp({ withTimezone: true }),
+    /** When the cron closes voting, and the last moment a ballot counts. */
+    closesAt: d.timestamp({ withTimezone: true }),
+    /** Counted check-ins this school year a member needs to be on the voter list. */
+    minCheckIns: d.integer().notNull().default(1),
+    /** Set when voting opened and the voter list was frozen. */
+    rollFrozenAt: d.timestamp({ withTimezone: true }),
     createdById: d.varchar({ length: 255 }).references(() => users.id, {
       onDelete: "set null",
     }),
@@ -660,6 +668,7 @@ export const elections = createTable(
   }),
   (t) => [
     index(idx("election_year_idx")).on(t.year),
+    check(idx("election_min_check_ins_check"), sql`${t.minCheckIns} >= 1`),
     check(
       idx("election_phase_check"),
       sql`${t.phase} in ('nominating', 'voting', 'closed', 'published')`,
@@ -720,13 +729,38 @@ export const electionCandidates = createTable(
 );
 
 /**
- * One ballot per voter per position; the primary key is what refuses a
- * second vote. No query may return voterId alongside candidateId — officers
- * see counts, never who voted for whom.
+ * The voter list, frozen in the transaction that opens voting: everyone who
+ * met the election's eligibility rule at that moment. Only these members may
+ * vote, so a check-in after voting opens changes nothing.
  */
-export const electionVotes = createTable(
-  "election_vote",
+export const electionRoll = createTable(
+  "election_roll",
   (d) => ({
+    electionId: d
+      .varchar({ length: 255 })
+      .notNull()
+      .references(() => elections.id, { onDelete: "cascade" }),
+    userId: d
+      .varchar({ length: 255 })
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+  }),
+  (t) => [primaryKey({ columns: [t.electionId, t.userId] })],
+);
+
+/**
+ * Who has voted on which position, and nothing about what they chose. The
+ * primary key is what refuses a second vote. Written in the same transaction
+ * as the ballot, but shares no column with `electionBallots` except the
+ * position, so the two cannot be joined back into a choice.
+ */
+export const electionVoters = createTable(
+  "election_voter",
+  (d) => ({
+    electionId: d
+      .varchar({ length: 255 })
+      .notNull()
+      .references(() => elections.id, { onDelete: "cascade" }),
     positionId: d
       .varchar({ length: 255 })
       .notNull()
@@ -735,18 +769,37 @@ export const electionVotes = createTable(
       .varchar({ length: 255 })
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
+  }),
+  (t) => [
+    primaryKey({ columns: [t.positionId, t.voterId] }),
+    index(idx("election_voter_election_idx")).on(t.electionId),
+  ],
+);
+
+/**
+ * What was chosen, with no voter id and no timestamp: a random id and a
+ * position and candidate. Tallies count these rows, so deleting a member
+ * never changes a result.
+ */
+export const electionBallots = createTable(
+  "election_ballot",
+  (d) => ({
+    id: d
+      .varchar({ length: 255 })
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    positionId: d
+      .varchar({ length: 255 })
+      .notNull()
+      .references(() => electionPositions.id, { onDelete: "cascade" }),
     candidateId: d
       .varchar({ length: 255 })
       .notNull()
       .references(() => electionCandidates.id, { onDelete: "cascade" }),
-    castAt: d
-      .timestamp({ withTimezone: true })
-      .$defaultFn(() => /* @__PURE__ */ new Date())
-      .notNull(),
   }),
   (t) => [
-    primaryKey({ columns: [t.positionId, t.voterId] }),
-    index(idx("election_vote_candidate_idx")).on(t.candidateId),
+    index(idx("election_ballot_position_idx")).on(t.positionId),
+    index(idx("election_ballot_candidate_idx")).on(t.candidateId),
   ],
 );
 
@@ -786,6 +839,13 @@ export const AUDIT_ACTIONS = [
   "mentorship.award_points",
   "mentorship.award_group_points",
   "kin_group.carry_forward",
+  "election.create",
+  "election.configure",
+  "election.set_phase",
+  "election.edit_positions",
+  "election.review_candidate",
+  "election.delete",
+  "export.election_tally",
   "export.roster",
   "export.attendance",
   "export.committee",
@@ -794,7 +854,13 @@ export const AUDIT_ACTIONS = [
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
 export type AuditTargetType =
-  "member" | "application" | "event" | "kin_group" | "roster" | "cycle";
+  | "member"
+  | "application"
+  | "event"
+  | "kin_group"
+  | "roster"
+  | "cycle"
+  | "election";
 
 /**
  * Append-only record of officer actions. A row is written in the same

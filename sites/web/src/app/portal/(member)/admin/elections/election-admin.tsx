@@ -29,6 +29,15 @@ import {
 import { Skeleton } from "~/components/ui/skeleton";
 import { Textarea } from "~/components/ui/textarea";
 import { api, type RouterOutputs } from "~/trpc/react";
+import {
+  ExportTally,
+  PositionsDialog,
+  readSchedule,
+  Schedule,
+  ScheduleDialog,
+  ScheduleFields,
+} from "./election-controls";
+import { revalidateBoard } from "./revalidate-board";
 
 type Election = RouterOutputs["election"]["list"][number];
 
@@ -119,7 +128,7 @@ function CreateElection() {
               .split("\n")
               .map((line) => line.trim())
               .filter(Boolean);
-            create.mutate({ title, positions });
+            create.mutate({ title, positions, ...readSchedule(data) });
           }}
         >
           <div className="grid gap-2">
@@ -144,6 +153,7 @@ function CreateElection() {
               className="text-base"
             />
           </div>
+          <ScheduleFields idPrefix="new-election" />
           <DialogFooter className="gap-2 sm:gap-2">
             <DialogClose asChild>
               <Action tone="quiet" type="button">
@@ -202,7 +212,9 @@ function ElectionPanel({
   const refresh = useRefresh();
   const onError = (error: { message: string }) => toast.error(error.message);
   const setPhase = api.election.setPhase.useMutation({
-    onSuccess: async ({ notice }) => {
+    onSuccess: async ({ notice, phase }) => {
+      // Published results decide who the public board lists.
+      if (phase === "published") await revalidateBoard();
       const { kind, message } = noticeToast(
         notice,
         electionNotice("Election updated."),
@@ -237,6 +249,7 @@ function ElectionPanel({
             {election.title}
           </h2>
           <p className="text-ink-muted text-body-sm">{election.year}</p>
+          <Schedule election={election} />
         </div>
         <Badge variant="secondary">{phaseLabel[election.phase]}</Badge>
       </div>
@@ -336,8 +349,20 @@ function ElectionPanel({
         })}
       </div>
 
+      {showCounts && (
+        <div className="border-hairline mt-5 flex flex-wrap gap-2 border-t pt-4">
+          <ExportTally election={election} />
+        </div>
+      )}
+
       {!readOnly && (next ?? election.phase === "voting") && (
         <div className="border-hairline mt-5 flex flex-wrap gap-2 border-t pt-4">
+          {(election.phase === "nominating" || election.phase === "voting") && (
+            <ScheduleDialog election={election} disabled={busy} />
+          )}
+          {election.phase === "nominating" && (
+            <PositionsDialog election={election} disabled={busy} />
+          )}
           {next && (
             <Confirm
               trigger={next.label}

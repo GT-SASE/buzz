@@ -15,6 +15,13 @@ export const actionLabels: Record<AuditAction, string> = {
   "mentorship.award_points": "Awarded KIN points",
   "mentorship.award_group_points": "Awarded group KIN points",
   "kin_group.carry_forward": "Copied kin groups forward",
+  "election.create": "Created an election",
+  "election.configure": "Changed an election's schedule",
+  "election.set_phase": "Moved an election to a new phase",
+  "election.edit_positions": "Edited election positions",
+  "election.review_candidate": "Reviewed a candidate",
+  "election.delete": "Deleted an election",
+  "export.election_tally": "Exported an election tally",
   "export.roster": "Exported the roster",
   "export.attendance": "Exported attendance",
   "export.committee": "Exported applications",
@@ -54,6 +61,14 @@ const rows = (value: unknown) => {
   return `${count} ${count === 1 ? "row" : "rows"}`;
 };
 
+const when = (value: unknown) =>
+  typeof value === "string"
+    ? value.slice(0, 16).replace("T", " ") + " UTC"
+    : "unset";
+
+const scheduleText = (value: Json) =>
+  `opens ${when(value?.opensAt)}, closes ${when(value?.closesAt)}, ${text(value?.minCheckIns)}+ check-ins`;
+
 /** One line saying what changed, from the row's `before` and `after`. */
 export function describeChange(row: {
   action: AuditAction;
@@ -79,6 +94,22 @@ export function describeChange(row: {
       return `+${text(after?.points)} points each to ${text(after?.members)} members`;
     case "kin_group.carry_forward":
       return `${text(after?.from)} to ${text(after?.to)}, ${text(after?.created)} new, ${text(after?.skipped)} already there`;
+    case "election.create":
+      return `${text(after?.positions)} positions, ${scheduleText(after)}`;
+    case "election.configure":
+      return `${scheduleText(before)} to ${scheduleText(after)}`;
+    case "election.set_phase":
+      return `${text(before?.phase)} to ${text(after?.phase)}${after?.scheduled ? " by schedule" : ""}${typeof after?.voters === "number" ? `, ${rows(after.voters).replace("row", "voter")} frozen` : ""}`;
+    case "election.edit_positions":
+      if (after?.added) return `Added ${text(after.added)}`;
+      if (before?.removed) return `Removed ${text(before.removed)}`;
+      return `${text(before?.renamed)} to ${text(after?.renamed)}`;
+    case "election.review_candidate":
+      return `${text(after?.candidate)}: ${text(before?.status)} to ${text(after?.status)}`;
+    case "election.delete":
+      return "Deleted";
+    case "export.election_tally":
+      return rows(after?.rows);
     case "export.roster": {
       const search = typeof after?.search === "string" ? after.search : "";
       return `${rows(after?.rows)}${after?.truncated ? ", cut off at the limit" : ""}${search ? `, search "${search}"` : ""}`;

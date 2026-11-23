@@ -9,7 +9,7 @@ import {
 } from "~/components/site";
 import { JsonLd } from "~/components/site/json-ld";
 import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert";
-import { board } from "~/data/content";
+import { getBoard } from "~/data/board";
 import { photos } from "~/data/photos";
 import { site } from "~/data/site";
 import { breadcrumbSchema, pageMetadata } from "~/lib/seo";
@@ -24,7 +24,8 @@ export const metadata = withOwnShareImage(
   }),
 );
 
-export default function BoardPage() {
+export default async function BoardPage() {
+  const board = await getBoard();
   const openSeats = board.filter((member) => !member.name).length;
 
   return (

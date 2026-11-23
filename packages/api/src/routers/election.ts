@@ -1,70 +1,39 @@
 import { TRPCError } from "@trpc/server";
-import { and, asc, count, desc, eq, gte, inArray, isNull } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, max, sql } from "drizzle-orm";
 import { z } from "zod";
 
+import { recordAudit } from "../audit";
+import {
+  advanceElection,
+  badRequest,
+  checkInsThisYear,
+  ELECTION_PHASES,
+  electionRecipients,
+  tallyRows,
+  yearTally,
+  type Database,
+  type Tx,
+} from "../election-flow";
 import { notFound } from "../errors";
-import { noNotice, notifyElectionPhase, type Recipient } from "../notify";
-import { schoolYearStart } from "../periods";
+import { notifyElectionPhase } from "../notify";
 import { isUniqueViolation } from "../pg-errors";
-import { assertRateLimit, ELECTION_ACTION_LIMIT } from "../rate-limit";
+import {
+  assertRateLimit,
+  ELECTION_ACTION_LIMIT,
+  EXPORT_ROSTER_LIMIT,
+} from "../rate-limit";
 import { schoolYear, schoolYearPattern } from "../terms";
 import { adminProcedure, createTRPCRouter, protectedProcedure } from "../trpc";
 import {
+  electionBallots,
   electionCandidates,
   electionPositions,
+  electionRoll,
   elections,
-  electionVotes,
-  eventCheckIns,
-  events,
+  electionVoters,
   users,
-  type db as Db,
   type CandidateStatus,
-  type ElectionPhase,
 } from "@buzz/db";
-
-type Database = typeof Db;
-type Tx = Parameters<Parameters<Database["transaction"]>[0]>[0];
-
-const phases = ["nominating", "voting", "closed", "published"] as const;
-
-/** Forward one step, or voting back to nominating while nobody has voted. */
-const nextPhase: Record<ElectionPhase, ElectionPhase | null> = {
-  nominating: "voting",
-  voting: "closed",
-  closed: "published",
-  published: null,
-};
-
-function badRequest(message: string): never {
-  throw new TRPCError({ code: "BAD_REQUEST", message });
-}
-
-/** The one rule for who may take part: a counted check-in this school year. */
-function checkedInThisYear(now: Date) {
-  return and(
-    gte(eventCheckIns.checkedInAt, schoolYearStart(now)),
-    isNull(events.archivedAt),
-  );
-}
-
-async function eligibility(db: Database, userId: string, now: Date) {
-  const [row] = await db
-    .select({ n: count() })
-    .from(eventCheckIns)
-    .innerJoin(events, eq(events.id, eventCheckIns.eventId))
-    .where(and(eq(eventCheckIns.userId, userId), checkedInThisYear(now)));
-  return (row?.n ?? 0) > 0;
-}
-
-/** Everyone `eligibility` passes: who an announcement goes to. */
-function eligibleMembers(db: Database, now: Date): Promise<Recipient[]> {
-  return db
-    .selectDistinct({ id: users.id, email: users.email })
-    .from(eventCheckIns)
-    .innerJoin(events, eq(events.id, eventCheckIns.eventId))
-    .innerJoin(users, eq(users.id, eventCheckIns.userId))
-    .where(checkedInThisYear(now));
-}
 
 async function loadElection(db: Database, electionId: string) {
   const [election] = await db
@@ -91,25 +60,25 @@ async function positionWithElection(db: Database, positionId: string) {
 
 /**
  * Runs `write` while the election is still nominating, under a shared lock on
- * its row. `setPhase` takes the same row FOR UPDATE, so a phase flip waits for
- * the write or the write sees the new phase: no nomination, withdrawal or
- * approval lands in an election after voting opened. `vote` does the same for
- * ballots.
+ * its row. `advanceElection` takes the same row FOR UPDATE, so a phase flip
+ * waits for the write or the write sees the new phase: no nomination,
+ * withdrawal, approval or position edit lands in an election after voting
+ * opened. `vote` does the same for ballots.
  */
 async function whileNominating<T>(
   db: Database,
   electionId: string,
   closedMessage: string,
-  write: (tx: Tx) => Promise<T>,
+  write: (tx: Tx, election: { title: string }) => Promise<T>,
 ) {
   return db.transaction(async (tx) => {
     const [locked] = await tx
-      .select({ phase: elections.phase })
+      .select({ phase: elections.phase, title: elections.title })
       .from(elections)
       .where(eq(elections.id, electionId))
       .for("share");
     if (locked?.phase !== "nominating") badRequest(closedMessage);
-    return write(tx);
+    return write(tx, locked);
   });
 }
 
@@ -191,99 +160,83 @@ async function electionTree(db: Database, year: string) {
   };
 }
 
-/**
- * Votes per (position, candidate) across one year's elections, with no phase
- * filter: callers decide from the phase on the rows they are already
- * displaying whether to show counts, so a phase change between two statements
- * cannot show a published election as zero votes. One vote per voter per
- * position (primary key), so a position's turnout is the sum of its rows.
- */
-async function yearVotes(db: Database, year: string) {
-  const rows = await db
-    .select({
-      positionId: electionVotes.positionId,
-      candidateId: electionVotes.candidateId,
-      votes: count(),
-    })
-    .from(electionVotes)
-    .where(
-      inArray(
-        electionVotes.positionId,
-        db
-          .select({ id: electionPositions.id })
-          .from(electionPositions)
-          .innerJoin(elections, eq(elections.id, electionPositions.electionId))
-          .where(eq(elections.year, year)),
-      ),
-    )
-    .groupBy(electionVotes.positionId, electionVotes.candidateId);
-  const perCandidate = new Map<string, number>();
-  const perPosition = new Map<string, number>();
-  for (const row of rows) {
-    perCandidate.set(row.candidateId, row.votes);
-    perPosition.set(
-      row.positionId,
-      (perPosition.get(row.positionId) ?? 0) + row.votes,
-    );
-  }
-  return { perCandidate, perPosition };
-}
-
 const yearInput = z
   .object({ year: z.string().regex(schoolYearPattern).optional() })
   .nullish();
 
+const positionTitle = z.string().trim().min(1).max(80);
+
+/** Open and close times: closing must follow opening, and still be ahead. */
+function checkSchedule(opensAt: Date | null, closesAt: Date | null, now: Date) {
+  if (closesAt && closesAt <= now) {
+    badRequest("The closing time has to be in the future.");
+  }
+  if (opensAt && closesAt && closesAt <= opensAt) {
+    badRequest("Voting has to close after it opens.");
+  }
+}
+
+const schedule = {
+  opensAt: z.coerce.date().nullable().optional(),
+  closesAt: z.coerce.date().nullable().optional(),
+  minCheckIns: z.number().int().min(1).max(50).optional(),
+};
+
 export const electionRouter = createTRPCRouter({
   /**
    * This school year's elections as a member sees them. Approved candidates
-   * only, the caller's own candidacies and ballots, and counts only once an
-   * officer has published.
+   * only, the caller's own candidacies, whether they have voted on each
+   * position (never which candidate: ballots carry no voter), and counts only
+   * once an officer has published.
    */
   current: protectedProcedure.query(async ({ ctx }) => {
     const now = new Date();
     const userId = ctx.session.user.id;
     const year = schoolYear(now);
+    const yearPositions = ctx.db
+      .select({ id: electionPositions.id })
+      .from(electionPositions)
+      .innerJoin(elections, eq(elections.id, electionPositions.electionId))
+      .where(eq(elections.year, year));
 
-    // Four statements, one wave: the tree, the vote totals, this member's
-    // ballots and their eligibility. Each is keyed by the year, not by ids read
-    // from another, and none can see a different phase than the tree does.
-    const [{ rows, positions, candidates }, votes, myVotes, eligible] =
+    const [{ rows, positions, candidates }, votes, voted, onRoll, checkIns] =
       await Promise.all([
         electionTree(ctx.db, year),
-        yearVotes(ctx.db, year),
+        yearTally(ctx.db, year),
         ctx.db
-          .select({
-            positionId: electionVotes.positionId,
-            candidateId: electionVotes.candidateId,
-          })
-          .from(electionVotes)
+          .select({ positionId: electionVoters.positionId })
+          .from(electionVoters)
           .where(
             and(
-              eq(electionVotes.voterId, userId),
-              inArray(
-                electionVotes.positionId,
-                ctx.db
-                  .select({ id: electionPositions.id })
-                  .from(electionPositions)
-                  .innerJoin(
-                    elections,
-                    eq(elections.id, electionPositions.electionId),
-                  )
-                  .where(eq(elections.year, year)),
-              ),
+              eq(electionVoters.voterId, userId),
+              inArray(electionVoters.positionId, yearPositions),
             ),
           ),
-        eligibility(ctx.db, userId, now),
+        ctx.db
+          .select({ electionId: electionRoll.electionId })
+          .from(electionRoll)
+          .where(eq(electionRoll.userId, userId)),
+        checkInsThisYear(ctx.db, userId, now),
       ]);
     const counts = votes.perCandidate;
+    const votedOn = new Set(voted.map((row) => row.positionId));
+    const frozenFor = new Set(onRoll.map((row) => row.electionId));
 
     return {
       year,
-      eligible,
+      checkIns,
       elections: rows.map((election) => ({
         id: election.id,
         title: election.title,
         phase: election.phase,
+        opensAt: election.opensAt,
+        closesAt: election.closesAt,
+        minCheckIns: election.minCheckIns,
+        rollFrozen: election.rollFrozenAt !== null,
+        // Once voting has opened the frozen list decides; before, the rule.
+        eligible: election.rollFrozenAt
+          ? frozenFor.has(election.id)
+          : checkIns >= election.minCheckIns,
         positions: positions
           .filter((position) => position.electionId === election.id)
           .map((position) => {
@@ -310,9 +263,7 @@ export const electionRouter = createTRPCRouter({
                     statement: mine.statement,
                   }
                 : null,
-              myVote:
-                myVotes.find((vote) => vote.positionId === position.id)
-                  ?.candidateId ?? null,
+              voted: votedOn.has(position.id),
             };
           }),
       })),
@@ -394,7 +345,16 @@ export const electionRouter = createTRPCRouter({
       return { id: candidate.id };
     }),
 
-  /** One ballot per position, final once cast. Returns no tally. */
+  /**
+   * One ballot per position, final once cast. Returns no tally.
+   *
+   * One transaction under a shared lock on the election row: `advanceElection`
+   * (FOR UPDATE) waits for it, so a ballot is counted in the voting phase or
+   * refused, never counted after close. A closing time that has passed
+   * refuses ballots even before the cron flips the phase. Who voted goes in
+   * `election_voter` (its primary key refuses a second vote) and what was
+   * chosen in `election_ballot`, which carries no voter.
+   */
   vote: protectedProcedure
     .input(
       z.object({
@@ -403,21 +363,15 @@ export const electionRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
+      const userId = ctx.session.user.id;
       await assertRateLimit(
         ctx.db,
-        `election:${ctx.session.user.id}`,
+        `election:${userId}`,
         ELECTION_ACTION_LIMIT,
       );
-      const now = new Date();
       const position = await positionWithElection(ctx.db, input.positionId);
       if (position.phase !== "voting") {
         badRequest("Voting is not open for this election.");
-      }
-      if (!(await eligibility(ctx.db, ctx.session.user.id, now))) {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "Voting needs at least one event check-in this school year.",
-        });
       }
 
       const [candidate] = await ctx.db
@@ -435,20 +389,41 @@ export const electionRouter = createTRPCRouter({
       }
 
       try {
-        // A shared lock on the election row: ballots do not block each other,
-        // but setPhase (FOR UPDATE) waits for them and they see its result.
         await ctx.db.transaction(async (tx) => {
           const [locked] = await tx
-            .select({ phase: elections.phase })
+            .select({
+              phase: elections.phase,
+              over: sql<boolean>`${elections.closesAt} is not null and ${elections.closesAt} <= now()`,
+            })
             .from(elections)
             .where(eq(elections.id, position.electionId))
             .for("share");
-          if (locked?.phase !== "voting") {
+          if (locked?.phase !== "voting" || locked.over) {
             badRequest("Voting is not open for this election.");
           }
-          await tx.insert(electionVotes).values({
+          const [listed] = await tx
+            .select({ userId: electionRoll.userId })
+            .from(electionRoll)
+            .where(
+              and(
+                eq(electionRoll.electionId, position.electionId),
+                eq(electionRoll.userId, userId),
+              ),
+            );
+          if (!listed) {
+            throw new TRPCError({
+              code: "FORBIDDEN",
+              message:
+                "You were not on the voter list when voting opened. It is frozen at that moment.",
+            });
+          }
+          await tx.insert(electionVoters).values({
+            electionId: position.electionId,
             positionId: input.positionId,
-            voterId: ctx.session.user.id,
+            voterId: userId,
+          });
+          await tx.insert(electionBallots).values({
+            positionId: input.positionId,
             candidateId: input.candidateId,
           });
         });
@@ -481,11 +456,18 @@ export const electionRouter = createTRPCRouter({
    */
   list: adminProcedure.input(yearInput).query(async ({ ctx, input }) => {
     const year = input?.year ?? schoolYear(new Date());
-    const [{ rows, positions, candidates }, votes] = await Promise.all([
+    const [{ rows, positions, candidates }, votes, rolls] = await Promise.all([
       electionTree(ctx.db, year),
-      yearVotes(ctx.db, year),
+      yearTally(ctx.db, year),
+      ctx.db
+        .select({ electionId: electionRoll.electionId, n: count() })
+        .from(electionRoll)
+        .innerJoin(elections, eq(elections.id, electionRoll.electionId))
+        .where(eq(elections.year, year))
+        .groupBy(electionRoll.electionId),
     ]);
     const counts = votes.perCandidate;
+    const rollSize = new Map(rolls.map((row) => [row.electionId, row.n]));
 
     return rows.map((election) => {
       const showCounts =
@@ -495,6 +477,13 @@ export const electionRouter = createTRPCRouter({
         year: election.year,
         title: election.title,
         phase: election.phase,
+        opensAt: election.opensAt,
+        closesAt: election.closesAt,
+        minCheckIns: election.minCheckIns,
+        rollFrozenAt: election.rollFrozenAt,
+        rollSize: election.rollFrozenAt
+          ? (rollSize.get(election.id) ?? 0)
+          : null,
         positions: positions
           .filter((position) => position.electionId === election.id)
           .map((position) => ({
@@ -520,16 +509,24 @@ export const electionRouter = createTRPCRouter({
     .input(
       z.object({
         title: z.string().trim().min(1).max(120),
-        positions: z.array(z.string().trim().min(1).max(80)).min(1).max(20),
+        positions: z.array(positionTitle).min(1).max(20),
+        ...schedule,
       }),
     )
     .mutation(async ({ ctx, input }) => {
+      const opensAt = input.opensAt ?? null;
+      const closesAt = input.closesAt ?? null;
+      checkSchedule(opensAt, closesAt, new Date());
+
       const created = await ctx.db.transaction(async (tx) => {
         const [created] = await tx
           .insert(elections)
           .values({
             year: schoolYear(new Date()),
             title: input.title,
+            opensAt,
+            closesAt,
+            ...(input.minCheckIns ? { minCheckIns: input.minCheckIns } : {}),
             createdById: ctx.session.user.id,
           })
           .returning();
@@ -546,6 +543,19 @@ export const electionRouter = createTRPCRouter({
             sortOrder,
           })),
         );
+        await recordAudit(tx, {
+          actorId: ctx.session.user.id,
+          action: "election.create",
+          targetType: "election",
+          targetId: created.id,
+          targetLabel: created.title,
+          after: {
+            positions: input.positions.length,
+            opensAt: opensAt?.toISOString() ?? null,
+            closesAt: closesAt?.toISOString() ?? null,
+            minCheckIns: created.minCheckIns,
+          },
+        });
         return created;
       });
 
@@ -554,9 +564,184 @@ export const electionRouter = createTRPCRouter({
         ctx.db,
         created,
         created.phase,
-        () => eligibleMembers(ctx.db, new Date()),
+        () => electionRecipients(ctx.db, created, new Date()),
       );
       return { ...created, notice };
+    }),
+
+  /**
+   * Schedule and eligibility. While nominating all three can change; once
+   * voting is open only the closing time can (to extend or shorten it), since
+   * the voter list is already frozen. Nothing after that.
+   */
+  configure: adminProcedure
+    .input(z.object({ electionId: z.string().min(1), ...schedule }))
+    .mutation(async ({ ctx, input }) => {
+      return ctx.db.transaction(async (tx) => {
+        const [election] = await tx
+          .select()
+          .from(elections)
+          .where(eq(elections.id, input.electionId))
+          .for("update");
+        if (!election) notFound("Election");
+
+        const now = new Date();
+        const opensAt =
+          input.opensAt === undefined ? election.opensAt : input.opensAt;
+        const closesAt =
+          input.closesAt === undefined ? election.closesAt : input.closesAt;
+        const minCheckIns = input.minCheckIns ?? election.minCheckIns;
+
+        if (election.phase === "voting") {
+          if (
+            opensAt?.getTime() !== election.opensAt?.getTime() ||
+            minCheckIns !== election.minCheckIns
+          ) {
+            badRequest(
+              "The voter list is frozen once voting opens. Only the closing time can change.",
+            );
+          }
+          checkSchedule(null, closesAt, now);
+        } else if (election.phase === "nominating") {
+          checkSchedule(opensAt, closesAt, now);
+        } else {
+          badRequest("This election is over; its schedule is fixed.");
+        }
+
+        const [updated] = await tx
+          .update(elections)
+          .set({ opensAt, closesAt, minCheckIns })
+          .where(eq(elections.id, election.id))
+          .returning({
+            id: elections.id,
+            opensAt: elections.opensAt,
+            closesAt: elections.closesAt,
+            minCheckIns: elections.minCheckIns,
+          });
+        const shape = (value: {
+          opensAt: Date | null;
+          closesAt: Date | null;
+          minCheckIns: number;
+        }) => ({
+          opensAt: value.opensAt?.toISOString() ?? null,
+          closesAt: value.closesAt?.toISOString() ?? null,
+          minCheckIns: value.minCheckIns,
+        });
+        await recordAudit(tx, {
+          actorId: ctx.session.user.id,
+          action: "election.configure",
+          targetType: "election",
+          targetId: election.id,
+          targetLabel: election.title,
+          before: shape(election),
+          after: shape(updated!),
+        });
+        return updated!;
+      });
+    }),
+
+  /** Positions can be added, renamed and removed only while nominating. */
+  addPosition: adminProcedure
+    .input(z.object({ electionId: z.string().min(1), title: positionTitle }))
+    .mutation(async ({ ctx, input }) =>
+      whileNominating(
+        ctx.db,
+        input.electionId,
+        "Positions are locked once voting opens.",
+        async (tx, election) => {
+          const [{ top } = { top: null }] = await tx
+            .select({ top: max(electionPositions.sortOrder) })
+            .from(electionPositions)
+            .where(eq(electionPositions.electionId, input.electionId));
+          const [{ n } = { n: 0 }] = await tx
+            .select({ n: count() })
+            .from(electionPositions)
+            .where(eq(electionPositions.electionId, input.electionId));
+          if (n >= 20) badRequest("An election has at most 20 positions.");
+          const [created] = await tx
+            .insert(electionPositions)
+            .values({
+              electionId: input.electionId,
+              title: input.title,
+              sortOrder: (top ?? -1) + 1,
+            })
+            .returning({
+              id: electionPositions.id,
+              title: electionPositions.title,
+            });
+          await recordAudit(tx, {
+            actorId: ctx.session.user.id,
+            action: "election.edit_positions",
+            targetType: "election",
+            targetId: input.electionId,
+            targetLabel: election.title,
+            after: { added: input.title },
+          });
+          return created!;
+        },
+      ),
+    ),
+
+  renamePosition: adminProcedure
+    .input(z.object({ positionId: z.string().min(1), title: positionTitle }))
+    .mutation(async ({ ctx, input }) => {
+      const position = await positionWithElection(ctx.db, input.positionId);
+      return whileNominating(
+        ctx.db,
+        position.electionId,
+        "Positions are locked once voting opens.",
+        async (tx, election) => {
+          const [before] = await tx
+            .select({ title: electionPositions.title })
+            .from(electionPositions)
+            .where(eq(electionPositions.id, input.positionId));
+          await tx
+            .update(electionPositions)
+            .set({ title: input.title })
+            .where(eq(electionPositions.id, input.positionId));
+          await recordAudit(tx, {
+            actorId: ctx.session.user.id,
+            action: "election.edit_positions",
+            targetType: "election",
+            targetId: position.electionId,
+            targetLabel: election.title,
+            before: { renamed: before?.title ?? null },
+            after: { renamed: input.title },
+          });
+          return { id: input.positionId, title: input.title };
+        },
+      );
+    }),
+
+  removePosition: adminProcedure
+    .input(z.object({ positionId: z.string().min(1) }))
+    .mutation(async ({ ctx, input }) => {
+      const position = await positionWithElection(ctx.db, input.positionId);
+      return whileNominating(
+        ctx.db,
+        position.electionId,
+        "Positions are locked once voting opens.",
+        async (tx, election) => {
+          const [{ n } = { n: 0 }] = await tx
+            .select({ n: count() })
+            .from(electionPositions)
+            .where(eq(electionPositions.electionId, position.electionId));
+          if (n <= 1) badRequest("An election needs at least one position.");
+          const [removed] = await tx
+            .delete(electionPositions)
+            .where(eq(electionPositions.id, input.positionId))
+            .returning({ title: electionPositions.title });
+          await recordAudit(tx, {
+            actorId: ctx.session.user.id,
+            action: "election.edit_positions",
+            targetType: "election",
+            targetId: position.electionId,
+            targetLabel: election.title,
+            before: { removed: removed?.title ?? null },
+          });
+          return { id: input.positionId };
+        },
+      );
     }),
 
   /** The ballot is fixed once voting opens, so review happens while nominating. */
@@ -578,7 +763,16 @@ export const electionRouter = createTRPCRouter({
         ctx.db,
         position.electionId,
         "The ballot is locked once voting opens.",
-        async (tx) => {
+        async (tx, election) => {
+          const [before] = await tx
+            .select({
+              status: electionCandidates.status,
+              name: users.name,
+              email: users.email,
+            })
+            .from(electionCandidates)
+            .innerJoin(users, eq(users.id, electionCandidates.userId))
+            .where(eq(electionCandidates.id, input.candidateId));
           const [updated] = await tx
             .update(electionCandidates)
             .set({ status: input.status })
@@ -587,6 +781,18 @@ export const electionRouter = createTRPCRouter({
               id: electionCandidates.id,
               status: electionCandidates.status,
             });
+          await recordAudit(tx, {
+            actorId: ctx.session.user.id,
+            action: "election.review_candidate",
+            targetType: "election",
+            targetId: position.electionId,
+            targetLabel: election.title,
+            before: { status: before?.status ?? null },
+            after: {
+              status: input.status,
+              candidate: before?.name ?? before?.email ?? null,
+            },
+          });
           return updated;
         },
       );
@@ -596,78 +802,42 @@ export const electionRouter = createTRPCRouter({
     .input(
       z.object({
         electionId: z.string().min(1),
-        phase: z.enum(phases),
+        phase: z.enum(ELECTION_PHASES),
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      // FOR UPDATE: no ballot can land between the vote count and the update.
-      const { updated, announce } = await ctx.db.transaction(async (tx) => {
-        const [election] = await tx
-          .select()
-          .from(elections)
-          .where(eq(elections.id, input.electionId))
-          .for("update");
-        if (!election) notFound("Election");
-        const forward = nextPhase[election.phase] === input.phase;
-        const back =
-          election.phase === "voting" && input.phase === "nominating";
-        if (!forward && !back) {
-          badRequest(
-            `An election cannot go from ${election.phase} to ${input.phase}.`,
-          );
-        }
-
-        if (back) {
-          const [cast] = await tx
-            .select({ n: count() })
-            .from(electionVotes)
-            .innerJoin(
-              electionPositions,
-              eq(electionPositions.id, electionVotes.positionId),
-            )
-            .where(eq(electionPositions.electionId, election.id));
-          if ((cast?.n ?? 0) > 0) {
-            badRequest(
-              "Votes have been cast, so voting cannot be reopened for nominations.",
-            );
-          }
-        }
-
-        if (input.phase === "voting") {
-          const [approved] = await tx
-            .select({ n: count() })
-            .from(electionCandidates)
-            .innerJoin(
-              electionPositions,
-              eq(electionPositions.id, electionCandidates.positionId),
-            )
-            .where(
-              and(
-                eq(electionPositions.electionId, election.id),
-                eq(electionCandidates.status, "approved"),
-              ),
-            );
-          if ((approved?.n ?? 0) === 0) {
-            badRequest("Approve at least one candidate before opening voting.");
-          }
-        }
-
-        const [updated] = await tx
-          .update(elections)
-          .set({ phase: input.phase })
-          .where(eq(elections.id, election.id))
-          .returning({ id: elections.id, phase: elections.phase });
-        // Forward steps are announced; reopening nominations is a correction.
-        return { updated, announce: forward ? election : null };
+      const result = await advanceElection(ctx.db, {
+        electionId: input.electionId,
+        to: input.phase,
+        actorId: ctx.session.user.id,
       });
+      // Not scheduled, so it always changes or throws.
+      if (!result.changed) badRequest(result.reason);
+      return { id: result.id, phase: result.phase, notice: result.notice };
+    }),
 
-      // After the commit: a failed send never undoes the phase change.
-      const notice = announce
-        ? await notifyElectionPhase(ctx.db, announce, input.phase, () =>
-            eligibleMembers(ctx.db, new Date()),
-          )
-        : noNotice;
-      return { ...updated, notice };
+  /**
+   * The tally as spreadsheet rows, once voting is closed. Counts only: there
+   * is no voter anywhere in it. Logged before it is handed over.
+   */
+  exportTally: adminProcedure
+    .input(z.object({ electionId: z.string().min(1) }))
+    .query(async ({ ctx, input }) => {
+      await assertRateLimit(
+        ctx.db,
+        `export-tally:${ctx.session.user.id}`,
+        EXPORT_ROSTER_LIMIT,
+      );
+      const { election, rows } = await tallyRows(ctx.db, input.electionId);
+      await recordAudit(ctx.db, {
+        actorId: ctx.session.user.id,
+        action: "export.election_tally",
+        targetType: "election",
+        targetId: election.id,
+        targetLabel: election.title,
+        after: { rows: rows.length - 1, truncated: false },
+      });
+      return { title: election.title, year: election.year, rows };
     }),
 
   delete: adminProcedure
@@ -677,7 +847,16 @@ export const electionRouter = createTRPCRouter({
       if (election.phase !== "nominating") {
         badRequest("Only an election still taking nominations can be deleted.");
       }
-      await ctx.db.delete(elections).where(eq(elections.id, election.id));
+      await ctx.db.transaction(async (tx) => {
+        await tx.delete(elections).where(eq(elections.id, election.id));
+        await recordAudit(tx, {
+          actorId: ctx.session.user.id,
+          action: "election.delete",
+          targetType: "election",
+          targetId: election.id,
+          targetLabel: election.title,
+        });
+      });
       return { id: election.id };
     }),
 });
