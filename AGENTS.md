@@ -36,13 +36,13 @@ sites/discord-bot/              the events Discord bot: api/ (Vercel functions),
 sites/web/src/app/(marketing)/  public pages, prerendered; [slug] serves CMS pages
 sites/web/src/app/portal/(member)/        member portal pages (needs a session)
 sites/web/src/app/portal/(member)/admin/  officer pages; adminNav lives in sites/web/src/data/portal.ts
-sites/web/src/app/api/          route handlers (trpc, auth, health, resume)
+sites/web/src/app/api/          route handlers (trpc, auth, health; portal/ holds the resume downloads)
 sites/web/src/components/ui/    vendored Watermelon UI (do not hand-fix; `bun run ui:add`)
 sites/web/src/components/site/  editorial components built on ui
 sites/web/src/data/             content constants and cached loaders (chapter-events.ts, pages.ts)
 sites/web/src/trpc/             tRPC client/server glue for the app
 tests/                          all tests (bun test); tests/setup, tests/helpers, tests/mocks
-scripts/                        vercel-build.mjs, smoke.mjs, ci-test.mjs
+scripts/                        vercel-build.mjs, smoke.mjs, uptime.mjs, site-url.mjs, install-gitleaks.sh, bench-procedures.ts, fonts/
 ```
 
 ## Commands (run from repo root, Bun only)
@@ -54,9 +54,9 @@ Use `bun`, `bun run`, `bun x`. Never npm, pnpm, npx, bunx. Spell out `bun run te
 - `bun run test` = `test:node` (`--isolate`, ignores `*.tsx`) then `test:dom` (`.test.tsx`, happy-dom preload in `tests/setup/dom.ts`)
 - `bun run typecheck` (tsrs, fast) and `bun run typecheck:tsc` (tsc, the deciding check)
 - `bun run format:write`, `bun run lint:fix`
-- `bun run db:generate | db:migrate | db:push | db:seed | db:studio`
+- `bun run db:generate | db:migrate | db:push | db:seed | db:seed:calendar | db:studio`
 - `bun run smoke` = `bun scripts/smoke.mjs` against the live site
-- Discord bot (`sites/discord-bot`, `bun run --cwd sites/discord-bot <script>`): `build` (Vercel Build Output in `.vercel/output`), `smoke` (loads the built functions from a temp folder, expects 401s), `test`, `test:db`, `test:db:concurrency` (needs `CONCURRENCY_DATABASE_URL` and `BOT_APP_PASSWORD`, see its README), `db:migrate` (dbmate into the `discord_bot` schema, which must exist first; `DATABASE_URL` of a disposable DB only)
+- Discord bot (`sites/discord-bot`, `bun run --cwd sites/discord-bot <script>`): `build` (Vercel Build Output in `.vercel/output`), `smoke` (loads the built functions from a temp folder, expects 401s), `test`, `test:db`, `test:db:concurrency` (needs `CONCURRENCY_DATABASE_URL` and `BOT_APP_PASSWORD`, see its README), `db:migrate` (dbmate into the `discord_bot` schema, which must exist first; `DATABASE_URL` of a disposable DB only), `commands:register <guild-id>...` (replaces those servers' slash commands; needs the Discord env vars, never run it in a test)
 - `bun run hooks:install` and `bun run gitleaks:install`: pre-push secret scan, rules in `.gitleaks.toml`
 
 ## Tests
@@ -67,12 +67,14 @@ Use `bun`, `bun run`, `bun x`. Never npm, pnpm, npx, bunx. Spell out `bun run te
 - Router tests use a fake `db`; `*.integration.test.ts` use a real Postgres through `TEST_DATABASE_URL` only and wrap the suite in `describe.skipIf(!process.env.DATABASE_URL)`.
 - `tests/setup/env.ts` (bunfig preload) copies `TEST_DATABASE_URL` into `DATABASE_URL` and deletes it when unset, so unset means DB suites skip.
 - `.tsx` tests need the happy-dom preload; they only run in `test:dom`.
+- The bot's database tests each boot PGlite and apply every migration, about 10 s on a busy machine. A file that imports `test/db/handler-db.ts` builds that template in a `beforeAll` with `HOOK_TIMEOUT_MS`, and the other files pass `HOOK_TIMEOUT_MS` to the hook that calls `createMigratedDb`. Do the same in a new file: built inside a test, the boot counted against that test's timeout and failed the first test of the file under load.
+- `tests/check-in.load.test.ts` writes its throughput JSON only when `BENCH_JSON` names a file; `scripts/bench-procedures.ts` takes the same variable.
 
 ## Turbo
 
-`check`, `typecheck`, `typecheck:tsc` are cached by input. The cache is shared across git worktrees, so a second worktree can replay green logs without running anything: add `--force` for independent verification. In Git Bash prefix with `MSYS_NO_PATHCONV=1` or `//#lint` is rewritten into a path. `SKIP_ENV_VALIDATION=1` skips portal env validation.
+`check`, `typecheck`, `typecheck:tsc` are cached by input. Turbo has no named input sets (that is Nx), so the globs the root tasks share live once in the script-less tasks `//#sources` and `//#bot-sources` in `turbo.json`; each root task depends on them and so folds their hash into its own. The bot's `test` and `test:db` do not wait for the root `//#test`; CI runs all three in one `turbo run`. The cache is shared across git worktrees, so a second worktree can replay green logs without running anything: add `--force` for independent verification. In Git Bash prefix with `MSYS_NO_PATHCONV=1` or `//#lint` is rewritten into a path. `SKIP_ENV_VALIDATION=1` skips portal env validation.
 
-Remote cache (Vercel, team `sasegt`) is optional and off by default. Locally: `bun x turbo login`, then `bun x turbo link` and pick `sasegt`. CI reads repo secret `TURBO_TOKEN` (Vercel access token scoped to `sasegt`) and repo variable `TURBO_TEAM` (team slug); when either is empty, e.g. fork PRs, turbo uses the local cache that `actions/cache` restores. `remoteCache.signature` stays off: with it on and no `TURBO_REMOTE_CACHE_SIGNATURE_KEY`, uploads fail with "artifact signature error". `bun run vercel-build` runs `next build` directly, not turbo, so Vercel builds do not use the remote cache.
+Remote cache (Vercel, team `sasegt`) is optional and off by default. Locally: `bun x turbo login`, then `bun x turbo link` and pick `sasegt`. CI reads repo secret `TURBO_TOKEN` (Vercel access token scoped to `sasegt`) and repo variable `TURBO_TEAM` (team slug); when either is empty, e.g. fork PRs, turbo uses the local cache that `actions/cache` restores. The build job also restores `sites/web/.next/cache`, which turbo leaves out of its outputs. `remoteCache.signature` stays off: with it on and no `TURBO_REMOTE_CACHE_SIGNATURE_KEY`, uploads fail with "artifact signature error". `bun run vercel-build` runs `next build` directly, not turbo, so Vercel builds do not use the remote cache.
 
 ## Dependencies
 
@@ -94,7 +96,7 @@ Remote cache (Vercel, team `sasegt`) is optional and off by default. Locally: `b
 1. Branch from `origin/main` (`feat/...`, `fix/...`); use a git worktree for parallel work.
 2. Commit, push, open a PR to `main`. Commits and PRs carry no AI co-author or attribution lines.
 3. Run CI locally on a disposable Postgres in a clean tree: `bun run check` (use `--force`).
-4. Merge with `gh pr merge N --merge`.
+4. Merge with `gh pr merge N --merge`. CI runs on pull requests and on pushes to `main` only, so a branch pushed without a PR runs nothing.
 5. Check the Vercel commit status on the merge commit (`buzz_deploy_status`), then `bun scripts/smoke.mjs`, then GitHub CI on `main` (`gh run list --workflow CI --branch main --limit 1`). GitHub CI checks out a shallow clone, so tests that read git history can pass locally and fail there.
 
 ## Content Security Policy
