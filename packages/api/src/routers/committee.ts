@@ -15,6 +15,7 @@ import {
 } from "../committee-cycle";
 import { recordAudit } from "../audit";
 import { notFound } from "../errors";
+import { notifyApplicationDecision, noNotice } from "../notify";
 import { isUndefinedTable, isUniqueViolation } from "../pg-errors";
 import {
   assertRateLimit,
@@ -338,8 +339,8 @@ export const committeeRouter = createTRPCRouter({
         status: statusSchema,
       }),
     )
-    .mutation(async ({ ctx, input }) =>
-      ctx.db.transaction(async (tx) => {
+    .mutation(async ({ ctx, input }) => {
+      const { updated, applicant } = await ctx.db.transaction(async (tx) => {
         // Locked, so the logged "before" is the status this change replaces.
         const [existing] = await tx
           .select({
@@ -347,6 +348,7 @@ export const committeeRouter = createTRPCRouter({
             status: committeeApplications.status,
             cycle: committeeApplications.cycle,
             email: users.email,
+            name: users.name,
           })
           .from(committeeApplications)
           .innerJoin(users, eq(users.id, committeeApplications.userId))
@@ -375,9 +377,30 @@ export const committeeRouter = createTRPCRouter({
           });
         }
 
-        return updated;
-      }),
-    ),
+        return {
+          updated,
+          // Only a change of status tells the applicant anything.
+          applicant:
+            existing.status === input.status
+              ? null
+              : {
+                  email: existing.email,
+                  name: existing.name,
+                  cycle: existing.cycle,
+                },
+        };
+      });
+
+      // After the commit: a failed send never undoes the decision.
+      const notice = applicant
+        ? await notifyApplicationDecision(
+            applicant,
+            input.status,
+            applicant.cycle,
+          )
+        : noNotice;
+      return { ...updated, notice };
+    }),
 
   setNotes: adminProcedure
     .input(

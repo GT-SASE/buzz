@@ -4,8 +4,9 @@ import { z } from "zod";
 
 import { asDate, asInt, totalsColumns } from "../aggregates";
 import { recordAudit, recordPoints } from "../audit";
-import { sendCalendarInvite, type InviteEvent } from "../calendar-invite";
+import { sendCalendarInvite } from "../calendar-invite";
 import { notFound } from "../errors";
+import { noNotice, notifyEventChange } from "../notify";
 import { isUniqueViolation } from "../pg-errors";
 import {
   assertRateLimit,
@@ -105,33 +106,14 @@ const publicEventColumns = {
   checkInEnabled: events.checkInEnabled,
 } as const;
 
-/** Sends in small batches: Gmail throttles a burst of parallel connections. */
-const INVITE_BATCH = 5;
-
-/**
- * Re-sends the calendar invite (same UID, later SEQUENCE) to everyone who
- * RSVPed, after the event's time or place changed. A failed send does not fail
- * the edit; the officer gets the count instead.
- */
-async function sendUpdateInvites(db: typeof Db, event: InviteEvent) {
-  const rsvps = await db
-    .select({ email: users.email })
-    .from(eventRsvps)
-    .innerJoin(users, eq(users.id, eventRsvps.userId))
-    .where(eq(eventRsvps.eventId, event.id));
-
-  let failed = 0;
-  for (let i = 0; i < rsvps.length; i += INVITE_BATCH) {
-    const results = await Promise.all(
-      rsvps
-        .slice(i, i + INVITE_BATCH)
-        .map(({ email }) =>
-          sendCalendarInvite("REQUEST", event, email, { updated: true }),
-        ),
-    );
-    failed += results.filter((sent) => !sent).length;
-  }
-  return { sent: rsvps.length - failed, failed };
+/** Who RSVPed: the members told when an event changes or is cancelled. */
+function rsvpRecipients(db: typeof Db, eventId: string) {
+  return () =>
+    db
+      .select({ id: users.id, email: users.email })
+      .from(eventRsvps)
+      .innerJoin(users, eq(users.id, eventRsvps.userId))
+      .where(eq(eventRsvps.eventId, eventId));
 }
 
 const eventInput = z.object({
@@ -272,9 +254,16 @@ export const eventRouter = createTRPCRouter({
         moved && row.archivedAt === null && row.startsAt.getTime() > Date.now();
       return {
         ...row,
+        // After the commit. The calendar invite is the email, so a member is
+        // told once, and a failed send never undoes the edit.
         invites: notify
-          ? await sendUpdateInvites(ctx.db, row)
-          : { sent: 0, failed: 0 },
+          ? await notifyEventChange(
+              ctx.db,
+              row,
+              "moved",
+              rsvpRecipients(ctx.db, row.id),
+            )
+          : noNotice,
       };
     }),
 
@@ -484,19 +473,46 @@ export const eventRouter = createTRPCRouter({
       return updated;
     }),
 
+  /**
+   * Archiving an event that has not started is how an officer cancels it, so
+   * members who RSVPed are told, and told again if it is restored. A past
+   * event, or one already in the state asked for, tells nobody.
+   */
   setArchived: adminProcedure
     .input(z.object({ id: z.string().min(1), archived: z.boolean() }))
     .mutation(async ({ ctx, input }) => {
-      const [updated] = await ctx.db
-        .update(events)
-        .set({ archivedAt: input.archived ? new Date() : null })
-        .where(eq(events.id, input.id))
-        .returning({ id: events.id, archivedAt: events.archivedAt });
+      const result = await ctx.db.transaction(async (tx) => {
+        const [before] = await tx
+          .select({ archivedAt: events.archivedAt })
+          .from(events)
+          .where(eq(events.id, input.id))
+          .for("update");
+        if (!before) return null;
 
-      if (!updated) {
+        const [row] = await tx
+          .update(events)
+          .set({ archivedAt: input.archived ? new Date() : null })
+          .where(eq(events.id, input.id))
+          .returning();
+        return row
+          ? { row, changed: (before.archivedAt !== null) !== input.archived }
+          : null;
+      });
+
+      if (!result) {
         notFound("Event");
       }
-      return updated;
+      const { row, changed } = result;
+      const invites =
+        changed && row.startsAt.getTime() > Date.now()
+          ? await notifyEventChange(
+              ctx.db,
+              row,
+              input.archived ? "cancelled" : "restored",
+              rsvpRecipients(ctx.db, row.id),
+            )
+          : noNotice;
+      return { id: row.id, archivedAt: row.archivedAt, invites };
     }),
 
   /** Revocation: rotating the code kills a photographed poster immediately. */

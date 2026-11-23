@@ -73,6 +73,7 @@ export const portalNav = [
   { href: "/portal/mentorship", label: "SASE KIN" },
   { href: "/portal/resume", label: "Resume" },
   { href: "/portal/elections", label: "Elections" },
+  { href: "/portal/settings", label: "Settings" },
 ] as const;
 
 export const adminNav = [
