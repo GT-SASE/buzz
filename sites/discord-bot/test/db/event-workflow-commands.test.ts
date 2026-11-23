@@ -40,6 +40,7 @@ import { handlerDb, type HandlerDb } from "./handler-db.ts";
 import {
   createMigratedDb,
   errorCodeOf,
+  HOOK_TIMEOUT_MS,
   INSUFFICIENT_PRIVILEGE,
   MIGRATION_OWNER,
   OTHER_ROLE,
@@ -774,7 +775,7 @@ describe("the event workflow functions", () => {
   beforeAll(async () => {
     db = await createMigratedDb();
     guild = await insertGuild(db);
-  });
+  }, HOOK_TIMEOUT_MS);
 
   afterAll(async () => {
     await db.close();

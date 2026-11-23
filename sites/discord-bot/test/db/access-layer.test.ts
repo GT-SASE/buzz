@@ -78,6 +78,7 @@ import {
   type GuildFixture,
 } from "./fixtures.ts";
 import {
+  HOOK_TIMEOUT_MS,
   MIGRATION_OWNER,
   fakeId,
   queryAs,
@@ -140,7 +141,7 @@ describe("database layer against the real schema", () => {
     pg = backend.connection;
     db = backend.db;
     guild = await insertGuild(pg);
-  });
+  }, HOOK_TIMEOUT_MS);
 
   afterAll(async () => {
     await backend.close();

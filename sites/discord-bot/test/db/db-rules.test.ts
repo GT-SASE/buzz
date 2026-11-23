@@ -18,6 +18,7 @@ import {
 } from "./fixtures.ts";
 import {
   BOT_APP,
+  HOOK_TIMEOUT_MS,
   INSUFFICIENT_PRIVILEGE,
   MIGRATION_OWNER,
   OTHER_ROLE,
@@ -55,7 +56,7 @@ let guild: GuildFixture;
 beforeAll(async () => {
   db = await createMigratedDb();
   guild = await insertGuild(db);
-});
+}, HOOK_TIMEOUT_MS);
 
 afterAll(async () => {
   await db.close();

@@ -2,6 +2,7 @@ import type { PGlite } from "@electric-sql/pglite";
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import {
   BOT_APP,
+  HOOK_TIMEOUT_MS,
   INSUFFICIENT_PRIVILEGE,
   OTHER_ROLE,
   createMigratedDb,
@@ -39,7 +40,7 @@ let db: PGlite;
 
 beforeAll(async () => {
   db = await createMigratedDb();
-});
+}, HOOK_TIMEOUT_MS);
 
 afterAll(async () => {
   await db.close();

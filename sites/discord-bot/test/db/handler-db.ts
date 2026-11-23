@@ -5,7 +5,7 @@
  */
 
 import { PGlite } from "@electric-sql/pglite";
-import { onTestFinished } from "bun:test";
+import { beforeAll, onTestFinished } from "bun:test";
 import { createDbClient, type DbClient } from "../../src/db/client.ts";
 import {
   GUILD_ID,
@@ -15,7 +15,7 @@ import {
   type DraftRow,
 } from "../support/interactions.ts";
 import { names, pgliteSql, serverError } from "../support/sql-client.ts";
-import { createMigratedDb, fakeId } from "./harness.ts";
+import { createMigratedDb, fakeId, HOOK_TIMEOUT_MS } from "./harness.ts";
 
 export interface Seed {
   config?: ConfigRow | null;
@@ -47,13 +47,23 @@ export interface HandlerDb {
 
 let template: Promise<File | Blob> | undefined;
 
-async function migratedCopy(): Promise<PGlite> {
+function migratedTemplate(): Promise<File | Blob> {
   template ??= createMigratedDb().then(async (db) => {
     const dump = await db.dumpDataDir("none");
     await db.close();
     return dump;
   });
-  const db = new PGlite({ loadDataDir: await template });
+  return template;
+}
+
+// Every file that imports this builds the template before its first test, in a
+// hook with room. Left to the first handlerDb call, the boot and every
+// migration counted against that one test's 30 seconds and timed it out on a
+// busy machine.
+beforeAll(migratedTemplate, HOOK_TIMEOUT_MS);
+
+async function migratedCopy(): Promise<PGlite> {
+  const db = new PGlite({ loadDataDir: await migratedTemplate() });
   await db.waitReady;
   return db;
 }
