@@ -15,6 +15,7 @@ export const RESERVED_PAGE_SLUGS: ReadonlySet<string> = new Set([
   "contact",
   "discord",
   "events",
+  "events.ics",
   "join",
   "portal",
   "programs",

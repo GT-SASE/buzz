@@ -1,40 +1,13 @@
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
-
 import { ImageResponse } from "next/og";
 
 import { site } from "~/data/site";
+import { ogColors, ogDino, ogFonts } from "~/lib/og";
 
 export const alt = `${site.name} — ${site.tagline}`;
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
-const navy = "#003057";
-const gold = "#EAAA00";
-const ink = "#0F1F30";
-const muted = "#4A5866";
-const desk = "#EEF1F4";
-
-/** Archivo as TTF (Satori cannot read woff2). Falls back to the default face. */
-async function archivo(axes: string) {
-  try {
-    const css = await fetch(
-      `https://fonts.googleapis.com/css2?family=Archivo:${axes}`,
-    ).then((res) => {
-      if (!res.ok) throw new Error(String(res.status));
-      return res.text();
-    });
-    const url = /url\((https:[^)]+\.ttf)\)/.exec(css)?.[1];
-    return url
-      ? await fetch(url).then((res) => {
-          if (!res.ok) throw new Error(String(res.status));
-          return res.arrayBuffer();
-        })
-      : null;
-  } catch {
-    return null;
-  }
-}
+const { navy, gold, ink, muted, desk } = ogColors;
 
 /**
  * The share card for every page (Next applies the nearest ancestor image).
@@ -43,17 +16,7 @@ async function archivo(axes: string) {
  * `gap`, `grid`, and shorthand `background` with layers are unavailable.
  */
 export default async function OpengraphImage() {
-  const dino = `data:image/png;base64,${(
-    await readFile(join(process.cwd(), "public/brand/sase-dino.png"))
-  ).toString("base64")}`;
-  const [heavy, regular] = await Promise.all([
-    archivo("wdth,wght@125,800"),
-    archivo("wght@400"),
-  ]);
-  const fonts = [
-    heavy && { name: "Archivo", data: heavy, weight: 800 as const },
-    regular && { name: "Archivo", data: regular, weight: 400 as const },
-  ].filter((font) => !!font);
+  const [dino, fonts] = await Promise.all([ogDino(), ogFonts()]);
 
   return new ImageResponse(
     <div

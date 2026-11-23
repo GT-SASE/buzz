@@ -27,3 +27,28 @@ describe("public client bundle", () => {
     expect(readFileSync(join(src, file), "utf8")).not.toMatch(heavy);
   });
 });
+
+/**
+ * The RSVP island ships on every /events page. It talks to the tRPC endpoint
+ * with `fetch`, so none of the portal's data layer may come with it, and it
+ * may import nothing beyond React and its own fetch helpers.
+ */
+describe("RSVP island", () => {
+  const specifiers = (file: string) =>
+    [
+      ...readFileSync(join(src, file), "utf8").matchAll(
+        /(?:from|import)\s+"([^"]+)"/g,
+      ),
+    ].map((match) => match[1]);
+
+  it("imports only React and its fetch helpers", () => {
+    expect(specifiers("components/site/rsvp.tsx").sort()).toEqual([
+      "react",
+      "~/lib/rsvp-client",
+    ]);
+  });
+
+  it("keeps the fetch helpers free of imports", () => {
+    expect(specifiers("lib/rsvp-client.ts")).toEqual([]);
+  });
+});
