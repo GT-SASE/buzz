@@ -31,6 +31,13 @@ export function nextSemester(id: string) {
   return term === "fall" ? `spring-${year + 1}` : `fall-${year}`;
 }
 
+/** `spring-2027` -> `fall-2026`, `fall-2027` -> `spring-2027`. */
+export function previousSemester(id: string) {
+  const [term, yearText] = id.split("-");
+  const year = Number(yearText);
+  return term === "fall" ? `spring-${year}` : `fall-${year - 1}`;
+}
+
 /** The school year a semester id belongs to. */
 export function schoolYearOfSemester(id: string) {
   const [term, yearText] = id.split("-");

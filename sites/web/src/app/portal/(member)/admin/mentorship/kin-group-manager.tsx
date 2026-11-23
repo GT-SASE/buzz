@@ -21,7 +21,7 @@ import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { Skeleton } from "~/components/ui/skeleton";
 import { Textarea } from "~/components/ui/textarea";
-import { semesterLabel } from "@buzz/api/terms";
+import { previousSemester, semesterLabel } from "@buzz/api/terms";
 import { api, type RouterOutputs } from "~/trpc/react";
 
 type Group = RouterOutputs["mentorship"]["groups"][number];
@@ -209,6 +209,20 @@ export function KinGroupManager({
     onError: (error) => toast.error(error.message),
   });
 
+  const carry = api.mentorship.carryForwardGroups.useMutation({
+    onSuccess: async ({ created, skipped, from }) => {
+      toast.success(
+        created === 0
+          ? skipped === 0
+            ? `${semesterLabel(from)} has no groups to copy.`
+            : "Every group is already here."
+          : `Copied ${created} ${created === 1 ? "group" : "groups"} from ${semesterLabel(from)}${skipped > 0 ? `, ${skipped} already here` : ""}.`,
+      );
+      await refresh();
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
   if (groups.isPending) {
     return <Skeleton className="h-24 w-full rounded-xl" />;
   }
@@ -227,7 +241,21 @@ export function KinGroupManager({
         >
           Groups
         </h2>
-        {!readOnly && <GroupDialog />}
+        {!readOnly && (
+          <div className="flex flex-wrap gap-2">
+            <ConfirmDialog
+              title={`Copy groups from ${semesterLabel(previousSemester(semester))}?`}
+              body={`Adds last semester's groups here with the same names, descriptions and seats. Nobody is moved over, so members join again. A group whose name is already here is left alone. Nothing is deleted.`}
+              action="Copy groups"
+              onConfirm={() => carry.mutate()}
+            >
+              <Action tone="quiet" disabled={carry.isPending}>
+                {carry.isPending ? "Copying..." : "Copy last semester's groups"}
+              </Action>
+            </ConfirmDialog>
+            <GroupDialog />
+          </div>
+        )}
       </div>
 
       {all.length === 0 ? (

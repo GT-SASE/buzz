@@ -788,6 +788,7 @@ export const AUDIT_ACTIONS = [
   "export.attendance",
   "export.committee",
   "resume.download",
+  "kin_group.carry_forward",
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
@@ -922,6 +923,31 @@ export const notificationPreferences = createTable(
     eventEmails: d.boolean().notNull().default(true),
     /** Nominations open, voting open and results published. */
     electionEmails: d.boolean().notNull().default(true),
+    updatedAt: d
+      .timestamp({ withTimezone: true })
+      .$defaultFn(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  }),
+);
+
+/**
+ * A member's say over the leaderboard. A row exists only once a member has
+ * saved a choice; no row means the name shows. `hideName` keeps the member on
+ * the board at their true rank, shown as "Anonymous member", so every other
+ * rank and the viewer's own stay honest.
+ *
+ * A table beside `user` for the reason `notification_preference` is: a new
+ * `user` column would break Auth.js sign-in on a preview that shares the
+ * production database before its migration has run.
+ */
+export const leaderboardPreferences = createTable(
+  "leaderboard_preference",
+  (d) => ({
+    userId: d
+      .varchar({ length: 255 })
+      .primaryKey()
+      .references(() => users.id, { onDelete: "cascade" }),
+    hideName: d.boolean().notNull().default(false),
     updatedAt: d
       .timestamp({ withTimezone: true })
       .$defaultFn(() => /* @__PURE__ */ new Date())

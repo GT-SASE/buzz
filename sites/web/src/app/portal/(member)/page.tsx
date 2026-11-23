@@ -272,7 +272,17 @@ async function DashboardBody() {
             }))}
           />
 
-          <Leaderboard data={board} />
+          <Leaderboard
+            data={board}
+            footer={
+              <Link
+                href="/portal/leaderboard"
+                className="text-navy mt-4 inline-flex min-h-11 items-center font-semibold underline underline-offset-4"
+              >
+                This semester and school year
+              </Link>
+            }
+          />
 
           <Separator className="mt-12" />
           <div className="flex flex-wrap items-center justify-between gap-4 pt-6">

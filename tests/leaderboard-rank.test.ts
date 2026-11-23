@@ -1,31 +1,71 @@
 import { describe, expect, it } from "bun:test";
 
-import { rankLeaderboard } from "../packages/api/src/leaderboard-rank";
+import { shapeLeaderboard } from "../packages/api/src/leaderboard-rank";
 
-describe("rankLeaderboard", () => {
-  it("ranks by position, highest points first, negatives at the bottom", () => {
-    const board = rankLeaderboard(
-      [
-        { userId: "a", name: "Ada", totalPoints: 40, totalEvents: 5 },
-        { userId: "b", name: "Bea", totalPoints: 30, totalEvents: 4 },
-        { userId: "k", name: "Kyle Jiang", totalPoints: -67, totalEvents: 3 },
-      ],
+const row = (
+  userId: string,
+  rank: number,
+  name: string | null,
+  hidden = false,
+) => ({ userId, rank, name, hidden, totalPoints: 100 - rank, totalEvents: 1 });
+
+describe("shapeLeaderboard", () => {
+  it("keeps the rank the database gave, and marks the viewer", () => {
+    const board = shapeLeaderboard(
+      [row("a", 1, "Ada"), row("b", 2, "Bea")],
       "b",
+      10,
     );
-    expect(board.map((row) => [row.name, row.rank])).toEqual([
+    expect(board.top.map((entry) => [entry.name, entry.rank])).toEqual([
       ["Ada", 1],
       ["Bea", 2],
-      ["Kyle Jiang", 3],
     ]);
-    expect(board[1]?.isYou).toBe(true);
-    expect(board[0]?.isYou).toBe(false);
+    expect(board.top[1]?.isYou).toBe(true);
+    expect(board.you).toEqual({ rank: 2, totalPoints: 98, totalEvents: 1 });
   });
 
   it("falls back to Member when the account has no name", () => {
-    const board = rankLeaderboard(
-      [{ userId: "x", name: null, totalPoints: 10, totalEvents: 1 }],
-      "x",
+    const board = shapeLeaderboard([row("x", 1, null)], "x", 10);
+    expect(board.top[0]?.name).toBe("Member");
+  });
+
+  it("sends no name for a hidden member, only their place", () => {
+    const board = shapeLeaderboard(
+      [row("a", 1, "Ada Lovelace", true), row("b", 2, "Bea")],
+      "b",
+      10,
     );
-    expect(board[0]?.name).toBe("Member");
+    expect(board.top[0]).toMatchObject({
+      rank: 1,
+      name: null,
+      anonymous: true,
+    });
+    expect(JSON.stringify(board)).not.toContain("Ada Lovelace");
+  });
+
+  it("reports a viewer below the top N as `you` only", () => {
+    const board = shapeLeaderboard(
+      [row("a", 1, "Ada"), row("b", 2, "Bea"), row("z", 9, "Zed")],
+      "z",
+      2,
+    );
+    expect(board.top.map((entry) => entry.rank)).toEqual([1, 2]);
+    expect(board.you).toMatchObject({ rank: 9 });
+  });
+
+  it("has no standing for a viewer who is not on the board", () => {
+    expect(shapeLeaderboard([row("a", 1, "Ada")], "q", 10).you).toBeNull();
+  });
+
+  it("carries a name and totals only, never an email, id or image", () => {
+    const board = shapeLeaderboard([row("a", 1, "Ada")], "q", 10);
+    expect(Object.keys(board.top[0]!).sort()).toEqual([
+      "anonymous",
+      "isYou",
+      "name",
+      "rank",
+      "totalEvents",
+      "totalPoints",
+    ]);
   });
 });

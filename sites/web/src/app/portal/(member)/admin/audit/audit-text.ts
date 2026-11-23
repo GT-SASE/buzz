@@ -13,6 +13,7 @@ export const actionLabels: Record<AuditAction, string> = {
   "event.remove_check_in": "Removed a check-in",
   "mentorship.award_points": "Awarded KIN points",
   "mentorship.award_group_points": "Awarded group KIN points",
+  "kin_group.carry_forward": "Copied kin groups forward",
   "export.roster": "Exported the roster",
   "export.attendance": "Exported attendance",
   "export.committee": "Exported applications",
@@ -70,6 +71,8 @@ export function describeChange(row: {
       return `${text(before?.points)} to ${text(after?.points)} points`;
     case "mentorship.award_group_points":
       return `+${text(after?.points)} points each to ${text(after?.members)} members`;
+    case "kin_group.carry_forward":
+      return `${text(after?.from)} to ${text(after?.to)}, ${text(after?.created)} new, ${text(after?.skipped)} already there`;
     case "export.roster": {
       const search = typeof after?.search === "string" ? after.search : "";
       return `${rows(after?.rows)}${after?.truncated ? ", cut off at the limit" : ""}${search ? `, search "${search}"` : ""}`;

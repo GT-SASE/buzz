@@ -16,15 +16,29 @@ import type { RouterOutputs } from "~/trpc/react";
 const columnHeading =
   "text-eyebrow tracking-caps text-ink-muted px-0 font-semibold uppercase";
 
-function Board({ children }: { children: React.ReactNode }) {
+function Board({
+  children,
+  heading,
+}: {
+  children: React.ReactNode;
+  heading: boolean;
+}) {
   return (
-    <section className="mt-12">
-      <h2 className="text-eyebrow tracking-caps text-ink-muted border-hairline border-b pb-3 font-semibold uppercase">
-        Leaderboard
-      </h2>
+    <section className={heading ? "mt-12" : "mt-6"}>
+      {heading && (
+        <h2 className="text-eyebrow tracking-caps text-ink-muted border-hairline border-b pb-3 font-semibold uppercase">
+          Leaderboard
+        </h2>
+      )}
       {children}
     </section>
   );
+}
+
+/** Who a row is shown as. A hidden name is never in the payload. */
+function displayName(row: { name: string | null; isYou: boolean }) {
+  if (row.name) return row.name;
+  return row.isYou ? "You (name hidden)" : "Anonymous member";
 }
 
 function Standing({
@@ -88,12 +102,20 @@ function Standing({
 /** `null` means the board failed to load. */
 export function Leaderboard({
   data,
+  heading = true,
+  emptyMessage,
+  footer,
 }: {
   data: RouterOutputs["member"]["leaderboard"] | null;
+  /** Off where the page already titles the board. */
+  heading?: boolean;
+  /** Shown when nobody has points; without it an empty board renders nothing. */
+  emptyMessage?: string;
+  footer?: React.ReactNode;
 }) {
   if (!data) {
     return (
-      <Board>
+      <Board heading={heading}>
         <p className="text-ink-muted text-body-sm mt-4">
           Leaderboard could not be loaded. Refresh and try again.
         </p>
@@ -104,12 +126,20 @@ export function Leaderboard({
   const { top, you } = data;
 
   // Nobody has checked in anywhere yet. An empty board is worse than none.
-  if (top.length === 0) return null;
+  if (top.length === 0) {
+    if (!emptyMessage) return null;
+    return (
+      <Board heading={heading}>
+        <p className="text-ink-muted text-body-sm mt-4">{emptyMessage}</p>
+        {footer}
+      </Board>
+    );
+  }
 
   const pinned = you && !top.some((row) => row.isYou) ? you : null;
 
   return (
-    <Board>
+    <Board heading={heading}>
       <ul className="mt-4 grid gap-3 md:hidden">
         {top.map((row) => (
           <li
@@ -129,7 +159,7 @@ export function Leaderboard({
                   row.isYou ? "font-bold" : "font-medium",
                 )}
               >
-                {row.isYou ? `${row.name} (you)` : row.name}
+                {row.isYou && row.name ? `${row.name} (you)` : displayName(row)}
                 <span className="text-ink-muted ml-2 text-xs font-medium tracking-wide uppercase">
                   {tierFor(row.totalPoints).name}
                 </span>
@@ -177,7 +207,7 @@ export function Leaderboard({
               <Standing
                 key={row.rank}
                 rank={row.rank}
-                name={row.name}
+                name={displayName(row)}
                 totalPoints={row.totalPoints}
                 totalEvents={row.totalEvents}
                 isYou={row.isYou}
@@ -209,6 +239,7 @@ export function Leaderboard({
           and you will appear here.
         </p>
       )}
+      {footer}
     </Board>
   );
 }
