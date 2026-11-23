@@ -82,7 +82,28 @@ describe.skipIf(!process.env.DATABASE_URL)("points ledger backfill", () => {
             `ALTER TABLE ${table} ALTER COLUMN "${column}" SET DEFAULT now()`,
           );
         }
-        const members = ["ada", "bo", "cy", "dee", "eli", "fay"];
+        // Production has check-ins and signups with negative points (as low as
+        // INT_MIN) because it lacks the `>= 0` checks the schema declares. The
+        // migration must copy them as they are, so the scratch schema drops
+        // the same checks. Dropped by definition, not by name.
+        await run(
+          tx,
+          `DO $$
+            DECLARE c record;
+            BEGIN
+              FOR c IN
+                SELECT conrelid::regclass::text AS tbl, conname
+                  FROM pg_constraint
+                 WHERE contype = 'c'
+                   AND connamespace = current_schema()::regnamespace
+                   AND conrelid::regclass::text IN ('buzz_event_check_in', 'buzz_mentorship_enrollment')
+                   AND pg_get_constraintdef(oid) LIKE '%oints%'
+              LOOP
+                EXECUTE format('ALTER TABLE %s DROP CONSTRAINT %I', c.tbl, c.conname);
+              END LOOP;
+            END $$`,
+        );
+        const members = ["ada", "bo", "cy", "dee", "eli", "fay", "gus"];
         await run(
           tx,
           `INSERT INTO buzz_user (id, email, name, role) VALUES
@@ -109,7 +130,9 @@ describe.skipIf(!process.env.DATABASE_URL)("points ledger backfill", () => {
               ('ci-5', 'ev-b', 'cy', 'code', 5, NULL, '2026-09-08T18:03Z'),
               ('ci-6', 'ev-c', 'ada', 'code', 0, NULL, '2026-09-15T18:01Z'),
               ('ci-7', 'ev-d', 'ada', 'code', 20, NULL, '2026-01-20T18:10Z'),
-              ('ci-8', 'ev-d', 'dee', 'manual', 20, 'boss', '2026-01-20T18:20Z')`,
+              ('ci-8', 'ev-d', 'dee', 'manual', 20, 'boss', '2026-01-20T18:20Z'),
+              ('ci-9', 'ev-a', 'gus', 'code', -2147483648, NULL, '2026-09-01T18:09Z'),
+              ('ci-10', 'ev-b', 'gus', 'manual', -2147483648, 'boss', '2026-09-08T18:10Z')`,
         );
         await run(
           tx,
@@ -118,7 +141,9 @@ describe.skipIf(!process.env.DATABASE_URL)("points ledger backfill", () => {
               ('bo', '2026-2027', 'mentee', 'enrolled', 8, '2026-10-05T12:00Z'),
               ('bo', '2025-2026', 'mentee', 'enrolled', 20, '2026-04-01T12:00Z'),
               ('cy', '2026-2027', 'mentee', 'interested', 0, NULL),
-              ('dee', '2026-2027', 'mentee', 'withdrawn', 3, NULL)`,
+              ('dee', '2026-2027', 'mentee', 'withdrawn', 3, NULL),
+              ('eli', '2026-2027', 'mentee', 'enrolled', -2147483648, NULL),
+              ('fay', '2025-2026', 'mentee', 'enrolled', -3, NULL)`,
         );
         // A group seat's points are part of the enrollment total, not extra.
         await run(
@@ -164,23 +189,38 @@ describe.skipIf(!process.env.DATABASE_URL)("points ledger backfill", () => {
         };
 
         const readLedger = async () => {
-          const rows = (
-            await run(
-              tx,
-              `SELECT l."userId" AS id,
+          const rows =
+            // bigint, not int: two INT_MIN rows sum past the int range. The
+            // driver returns bigint as a string.
+            (
+              await run(
+                tx,
+                `SELECT l."userId" AS id,
                   COALESCE(SUM(l.delta) FILTER (
                     WHERE l.source IN ('check_in', 'manual_check_in', 'check_in_removed')
                       AND e."archivedAt" IS NULL
-                  ), 0)::int AS event_points,
+                  ), 0)::bigint AS event_points,
                   COALESCE(SUM(l.delta) FILTER (
                     WHERE l.source IN ('kin_award', 'kin_group_award', 'opening_balance')
-                  ), 0)::int AS kin_points
+                  ), 0)::bigint AS kin_points
                 FROM buzz_points_ledger l
                 LEFT JOIN buzz_event e ON e.id = l."eventId"
                 GROUP BY l."userId"`,
-            )
-          ).rows as { id: string; event_points: number; kin_points: number }[];
-          return new Map(rows.map((row) => [row.id, row]));
+              )
+            ).rows as {
+              id: string;
+              event_points: string;
+              kin_points: string;
+            }[];
+          return new Map(
+            rows.map((row) => [
+              row.id,
+              {
+                event_points: Number(row.event_points),
+                kin_points: Number(row.kin_points),
+              },
+            ]),
+          );
         };
 
         const first = await totals();
@@ -188,6 +228,11 @@ describe.skipIf(!process.env.DATABASE_URL)("points ledger backfill", () => {
         expect(first.events.get("ada")).toMatchObject({ points: 15 });
         expect(first.events.get("dee")).toMatchObject({ points: 0 });
         expect(first.kin.get("bo")).toBe(28);
+        // Negatives as production has them: two INT_MIN check-ins on one
+        // member sum below the int range; a signup sits at INT_MIN too.
+        expect(first.events.get("gus")).toMatchObject({ points: -4294967296 });
+        expect(first.kin.get("eli")).toBe(-2147483648);
+        expect(first.kin.get("fay")).toBe(-3);
 
         // ---------------------------------------------- the migration
         for (const statement of statementsOf(LEDGER_MIGRATION)) {
@@ -222,12 +267,27 @@ describe.skipIf(!process.env.DATABASE_URL)("points ledger backfill", () => {
           )
         ).rows[0] as Record<string, number>;
         expect(counts).toEqual({
-          check_ins: 8,
-          grants: 8,
-          balances: 4,
-          openings: 4,
-          everything: 12,
+          check_ins: 10,
+          grants: 10,
+          balances: 6,
+          openings: 6,
+          everything: 16,
         });
+
+        // Copied as they are, not clamped, skipped or failed on.
+        const negatives = (
+          await run(
+            tx,
+            `SELECT "userId", source, delta FROM buzz_points_ledger
+              WHERE delta < 0 ORDER BY "userId", source`,
+          )
+        ).rows;
+        expect(negatives).toEqual([
+          { userId: "eli", source: "opening_balance", delta: -2147483648 },
+          { userId: "fay", source: "opening_balance", delta: -3 },
+          { userId: "gus", source: "check_in", delta: -2147483648 },
+          { userId: "gus", source: "manual_check_in", delta: -2147483648 },
+        ]);
 
         const manual = (
           await run(
