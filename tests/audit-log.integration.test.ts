@@ -580,6 +580,11 @@ describe.skipIf(!process.env.DATABASE_URL)(
             [{ points: 0 }, { points: 5 }],
             [{ points: 5 }, { points: 7 }],
           ]);
+          // Named by email, so the entry still reads after an account is gone.
+          expect(rows.map((row) => row.targetLabel)).toEqual([
+            member.email,
+            member.email,
+          ]);
           expect(await enrollmentPoints(member.id)).toBe(7);
           expect(await ledgerKinPoints(member.id)).toBe(7);
           expect((await ledgerFor(member.id)).map((row) => row.source)).toEqual(
@@ -625,6 +630,39 @@ describe.skipIf(!process.env.DATABASE_URL)(
             targetLabel: `Hive ${suffix}`,
             after: { points: 3, members: 2 },
           });
+        },
+        SLOW,
+      );
+
+      it(
+        "a group award counts only the members whose yearly total moved",
+        async () => {
+          const signedUp = await makeUser("kin-s1", "MEMBER");
+          const seatOnly = await makeUser("kin-s2", "MEMBER");
+          await enroll(signedUp);
+          const [group] = await db
+            .insert(kinGroups)
+            .values({ year, semester: term, name: `Seat ${suffix}` })
+            .returning({ id: kinGroups.id });
+          groupIds.push(group!.id);
+          await db.insert(kinMemberships).values([
+            { userId: signedUp.id, semester: term, groupId: group!.id },
+            { userId: seatOnly.id, semester: term, groupId: group!.id },
+          ]);
+
+          await callerFor(officer).mentorship.awardGroupPoints({
+            groupId: group!.id,
+            points: 3,
+          });
+
+          // The seat with no signup has no total to move, so no ledger row.
+          expect(await ledgerFor(signedUp.id)).toHaveLength(1);
+          expect(await ledgerFor(seatOnly.id)).toHaveLength(0);
+          const rows = (
+            await auditBy(officer.id, "mentorship.award_group_points")
+          ).filter((row) => row.targetId === group!.id);
+          expect(rows).toHaveLength(1);
+          expect(rows[0]?.after).toEqual({ points: 3, members: 1 });
         },
         SLOW,
       );

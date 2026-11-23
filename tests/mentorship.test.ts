@@ -134,7 +134,11 @@ describe("mentorship.awardPoints", () => {
 
 describe("mentorship.awardPoints writes", () => {
   it("adds the points to the ledger and logs the total before and after", async () => {
-    const { db } = awardingDb([[{ points: 12 }], []]);
+    const { db } = awardingDb([
+      [{ points: 12 }],
+      [],
+      [{ email: "member-2@gatech.edu" }],
+    ]);
 
     await createCaller(adminCtx(db)).mentorship.awardPoints({
       userId: "member-2",
@@ -157,7 +161,7 @@ describe("mentorship.awardPoints writes", () => {
         action: "mentorship.award_points",
         targetType: "member",
         targetId: "member-2",
-        targetLabel: null,
+        targetLabel: "member-2@gatech.edu",
         before: { points: 12 },
         after: { points: 17 },
       },
@@ -220,6 +224,26 @@ describe("mentorship.awardGroupPoints writes", () => {
         after: { points: 3, members: 2 },
       },
     ]);
+  });
+
+  it("counts only the members whose yearly total moved when a seat has no signup for the year", async () => {
+    const { db } = awardingDb([
+      [{ year: "2026-2027", name: "Hive" }],
+      [
+        { userId: "member-1", semester: "fall-2026", points: 0 },
+        { userId: "member-2", semester: "fall-2026", points: 4 },
+      ],
+      [{ userId: "member-1", points: 0 }],
+    ]);
+
+    await createCaller(adminCtx(db)).mentorship.awardGroupPoints({
+      groupId: "group-1",
+      points: 3,
+    });
+
+    expect(ledgerRows.map((row) => row.userId)).toEqual(["member-1"]);
+    expect(auditRows).toHaveLength(1);
+    expect(auditRows[0]?.after).toEqual({ points: 3, members: 1 });
   });
 
   it("writes nothing for an empty group", async () => {

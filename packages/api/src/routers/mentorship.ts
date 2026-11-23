@@ -311,11 +311,18 @@ export const mentorshipRouter = createTRPCRouter({
             actedByUserId: ctx.session.user.id,
           },
         ]);
+        // Named by email like every other member-targeted entry, so the log
+        // still says who it was after the account is renamed or deleted.
+        const [member] = await tx
+          .select({ email: users.email })
+          .from(users)
+          .where(eq(users.id, input.userId));
         await recordAudit(tx, {
           actorId: ctx.session.user.id,
           action: "mentorship.award_points",
           targetType: "member",
           targetId: input.userId,
+          targetLabel: member?.email ?? null,
           before: { points: existing.points },
           after: { points: existing.points + input.points },
         });
@@ -768,7 +775,9 @@ export const mentorshipRouter = createTRPCRouter({
           targetType: "kin_group",
           targetId: input.groupId,
           targetLabel: group.name,
-          after: { points: input.points, members: seats.length },
+          // The members whose yearly total moved, the same set the ledger got
+          // rows for. A seat with no signup for the year is not one of them.
+          after: { points: input.points, members: totals.length },
         });
         return { awarded: seats.length };
       });
