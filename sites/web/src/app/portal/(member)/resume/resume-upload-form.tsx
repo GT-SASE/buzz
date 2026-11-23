@@ -1,16 +1,19 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import { FileInput, FileInputTrigger } from "@ui-sdk/react/file-input";
 import { toast } from "sonner";
 
 import { ConfirmDialog } from "~/app/portal/_components/confirm-dialog";
 import { formatDate } from "~/app/portal/_lib/format";
 import { Alert, AlertDescription } from "~/components/ui/alert";
 import { Button } from "~/components/ui/button";
-import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { Skeleton } from "~/components/ui/skeleton";
 import { api, type RouterOutputs } from "~/trpc/react";
+
+// Mirrors RESUME_MAX_BYTES in @buzz/db; the server still enforces it. Not imported so the client bundle skips the db package.
+const MAX_BYTES = 2 * 1024 * 1024;
 
 type Mine = RouterOutputs["resume"]["mine"];
 
@@ -83,7 +86,6 @@ function ResumeFields({ row }: { row: Mine }) {
       }
       toast.success("Resume saved.");
       setFile(null);
-      (event.target as HTMLFormElement).reset();
       await utils.resume.mine.invalidate();
     } catch (err) {
       const message =
@@ -129,18 +131,32 @@ function ResumeFields({ row }: { row: Mine }) {
 
       <form className="mt-8 grid gap-6" onSubmit={onSubmit}>
         <div>
-          <Label htmlFor="resume-file">PDF</Label>
-          <Input
-            id="resume-file"
-            type="file"
-            accept="application/pdf,.pdf"
+          <Label>PDF</Label>
+          <FileInput
+            accept={["application/pdf", ".pdf"]}
+            maxSize={MAX_BYTES}
             disabled={busy}
-            onChange={(event) => {
-              setFile(event.target.files?.[0] ?? null);
+            value={file ? [file] : []}
+            onValueChange={(value) => {
+              setFile(value[0] ?? null);
               setError(null);
             }}
-            className="border-hairline file:bg-navy mt-2 h-12 py-2 text-base file:mr-3 file:h-8 file:rounded-md file:px-3 file:font-semibold file:text-white"
-          />
+            onReject={() =>
+              setError("That file must be a PDF of 2 MB or less.")
+            }
+          >
+            <div className="border-hairline mt-2 flex min-h-12 items-center gap-3 rounded-md border px-2 py-2 text-base">
+              <FileInputTrigger
+                aria-label={file ? "Replace resume PDF" : "Choose resume PDF"}
+                className="bg-navy hover:bg-navy-deep focus-visible:ring-navy min-h-11 shrink-0 rounded-md px-3 font-semibold text-white focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-50"
+              >
+                {file ? "Replace file" : "Choose File"}
+              </FileInputTrigger>
+              <span className="text-ink-muted min-w-0 truncate">
+                {file?.name ?? "No file chosen"}
+              </span>
+            </div>
+          </FileInput>
         </div>
 
         <Button
