@@ -208,6 +208,10 @@ describe("notifyEventChange", () => {
 
     expect(sent[0]!.icalEvent?.method).toBe("CANCEL");
     expect(sent[0]!.subject).toBe("Cancelled: Fall GBM");
+    // The event is cancelled, not the member's RSVP.
+    expect(sent[0]!.text).toBe(
+      "Fall GBM is cancelled. It is off your calendar.",
+    );
   });
 
   it("puts the entry back on a restore", async () => {
@@ -215,6 +219,10 @@ describe("notifyEventChange", () => {
       members(1),
     );
     expect(sent[0]!.icalEvent?.method).toBe("REQUEST");
+    // Not "updated": nothing about the time or place changed.
+    expect(sent[0]!.subject).toBe("Back on: Fall GBM");
+    expect(sent[0]!.text).toContain("is back on");
+    expect(sent[0]!.text).not.toContain("time or place");
   });
 
   it("skips members who switched event emails off, and says how many", async () => {

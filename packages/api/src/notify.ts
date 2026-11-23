@@ -1,6 +1,10 @@
 import { eq } from "drizzle-orm";
 
-import { sendCalendarInvite, type InviteEvent } from "./calendar-invite";
+import {
+  sendCalendarInvite,
+  type EventChange,
+  type InviteEvent,
+} from "./calendar-invite";
 import { deliver, mailer, type Mailer } from "./mail";
 import { isUndefinedTable } from "./pg-errors";
 import { semesterLabel } from "./terms";
@@ -200,8 +204,6 @@ export async function notifyApplicationDecision(
   return { ...noNotice, sent: ok ? 1 : 0, failed: ok ? 0 : 1 };
 }
 
-export type EventChange = "moved" | "cancelled" | "restored";
-
 const whenFormat = new Intl.DateTimeFormat("en-US", {
   timeZone: "America/New_York",
   weekday: "short",
@@ -242,10 +244,7 @@ export async function notifyEventChange(
         change === "cancelled" ? "CANCEL" : "REQUEST",
         event,
         to,
-        {
-          updated: true,
-          mail,
-        },
+        { change, mail },
       ),
     ),
     postToChannel(eventChannelPost(event, change)),

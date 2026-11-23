@@ -553,6 +553,7 @@ describe.skipIf(!process.env.DATABASE_URL)("notifications", () => {
         expect(result.invites.sent).toBe(2);
         for (const mail of mine()) {
           expect(mail.method).toBe("REQUEST");
+          expect(mail.subject).toStartWith("Back on:");
           expect(mail.seen).toBe(false);
         }
       },
