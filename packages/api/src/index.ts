@@ -8,7 +8,11 @@ export {
   RESUME_MAX_BYTES,
   RESUME_MIME,
 } from "./resume";
-export { takeToken, RESUME_UPLOAD_LIMIT } from "./rate-limit";
+export {
+  takeToken,
+  HEADSHOT_UPLOAD_LIMIT,
+  RESUME_UPLOAD_LIMIT,
+} from "./rate-limit";
 export { isUndefinedTable } from "./pg-errors";
 export { currentCommitteeCycle } from "./committee-cycle";
 export {
@@ -27,3 +31,10 @@ export {
 export { runScheduledFlips, type ScheduledRun } from "./election-flow";
 export { isCronAuthorized, isCronSecretUsable } from "./cron-auth";
 export { boardFromResults, type BoardSeat } from "./board";
+export {
+  HEADSHOT_MAX_STORED_BYTES,
+  HEADSHOT_MAX_UPLOAD_BYTES,
+  HEADSHOT_SIZE,
+  headshotUrl,
+  sniffHeadshotType,
+} from "./headshot";

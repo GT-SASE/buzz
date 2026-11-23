@@ -22,6 +22,7 @@ export const actionLabels: Record<AuditAction, string> = {
   "election.review_candidate": "Reviewed a candidate",
   "election.delete": "Deleted an election",
   "export.election_tally": "Exported an election tally",
+  "board.remove_photo": "Removed a board headshot",
   "export.roster": "Exported the roster",
   "export.attendance": "Exported attendance",
   "export.committee": "Exported applications",
@@ -110,6 +111,8 @@ export function describeChange(row: {
       return "Deleted";
     case "export.election_tally":
       return rows(after?.rows);
+    case "board.remove_photo":
+      return "Headshot taken down";
     case "export.roster": {
       const search = typeof after?.search === "string" ? after.search : "";
       return `${rows(after?.rows)}${after?.truncated ? ", cut off at the limit" : ""}${search ? `, search "${search}"` : ""}`;

@@ -2,7 +2,7 @@ import "server-only";
 
 import { unstable_cache } from "next/cache";
 
-import { boardFromResults } from "@buzz/api";
+import { boardFromResults, headshotUrl } from "@buzz/api";
 import { db } from "@buzz/db";
 import { board as handWritten, type BoardMember } from "~/data/content";
 
@@ -12,10 +12,20 @@ export const BOARD_TAG = "board";
 // transient failure is not served for the whole revalidate window.
 async function fetchBoard(): Promise<BoardMember[] | null> {
   if (!process.env.DATABASE_URL) return null;
-  return boardFromResults(db);
+  const seats = await boardFromResults(db);
+  if (!seats) return null;
+  // Only the member's own uploaded headshot is shown; no one's account
+  // avatar is. Without one the row shows their initials.
+  return seats.map((seat) => ({
+    role: seat.role,
+    ...(seat.name ? { name: seat.name } : {}),
+    ...(seat.userId && seat.photoVersion
+      ? { photo: headshotUrl(seat.userId, seat.photoVersion) }
+      : {}),
+  }));
 }
 
-const loadBoard = unstable_cache(fetchBoard, [BOARD_TAG, "v1"], {
+const loadBoard = unstable_cache(fetchBoard, [BOARD_TAG, "v2"], {
   tags: [BOARD_TAG],
   revalidate: process.env.NODE_ENV === "production" ? 3600 : 60,
 });

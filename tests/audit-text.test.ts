@@ -112,6 +112,7 @@ describe("describeChange", () => {
       ],
       ["election.delete", {}, {}, "Deleted"],
       ["export.election_tally", {}, { rows: 9, truncated: false }, "9 rows"],
+      ["board.remove_photo", { photo: true }, {}, "Headshot taken down"],
       [
         "export.roster",
         {},

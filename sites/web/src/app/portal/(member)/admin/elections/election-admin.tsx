@@ -37,6 +37,7 @@ import {
   ScheduleDialog,
   ScheduleFields,
 } from "./election-controls";
+import { BoardPhotos } from "./board-photos";
 import { revalidateBoard } from "./revalidate-board";
 
 type Election = RouterOutputs["election"]["list"][number];
@@ -459,6 +460,7 @@ export function ElectionAdmin({ currentYear }: { currentYear: string }) {
           ))}
         </ul>
       )}
+      {!readOnly && <BoardPhotos />}
     </>
   );
 }

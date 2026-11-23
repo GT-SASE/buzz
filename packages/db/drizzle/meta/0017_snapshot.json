@@ -1,5 +1,5 @@
 {
-  "id": "fefdb2c4-8db9-4348-8356-6d493e2eac28",
+  "id": "2bc99136-587f-4433-98b7-a1081c3bcc1f",
   "prevId": "13305829-9cef-46a0-bb98-4c025406f46f",
   "version": "7",
   "dialect": "postgresql",
@@ -245,6 +245,78 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.buzz_board_photo": {
+      "name": "buzz_board_photo",
+      "schema": "",
+      "columns": {
+        "userId": {
+          "name": "userId",
+          "type": "varchar(255)",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "contentType": {
+          "name": "contentType",
+          "type": "varchar(16)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "byteSize": {
+          "name": "byteSize",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "bytes": {
+          "name": "bytes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "etag": {
+          "name": "etag",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updatedAt": {
+          "name": "updatedAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "buzz_board_photo_userId_buzz_user_id_fk": {
+          "name": "buzz_board_photo_userId_buzz_user_id_fk",
+          "tableFrom": "buzz_board_photo",
+          "tableTo": "buzz_user",
+          "columnsFrom": [
+            "userId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "buzz_board_photo_size_check": {
+          "name": "buzz_board_photo_size_check",
+          "value": "\"buzz_board_photo\".\"byteSize\" > 0 and \"buzz_board_photo\".\"byteSize\" <= 204800"
+        },
+        "buzz_board_photo_type_check": {
+          "name": "buzz_board_photo_type_check",
+          "value": "\"buzz_board_photo\".\"contentType\" = 'image/webp'"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.buzz_committee_application": {

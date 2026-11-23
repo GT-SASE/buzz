@@ -930,10 +930,6 @@ describe.skipIf(!process.env.DATABASE_URL)("elections v2", () => {
           await checkIn(voter);
           voters.push(voter);
         }
-        await db
-          .update(users)
-          .set({ image: "https://example.test/ada.png" })
-          .where(eq(users.id, ada.id));
         const election = await makeElection("board", {
           positions: ["President", "Treasurer", "Secretary"],
           candidates: [ada, bea],
@@ -998,21 +994,18 @@ describe.skipIf(!process.env.DATABASE_URL)("elections v2", () => {
           });
         }
         const seats = await boardFromResults(db);
+        // Seat holders by id; the account's own image is never part of a seat.
         expect(seats).toEqual([
           {
             role: "President",
             name: `Zed board-ada ${suffix}`,
-            photo: "https://example.test/ada.png",
+            userId: ada.id,
           },
-          {
-            role: "Treasurer",
-            name: `Zed board-cy ${suffix}`,
-            photo: undefined,
-          },
+          { role: "Treasurer", name: `Zed board-cy ${suffix}`, userId: cy.id },
           {
             role: "Treasurer",
             name: `Zed board-dee ${suffix}`,
-            photo: undefined,
+            userId: dee.id,
           },
           { role: "Secretary" },
         ]);

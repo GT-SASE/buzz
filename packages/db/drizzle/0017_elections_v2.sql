@@ -32,6 +32,18 @@ CREATE INDEX "buzz_election_ballot_position_idx" ON "buzz_election_ballot" USING
 CREATE INDEX "buzz_election_ballot_candidate_idx" ON "buzz_election_ballot" USING btree ("candidateId");--> statement-breakpoint
 CREATE INDEX "buzz_election_voter_election_idx" ON "buzz_election_voter" USING btree ("electionId");--> statement-breakpoint
 ALTER TABLE "buzz_election" ADD CONSTRAINT "buzz_election_min_check_ins_check" CHECK ("buzz_election"."minCheckIns" >= 1);
+CREATE TABLE "buzz_board_photo" (
+	"userId" varchar(255) PRIMARY KEY NOT NULL,
+	"contentType" varchar(16) NOT NULL,
+	"byteSize" integer NOT NULL,
+	"bytes" text NOT NULL,
+	"etag" varchar(32) NOT NULL,
+	"updatedAt" timestamp with time zone NOT NULL,
+	CONSTRAINT "buzz_board_photo_size_check" CHECK ("buzz_board_photo"."byteSize" > 0 and "buzz_board_photo"."byteSize" <= 204800),
+	CONSTRAINT "buzz_board_photo_type_check" CHECK ("buzz_board_photo"."contentType" = 'image/webp')
+);
+--> statement-breakpoint
+ALTER TABLE "buzz_board_photo" ADD CONSTRAINT "buzz_board_photo_userId_buzz_user_id_fk" FOREIGN KEY ("userId") REFERENCES "public"."buzz_user"("id") ON DELETE cascade ON UPDATE no action;
 --> statement-breakpoint
 -- Data move. Runs once: it only acts while the old table exists, and the
 -- table is dropped in the same statement. Voters and ballots are written in

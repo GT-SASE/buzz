@@ -1,6 +1,7 @@
 import { and, asc, count, desc, eq } from "drizzle-orm";
 
 import {
+  boardPhotos,
   electionBallots,
   electionCandidates,
   electionPositions,
@@ -9,7 +10,14 @@ import {
   type db as Db,
 } from "@buzz/db";
 
-export type BoardSeat = { role: string; name?: string; photo?: string };
+export type BoardSeat = {
+  role: string;
+  name?: string;
+  /** Who holds the seat; read on the server only, never sent to a browser. */
+  userId?: string;
+  /** The stored headshot's etag, when the member uploaded one. */
+  photoVersion?: string;
+};
 
 /**
  * The board as the latest published election decided it: for each position,
@@ -37,8 +45,9 @@ export async function boardFromResults(
     db
       .select({
         positionId: electionCandidates.positionId,
+        userId: users.id,
         name: users.name,
-        image: users.image,
+        photoVersion: boardPhotos.etag,
         votes: count(electionBallots.id),
       })
       .from(electionCandidates)
@@ -51,13 +60,14 @@ export async function boardFromResults(
         electionBallots,
         eq(electionBallots.candidateId, electionCandidates.id),
       )
+      .leftJoin(boardPhotos, eq(boardPhotos.userId, users.id))
       .where(
         and(
           eq(electionPositions.electionId, latest.id),
           eq(electionCandidates.status, "approved"),
         ),
       )
-      .groupBy(electionCandidates.id, users.id)
+      .groupBy(electionCandidates.id, users.id, boardPhotos.etag)
       .orderBy(asc(users.name)),
   ]);
 
@@ -74,7 +84,8 @@ export async function boardFromResults(
       seats.push({
         role: position.title,
         name: winner.name ?? "Officer",
-        photo: winner.image ?? undefined,
+        userId: winner.userId,
+        photoVersion: winner.photoVersion ?? undefined,
       });
     }
   }

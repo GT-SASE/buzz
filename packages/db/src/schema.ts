@@ -567,6 +567,38 @@ export const resumesRelations = relations(resumes, ({ one }) => ({
 }));
 
 /**
+ * The headshot a board member chose for the public board page: one per member,
+ * re-encoded to a 400 px square WebP on upload, so the row stays small. Kept
+ * beside `buzz_user` rather than on it (Auth.js reads whole user rows), and
+ * base64 text like resumes. `etag` is a hash of the bytes and versions the
+ * public URL.
+ */
+export const boardPhotos = createTable(
+  "board_photo",
+  (d) => ({
+    userId: d
+      .varchar({ length: 255 })
+      .primaryKey()
+      .references(() => users.id, { onDelete: "cascade" }),
+    contentType: d.varchar({ length: 16 }).notNull(),
+    byteSize: d.integer().notNull(),
+    bytes: d.text().notNull(),
+    etag: d.varchar({ length: 32 }).notNull(),
+    updatedAt: d
+      .timestamp({ withTimezone: true })
+      .$defaultFn(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  }),
+  (t) => [
+    check(
+      idx("board_photo_size_check"),
+      sql`${t.byteSize} > 0 and ${t.byteSize} <= 204800`,
+    ),
+    check(idx("board_photo_type_check"), sql`${t.contentType} = 'image/webp'`),
+  ],
+);
+
+/**
  * One committee recruiting window per semester, keyed `fall-2026`. Officers
  * open it and pick the close date in the portal; applications are accepted
  * while now is before `closesAt`. Closing early sets `closesAt` to now.
@@ -846,6 +878,7 @@ export const AUDIT_ACTIONS = [
   "election.review_candidate",
   "election.delete",
   "export.election_tally",
+  "board.remove_photo",
   "export.roster",
   "export.attendance",
   "export.committee",
