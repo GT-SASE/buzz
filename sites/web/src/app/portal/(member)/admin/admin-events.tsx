@@ -56,9 +56,104 @@ type AdminEvent = RouterOutputs["event"]["listAll"]["events"][number];
 type Filter = AdminEventFilter;
 const filters = adminEventFilters;
 
+type Scope = "one" | "future";
+type Cadence = "weekly" | "biweekly";
+
+/**
+ * Asks whether a change to one occurrence of a repeating event is for that
+ * occurrence only or for it and every later one. Earlier occurrences are never
+ * touched.
+ */
+function ScopeDialog({
+  open,
+  onOpenChange,
+  title,
+  description,
+  busy,
+  onChoose,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  title: string;
+  description: string;
+  busy: boolean;
+  onChoose: (scope: Scope) => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="font-display text-navy text-h3 font-bold">
+            {title}
+          </DialogTitle>
+          <DialogDescription>{description}</DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-3">
+          <Button
+            type="button"
+            variant="outline"
+            disabled={busy}
+            onClick={() => onChoose("one")}
+            className="border-hairline text-navy hover:bg-cream min-h-11 justify-start font-semibold"
+          >
+            Only this event
+          </Button>
+          <Button
+            type="button"
+            disabled={busy}
+            onClick={() => onChoose("future")}
+            className="bg-navy hover:bg-navy-deep min-h-11 justify-start font-semibold text-white"
+          >
+            This and all later events
+          </Button>
+        </div>
+        <DialogFooter>
+          <DialogClose asChild>
+            <Button type="button" variant="ghost" className="min-h-11">
+              Cancel
+            </Button>
+          </DialogClose>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+const cadenceLabel = (cadence: Cadence) =>
+  cadence === "biweekly" ? "every two weeks" : "every week";
+
 /** FormData entries are `string | File`; only the string case is ever real here. */
 const text = (value: FormDataEntryValue | null) =>
   typeof value === "string" ? value.trim() : "";
+
+type FormValues = {
+  title: string;
+  startsAt: Date;
+  pointsValue: number;
+  location: string | undefined;
+  description: string | undefined;
+  maxCheckIns: number | null;
+  repeatCount: number | undefined;
+  repeatUntil: string;
+};
+
+function readValues(form: HTMLFormElement): FormValues {
+  const data = new FormData(form);
+  const capacity = text(data.get("maxCheckIns"));
+  const description = text(data.get("description"));
+  const location = text(data.get("location"));
+
+  return {
+    title: text(data.get("title")),
+    startsAt: fromLocalInputValue(text(data.get("startsAt"))),
+    pointsValue: Number(text(data.get("pointsValue"))),
+    location: location || undefined,
+    description: description || undefined,
+    maxCheckIns: capacity ? Number(capacity) : null,
+    repeatCount: Number(text(data.get("repeatCount"))) || undefined,
+    repeatUntil: text(data.get("repeatUntil")),
+  };
+}
 
 function EventForm({
   event,
@@ -69,6 +164,10 @@ function EventForm({
 }) {
   const utils = api.useUtils();
   const [limited, setLimited] = useState(event?.maxCheckIns != null);
+  const [cadence, setCadence] = useState<Cadence | "none">("none");
+  const [endMode, setEndMode] = useState<"count" | "until">("count");
+  // The form values waiting on a "this event or all later ones" answer.
+  const [pending, setPending] = useState<FormValues | null>(null);
 
   // Not just the list. The attendance and projector screens read `getById`,
   // and the overview strip on this same page counts events.
@@ -85,16 +184,26 @@ function EventForm({
   };
 
   const create = api.event.create.useMutation({
-    onSuccess: async () => {
-      toast.success("Event created.");
+    onSuccess: async (created) => {
+      toast.success(
+        created.occurrences > 1
+          ? `${created.occurrences} events created.`
+          : "Event created.",
+      );
       await refresh();
     },
     onError: (e) => toast.error(e.message),
   });
   const update = api.event.update.useMutation({
-    onSuccess: async ({ invites }) => {
+    onSuccess: async ({ invites, occurrences, promoted }) => {
       const { kind, message } = noticeToast(invites, {
-        done: "Changes saved.",
+        done:
+          (occurrences > 1
+            ? `Changes saved on ${occurrences} events.`
+            : "Changes saved.") +
+          (promoted > 0
+            ? ` ${promoted} ${promoted === 1 ? "person" : "people"} moved off the waitlist.`
+            : ""),
         unit: "calendar update",
         audience: "RSVPs",
         followUp: "Tell those members the new time or place.",
@@ -105,35 +214,58 @@ function EventForm({
     onError: (e) => toast.error(e.message),
   });
 
-  const pending = create.isPending || update.isPending;
+  const busy = create.isPending || update.isPending;
 
   return (
     <form
       className="grid gap-5"
       onSubmit={(submitEvent) => {
         submitEvent.preventDefault();
-
-        const data = new FormData(submitEvent.currentTarget);
-        const capacity = text(data.get("maxCheckIns"));
-        const description = text(data.get("description"));
-        const location = text(data.get("location"));
-
-        const values = {
-          title: text(data.get("title")),
-          startsAt: fromLocalInputValue(text(data.get("startsAt"))),
-          pointsValue: Number(text(data.get("pointsValue"))),
-          location: location || undefined,
-          description: description || undefined,
-          maxCheckIns: capacity ? Number(capacity) : null,
-        };
-
+        const read = readValues(submitEvent.currentTarget);
+        if (event?.series) {
+          setPending(read);
+          return;
+        }
+        const { repeatCount, repeatUntil, ...values } = read;
         if (event) {
-          update.mutate({ ...values, id: event.id });
-        } else {
+          update.mutate({ ...values, id: event.id, scope: "one" });
+        } else if (cadence === "none") {
           create.mutate(values);
+        } else {
+          create.mutate({
+            ...values,
+            repeat: {
+              cadence,
+              ...(endMode === "count"
+                ? { count: repeatCount }
+                : { until: fromLocalInputValue(`${repeatUntil}T23:59`) }),
+            },
+          });
         }
       }}
     >
+      <ScopeDialog
+        open={pending !== null}
+        onOpenChange={(open) => {
+          if (!open) setPending(null);
+        }}
+        title="Edit a repeating event"
+        description={`"${event?.title ?? ""}" repeats ${cadenceLabel(event?.series?.cadence ?? "weekly")}. Apply these changes to this event only, or to it and every later one? Later events only take the fields you changed.`}
+        busy={update.isPending}
+        onChoose={(scope) => {
+          if (!pending || !event) return;
+          const values = {
+            title: pending.title,
+            startsAt: pending.startsAt,
+            pointsValue: pending.pointsValue,
+            location: pending.location,
+            description: pending.description,
+            maxCheckIns: pending.maxCheckIns,
+          };
+          update.mutate({ ...values, id: event.id, scope });
+          setPending(null);
+        }}
+      />
       <div className="grid gap-2">
         <Label htmlFor="title">Event title</Label>
         <Input
@@ -202,11 +334,97 @@ function EventForm({
               min={1}
               required
               defaultValue={event?.maxCheckIns ?? ""}
+              aria-describedby="seats-help"
               className="text-base tabular-nums"
             />
+            <p id="seats-help" className="text-ink-muted text-body-sm">
+              RSVPs past this go on a waitlist. Raising it moves people off the
+              waitlist, first in line first.
+            </p>
           </div>
         )}
       </div>
+
+      {!event && (
+        <div className="border-hairline grid gap-5 rounded-lg border p-4 sm:grid-cols-2">
+          <div className="grid gap-2">
+            <Label htmlFor="repeatMode">Repeats</Label>
+            <Select
+              value={cadence}
+              onValueChange={(value) => setCadence(value as Cadence | "none")}
+            >
+              <SelectTrigger
+                id="repeatMode"
+                className="h-auto min-h-11 w-full text-base"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Does not repeat</SelectItem>
+                <SelectItem value="weekly">Every week</SelectItem>
+                <SelectItem value="biweekly">Every two weeks</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {cadence !== "none" && (
+            <>
+              <div className="grid gap-2">
+                <Label htmlFor="repeatEnd">Ends</Label>
+                <Select
+                  value={endMode}
+                  onValueChange={(value) =>
+                    setEndMode(value as "count" | "until")
+                  }
+                >
+                  <SelectTrigger
+                    id="repeatEnd"
+                    className="h-auto min-h-11 w-full text-base"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="count">
+                      After a number of events
+                    </SelectItem>
+                    <SelectItem value="until">On a date</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {endMode === "count" ? (
+                <div className="grid gap-2">
+                  <Label htmlFor="repeatCount">Number of events</Label>
+                  <Input
+                    id="repeatCount"
+                    name="repeatCount"
+                    type="number"
+                    min={2}
+                    max={26}
+                    required
+                    defaultValue={8}
+                    className="text-base tabular-nums"
+                  />
+                </div>
+              ) : (
+                <div className="grid gap-2">
+                  <Label htmlFor="repeatUntil">Last day</Label>
+                  <Input
+                    id="repeatUntil"
+                    name="repeatUntil"
+                    type="date"
+                    required
+                    className="text-base tabular-nums"
+                  />
+                </div>
+              )}
+              <p className="text-ink-muted text-body-sm sm:col-span-2">
+                Each one is its own event with its own check-in and RSVPs, at
+                the same time of day. At most 26.
+              </p>
+            </>
+          )}
+        </div>
+      )}
 
       <div className="grid gap-2">
         <Label htmlFor="location">Location</Label>
@@ -245,8 +463,8 @@ function EventForm({
             Cancel
           </Button>
         </DialogClose>
-        <Button type="submit" disabled={pending} className="min-h-11">
-          {pending ? "Saving..." : event ? "Save changes" : "Create event"}
+        <Button type="submit" disabled={busy} className="min-h-11">
+          {busy ? "Saving..." : event ? "Save changes" : "Create event"}
         </Button>
       </DialogFooter>
     </form>
@@ -274,7 +492,7 @@ function EventDialog({
           <DialogDescription>
             {event
               ? "Attendance already recorded keeps the points it was stamped with."
-              : "Creating one generates its check-in code straight away."}
+              : "Check-in opens two hours before it starts, with a QR that changes every 30 seconds."}
           </DialogDescription>
         </DialogHeader>
         <EventForm event={event} onDone={() => setOpen(false)} />
@@ -312,6 +530,11 @@ function StatusBadges({ event }: { event: AdminEvent }) {
         </Badge>
       )}
       {full && <Badge variant="destructive">At capacity</Badge>}
+      {event.series && (
+        <Badge variant="outline" className="border-hairline text-ink-muted">
+          Repeats {cadenceLabel(event.series.cadence)}
+        </Badge>
+      )}
       {event.isPast && !archived && (
         <Badge variant="outline" className="border-hairline text-ink-muted/80">
           Past
@@ -385,10 +608,15 @@ function EventActions({ event }: { event: AdminEvent }) {
       await utils.event.listAll.invalidate();
     },
   });
+  const [scopeOpen, setScopeOpen] = useState(false);
   const archive = api.event.setArchived.useMutation({
     onSuccess: async (updated) => {
       const { kind, message } = noticeToast(updated.invites, {
-        done: updated.archivedAt ? "Event archived." : "Event restored.",
+        done:
+          (updated.archivedAt ? "Event archived." : "Event restored.") +
+          (updated.occurrences > 1
+            ? ` ${updated.occurrences} events changed.`
+            : ""),
         unit: "calendar update",
         audience: "RSVPs",
         followUp: updated.archivedAt
@@ -453,26 +681,58 @@ function EventActions({ event }: { event: AdminEvent }) {
 
       {/* Archiving is reversible on purpose: an event with attendance is
           chapter history and must never be deletable from this screen. */}
-      <ConfirmDialog
-        title={archived ? "Restore this event?" : "Archive this event?"}
-        body={
-          archived
-            ? `"${event.title}" goes back on the members' list, its code works again, and its check-ins count toward points, the leaderboard, and voting. If it has not started yet, members who RSVPed get their calendar entry back.`
-            : `"${event.title}" keeps its ${event.attendees} recorded check-ins, but members stop seeing it, its code stops working, and those check-ins stop counting toward points, the leaderboard, and voting until you restore it. If it has not started yet, members who RSVPed get a cancellation.`
-        }
-        action={archived ? "Yes, restore" : "Yes, archive"}
-        danger={!archived}
-        onConfirm={() => archive.mutate({ id: event.id, archived: !archived })}
-      >
-        <Button
-          size="sm"
-          variant="ghost"
-          className="text-ink-muted hover:bg-cream hover:text-navy max-md:border-hairline h-11 min-h-11 w-full rounded-md font-semibold max-md:border md:h-9 md:min-h-9 md:w-auto"
-          disabled={archive.isPending}
+      {event.series && (
+        <>
+          <ScopeDialog
+            open={scopeOpen}
+            onOpenChange={setScopeOpen}
+            title={
+              archived
+                ? "Restore a repeating event"
+                : "Archive a repeating event"
+            }
+            description={`"${event.title}" repeats ${cadenceLabel(event.series.cadence)}. ${archived ? "Restore" : "Archive"} this event only, or it and every later one? Members who RSVPed to an event that has not started are told.`}
+            busy={archive.isPending}
+            onChoose={(scope) => {
+              archive.mutate({ id: event.id, archived: !archived, scope });
+              setScopeOpen(false);
+            }}
+          />
+          <Button
+            size="sm"
+            variant="ghost"
+            className="text-ink-muted hover:bg-cream hover:text-navy max-md:border-hairline h-11 min-h-11 w-full rounded-md font-semibold max-md:border md:h-9 md:min-h-9 md:w-auto"
+            disabled={archive.isPending}
+            onClick={() => setScopeOpen(true)}
+          >
+            {archived ? "Restore" : "Archive"}
+          </Button>
+        </>
+      )}
+      {!event.series && (
+        <ConfirmDialog
+          title={archived ? "Restore this event?" : "Archive this event?"}
+          body={
+            archived
+              ? `"${event.title}" goes back on the members' list, its code works again, and its check-ins count toward points, the leaderboard, and voting. If it has not started yet, members who RSVPed get their calendar entry back.`
+              : `"${event.title}" keeps its ${event.attendees} recorded check-ins, but members stop seeing it, its code stops working, and those check-ins stop counting toward points, the leaderboard, and voting until you restore it. If it has not started yet, members who RSVPed get a cancellation.`
+          }
+          action={archived ? "Yes, restore" : "Yes, archive"}
+          danger={!archived}
+          onConfirm={() =>
+            archive.mutate({ id: event.id, archived: !archived, scope: "one" })
+          }
         >
-          {archived ? "Restore" : "Archive"}
-        </Button>
-      </ConfirmDialog>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="text-ink-muted hover:bg-cream hover:text-navy max-md:border-hairline h-11 min-h-11 w-full rounded-md font-semibold max-md:border md:h-9 md:min-h-9 md:w-auto"
+            disabled={archive.isPending}
+          >
+            {archived ? "Restore" : "Archive"}
+          </Button>
+        </ConfirmDialog>
+      )}
     </div>
   );
 }

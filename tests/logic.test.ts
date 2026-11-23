@@ -179,9 +179,9 @@ describe("codeFromScan", () => {
 
   it("takes the length bounds inclusively", () => {
     expect(codeFromScan("ABC234")).toBe("ABC234");
-    expect(codeFromScan("ABCDEFGHJK23")).toBe("ABCDEFGHJK23");
+    expect(codeFromScan("ABCDEFGHJK23PQRS")).toBe("ABCDEFGHJK23PQRS");
     expect(codeFromScan("ABC23")).toBeNull();
-    expect(codeFromScan("ABCDEFGHJK234")).toBeNull();
+    expect(codeFromScan("ABCDEFGHJK23PQRST")).toBeNull();
     expect(codeFromScan("")).toBeNull();
   });
 

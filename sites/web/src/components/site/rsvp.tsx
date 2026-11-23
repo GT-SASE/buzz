@@ -11,11 +11,12 @@ import {
 } from "react";
 
 import {
-  fetchRsvped,
+  fetchRsvpState,
   fetchSignedIn,
   RsvpRequestError,
   sendCancel,
   sendRsvp,
+  type RsvpState,
 } from "~/lib/rsvp-client";
 
 /**
@@ -35,6 +36,10 @@ type Session = "checking" | "signed-out" | "signed-in";
 
 type Entry = {
   going: boolean;
+  /** Place in the line for a seat (1 is next), or 0 when not waiting. */
+  waitlist: number;
+  /** No seat left, so the button joins the waitlist instead. */
+  full: boolean;
   busy: boolean;
   /** The visitor did something, so the result is announced. Loading is not. */
   acted: boolean;
@@ -45,6 +50,8 @@ type Entry = {
 
 const idle: Entry = {
   going: false,
+  waitlist: 0,
+  full: false,
   busy: false,
   acted: false,
   detail: "",
@@ -55,9 +62,15 @@ type State = { session: Session; entries: Record<string, Entry> };
 
 type Action =
   | { type: "signed-out" }
-  | { type: "signed-in"; going: string[] }
+  | { type: "signed-in"; state: RsvpState }
   | { type: "busy"; id: string }
-  | { type: "done"; id: string; going: boolean; detail: string }
+  | {
+      type: "done";
+      id: string;
+      going: boolean;
+      waitlist: number;
+      detail: string;
+    }
   | { type: "failed"; id: string; error: string };
 
 function reduce(state: State, action: Action): State {
@@ -72,15 +85,30 @@ function reduce(state: State, action: Action): State {
     case "signed-in":
       return {
         session: "signed-in",
-        entries: Object.fromEntries(
-          action.going.map((id) => [id, { ...idle, going: true }]),
-        ),
+        entries: {
+          ...Object.fromEntries(
+            action.state.full.map((id) => [id, { ...idle, full: true }]),
+          ),
+          ...Object.fromEntries(
+            action.state.waitlisted.map(({ eventId, position }) => [
+              eventId,
+              { ...idle, full: true, waitlist: position },
+            ]),
+          ),
+          ...Object.fromEntries(
+            action.state.going.map((id) => [id, { ...idle, going: true }]),
+          ),
+        },
       };
     case "busy":
       return put(action.id, { ...at(action.id), busy: true, error: "" });
     case "done":
       return put(action.id, {
         going: action.going,
+        waitlist: action.waitlist,
+        // Leaving the waitlist or an RSVP may leave the event full or not;
+        // the next load says. Until then a leaver is offered a plain RSVP.
+        full: action.waitlist > 0 || at(action.id).full,
         busy: false,
         acted: true,
         detail: action.detail,
@@ -185,12 +213,17 @@ export function RsvpProvider({
     dispatch({ type: "busy", id: eventId });
     try {
       if (going) {
-        const { invited } = await sendRsvp(eventId);
+        const result = await sendRsvp(eventId);
         dispatch({
           type: "done",
           id: eventId,
-          going: true,
-          detail: invited ? "Calendar invite sent." : "",
+          going: !result.waitlisted,
+          waitlist: result.waitlistPosition ?? 0,
+          detail: result.waitlisted
+            ? "We will email you if a seat opens."
+            : result.invited
+              ? "Calendar invite sent."
+              : "",
         });
       } else {
         const { uninvited } = await sendCancel(eventId);
@@ -198,6 +231,7 @@ export function RsvpProvider({
           type: "done",
           id: eventId,
           going: false,
+          waitlist: 0,
           detail: uninvited
             ? "RSVP cancelled and taken off your calendar."
             : "RSVP cancelled.",
@@ -223,19 +257,22 @@ export function RsvpProvider({
         if (!cancelled) dispatch({ type: "signed-out" });
         return;
       }
-      let going: string[] = [];
+      let state: RsvpState = { going: [], waitlisted: [], full: [] };
       try {
-        going = await fetchRsvped(ids.split(","));
+        state = await fetchRsvpState(ids.split(","));
       } catch {
         // Unknown counts as not going: the button is still right, and an RSVP
         // that already exists is a no-op on the server.
       }
       if (cancelled) return;
-      dispatch({ type: "signed-in", going });
+      dispatch({ type: "signed-in", state });
       if (returnTo && returnedToRsvp()) {
         forgetReturnedToRsvp();
         const asked = takeIntent(returnTo);
-        if (asked && !going.includes(returnTo)) await act(returnTo, true);
+        const already =
+          state.going.includes(returnTo) ||
+          state.waitlisted.some((row) => row.eventId === returnTo);
+        if (asked && !already) await act(returnTo, true);
       }
     })();
     return () => {
@@ -313,10 +350,11 @@ export function RsvpControl({
   const entry = rsvp.entries[eventId] ?? idle;
   const signedIn = rsvp.session === "signed-in";
   const going = signedIn && entry.going;
+  const waiting = signedIn && entry.waitlist > 0;
   const forTitle = <span className="sr-only"> for {title}</span>;
 
   let body: React.ReactNode;
-  if (closed && !going) {
+  if (closed && !going && !waiting) {
     body = (
       <span className="text-ink-muted text-body-sm py-3">
         RSVPs are closed.
@@ -328,6 +366,29 @@ export function RsvpControl({
       <div className="contents" onClickCapture={() => rememberIntent(eventId)}>
         {children}
       </div>
+    );
+  } else if (waiting) {
+    body = (
+      <>
+        {prominent ? (
+          <span className={goingLarge}>Waitlist, number {entry.waitlist}</span>
+        ) : (
+          <span className="text-navy text-body-sm inline-flex items-center gap-2 py-3 font-semibold">
+            Waitlist, number {entry.waitlist}
+          </span>
+        )}
+        {!closed && (
+          <button
+            type="button"
+            className={prominent ? quietLarge : quiet}
+            disabled={entry.busy}
+            onClick={() => void rsvp.act(eventId, false)}
+          >
+            {entry.busy ? "Leaving…" : "Leave waitlist"}
+            {forTitle}
+          </button>
+        )}
+      </>
     );
   } else if (going) {
     body = (
@@ -361,7 +422,7 @@ export function RsvpControl({
         disabled={entry.busy}
         onClick={() => void rsvp.act(eventId, true)}
       >
-        {entry.busy ? "Saving…" : "RSVP"}
+        {entry.busy ? "Saving…" : entry.full ? "Join waitlist" : "RSVP"}
         {forTitle}
       </button>
     );
@@ -369,9 +430,11 @@ export function RsvpControl({
 
   const announcement = !entry.acted
     ? ""
-    : going
-      ? `You're going.${entry.detail ? ` ${entry.detail}` : ""}`
-      : entry.detail;
+    : waiting
+      ? `You're on the waitlist, number ${entry.waitlist}.${entry.detail ? ` ${entry.detail}` : ""}`
+      : going
+        ? `You're going.${entry.detail ? ` ${entry.detail}` : ""}`
+        : entry.detail;
 
   return (
     <div className="w-full">

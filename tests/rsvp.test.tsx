@@ -16,6 +16,11 @@ type Call = { url: string; method: string; body: string | null };
 function server(options: {
   signedIn: boolean;
   going?: string[];
+  /** Events with no seat left, and events this member waits on (place in line). */
+  full?: string[];
+  waitlisted?: Record<string, number>;
+  /** What event.rsvp answers: a seat, or a place in the line. */
+  rsvpAnswer?: { waitlisted: boolean; waitlistPosition: number | null };
   /** Status code and tRPC error message for the next RSVP or cancel. */
   failWith?: { status: number; message: string; code?: string };
   statusLookupFails?: boolean;
@@ -43,7 +48,7 @@ function server(options: {
       if (url.startsWith("/api/auth/session")) {
         return json(options.signedIn ? { user: { id: "me" } } : null);
       }
-      if (url.includes("event.myRsvps")) {
+      if (url.includes("event.rsvpState")) {
         if (options.statusLookupFails) return json({}, 500);
         const input = new URL(url, "http://localhost").searchParams.get(
           "input",
@@ -51,7 +56,13 @@ function server(options: {
         const { eventIds } = (
           JSON.parse(input) as { json: { eventIds: string[] } }
         ).json;
-        return ok(eventIds.filter((id) => options.going?.includes(id)));
+        return ok({
+          going: eventIds.filter((id) => options.going?.includes(id)),
+          waitlisted: eventIds
+            .filter((id) => options.waitlisted?.[id])
+            .map((id) => ({ eventId: id, position: options.waitlisted![id]! })),
+          full: eventIds.filter((id) => options.full?.includes(id)),
+        });
       }
       if (options.failWith) {
         const { status, message, code } = options.failWith;
@@ -63,7 +74,13 @@ function server(options: {
         );
       }
       if (url.endsWith("event.rsvp"))
-        return ok({ rsvped: true, invited: true });
+        return ok({
+          rsvped: !(options.rsvpAnswer?.waitlisted ?? false),
+          invited: !options.rsvpAnswer?.waitlisted,
+          waitlisted: false,
+          waitlistPosition: null,
+          ...options.rsvpAnswer,
+        });
       if (url.endsWith("event.cancelRsvp")) {
         return ok({ rsvped: false, uninvited: true });
       }
@@ -142,6 +159,49 @@ describe("signed out", () => {
     render(page({ startsAt: started() }));
     expect(await screen.findByText("RSVPs are closed.")).toBeTruthy();
     expect(screen.queryByRole("link", { name: "Sign in to RSVP" })).toBeNull();
+  });
+});
+
+describe("an event with no seat left", () => {
+  it("offers the waitlist instead of an RSVP, and shows the place in line after joining", async () => {
+    const api = server({
+      signedIn: true,
+      full: ["e1"],
+      rsvpAnswer: { waitlisted: true, waitlistPosition: 3 },
+    });
+    render(page({ title: "GBM 4" }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Join waitlist for GBM 4" }),
+    );
+    expect(await screen.findByText("Waitlist, number 3")).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Leave waitlist for GBM 4" }),
+    ).toBeTruthy();
+    expect(screen.queryByText("You’re going")).toBeNull();
+    expect(screen.getByRole("status").textContent).toContain(
+      "You're on the waitlist, number 3.",
+    );
+    expect(api.posts()[0]!.url).toBe("/api/trpc/event.rsvp");
+  });
+
+  it("shows a member already waiting their place and lets them leave", async () => {
+    const api = server({ signedIn: true, waitlisted: { e1: 2 } });
+    render(page({ title: "GBM 4" }));
+    expect(await screen.findByText("Waitlist, number 2")).toBeTruthy();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Leave waitlist for GBM 4" }),
+    );
+    await waitFor(() =>
+      expect(api.posts()[0]!.url).toBe("/api/trpc/event.cancelRsvp"),
+    );
+    expect(screen.queryByText("Waitlist, number 2")).toBeNull();
+  });
+
+  it("does not mistake a member who is going for a full event", async () => {
+    server({ signedIn: true, going: ["e1"], full: ["e1"] });
+    render(page({ title: "GBM 4" }));
+    expect(await screen.findByText("You’re going")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Join waitlist/ })).toBeNull();
   });
 });
 

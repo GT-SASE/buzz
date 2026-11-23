@@ -89,11 +89,11 @@ function insertCapturingDb() {
     insert: () => ({
       values: (values: Record<string, unknown>) => {
         inserted.push(values);
-        return {
-          returning: () => Promise.resolve([{ id: "event-1", ...values }]),
-        };
+        const returning = () => Promise.resolve([{ id: "event-1", ...values }]);
+        return { returning, onConflictDoNothing: () => ({ returning }) };
       },
     }),
+    transaction: (fn: (tx: unknown) => Promise<unknown>) => fn(db),
   };
   return { db, inserted };
 }
@@ -102,15 +102,25 @@ function insertCapturingDb() {
  * `db.transaction` + lock + count + update. The recount is a SELECT under
  * `FOR UPDATE`, not a SQL subquery inside SET — same race safety, Drizzle ORM.
  */
-function updateCapturingDb() {
+function updateCapturingDb(archivedAt: Date | null = null) {
   const sets: Record<string, unknown>[] = [];
   const selectChain = () => {
     const chain = {
       from: () => chain,
       where: () => chain,
+      orderBy: () => chain,
       for: () =>
         Promise.resolve([
-          { id: "event-1", startsAt, location: null, archivedAt: null },
+          {
+            id: "event-1",
+            title: "Fall Kickoff",
+            description: null,
+            startsAt,
+            location: null,
+            pointsValue: 5,
+            maxCheckIns: null,
+            archivedAt,
+          },
         ]),
       then: (
         onFulfilled?: (value: { total: number }[]) => unknown,
@@ -676,7 +686,7 @@ describe("event.update", () => {
 describe("event.setArchived", () => {
   /** Same `undefined` trap: un-archiving has to send a null, not an absence. */
   it("clears archivedAt with an explicit null when un-archiving", async () => {
-    const { db, sets } = updateCapturingDb();
+    const { db, sets } = updateCapturingDb(new Date());
     await createCaller(adminCtx(db)).event.setArchived({
       id: "event-1",
       archived: false,
@@ -788,8 +798,15 @@ describe("event.listAll check-in state", () => {
     const totalChain = {
       from: () => Promise.resolve([{ total: rows.length }]),
     };
+    // The third read is the series lookup: nothing is in a series here.
+    const seriesChain = { from: () => ({ where: () => Promise.resolve([]) }) };
     let call = 0;
-    return { select: () => (call++ === 0 ? rowsChain : totalChain) };
+    return {
+      select: () => {
+        const n = call++;
+        return n === 0 ? rowsChain : n === 1 ? totalChain : seriesChain;
+      },
+    };
   }
 
   it("reads closed for a past event whose stored flag is still true", async () => {
@@ -834,7 +851,7 @@ describe("event.getById check-in state", () => {
       c.then = (resolve: (v: unknown) => unknown) => resolve(result);
       return c;
     };
-    const results = [[], [{ total: 0 }], []];
+    const results = [[], [{ total: 0 }], [], [], []];
     let call = 0;
     const db = {
       query: {
@@ -885,7 +902,9 @@ describe("normalizeCode (through event.checkIn)", () => {
     };
 
     const error = await rejection(
-      createCaller(memberCtx(db)).event.checkIn({ code: " sase-gt 26 " }),
+      createCaller(memberCtx(db)).event.checkIn({
+        code: " sase-gt 26 abcd-2345 ",
+      }),
     );
     expect(error.code).toBe("NOT_FOUND");
 

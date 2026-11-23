@@ -26,6 +26,15 @@ function journalTags() {
   return journal.entries;
 }
 
+/** 0017 and the migrations before it; later migrations are not part of this test. */
+function upTo0017() {
+  const all = journalTags();
+  return all.slice(
+    0,
+    all.findIndex((entry) => entry.tag.startsWith("0017_")) + 1,
+  );
+}
+
 describe.skipIf(!process.env.DATABASE_URL)("migration 0017", () => {
   const name = `mig0017_${crypto.randomUUID().slice(0, 8)}`;
   let admin: SQL;
@@ -46,7 +55,7 @@ describe.skipIf(!process.env.DATABASE_URL)("migration 0017", () => {
   }, SLOW);
 
   it("is newer than the one before it, so prod applies it", () => {
-    const entries = journalTags();
+    const entries = upTo0017();
     const last = entries.at(-1)!;
     expect(last.tag.startsWith("0017_")).toBe(true);
     expect(last.when).toBeGreaterThan(entries.at(-2)!.when);
@@ -55,7 +64,7 @@ describe.skipIf(!process.env.DATABASE_URL)("migration 0017", () => {
   it(
     "keeps every tally identical and loses no vote",
     async () => {
-      const entries = journalTags();
+      const entries = upTo0017();
       const last = entries.at(-1)!;
       for (const entry of entries.slice(0, -1)) {
         for (const statement of statements(entry.tag)) {

@@ -1,5 +1,15 @@
 import { TRPCError } from "@trpc/server";
-import { and, asc, count, desc, eq, gte, inArray, isNull } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  gte,
+  inArray,
+  isNull,
+  lte,
+} from "drizzle-orm";
 import { z } from "zod";
 
 import { asDate, asInt, totalsColumns } from "../aggregates";
@@ -10,9 +20,21 @@ import {
 } from "../attendance";
 import { recordAudit, recordPoints } from "../audit";
 import { sendCalendarInvite } from "../calendar-invite";
+import {
+  checkInCodeFor,
+  checkInCodeIsCurrent,
+  windowEnd,
+  WINDOW_MS,
+} from "../check-in-code";
 import { notFound } from "../errors";
-import { noNotice, notifyEventChange } from "../notify";
-import { isUniqueViolation } from "../pg-errors";
+import {
+  noNotice,
+  notifyEventChange,
+  notifyWaitlistPromotion,
+  sumNotices,
+  type Notice,
+} from "../notify";
+import { isUndefinedTable, isUniqueViolation } from "../pg-errors";
 import { semesterWindow } from "../periods";
 import {
   assertRateLimit,
@@ -22,14 +44,27 @@ import {
   REGENERATE_CODE_LIMIT,
   RSVP_LIMIT,
 } from "../rate-limit";
+import { MAX_OCCURRENCES, occurrenceStarts, shiftLike } from "../series";
 import { adminProcedure, createTRPCRouter, protectedProcedure } from "../trpc";
 import {
+  lockEvent,
+  promoteWaitlist,
+  seatStates,
+  waitlistFor,
+  type Promoted,
+  type SeatState,
+} from "../waitlist";
+import {
+  EVENT_CADENCES,
   eventCheckIns,
   eventRsvps,
   events,
+  eventSeriesMembers,
+  eventWaitlist,
   pointsLedger,
   users,
   type db as Db,
+  type EventCadence,
 } from "@buzz/db";
 
 /**
@@ -74,6 +109,24 @@ function normalizeCode(input: string) {
   return input.toUpperCase().replace(/[^A-Z0-9]/g, "");
 }
 
+/**
+ * The event a submitted code admits to right now, or null. The code is the
+ * event's stored key followed by a MAC of the current time window (see
+ * check-in-code.ts), so a code that was once right, a poster, or a guess at
+ * the key are all the same answer: not valid.
+ */
+async function eventForCode(db: Pick<typeof Db, "query">, raw: string) {
+  const code = normalizeCode(raw);
+  if (code.length <= CODE_LENGTH) return null;
+  const event = await db.query.events.findFirst({
+    where: eq(events.checkInCode, code.slice(0, CODE_LENGTH)),
+  });
+  return event && checkInCodeIsCurrent(event, code) ? event : null;
+}
+
+const CODE_REFUSED =
+  "That code is not valid or has expired. Scan the QR code on the screen again.";
+
 function checkInNotYetOpen(startsAt: Date, now: number) {
   return startsAt.getTime() - CHECK_IN_GRACE_MS > now;
 }
@@ -111,6 +164,7 @@ const publicEventColumns = {
   startsAt: events.startsAt,
   pointsValue: events.pointsValue,
   checkInEnabled: events.checkInEnabled,
+  maxCheckIns: events.maxCheckIns,
 } as const;
 
 /** Who RSVPed: the members told when an event changes or is cancelled. */
@@ -122,6 +176,8 @@ function rsvpRecipients(db: typeof Db, eventId: string) {
       .innerJoin(users, eq(users.id, eventRsvps.userId))
       .where(eq(eventRsvps.eventId, eventId));
 }
+
+type Transaction = Parameters<Parameters<typeof Db.transaction>[0]>[0];
 
 const eventInput = z.object({
   title: z.string().trim().min(1).max(200),
@@ -137,52 +193,207 @@ const eventInput = z.object({
   maxCheckIns: z.number().int().positive().max(10000).nullable().optional(),
 });
 
+/**
+ * "Repeat weekly for 8 weeks" or "until Dec 10". Either way the series is real
+ * event rows created now, never more than MAX_OCCURRENCES of them.
+ */
+const repeatInput = z
+  .object({
+    cadence: z.enum(EVENT_CADENCES),
+    count: z.number().int().min(2).max(MAX_OCCURRENCES).optional(),
+    until: z.coerce.date().optional(),
+  })
+  .refine(
+    (repeat) => (repeat.count === undefined) !== (repeat.until === undefined),
+    "Say how many times it repeats, or the date it ends, not both.",
+  );
+
+/** One occurrence ("one") or this occurrence and every later one ("future"). */
+const scopeInput = z.enum(["one", "future"]).default("one");
+type Scope = z.infer<typeof scopeInput>;
+
+const iso = (date: Date) => date.toISOString();
+
+/**
+ * The events an edit reaches, locked, in start order. "one" is the event
+ * itself. "future" is it plus every later occurrence of its series; an event
+ * that is in no series is just itself. The row locks are taken together, in
+ * one order, so two officers editing the same series queue rather than
+ * deadlock.
+ */
+async function lockOccurrences(tx: Transaction, eventId: string, scope: Scope) {
+  let ids = [eventId];
+  if (scope === "future") {
+    const [member] = await tx
+      .select()
+      .from(eventSeriesMembers)
+      .where(eq(eventSeriesMembers.eventId, eventId));
+    if (member) {
+      const later = await tx
+        .select({ id: eventSeriesMembers.eventId })
+        .from(eventSeriesMembers)
+        .where(
+          and(
+            eq(eventSeriesMembers.seriesId, member.seriesId),
+            gte(eventSeriesMembers.position, member.position),
+          ),
+        );
+      ids = later.map((row) => row.id);
+    }
+  }
+  return tx
+    .select()
+    .from(events)
+    .where(inArray(events.id, ids))
+    .orderBy(asc(events.startsAt), asc(events.id))
+    .for("update");
+}
+
+type EventRow = typeof events.$inferSelect;
+
+/** Inserts one event, drawing a fresh code if the one drawn is already taken. */
+async function insertEvent(
+  tx: Transaction,
+  values: Omit<typeof events.$inferInsert, "checkInCode">,
+) {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const [created] = await tx
+      .insert(events)
+      .values({ ...values, checkInCode: newCheckInCode() })
+      .onConflictDoNothing()
+      .returning();
+    if (created) return created;
+  }
+  throw new TRPCError({
+    code: "INTERNAL_SERVER_ERROR",
+    message: "Could not create that event.",
+  });
+}
+
+/**
+ * Which series each event belongs to. A separate read, not a join: a preview
+ * that runs this build against a database the migration has not reached yet
+ * has no series table, and the officer list must still load (as one-offs).
+ */
+async function seriesInfo(db: typeof Db, ids: string[]) {
+  const info = new Map<
+    string,
+    { seriesId: string; cadence: EventCadence; position: number }
+  >();
+  if (ids.length === 0) return info;
+  try {
+    const rows = await db
+      .select()
+      .from(eventSeriesMembers)
+      .where(inArray(eventSeriesMembers.eventId, ids));
+    for (const row of rows) {
+      info.set(row.eventId, {
+        seriesId: row.seriesId,
+        cadence: row.cadence,
+        position: row.position,
+      });
+    }
+  } catch (error) {
+    if (!isUndefinedTable(error)) throw error;
+  }
+  return info;
+}
+
+/** What a member's event list needs to know about seats, from seatStates. */
+function seatView(seat: SeatState | undefined, going: boolean) {
+  return {
+    seatsLeft:
+      seat?.seats == null ? null : Math.max(seat.seats - seat.taken, 0),
+    waitlistPosition: seat?.waitlistPosition ?? null,
+    full: !going && seat?.seats != null && seat.taken >= seat.seats,
+  };
+}
+
+const seatsOf = (row: { maxCheckIns: number | null }) =>
+  row.maxCheckIns ?? "no limit";
+
 export const eventRouter = createTRPCRouter({
   // ---------------------------------------------------------------- officers
 
-  create: adminProcedure.input(eventInput).mutation(async ({ ctx, input }) => {
-    for (let attempt = 0; attempt < 5; attempt++) {
-      try {
-        const [created] = await ctx.db
-          .insert(events)
-          .values({
-            ...input,
-            maxCheckIns: input.maxCheckIns ?? null,
-            checkInCode: newCheckInCode(),
-            createdById: ctx.session.user.id,
-          })
-          .returning();
+  create: adminProcedure
+    .input(eventInput.extend({ repeat: repeatInput.optional() }))
+    .mutation(async ({ ctx, input }) => {
+      const { repeat, ...fields } = input;
+      const starts = repeat
+        ? occurrenceStarts(
+            fields.startsAt,
+            repeat.cadence,
+            repeat.count !== undefined
+              ? { count: repeat.count }
+              : { until: repeat.until! },
+          )
+        : [fields.startsAt];
+      if (repeat && starts.length < 2) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "That end date leaves only one event. Pick a later date.",
+        });
+      }
 
-        if (!created) {
+      return ctx.db.transaction(async (tx) => {
+        const created: EventRow[] = [];
+        for (const startsAt of starts) {
+          created.push(
+            await insertEvent(tx, {
+              ...fields,
+              startsAt,
+              maxCheckIns: fields.maxCheckIns ?? null,
+              createdById: ctx.session.user.id,
+            }),
+          );
+        }
+        const [first] = created;
+        if (!first) {
           throw new TRPCError({
             code: "INTERNAL_SERVER_ERROR",
             message: "Could not create that event.",
           });
         }
-        return created;
-      } catch (error) {
-        if (!isUniqueViolation(error) || attempt === 4) {
-          if (isUniqueViolation(error)) {
-            throw new TRPCError({
-              code: "INTERNAL_SERVER_ERROR",
-              message: "Could not create that event.",
-            });
-          }
-          throw error;
-        }
-      }
-    }
 
-    throw new TRPCError({
-      code: "INTERNAL_SERVER_ERROR",
-      message: "Could not create that event.",
-    });
-  }),
+        if (repeat) {
+          const seriesId = crypto.randomUUID();
+          await tx.insert(eventSeriesMembers).values(
+            created.map((row, position) => ({
+              eventId: row.id,
+              seriesId,
+              cadence: repeat.cadence,
+              position,
+            })),
+          );
+        }
+
+        await recordAudit(tx, {
+          actorId: ctx.session.user.id,
+          action: repeat ? "event.create_series" : "event.create",
+          targetType: "event",
+          targetId: first.id,
+          targetLabel: first.title,
+          after: {
+            startsAt: iso(first.startsAt),
+            points: first.pointsValue,
+            seats: seatsOf(first),
+            ...(repeat
+              ? {
+                  cadence: repeat.cadence,
+                  occurrences: created.length,
+                  lastStartsAt: iso(created[created.length - 1]!.startsAt),
+                }
+              : {}),
+          },
+        });
+        return { ...first, occurrences: created.length };
+      });
+    }),
 
   update: adminProcedure
-    .input(eventInput.extend({ id: z.string().min(1) }))
+    .input(eventInput.extend({ id: z.string().min(1), scope: scopeInput }))
     .mutation(async ({ ctx, input }) => {
-      const { id, ...fields } = input;
+      const { id, scope, ...fields } = input;
       // Editing pointsValue changes what FUTURE attendance is worth. Rows
       // already written keep the value they were stamped with.
       //
@@ -193,84 +404,194 @@ export const eventRouter = createTRPCRouter({
       // and the old text keeps rendering to members.
       const capacity = fields.maxCheckIns ?? null;
 
-      // Uncapped check-ins skip the counter entirely, because a shared counter
-      // is a row every scanner has to serialise on. So the moment a capacity is
-      // added the counter may be stale, and the gate it feeds would admit past
-      // the limit. Recomputing it from the rows that actually exist is what
-      // makes the fast path safe to turn back off.
-      //
-      // The recount is a subquery inside this UPDATE, not a separate SELECT
-      // before it: two statements leave a window where a check-in inserted
-      // between them is counted by neither, and since this counter IS the
-      // capacity gate, a count low by k inflates the cap by k for the life of
-      // the event.
-      // Lock + recount in one transaction so a check-in between SELECT and
-      // UPDATE cannot leave the counter low of the real attendance.
+      // Everything below runs in one transaction with every affected event
+      // locked, so a check-in between the recount and the write cannot leave
+      // the counter low, and a cancel racing a capacity change cannot leave a
+      // seat empty with someone waiting.
       const updated = await ctx.db.transaction(async (tx) => {
-        const [locked] = await tx
-          .select({
-            id: events.id,
-            startsAt: events.startsAt,
-            location: events.location,
-          })
-          .from(events)
-          .where(eq(events.id, id))
-          .for("update");
+        const locked = await lockOccurrences(tx, id, scope);
+        const target = locked.find((row) => row.id === id);
+        if (!target) return null;
 
-        if (!locked) return null;
+        const edited = {
+          title: fields.title !== target.title,
+          description: (fields.description ?? null) !== target.description,
+          location: (fields.location ?? null) !== target.location,
+          startsAt: fields.startsAt.getTime() !== target.startsAt.getTime(),
+          pointsValue: fields.pointsValue !== target.pointsValue,
+          maxCheckIns: capacity !== target.maxCheckIns,
+        };
 
-        const [attendance] = await tx
-          .select({ total: count() })
-          .from(eventCheckIns)
-          .where(eq(eventCheckIns.eventId, id));
+        const results: {
+          row: EventRow;
+          before: EventRow;
+          promoted: Promoted[];
+        }[] = [];
+        for (const current of locked) {
+          const isTarget = current.id === id;
+          // The edited event takes the whole form. Its later siblings take only
+          // what the officer changed, so a location fixed on one week and a
+          // title changed for all of them do not undo each other.
+          const set = isTarget
+            ? {
+                ...fields,
+                description: fields.description ?? null,
+                location: fields.location ?? null,
+                maxCheckIns: capacity,
+              }
+            : {
+                ...(edited.title ? { title: fields.title } : {}),
+                ...(edited.description
+                  ? { description: fields.description ?? null }
+                  : {}),
+                ...(edited.location
+                  ? { location: fields.location ?? null }
+                  : {}),
+                ...(edited.pointsValue
+                  ? { pointsValue: fields.pointsValue }
+                  : {}),
+                ...(edited.maxCheckIns ? { maxCheckIns: capacity } : {}),
+                ...(edited.startsAt
+                  ? {
+                      startsAt: shiftLike(
+                        current.startsAt,
+                        target.startsAt,
+                        fields.startsAt,
+                      ),
+                    }
+                  : {}),
+              };
+          if (Object.keys(set).length === 0) continue;
 
-        const [row] = await tx
-          .update(events)
-          .set({
-            ...fields,
-            description: fields.description ?? null,
-            location: fields.location ?? null,
-            maxCheckIns: capacity,
-            ...(capacity === null
-              ? {}
-              : {
-                  currentCheckIns:
-                    typeof attendance?.total === "number"
-                      ? attendance.total
-                      : Number(attendance?.total ?? 0),
-                }),
-          })
-          .where(eq(events.id, id))
-          .returning();
+          const nextCapacity =
+            "maxCheckIns" in set
+              ? (set.maxCheckIns ?? null)
+              : current.maxCheckIns;
+          // Uncapped check-ins skip the counter entirely, because a shared
+          // counter is a row every scanner has to serialise on. So the moment
+          // a capacity is added the counter may be stale, and the gate it
+          // feeds would admit past the limit. Recomputing it from the rows
+          // that actually exist, under the row lock, is what makes the fast
+          // path safe to turn back off.
+          const [attendance] =
+            nextCapacity === null
+              ? []
+              : await tx
+                  .select({ total: count() })
+                  .from(eventCheckIns)
+                  .where(eq(eventCheckIns.eventId, current.id));
 
-        return row ? { row, before: locked } : null;
+          const [row] = await tx
+            .update(events)
+            .set({
+              ...set,
+              ...(nextCapacity === null
+                ? {}
+                : {
+                    currentCheckIns:
+                      typeof attendance?.total === "number"
+                        ? attendance.total
+                        : Number(attendance?.total ?? 0),
+                  }),
+            })
+            .where(eq(events.id, current.id))
+            .returning();
+          if (!row) continue;
+
+          // Seats added: whoever has been waiting longest gets them now.
+          const seatsGrew =
+            current.maxCheckIns !== null &&
+            (row.maxCheckIns === null || row.maxCheckIns > current.maxCheckIns);
+          results.push({
+            row,
+            before: current,
+            promoted: seatsGrew ? await promoteWaitlist(tx, row) : [],
+          });
+        }
+
+        const mine = results.find((result) => result.row.id === id);
+        if (mine) {
+          const { row, before } = mine;
+          const pairs: [string, unknown, unknown][] = [];
+          if (edited.title) pairs.push(["title", before.title, row.title]);
+          if (edited.location) {
+            pairs.push(["location", before.location, row.location]);
+          }
+          if (edited.startsAt) {
+            pairs.push(["startsAt", iso(before.startsAt), iso(row.startsAt)]);
+          }
+          if (edited.pointsValue) {
+            pairs.push(["points", before.pointsValue, row.pointsValue]);
+          }
+          if (edited.maxCheckIns) {
+            pairs.push(["seats", seatsOf(before), seatsOf(row)]);
+          }
+          if (edited.description) pairs.push(["description", null, "changed"]);
+
+          if (pairs.length > 0) {
+            const series = scope === "future" && results.length > 1;
+            await recordAudit(tx, {
+              actorId: ctx.session.user.id,
+              action: series ? "event.update_series" : "event.update",
+              targetType: "event",
+              targetId: id,
+              targetLabel: row.title,
+              before: Object.fromEntries(pairs.map(([k, from]) => [k, from])),
+              after: {
+                ...Object.fromEntries(pairs.map(([k, , to]) => [k, to])),
+                ...(series ? { occurrences: results.length } : {}),
+              },
+            });
+          }
+        }
+        return results;
       });
 
       if (!updated) {
         notFound("Event");
       }
-      const { row, before } = updated;
+      const mine = updated.find((result) => result.row.id === id);
+      if (!mine) notFound("Event");
 
       // Members who RSVPed have the old time or place on their calendar.
       // Past events and archived ones are left alone: nobody is planning
       // around them, and a typo fix there should not email the whole list.
-      const moved =
-        before.startsAt.getTime() !== row.startsAt.getTime() ||
-        before.location !== row.location;
-      const notify =
-        moved && row.archivedAt === null && row.startsAt.getTime() > Date.now();
-      return {
-        ...row,
+      // One Discord post per edit, however many occurrences it moved.
+      const now = Date.now();
+      const notices: Notice[] = [];
+      for (const { row, before } of updated) {
+        const moved =
+          before.startsAt.getTime() !== row.startsAt.getTime() ||
+          before.location !== row.location;
+        if (
+          !moved ||
+          row.archivedAt !== null ||
+          row.startsAt.getTime() <= now
+        ) {
+          continue;
+        }
         // After the commit. The calendar invite is the email, so a member is
         // told once, and a failed send never undoes the edit.
-        invites: notify
-          ? await notifyEventChange(
-              ctx.db,
-              row,
-              "moved",
-              rsvpRecipients(ctx.db, row.id),
-            )
-          : noNotice,
+        notices.push(
+          await notifyEventChange(
+            ctx.db,
+            row,
+            "moved",
+            rsvpRecipients(ctx.db, row.id),
+            { channel: notices.length === 0 },
+          ),
+        );
+      }
+      let promotedCount = 0;
+      for (const { row, promoted } of updated) {
+        promotedCount += promoted.length;
+        await notifyWaitlistPromotion(row, promoted);
+      }
+      return {
+        ...mine.row,
+        invites: notices.length > 0 ? sumNotices(notices) : noNotice,
+        occurrences: updated.length,
+        promoted: promotedCount,
       };
     }),
 
@@ -287,8 +608,6 @@ export const eventRouter = createTRPCRouter({
         ctx.db
           .select({
             ...publicEventColumns,
-            checkInCode: events.checkInCode,
-            maxCheckIns: events.maxCheckIns,
             archivedAt: events.archivedAt,
             attendees: count(eventCheckIns.id),
           })
@@ -306,6 +625,10 @@ export const eventRouter = createTRPCRouter({
       // is the same cutoff the check-in door uses.
       const now = Date.now();
       const cutoff = now - CHECK_IN_WINDOW_MS;
+      const series = await seriesInfo(
+        ctx.db,
+        rows.map((row) => row.id),
+      );
       return {
         events: rows.map((row) => {
           const isPast = row.startsAt.getTime() < cutoff;
@@ -313,6 +636,7 @@ export const eventRouter = createTRPCRouter({
           // report the effective state: a past event is always closed.
           return {
             ...row,
+            series: series.get(row.id) ?? null,
             checkInEnabled: row.checkInEnabled && !isPast,
             isPast,
             // And an event more than two hours out is not open yet either.
@@ -339,41 +663,44 @@ export const eventRouter = createTRPCRouter({
     .query(async ({ ctx, input }) => {
       // All four reads key off `input.id`, so they share one round trip. A
       // missing event just means the other three come back empty and unused.
-      const [event, roster, [rosterCount], rsvps] = await Promise.all([
-        ctx.db.query.events.findFirst({
-          where: eq(events.id, input.id),
-        }),
-        ctx.db
-          .select({
-            userId: eventCheckIns.userId,
-            name: users.name,
-            email: users.email,
-            method: eventCheckIns.method,
-            pointsEarned: eventCheckIns.pointsEarned,
-            checkedInAt: eventCheckIns.checkedInAt,
-          })
-          .from(eventCheckIns)
-          .innerJoin(users, eq(users.id, eventCheckIns.userId))
-          .where(eq(eventCheckIns.eventId, input.id))
-          .orderBy(desc(eventCheckIns.checkedInAt))
-          .limit(input.limit)
-          .offset(input.offset),
-        ctx.db
-          .select({ total: count() })
-          .from(eventCheckIns)
-          .where(eq(eventCheckIns.eventId, input.id)),
-        ctx.db
-          .select({
-            userId: eventRsvps.userId,
-            name: users.name,
-            email: users.email,
-            createdAt: eventRsvps.createdAt,
-          })
-          .from(eventRsvps)
-          .innerJoin(users, eq(users.id, eventRsvps.userId))
-          .where(eq(eventRsvps.eventId, input.id))
-          .orderBy(asc(eventRsvps.createdAt)),
-      ]);
+      const [event, roster, [rosterCount], rsvps, waitlist, series] =
+        await Promise.all([
+          ctx.db.query.events.findFirst({
+            where: eq(events.id, input.id),
+          }),
+          ctx.db
+            .select({
+              userId: eventCheckIns.userId,
+              name: users.name,
+              email: users.email,
+              method: eventCheckIns.method,
+              pointsEarned: eventCheckIns.pointsEarned,
+              checkedInAt: eventCheckIns.checkedInAt,
+            })
+            .from(eventCheckIns)
+            .innerJoin(users, eq(users.id, eventCheckIns.userId))
+            .where(eq(eventCheckIns.eventId, input.id))
+            .orderBy(desc(eventCheckIns.checkedInAt))
+            .limit(input.limit)
+            .offset(input.offset),
+          ctx.db
+            .select({ total: count() })
+            .from(eventCheckIns)
+            .where(eq(eventCheckIns.eventId, input.id)),
+          ctx.db
+            .select({
+              userId: eventRsvps.userId,
+              name: users.name,
+              email: users.email,
+              createdAt: eventRsvps.createdAt,
+            })
+            .from(eventRsvps)
+            .innerJoin(users, eq(users.id, eventRsvps.userId))
+            .where(eq(eventRsvps.eventId, input.id))
+            .orderBy(asc(eventRsvps.createdAt)),
+          waitlistFor(ctx.db, input.id),
+          seriesInfo(ctx.db, [input.id]),
+        ]);
 
       if (!event) {
         notFound("Event");
@@ -388,8 +715,13 @@ export const eventRouter = createTRPCRouter({
       const notYetOpen = checkInNotYetOpen(event.startsAt, now);
       const opensAt = new Date(event.startsAt.getTime() - CHECK_IN_GRACE_MS);
 
+      // The stored key is not a credential on its own any more, but it has no
+      // use on an officer screen either: the QR comes from `presentCode`.
+      const { checkInCode: _key, ...shown } = event; // eslint-disable-line @typescript-eslint/no-unused-vars
       return {
-        event: { ...event, checkInEnabled: event.checkInEnabled && !isPast },
+        event: { ...shown, checkInEnabled: event.checkInEnabled && !isPast },
+        series: series.get(input.id) ?? null,
+        waitlist,
         roster,
         rosterTotal:
           typeof rosterCount?.total === "number"
@@ -468,16 +800,30 @@ export const eventRouter = createTRPCRouter({
         }
       }
 
-      const [updated] = await ctx.db
-        .update(events)
-        .set({ checkInEnabled: input.enabled })
-        .where(eq(events.id, input.id))
-        .returning({ id: events.id, checkInEnabled: events.checkInEnabled });
+      return ctx.db.transaction(async (tx) => {
+        const [updated] = await tx
+          .update(events)
+          .set({ checkInEnabled: input.enabled })
+          .where(eq(events.id, input.id))
+          .returning({
+            id: events.id,
+            title: events.title,
+            checkInEnabled: events.checkInEnabled,
+          });
 
-      if (!updated) {
-        notFound("Event");
-      }
-      return updated;
+        if (!updated) {
+          notFound("Event");
+        }
+        await recordAudit(tx, {
+          actorId: ctx.session.user.id,
+          action: "event.set_check_in",
+          targetType: "event",
+          targetId: updated.id,
+          targetLabel: updated.title,
+          after: { checkInEnabled: updated.checkInEnabled },
+        });
+        return { id: updated.id, checkInEnabled: updated.checkInEnabled };
+      });
     }),
 
   /**
@@ -486,40 +832,76 @@ export const eventRouter = createTRPCRouter({
    * event, or one already in the state asked for, tells nobody.
    */
   setArchived: adminProcedure
-    .input(z.object({ id: z.string().min(1), archived: z.boolean() }))
+    .input(
+      z.object({
+        id: z.string().min(1),
+        archived: z.boolean(),
+        scope: scopeInput,
+      }),
+    )
     .mutation(async ({ ctx, input }) => {
       const result = await ctx.db.transaction(async (tx) => {
-        const [before] = await tx
-          .select({ archivedAt: events.archivedAt })
-          .from(events)
-          .where(eq(events.id, input.id))
-          .for("update");
-        if (!before) return null;
+        const locked = await lockOccurrences(tx, input.id, input.scope);
+        const target = locked.find((row) => row.id === input.id);
+        if (!target) return null;
 
-        const [row] = await tx
-          .update(events)
-          .set({ archivedAt: input.archived ? new Date() : null })
-          .where(eq(events.id, input.id))
-          .returning();
-        return row
-          ? { row, changed: (before.archivedAt !== null) !== input.archived }
-          : null;
+        const changes: { row: EventRow }[] = [];
+        for (const current of locked) {
+          // Already in the state asked for: nothing to write, nobody to tell.
+          if ((current.archivedAt !== null) === input.archived) continue;
+          const [row] = await tx
+            .update(events)
+            .set({ archivedAt: input.archived ? new Date() : null })
+            .where(eq(events.id, current.id))
+            .returning();
+          if (row) changes.push({ row });
+        }
+
+        if (changes.length > 0) {
+          const series = input.scope === "future" && changes.length > 1;
+          await recordAudit(tx, {
+            actorId: ctx.session.user.id,
+            action: series ? "event.archive_series" : "event.archive",
+            targetType: "event",
+            targetId: target.id,
+            targetLabel: target.title,
+            after: {
+              archived: input.archived,
+              ...(series ? { occurrences: changes.length } : {}),
+            },
+          });
+        }
+        return {
+          row:
+            changes.find((change) => change.row.id === input.id)?.row ?? target,
+          changes,
+        };
       });
 
       if (!result) {
         notFound("Event");
       }
-      const { row, changed } = result;
-      const invites =
-        changed && row.startsAt.getTime() > Date.now()
-          ? await notifyEventChange(
-              ctx.db,
-              row,
-              input.archived ? "cancelled" : "restored",
-              rsvpRecipients(ctx.db, row.id),
-            )
-          : noNotice;
-      return { id: row.id, archivedAt: row.archivedAt, invites };
+      const { row, changes } = result;
+      const now = Date.now();
+      const notices: Notice[] = [];
+      for (const change of changes) {
+        if (change.row.startsAt.getTime() <= now) continue;
+        notices.push(
+          await notifyEventChange(
+            ctx.db,
+            change.row,
+            input.archived ? "cancelled" : "restored",
+            rsvpRecipients(ctx.db, change.row.id),
+            { channel: notices.length === 0 },
+          ),
+        );
+      }
+      return {
+        id: row.id,
+        archivedAt: row.archivedAt,
+        occurrences: changes.length,
+        invites: notices.length > 0 ? sumNotices(notices) : noNotice,
+      };
     }),
 
   /** Revocation: rotating the code kills a photographed poster immediately. */
@@ -534,23 +916,32 @@ export const eventRouter = createTRPCRouter({
 
       for (let attempt = 0; attempt < 5; attempt++) {
         try {
-          const [updated] = await ctx.db
-            .update(events)
-            .set({ checkInCode: newCheckInCode() })
-            .where(eq(events.id, input.id))
-            .returning({ id: events.id, checkInCode: events.checkInCode });
+          return await ctx.db.transaction(async (tx) => {
+            const [updated] = await tx
+              .update(events)
+              .set({ checkInCode: newCheckInCode() })
+              .where(eq(events.id, input.id))
+              .returning({ id: events.id, title: events.title });
 
-          if (!updated) {
-            notFound("Event");
-          }
-          return updated;
+            if (!updated) {
+              notFound("Event");
+            }
+            await recordAudit(tx, {
+              actorId: ctx.session.user.id,
+              action: "event.revoke_codes",
+              targetType: "event",
+              targetId: updated.id,
+              targetLabel: updated.title,
+            });
+            return { id: updated.id };
+          });
         } catch (error) {
           if (error instanceof TRPCError) throw error;
           if (!isUniqueViolation(error) || attempt === 4) {
             if (isUniqueViolation(error)) {
               throw new TRPCError({
                 code: "INTERNAL_SERVER_ERROR",
-                message: "Could not regenerate that code.",
+                message: "Could not revoke that code.",
               });
             }
             throw error;
@@ -560,8 +951,32 @@ export const eventRouter = createTRPCRouter({
 
       throw new TRPCError({
         code: "INTERNAL_SERVER_ERROR",
-        message: "Could not regenerate that code.",
+        message: "Could not revoke that code.",
       });
+    }),
+
+  /**
+   * The code to show on the projector right now, and when it changes. The
+   * screen asks again at `windowEndsAt`; `serverNow` lets it correct for a
+   * wrong clock on the laptop driving the projector.
+   */
+  presentCode: adminProcedure
+    .input(z.object({ id: z.string().min(1) }))
+    .query(async ({ ctx, input }) => {
+      const event = await ctx.db.query.events.findFirst({
+        where: eq(events.id, input.id),
+        columns: { id: true, checkInCode: true },
+      });
+      if (!event) {
+        notFound("Event");
+      }
+      const now = Date.now();
+      return {
+        code: checkInCodeFor(event, now),
+        windowEndsAt: windowEnd(now),
+        windowMs: WINDOW_MS,
+        serverNow: now,
+      };
     }),
 
   /** For the member whose phone died. Same snapshot rule as the code path. */
@@ -768,9 +1183,8 @@ export const eventRouter = createTRPCRouter({
    * gone: membership is free here, so being signed in IS the membership check.
    */
   checkIn: protectedProcedure
-    .input(z.object({ code: z.string().min(4).max(16) }))
+    .input(z.object({ code: z.string().min(4).max(32) }))
     .mutation(async ({ ctx, input }) => {
-      const code = normalizeCode(input.code);
       const userId = ctx.session.user.id;
 
       await assertRateLimit(ctx.db, `check-in:${userId}`, CHECK_IN_LIMIT);
@@ -778,15 +1192,10 @@ export const eventRouter = createTRPCRouter({
       // Lookup outside the transaction — the code index settles "no such
       // event" without taking a row lock. Everything mutable is re-checked
       // inside once the event row is locked.
-      const event = await ctx.db.query.events.findFirst({
-        where: eq(events.checkInCode, code),
-      });
+      const event = await eventForCode(ctx.db, input.code);
 
       if (!event) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "That code is not valid.",
-        });
+        throw new TRPCError({ code: "NOT_FOUND", message: CODE_REFUSED });
       }
 
       let eventTitle = event.title;
@@ -964,72 +1373,157 @@ export const eventRouter = createTRPCRouter({
     };
   }),
 
-  /** Say you plan to come. Only before the event starts; repeats are no-ops. */
+  /**
+   * Say you plan to come. Only before the event starts; repeats are no-ops.
+   * An event with seats takes RSVPs until they are gone, then a waitlist. The
+   * count, the insert and the choice between the two happen under the event
+   * row lock, so two members taking the last seat cannot both get it.
+   */
   rsvp: protectedProcedure
     .input(z.object({ eventId: z.string().min(1) }))
     .mutation(async ({ ctx, input }) => {
       await assertRateLimit(ctx.db, `rsvp:${ctx.session.user.id}`, RSVP_LIMIT);
-      const event = await ctx.db.query.events.findFirst({
-        where: eq(events.id, input.eventId),
-        columns: {
-          id: true,
-          title: true,
-          description: true,
-          location: true,
-          startsAt: true,
-          archivedAt: true,
-        },
+      const userId = ctx.session.user.id;
+
+      const outcome = await ctx.db.transaction(async (tx) => {
+        const [event] = await lockEvent(tx, input.eventId);
+        if (!event || event.archivedAt) notFound("Event");
+        if (event.startsAt.getTime() <= Date.now()) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "This event has already started.",
+          });
+        }
+
+        const [going] = await tx
+          .select({ userId: eventRsvps.userId })
+          .from(eventRsvps)
+          .where(
+            and(
+              eq(eventRsvps.eventId, event.id),
+              eq(eventRsvps.userId, userId),
+            ),
+          );
+        if (going) return { event, status: "going" as const, added: false };
+
+        if (event.maxCheckIns !== null) {
+          const [taken] = await tx
+            .select({ total: count() })
+            .from(eventRsvps)
+            .where(eq(eventRsvps.eventId, event.id));
+          if (Number(taken?.total ?? 0) >= event.maxCheckIns) {
+            await tx
+              .insert(eventWaitlist)
+              .values({ eventId: event.id, userId })
+              .onConflictDoNothing();
+            const [mine] = await tx
+              .select({ joinedAt: eventWaitlist.createdAt })
+              .from(eventWaitlist)
+              .where(
+                and(
+                  eq(eventWaitlist.eventId, event.id),
+                  eq(eventWaitlist.userId, userId),
+                ),
+              );
+            const [ahead] = await tx
+              .select({ total: count() })
+              .from(eventWaitlist)
+              .where(
+                and(
+                  eq(eventWaitlist.eventId, event.id),
+                  lte(eventWaitlist.createdAt, mine?.joinedAt ?? new Date()),
+                ),
+              );
+            return {
+              event,
+              status: "waitlisted" as const,
+              added: false,
+              position: Math.max(Number(ahead?.total ?? 1), 1),
+            };
+          }
+        }
+
+        const [added] = await tx
+          .insert(eventRsvps)
+          .values({ eventId: event.id, userId })
+          .onConflictDoNothing()
+          .returning({ eventId: eventRsvps.eventId });
+        return { event, status: "going" as const, added: Boolean(added) };
       });
-      if (!event || event.archivedAt) notFound("Event");
-      if (event.startsAt.getTime() <= Date.now()) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "This event has already started.",
-        });
+
+      if (outcome.status === "waitlisted") {
+        return {
+          eventId: outcome.event.id,
+          rsvped: false,
+          waitlisted: true,
+          waitlistPosition: outcome.position,
+          invited: false,
+        };
       }
-      const [added] = await ctx.db
-        .insert(eventRsvps)
-        .values({ eventId: event.id, userId: ctx.session.user.id })
-        .onConflictDoNothing()
-        .returning({ eventId: eventRsvps.eventId });
       const email = ctx.session.user.email;
       const invited =
-        added && email
-          ? await sendCalendarInvite("REQUEST", event, email)
+        outcome.added && email
+          ? await sendCalendarInvite("REQUEST", outcome.event, email)
           : false;
-      return { eventId: event.id, rsvped: true, invited };
+      return {
+        eventId: outcome.event.id,
+        rsvped: true,
+        waitlisted: false,
+        waitlistPosition: null,
+        invited,
+      };
     }),
 
+  /**
+   * Leave: give up the seat, or the place in line. A freed seat goes to the
+   * first member on the waitlist inside the same transaction, who is told
+   * after it commits.
+   */
   cancelRsvp: protectedProcedure
     .input(z.object({ eventId: z.string().min(1) }))
     .mutation(async ({ ctx, input }) => {
       await assertRateLimit(ctx.db, `rsvp:${ctx.session.user.id}`, RSVP_LIMIT);
-      const [removed] = await ctx.db
-        .delete(eventRsvps)
-        .where(
-          and(
-            eq(eventRsvps.eventId, input.eventId),
-            eq(eventRsvps.userId, ctx.session.user.id),
-          ),
-        )
-        .returning({ eventId: eventRsvps.eventId });
-      const event =
-        removed &&
-        (await ctx.db.query.events.findFirst({
-          where: eq(events.id, input.eventId),
-          columns: {
-            id: true,
-            title: true,
-            description: true,
-            location: true,
-            startsAt: true,
-          },
-        }));
+      const userId = ctx.session.user.id;
+
+      const result = await ctx.db.transaction(async (tx) => {
+        const [event] = await lockEvent(tx, input.eventId);
+        if (!event) return null;
+
+        const [removed] = await tx
+          .delete(eventRsvps)
+          .where(
+            and(
+              eq(eventRsvps.eventId, event.id),
+              eq(eventRsvps.userId, userId),
+            ),
+          )
+          .returning({ eventId: eventRsvps.eventId });
+        // An uncapped event never has a waitlist (and the table may not exist
+        // yet on a preview), so there is nothing more to do for it.
+        if (event.maxCheckIns === null && !removed) {
+          return { event, removed: false, promoted: [] as Promoted[] };
+        }
+        await tx
+          .delete(eventWaitlist)
+          .where(
+            and(
+              eq(eventWaitlist.eventId, event.id),
+              eq(eventWaitlist.userId, userId),
+            ),
+          );
+        return {
+          event,
+          removed: Boolean(removed),
+          promoted: removed ? await promoteWaitlist(tx, event) : [],
+        };
+      });
+
       const email = ctx.session.user.email;
       const uninvited =
-        event && email
-          ? await sendCalendarInvite("CANCEL", event, email)
+        result?.removed && email
+          ? await sendCalendarInvite("CANCEL", result.event, email)
           : false;
+      if (result) await notifyWaitlistPromotion(result.event, result.promoted);
       return { eventId: input.eventId, rsvped: false, uninvited };
     }),
 
@@ -1051,6 +1545,51 @@ export const eventRouter = createTRPCRouter({
           ),
         );
       return rows.map((row) => row.eventId);
+    }),
+
+  /**
+   * What the public pages need to draw an RSVP button for each event: which
+   * ones the member is going to, which ones they are waiting on (and their
+   * place in line), and which are full. The pages are static, so they ask
+   * after paint.
+   */
+  rsvpState: protectedProcedure
+    .input(z.object({ eventIds: z.array(z.string().min(1).max(255)).max(100) }))
+    .query(async ({ ctx, input }) => {
+      const empty = {
+        going: [] as string[],
+        waitlisted: [] as { eventId: string; position: number }[],
+        full: [] as string[],
+      };
+      if (input.eventIds.length === 0) return empty;
+      const userId = ctx.session.user.id;
+      const [going, seats] = await Promise.all([
+        ctx.db
+          .select({ eventId: eventRsvps.eventId })
+          .from(eventRsvps)
+          .where(
+            and(
+              eq(eventRsvps.userId, userId),
+              inArray(eventRsvps.eventId, input.eventIds),
+            ),
+          ),
+        seatStates(ctx.db, userId, input.eventIds),
+      ]);
+      const mine = new Set(going.map((row) => row.eventId));
+      const waitlisted: { eventId: string; position: number }[] = [];
+      const full: string[] = [];
+      for (const [eventId, seat] of seats) {
+        if (seat.waitlistPosition !== null) {
+          waitlisted.push({ eventId, position: seat.waitlistPosition });
+        } else if (
+          seat.seats !== null &&
+          seat.taken >= seat.seats &&
+          !mine.has(eventId)
+        ) {
+          full.push(eventId);
+        }
+      }
+      return { going: [...mine], waitlisted, full };
     }),
 
   /** What is still open, marked with whether this member has been or RSVPed. */
@@ -1082,9 +1621,15 @@ export const eventRouter = createTRPCRouter({
       .where(and(isNull(events.archivedAt), gte(events.startsAt, cutoff)))
       .orderBy(asc(events.startsAt))
       .limit(20);
+    const seats = await seatStates(
+      ctx.db,
+      ctx.session.user.id,
+      rows.map((row) => row.id),
+    );
     // RSVPs close at the start time; the list keeps an event a day longer.
     return rows.map((row) => ({
       ...row,
+      ...seatView(seats.get(row.id), row.rsvpedAt !== null),
       rsvpOpen: row.startsAt.getTime() > now,
       checkInOpen:
         row.checkInEnabled &&
@@ -1099,16 +1644,14 @@ export const eventRouter = createTRPCRouter({
    * so it cannot be used to guess codes.
    */
   peek: protectedProcedure
-    .input(z.object({ code: z.string().min(4).max(16) }))
+    .input(z.object({ code: z.string().min(4).max(32) }))
     .query(async ({ ctx, input }) => {
       await assertRateLimit(
         ctx.db,
         `check-in-peek:${ctx.session.user.id}`,
         CHECK_IN_LIMIT,
       );
-      const event = await ctx.db.query.events.findFirst({
-        where: eq(events.checkInCode, normalizeCode(input.code)),
-      });
+      const event = await eventForCode(ctx.db, input.code);
       if (!event) return null;
       const now = Date.now();
       return {
@@ -1192,12 +1735,18 @@ export const eventRouter = createTRPCRouter({
 
     const [row] = totals;
     const now = Date.now();
+    const seats = await seatStates(
+      ctx.db,
+      userId,
+      upcoming.map((event) => event.id),
+    );
     return {
       attended,
       // `checkInOpen` is what `checkIn` will accept right now: an officer can
       // turn check-in on hours before the window opens.
       upcoming: upcoming.map((event) => ({
         ...event,
+        ...seatView(seats.get(event.id), event.rsvpedAt !== null),
         checkInOpen:
           event.checkInEnabled &&
           !checkInNotYetOpen(event.startsAt, now) &&

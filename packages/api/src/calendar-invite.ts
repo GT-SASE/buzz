@@ -69,7 +69,7 @@ export function inviteIcs({
 }
 
 /** Why an organizer sends an invite the member did not ask for. */
-export type EventChange = "moved" | "cancelled" | "restored";
+export type EventChange = "moved" | "cancelled" | "restored" | "promoted";
 
 const copy: Record<
   EventChange,
@@ -82,6 +82,10 @@ const copy: Record<
   cancelled: (title) => ({
     subject: `Cancelled: ${title}`,
     text: `${title} is cancelled. It is off your calendar.`,
+  }),
+  promoted: (title) => ({
+    subject: `A seat opened: you're going to ${title}`,
+    text: `A spot opened up and you moved off the waitlist for ${title}. You're going, and it's on your calendar. If you can't make it any more, cancel your RSVP so the next person gets the seat.`,
   }),
   restored: (title) => ({
     subject: `Back on: ${title}`,

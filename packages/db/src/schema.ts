@@ -308,6 +308,69 @@ export const eventRsvps = createTable(
   ],
 );
 
+/**
+ * Members waiting for a seat at a capped event, first come first served. A
+ * table beside `event_rsvp` rather than a status column on it: code that
+ * predates this table (a preview before its migration, the old build during a
+ * deploy) counts every `event_rsvp` row as a confirmed seat and mails it a
+ * calendar entry, so a waiting member must not be in that table. Promotion
+ * moves the row across inside one transaction that holds the event row lock.
+ */
+export const eventWaitlist = createTable(
+  "event_waitlist",
+  (d) => ({
+    eventId: d
+      .varchar({ length: 255 })
+      .notNull()
+      .references(() => events.id, { onDelete: "cascade" }),
+    userId: d
+      .varchar({ length: 255 })
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    createdAt: d
+      .timestamp({ withTimezone: true })
+      .$defaultFn(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  }),
+  (t) => [
+    primaryKey({ columns: [t.eventId, t.userId] }),
+    index(idx("event_waitlist_queue_idx")).on(t.eventId, t.createdAt),
+    index(idx("event_waitlist_user_idx")).on(t.userId),
+  ],
+);
+
+/**
+ * How often a recurring series repeats. Occurrences are real `event` rows, so
+ * check-ins, RSVPs, points and the .ics feed work per occurrence; this table
+ * only says which rows belong together. `position` is the occurrence's place in
+ * the series as created (0 first). A table beside `event` for the same reason
+ * as the waitlist: an old build never reads it, and a preview before the
+ * migration just sees every event as a one-off.
+ */
+export const EVENT_CADENCES = ["weekly", "biweekly"] as const;
+export type EventCadence = (typeof EVENT_CADENCES)[number];
+
+export const eventSeriesMembers = createTable(
+  "event_series_member",
+  (d) => ({
+    eventId: d
+      .varchar({ length: 255 })
+      .primaryKey()
+      .references(() => events.id, { onDelete: "cascade" }),
+    seriesId: d.varchar({ length: 255 }).notNull(),
+    cadence: d.varchar({ length: 12 }).$type<EventCadence>().notNull(),
+    position: d.integer().notNull(),
+  }),
+  (t) => [
+    index(idx("event_series_member_series_idx")).on(t.seriesId, t.position),
+    check(
+      idx("event_series_member_cadence_check"),
+      sql`${t.cadence} in ('weekly', 'biweekly')`,
+    ),
+    check(idx("event_series_member_position_check"), sql`${t.position} >= 0`),
+  ],
+);
+
 export type MentorshipRole = "mentor" | "mentee";
 export type MentorshipStatus = "interested" | "enrolled" | "withdrawn";
 
@@ -868,6 +931,14 @@ export const AUDIT_ACTIONS = [
   "committee.set_status",
   "event.manual_check_in",
   "event.remove_check_in",
+  "event.create",
+  "event.create_series",
+  "event.update",
+  "event.update_series",
+  "event.archive",
+  "event.archive_series",
+  "event.set_check_in",
+  "event.revoke_codes",
   "mentorship.award_points",
   "mentorship.award_group_points",
   "kin_group.carry_forward",

@@ -8,7 +8,7 @@ import { Spinner } from "~/components/ui/spinner";
  * The generated alphabet. `JKM-N` rather than `J-N`: the range spelling
  * silently included L, which the generator never issues.
  */
-const ISSUED_CODE = /^[2-9A-HJKM-NP-TV-Z]{6,12}$/i;
+const ISSUED_CODE = /^[2-9A-HJKM-NP-TV-Z]{6,16}$/i;
 
 /**
  * A full check-in URL or a bare code, held to the same alphabet either way.

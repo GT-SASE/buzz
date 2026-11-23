@@ -12,6 +12,14 @@ export const actionLabels: Record<AuditAction, string> = {
   "committee.set_status": "Moved an application",
   "event.manual_check_in": "Checked someone in",
   "event.remove_check_in": "Removed a check-in",
+  "event.create": "Created an event",
+  "event.create_series": "Created a recurring event",
+  "event.update": "Edited an event",
+  "event.update_series": "Edited an event and its later repeats",
+  "event.archive": "Archived or restored an event",
+  "event.archive_series": "Archived or restored an event and its later repeats",
+  "event.set_check_in": "Opened or closed check-in",
+  "event.revoke_codes": "Revoked an event's check-in codes",
   "mentorship.award_points": "Awarded KIN points",
   "mentorship.award_group_points": "Awarded group KIN points",
   "kin_group.carry_forward": "Copied kin groups forward",
@@ -70,6 +78,16 @@ const when = (value: unknown) =>
 const scheduleText = (value: Json) =>
   `opens ${when(value?.opensAt)}, closes ${when(value?.closesAt)}, ${text(value?.minCheckIns)}+ check-ins`;
 
+/** "title Old to New, seats 20 to 30": every field an event edit touched. */
+const changedFields = (before: Json, after: Json) =>
+  Object.keys(before ?? {})
+    .map((key) => {
+      const was = text(before?.[key]);
+      const now = text(after?.[key]);
+      return key === "description" ? "description" : `${key} ${was} to ${now}`;
+    })
+    .join(", ") || "No visible change";
+
 /** One line saying what changed, from the row's `before` and `after`. */
 export function describeChange(row: {
   action: AuditAction;
@@ -89,6 +107,20 @@ export function describeChange(row: {
       return `${text(after?.event)}, +${text(after?.points)} points`;
     case "event.remove_check_in":
       return `${text(before?.event)}, -${text(before?.points)} points`;
+    case "event.create":
+      return `${when(after?.startsAt)}, ${text(after?.points)} points, ${text(after?.seats)} seats`;
+    case "event.create_series":
+      return `${text(after?.occurrences)} ${text(after?.cadence)} events from ${when(after?.startsAt)} to ${when(after?.lastStartsAt)}`;
+    case "event.update":
+    case "event.update_series":
+      return `${changedFields(before, after)}${typeof after?.occurrences === "number" ? `, ${after.occurrences} events` : ""}`;
+    case "event.archive":
+    case "event.archive_series":
+      return `${after?.archived ? "Archived" : "Restored"}${typeof after?.occurrences === "number" ? `, ${after.occurrences} events` : ""}`;
+    case "event.set_check_in":
+      return after?.checkInEnabled ? "Opened check-in" : "Closed check-in";
+    case "event.revoke_codes":
+      return "Every outstanding code stopped working";
     case "mentorship.award_points":
       return `${text(before?.points)} to ${text(after?.points)} points`;
     case "mentorship.award_group_points":

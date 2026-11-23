@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, mock } from "bun:test";
+import { liveCode } from "./helpers/check-in-code";
 
 /**
  * `@buzz/auth` is stubbed before anything imports the router.
@@ -157,6 +158,9 @@ describe.skipIf(!process.env.DATABASE_URL)("check-in", () => {
   const allCodes = Object.values(code);
 
   const id = {} as Record<keyof typeof code, string>;
+  /** What the projector shows for that event at this moment. */
+  const live = (name: keyof typeof code) =>
+    liveCode({ id: id[name], checkInCode: code[name] });
 
   async function makeUser(
     tag: string,
@@ -349,7 +353,7 @@ describe.skipIf(!process.env.DATABASE_URL)("check-in", () => {
       "stamps the event's value onto the row and into the member's total",
       async () => {
         const caller = callerFor(statsMember);
-        const result = await caller.event.checkIn({ code: code.snapshot });
+        const result = await caller.event.checkIn({ code: live("snapshot") });
 
         expect(result.pointsEarned).toBe(10);
         expect(result.totalPoints).toBe(10);
@@ -396,7 +400,7 @@ describe.skipIf(!process.env.DATABASE_URL)("check-in", () => {
       "prices a check-in taken after the change at the new value",
       async () => {
         const result = await callerFor(extraMember).event.checkIn({
-          code: code.snapshot,
+          code: live("snapshot"),
         });
         expect(result.pointsEarned).toBe(50);
       },
@@ -432,11 +436,11 @@ describe.skipIf(!process.env.DATABASE_URL)("check-in", () => {
       "refuses the second tap without writing a row or moving the counter",
       async () => {
         const caller = callerFor(gateMember);
-        const first = await caller.event.checkIn({ code: code.duplicate });
+        const first = await caller.event.checkIn({ code: live("duplicate") });
         expect(first.pointsEarned).toBe(5);
 
         expect(
-          await errorCode(caller.event.checkIn({ code: code.duplicate })),
+          await errorCode(caller.event.checkIn({ code: live("duplicate") })),
         ).toBe("CONFLICT");
 
         expect(await countCheckIns(id.duplicate)).toBe(1);
@@ -464,7 +468,7 @@ describe.skipIf(!process.env.DATABASE_URL)("check-in", () => {
       async () => {
         expect(
           await errorCode(
-            callerFor(gateMember).event.checkIn({ code: code.stale }),
+            callerFor(gateMember).event.checkIn({ code: live("stale") }),
           ),
         ).toBe("BAD_REQUEST");
         expect(await countCheckIns(id.stale)).toBe(0);
@@ -476,7 +480,7 @@ describe.skipIf(!process.env.DATABASE_URL)("check-in", () => {
       "still admits an event 23 hours past its start",
       async () => {
         const result = await callerFor(gateMember).event.checkIn({
-          code: code.fresh,
+          code: live("fresh"),
         });
         expect(result.pointsEarned).toBe(10);
       },
@@ -490,7 +494,7 @@ describe.skipIf(!process.env.DATABASE_URL)("check-in", () => {
       async () => {
         expect(
           await errorCode(
-            callerFor(gateMember).event.checkIn({ code: code.disabled }),
+            callerFor(gateMember).event.checkIn({ code: live("disabled") }),
           ),
         ).toBe("BAD_REQUEST");
         expect(await countCheckIns(id.disabled)).toBe(0);
@@ -503,7 +507,7 @@ describe.skipIf(!process.env.DATABASE_URL)("check-in", () => {
       async () => {
         expect(
           await errorCode(
-            callerFor(gateMember).event.checkIn({ code: code.archived }),
+            callerFor(gateMember).event.checkIn({ code: live("archived") }),
           ),
         ).toBe("BAD_REQUEST");
         expect(await countCheckIns(id.archived)).toBe(0);
@@ -533,13 +537,13 @@ describe.skipIf(!process.env.DATABASE_URL)("check-in", () => {
       "admits up to maxCheckIns and refuses the next member",
       async () => {
         const admitted = await callerFor(gateMember).event.checkIn({
-          code: code.capped,
+          code: live("capped"),
         });
         expect(admitted.pointsEarned).toBe(10);
 
         expect(
           await errorCode(
-            callerFor(extraMember).event.checkIn({ code: code.capped }),
+            callerFor(extraMember).event.checkIn({ code: live("capped") }),
           ),
         ).toBe("BAD_REQUEST");
 
@@ -561,10 +565,10 @@ describe.skipIf(!process.env.DATABASE_URL)("check-in", () => {
       async () => {
         const results = await Promise.all([
           errorOutcome(
-            callerFor(gateMember).event.checkIn({ code: code.race }),
+            callerFor(gateMember).event.checkIn({ code: live("race") }),
           ),
           errorOutcome(
-            callerFor(extraMember).event.checkIn({ code: code.race }),
+            callerFor(extraMember).event.checkIn({ code: live("race") }),
           ),
         ]);
 
@@ -589,8 +593,8 @@ describe.skipIf(!process.env.DATABASE_URL)("check-in", () => {
       async () => {
         const caller = callerFor(extraMember);
         const results = await Promise.all([
-          errorOutcome(caller.event.checkIn({ code: code.raceDuplicate })),
-          errorOutcome(caller.event.checkIn({ code: code.raceDuplicate })),
+          errorOutcome(caller.event.checkIn({ code: live("raceDuplicate") })),
+          errorOutcome(caller.event.checkIn({ code: live("raceDuplicate") })),
         ]);
 
         expect(results.filter((r) => r === "NO_ERROR")).toHaveLength(1);
@@ -620,7 +624,7 @@ describe.skipIf(!process.env.DATABASE_URL)("check-in", () => {
           counter: (await readEvent(id[key]))?.currentCheckIns,
         });
 
-      await callerFor(counterMember).event.checkIn({ code: code[key] });
+      await callerFor(counterMember).event.checkIn({ code: live(key) });
       await observe();
       await callerFor(admin).event.manualCheckIn({
         eventId: id[key],
@@ -682,7 +686,7 @@ describe.skipIf(!process.env.DATABASE_URL)("check-in", () => {
             .for("update");
 
           scan.current = errorOutcome(
-            callerFor(counterMember).event.checkIn({ code: code.lateCap }),
+            callerFor(counterMember).event.checkIn({ code: live("lateCap") }),
           );
 
           // Wait until the scan is queued behind this transaction's lock.
@@ -727,7 +731,8 @@ describe.skipIf(!process.env.DATABASE_URL)("check-in", () => {
     it(
       "matches a lowercased code with interior spaces",
       async () => {
-        const spaced = `  ${code.spaced.slice(0, 4)} ${code.spaced.slice(4)} `;
+        const full = live("spaced");
+        const spaced = `  ${full.slice(0, 4)} ${full.slice(4, 10)} ${full.slice(10)} `;
         const result = await callerFor(gateMember).event.checkIn({
           code: spaced.toLowerCase(),
         });
@@ -856,9 +861,9 @@ describe.skipIf(!process.env.DATABASE_URL)("check-in", () => {
       expect(open("snapshot")).toBe(true);
       expect(open("disabled")).toBe(false);
       expect(open("early")).toBe(false);
-      await expect(caller.event.checkIn({ code: code.early })).rejects.toThrow(
-        "Check-in has not opened yet.",
-      );
+      await expect(
+        caller.event.checkIn({ code: live("early") }),
+      ).rejects.toThrow("Check-in has not opened yet.");
     });
 
     /**
