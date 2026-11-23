@@ -899,3 +899,32 @@ export const pointsLedger = createTable(
     ),
   ],
 );
+
+/**
+ * Which optional emails a member has switched off. A row exists only once a
+ * member has saved a choice; no row means every switch is on, so adding a
+ * member or a category needs no backfill. Application decisions are not here
+ * on purpose: they answer something the member did and are always sent.
+ *
+ * A table beside `user` rather than columns on it: Auth.js reads whole user
+ * rows on every sign-in, and a preview build shares the production database
+ * before its migration has run, so a new `user` column would break sign-in
+ * there. Nothing but the notify module reads this table.
+ */
+export const notificationPreferences = createTable(
+  "notification_preference",
+  (d) => ({
+    userId: d
+      .varchar({ length: 255 })
+      .primaryKey()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** Time or place changes and cancellations of an event the member RSVPed to. */
+    eventEmails: d.boolean().notNull().default(true),
+    /** Nominations open, voting open and results published. */
+    electionEmails: d.boolean().notNull().default(true),
+    updatedAt: d
+      .timestamp({ withTimezone: true })
+      .$defaultFn(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  }),
+);
