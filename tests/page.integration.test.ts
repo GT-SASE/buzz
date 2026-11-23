@@ -9,8 +9,7 @@ mock.module("../packages/auth/src/index.ts", () => ({
 
 const { db, pages, users } = await import("../packages/db/src/index");
 const { createCaller } = await import("../packages/api/src/root");
-const { eq, like } =
-  await import("../packages/db/node_modules/drizzle-orm/index.js");
+const { eq, like } = await import("drizzle-orm");
 
 function callerFor(id: string, role: "MEMBER" | "ADMIN") {
   return createCaller({

@@ -10,8 +10,7 @@ mock.module("../packages/auth/src/index.ts", () => ({
 const { db, eventCheckIns, events, users } =
   await import("../packages/db/src/index");
 const { createCaller } = await import("../packages/api/src/root");
-const { and, eq, inArray } =
-  await import("../packages/db/node_modules/drizzle-orm/index.js");
+const { and, eq, inArray } = await import("drizzle-orm");
 
 const SLOW = 60_000;
 
