@@ -1,9 +1,9 @@
 import { TRPCError } from "@trpc/server";
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, ne } from "drizzle-orm";
 import { z } from "zod";
 
 import { notFound } from "../errors";
-import { pageSlugProblem } from "../page-slug";
+import { ANNOUNCEMENT_SLUG, pageSlugProblem } from "../page-slug";
 import { isUniqueViolation } from "../pg-errors";
 import { adminProcedure, createTRPCRouter } from "../trpc";
 import { pages } from "@buzz/db";
@@ -39,6 +39,8 @@ export const pageRouter = createTRPCRouter({
         updatedAt: pages.updatedAt,
       })
       .from(pages)
+      // The site banner is a row of this table, but it has its own editor.
+      .where(ne(pages.slug, ANNOUNCEMENT_SLUG))
       .orderBy(desc(pages.updatedAt)),
   ),
 

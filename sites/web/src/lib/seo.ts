@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 
+import { eventPagePath } from "~/app/portal/_lib/paths";
 import { site } from "~/data/site";
+import { localDateKey } from "~/lib/event-time";
 
 /**
  * Share image served by `app/opengraph-image.tsx`. A page that sets its own
@@ -28,10 +30,19 @@ export function pageMetadata({
   title,
   description,
   path,
+  image = shareImage,
 }: {
   title: string;
   description: string;
   path: string;
+  /** This page's own share card, when it has one. Defaults to the chapter's. */
+  image?: {
+    url: string;
+    width: number;
+    height: number;
+    alt: string;
+    type: string;
+  };
 }): Metadata {
   const url = path === "/" ? site.url : `${site.url}${path}`;
 
@@ -46,13 +57,13 @@ export function pageMetadata({
       siteName: site.name,
       locale: "en_US",
       type: "website",
-      images: [shareImage],
+      images: [image],
     },
     twitter: {
       card: "summary_large_image",
       title,
       description,
-      images: [shareImage.url],
+      images: [image.url],
     },
   };
 }
@@ -66,6 +77,13 @@ export function googleSiteVerification(
 ): Metadata["verification"] {
   if (!token) return undefined;
   return { google: token };
+}
+
+/** Cuts copy to `length` characters, ending in an ellipsis, for a tag or a card. */
+export function clipText(text: string, length: number) {
+  return text.length > length
+    ? `${text.slice(0, length - 1).trimEnd()}…`
+    : text;
 }
 
 /** Serialises JSON-LD for a <script type="application/ld+json"> tag. */
@@ -110,7 +128,9 @@ export function organizationSchema() {
  * One chapter event.
  *
  * `startsAt` is a real instant, so it is emitted as a fully qualified ISO 8601
- * string with its offset.
+ * string with its offset. A date-only listing (`reminder`) has no real time:
+ * its stored hour means nothing, so it is emitted as the chapter-local day,
+ * the same day the cards, the month grid and the .ics feed put it on.
  *
  * Location and description are omitted rather than defaulted when the officer
  * left them blank. A placeholder like "Location announced on Instagram" is fine
@@ -119,16 +139,30 @@ export function organizationSchema() {
  * address that is real.
  */
 export function eventSchema(event: {
+  id?: string;
   title: string;
   startsAt: Date;
   location: string | null;
   description: string | null;
+  /** Campus listing with a date and no time. */
+  reminder?: boolean;
+  /** Absolute URL of the event's share card. */
+  image?: string;
 }) {
   return {
     "@context": "https://schema.org",
     "@type": "Event",
+    ...(event.id
+      ? {
+          "@id": `${site.url}${eventPagePath(event.id)}`,
+          url: `${site.url}${eventPagePath(event.id)}`,
+        }
+      : {}),
     name: event.title,
-    startDate: event.startsAt.toISOString(),
+    startDate: event.reminder
+      ? localDateKey(event.startsAt)
+      : event.startsAt.toISOString(),
+    ...(event.image ? { image: event.image } : {}),
     ...(event.description ? { description: event.description } : {}),
     eventAttendanceMode: "https://schema.org/OfflineEventAttendanceMode",
     eventStatus: "https://schema.org/EventScheduled",
@@ -170,5 +204,18 @@ export function breadcrumbSchema(label: string, path: string) {
         item: `${site.url}${path}`,
       },
     ],
+  };
+}
+
+/** Question and answer pairs for a FAQPage. Answers are plain text. */
+export function faqSchema(items: readonly { q: string; a: string }[]) {
+  return {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    mainEntity: items.map((item) => ({
+      "@type": "Question",
+      name: item.q,
+      acceptedAnswer: { "@type": "Answer", text: item.a },
+    })),
   };
 }

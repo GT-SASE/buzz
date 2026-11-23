@@ -105,6 +105,12 @@ export const navGroups: NavGroup[] = [
 ];
 
 /**
+ * Pages the footer lists beyond the header's groups. They stay out of the
+ * header, which has no room for another entry.
+ */
+export const footerLinks = [{ label: "FAQ", href: "/faq" }] as const;
+
+/**
  * Membership is a portal account, so joining is signing in. Every join button
  * and nav link goes here. `/join` is the explainer page, reached only by text
  * links that say they explain (tests/join-links.test.ts holds the line).

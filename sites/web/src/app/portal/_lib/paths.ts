@@ -81,6 +81,25 @@ export function eventPath(eventId: string) {
   return `/portal/events?event=${encodeURIComponent(eventId)}`;
 }
 
+/** One event's public page, the one anyone can open and share. */
+export function eventPagePath(eventId: string) {
+  return `/events/${encodeURIComponent(eventId)}`;
+}
+
+/**
+ * Sign-in that lands back on the event's public page with `?rsvp=1`, where the
+ * page RSVPs once. The flag rides in the query for the same reason `eventPath`'s
+ * id does: a query survives the OAuth round trip and a fragment does not.
+ */
+export function rsvpSignInPath(eventId: string) {
+  return signInPath(`${eventPagePath(eventId)}?rsvp=1`);
+}
+
+/** The month view of the public calendar, `month` as `"2026-11"`. */
+export function eventMonthPath(month: string) {
+  return `/events/month/${month}`;
+}
+
 /**
  * Check-in with a code in the query. QR links use `#code=` instead, but a
  * fragment does not survive the OAuth round-trip, so this is what `from`

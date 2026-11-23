@@ -10,14 +10,18 @@ import { JsonLd } from "~/components/site/json-ld";
 import { Badge } from "~/components/ui/badge";
 import { meeting } from "~/data/content";
 import { discord, instagram, site } from "~/data/site";
+import { packetAction } from "~/data/sponsors";
 import { breadcrumbSchema, pageMetadata } from "~/lib/seo";
+import { withOwnShareImage } from "~/lib/own-share-image";
 
-export const metadata = pageMetadata({
-  title: "Contact | SASE at Georgia Tech",
-  description:
-    "How to reach SASE at Georgia Tech: general body meetings for prospective members, Discord, the mailing list, and sponsorship contacts for companies.",
-  path: "/contact",
-});
+export const metadata = withOwnShareImage(
+  pageMetadata({
+    title: "Contact | SASE at Georgia Tech",
+    description:
+      "How to reach SASE at Georgia Tech: general body meetings for prospective members, Discord, the mailing list, and sponsorship contacts for companies.",
+    path: "/contact",
+  }),
+);
 
 const meetingRows = [
   { term: "Cadence", detail: meeting.cadence },
@@ -26,6 +30,7 @@ const meetingRows = [
   { term: "Where", detail: meeting.location },
 ];
 
+const packet = packetAction();
 const mailingListHref = `mailto:${site.email}?subject=${encodeURIComponent("Mailing list")}`;
 
 function ChannelBadge({ children }: { children: React.ReactNode }) {
@@ -139,11 +144,8 @@ export default function ContactPage() {
           title="Recruit from this chapter."
           body="Info sessions, technical workshops, resume book access, and named sponsorship of a signature event. Write to the chapter inbox and the external vice president will follow up."
         >
-          <Button
-            variant="solid"
-            href={`mailto:${site.email}?subject=${encodeURIComponent("Sponsorship packet request")}`}
-          >
-            Request the sponsorship packet
+          <Button variant="solid" href={packet.href} external={packet.external}>
+            {packet.label}
           </Button>
           <Button href="/sponsors" variant="ghost">
             See the tiers

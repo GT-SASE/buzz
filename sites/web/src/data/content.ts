@@ -7,7 +7,7 @@
  * module is pure data again.
  *
  * Contact-facing facts are taken from the chapter's public
- * site (sites.gatech.edu/gtsase). Sponsors stay empty until partners sign.
+ * site (sites.gatech.edu/gtsase). Partners and the sponsorship packet live in `~/data/sponsors`.
  */
 
 /** The home page's one line about the chapter. 2007 is the verified founding year. */
@@ -214,7 +214,3 @@ export const sponsorTiers: SponsorTier[] = [
     ],
   },
 ];
-
-// Once real partners sign, add them here and give /sponsors a logo wall
-// (next/image from /public/sponsors). Until then the page runs an invitation
-// instead — an empty logo grid advertises that the chapter has no partners.

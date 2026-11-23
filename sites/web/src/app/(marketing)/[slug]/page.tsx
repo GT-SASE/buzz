@@ -5,6 +5,7 @@ import { PageHeader, Section } from "~/components/site";
 import { JsonLd } from "~/components/site/json-ld";
 import { Markdown } from "~/components/site/markdown";
 import { getPublishedPage } from "~/data/pages";
+import { withOwnShareImage } from "~/lib/own-share-image";
 import { breadcrumbSchema, pageMetadata } from "~/lib/seo";
 import { site } from "~/data/site";
 
@@ -14,11 +15,13 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { slug } = await params;
   const page = await getPublishedPage(slug);
   if (!page) return {};
-  return pageMetadata({
-    title: `${page.title} | ${site.name}`,
-    description: page.description || site.description,
-    path: `/${slug}`,
-  });
+  return withOwnShareImage(
+    pageMetadata({
+      title: `${page.title} | ${site.name}`,
+      description: page.description || site.description,
+      path: `/${slug}`,
+    }),
+  );
 }
 
 export default async function PublishedPage({ params }: Params) {

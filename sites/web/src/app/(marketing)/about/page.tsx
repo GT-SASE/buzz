@@ -11,13 +11,16 @@ import { board, missionPillars } from "~/data/content";
 import { photos } from "~/data/photos";
 import { joinHref } from "~/data/site";
 import { breadcrumbSchema, pageMetadata } from "~/lib/seo";
+import { withOwnShareImage } from "~/lib/own-share-image";
 
-export const metadata = pageMetadata({
-  title: "About | SASE at Georgia Tech",
-  description:
-    "SASE at Georgia Tech is the campus chapter of the Society of Asian Scientists and Engineers. Our mission, how the chapter is run, and what a year looks like.",
-  path: "/about",
-});
+export const metadata = withOwnShareImage(
+  pageMetadata({
+    title: "About | SASE at Georgia Tech",
+    description:
+      "SASE at Georgia Tech is the campus chapter of the Society of Asian Scientists and Engineers. Our mission, how the chapter is run, and what a year looks like.",
+    path: "/about",
+  }),
+);
 
 /** "President, Internal Vice President, ... and Marketing Director" */
 function roleSentence(roles: string[]) {

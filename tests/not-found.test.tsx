@@ -17,9 +17,17 @@ mock.module("next/link", () => ({
   ),
 }));
 
-import MarketingLayout from "../sites/web/src/app/(marketing)/layout";
-import MarketingNotFound from "../sites/web/src/app/(marketing)/not-found";
-import RootNotFound from "../sites/web/src/app/not-found";
+// The slot reads the banner from the database; chrome counts do not need it.
+mock.module("../sites/web/src/components/site/announcement-slot.tsx", () => ({
+  AnnouncementSlot: () => null,
+}));
+
+const { default: MarketingLayout } =
+  await import("../sites/web/src/app/(marketing)/layout");
+const { default: MarketingNotFound } =
+  await import("../sites/web/src/app/(marketing)/not-found");
+const { default: RootNotFound } =
+  await import("../sites/web/src/app/not-found");
 
 afterEach(cleanup);
 

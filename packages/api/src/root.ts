@@ -1,3 +1,4 @@
+import { announcementRouter } from "./routers/announcement";
 import { chapterRouter } from "./routers/chapter";
 import { electionRouter } from "./routers/election";
 import { committeeRouter } from "./routers/committee";
@@ -14,6 +15,7 @@ import { createCallerFactory, createTRPCRouter } from "./trpc";
  * All routers added in /api/routers should be manually added here.
  */
 export const appRouter = createTRPCRouter({
+  announcement: announcementRouter,
   chapter: chapterRouter,
   committee: committeeRouter,
   election: electionRouter,

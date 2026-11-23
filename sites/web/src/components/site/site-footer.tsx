@@ -3,11 +3,15 @@ import Link from "next/link";
 import { TextLink } from "~/components/site/actions";
 import { Wordmark } from "~/components/site/brand";
 import { SaseDino } from "~/components/site/hive";
+import { packetAction } from "~/data/sponsors";
 import { cn } from "~/lib/utils";
-import { joinHref, navGroups, site } from "~/data/site";
+import { footerLinks, joinHref, navGroups, site } from "~/data/site";
 
 /** Discord already sits under Connect as the invite itself. */
-const explore = navGroups.filter((group) => group.href !== "/discord");
+const explore = [
+  ...navGroups.filter((group) => group.href !== "/discord"),
+  ...footerLinks,
+];
 
 // On this ground the near-black --rule would be invisible, so the column
 // weight has to come from white instead.
@@ -19,6 +23,7 @@ const columnLabel =
 const footerLink = "block py-3 transition hover:text-white";
 
 export function SiteFooter({ dino = true }: { dino?: boolean } = {}) {
+  const packet = packetAction();
   return (
     <footer
       className={cn("bg-navy relative text-white/70", dino && "mt-20 sm:mt-24")}
@@ -86,11 +91,12 @@ export function SiteFooter({ dino = true }: { dino?: boolean } = {}) {
               a named signature event.
             </p>
             <TextLink
-              href={`mailto:${site.email}?subject=Sponsorship%20packet`}
+              href={packet.href}
+              external={packet.external}
               tone="gold"
               className="mt-4 min-h-11 py-3"
             >
-              Request the sponsorship packet
+              {packet.label}
             </TextLink>
           </div>
         </div>
