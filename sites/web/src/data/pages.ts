@@ -3,6 +3,7 @@ import "server-only";
 import { and, asc, eq, ne } from "drizzle-orm";
 import { unstable_cache } from "next/cache";
 
+import { pageRedirectTarget } from "@buzz/api/page-redirect";
 import { ANNOUNCEMENT_SLUG, isValidPageSlug } from "@buzz/api/page-slug";
 import { db, pages } from "@buzz/db";
 
@@ -82,6 +83,39 @@ export async function getPublishedPage(slug: string) {
       JSON.stringify({
         level: "error",
         event: "pages.load",
+        message: error instanceof Error ? error.message : String(error),
+      }),
+    );
+    return null;
+  }
+}
+
+// Throws on any database error, including a missing table before migration
+// 0018: unstable_cache does not store a throw, so "no redirects yet" is never
+// remembered past the migration.
+const loadRedirect = unstable_cache(
+  (slug: string) => pageRedirectTarget(db, slug),
+  [PAGES_TAG, "redirect", "v1"],
+  {
+    tags: [PAGES_TAG],
+    revalidate: process.env.NODE_ENV === "production" ? 3600 : 60,
+  },
+);
+
+/**
+ * The current address of a page that used to live at `slug`, or null (no
+ * redirect, a live page owns the slug, no database, or the redirect table is
+ * not there yet).
+ */
+export async function getPageRedirect(slug: string) {
+  if (!process.env.DATABASE_URL || !isValidPageSlug(slug)) return null;
+  try {
+    return await loadRedirect(slug);
+  } catch (error) {
+    console.error(
+      JSON.stringify({
+        level: "error",
+        event: "pages.redirect",
         message: error instanceof Error ? error.message : String(error),
       }),
     );

@@ -28,8 +28,16 @@ import { db, isOfficerRole } from "@buzz/db";
  */
 export type Defer = (task: () => Promise<unknown>) => void;
 
+export type RevalidatePages = (slugs: string[]) => void;
+
 export const createTRPCContext = async (opts: {
   headers: Headers;
+  /**
+   * Drops the cached public pages for these slugs and the sitemap (Next's
+   * `revalidateTag` and `revalidatePath`). Page mutations call it after they
+   * commit. Absent in tests and scripts, where there is no cache.
+   */
+  revalidatePages?: RevalidatePages;
   /**
    * Runs work after the response has gone out (Next's `after`). Absent in
    * tests and scripts, where the work is awaited in place.

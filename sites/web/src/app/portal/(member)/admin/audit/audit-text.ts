@@ -23,6 +23,12 @@ export const actionLabels: Record<AuditAction, string> = {
   "election.delete": "Deleted an election",
   "export.election_tally": "Exported an election tally",
   "board.remove_photo": "Removed a board headshot",
+  "page.create": "Created a page",
+  "page.publish": "Published a page",
+  "page.unpublish": "Took a page down",
+  "page.restore": "Restored a page version",
+  "page.delete": "Deleted a page",
+  "page.upload_image": "Uploaded a page image",
   "export.roster": "Exported the roster",
   "export.attendance": "Exported attendance",
   "export.committee": "Exported applications",
@@ -113,6 +119,20 @@ export function describeChange(row: {
       return rows(after?.rows);
     case "board.remove_photo":
       return "Headshot taken down";
+    case "page.create":
+      return `/${text(after?.slug)}`;
+    case "page.publish":
+      return before?.slug && before.slug !== after?.slug
+        ? `v${text(after?.version)}, /${text(before.slug)} to /${text(after?.slug)}`
+        : `v${text(after?.version)}, /${text(after?.slug)}`;
+    case "page.unpublish":
+      return `/${text(before?.slug)} is a draft again`;
+    case "page.restore":
+      return `v${text(after?.restoredFrom)} as draft v${text(after?.version)}`;
+    case "page.delete":
+      return `/${text(before?.slug)} deleted`;
+    case "page.upload_image":
+      return `${text(after?.width)} x ${text(after?.height)}, ${text(after?.bytes)} bytes`;
     case "export.roster": {
       const search = typeof after?.search === "string" ? after.search : "";
       return `${rows(after?.rows)}${after?.truncated ? ", cut off at the limit" : ""}${search ? `, search "${search}"` : ""}`;

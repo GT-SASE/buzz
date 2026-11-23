@@ -37,6 +37,7 @@ export const RESERVED_PAGE_SLUGS: ReadonlySet<string> = new Set([
   "icon",
   "manifest",
   "opengraph-image",
+  "page-image",
   "robots",
   "sitemap",
   "twitter-image",

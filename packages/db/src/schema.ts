@@ -659,6 +659,115 @@ export const pages = createTable(
   ],
 );
 
+/**
+ * Every saved state of a page. A save edits the page's one open draft (the
+ * row with neither `publishedAt` nor `supersededAt`); publishing stamps it and copies it onto the
+ * `buzz_page` row, which stays the only thing the public site reads. The next
+ * save after a publish opens a new version, and a restore opens one from an
+ * old version's text. `number` counts per page.
+ */
+export const pageVersions = createTable(
+  "page_version",
+  (d) => ({
+    id: d
+      .varchar({ length: 255 })
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    pageId: d
+      .varchar({ length: 255 })
+      .notNull()
+      .references(() => pages.id, { onDelete: "cascade" }),
+    number: d.integer().notNull(),
+    slug: d.varchar({ length: 60 }).notNull(),
+    title: d.varchar({ length: 200 }).notNull(),
+    description: d.varchar({ length: 300 }).notNull().default(""),
+    body: d.text().notNull().default(""),
+    /** The version this one was restored from, when it came from a restore. */
+    restoredFrom: d.integer(),
+    createdById: d.varchar({ length: 255 }).references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: d
+      .timestamp({ withTimezone: true })
+      .$defaultFn(() => /* @__PURE__ */ new Date())
+      .notNull(),
+    updatedAt: d
+      .timestamp({ withTimezone: true })
+      .$defaultFn(() => /* @__PURE__ */ new Date())
+      .notNull(),
+    publishedAt: d.timestamp({ withTimezone: true }),
+    /** Set when a restore replaced this unpublished draft; it stays in the history. */
+    supersededAt: d.timestamp({ withTimezone: true }),
+  }),
+  (t) => [
+    uniqueIndex(idx("page_version_number_idx")).on(t.pageId, t.number),
+    // One open draft per page.
+    uniqueIndex(idx("page_version_open_idx"))
+      .on(t.pageId)
+      .where(sql`${t.publishedAt} is null and ${t.supersededAt} is null`),
+  ],
+);
+
+/**
+ * An old address of a page that changed its slug. Points at the page, not at
+ * a slug, so the target is always the page's current slug and a chain of
+ * renames is one hop. Never consulted when a live page owns the slug.
+ */
+export const pageRedirects = createTable(
+  "page_redirect",
+  (d) => ({
+    fromSlug: d.varchar({ length: 60 }).primaryKey(),
+    pageId: d
+      .varchar({ length: 255 })
+      .notNull()
+      .references(() => pages.id, { onDelete: "cascade" }),
+    createdAt: d
+      .timestamp({ withTimezone: true })
+      .$defaultFn(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  }),
+  (t) => [index(idx("page_redirect_page_idx")).on(t.pageId)],
+);
+
+/**
+ * An image an officer uploaded for a page, kept like board photos: re-encoded
+ * to WebP (1600 px wide at most) on upload, base64 text, immutable, served at
+ * `/page-image/{id}`. `etag` is a hash of the bytes.
+ */
+export const pageImages = createTable(
+  "page_image",
+  (d) => ({
+    id: d
+      .varchar({ length: 255 })
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    contentType: d.varchar({ length: 16 }).notNull(),
+    byteSize: d.integer().notNull(),
+    width: d.integer().notNull(),
+    height: d.integer().notNull(),
+    bytes: d.text().notNull(),
+    etag: d.varchar({ length: 32 }).notNull(),
+    createdById: d.varchar({ length: 255 }).references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: d
+      .timestamp({ withTimezone: true })
+      .$defaultFn(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  }),
+  (t) => [
+    check(
+      idx("page_image_size_check"),
+      sql`${t.byteSize} > 0 and ${t.byteSize} <= 1048576`,
+    ),
+    check(idx("page_image_type_check"), sql`${t.contentType} = 'image/webp'`),
+    check(
+      idx("page_image_dims_check"),
+      sql`${t.width} between 1 and 1600 and ${t.height} between 1 and 10000`,
+    ),
+  ],
+);
+
 export type ElectionPhase = "nominating" | "voting" | "closed" | "published";
 export type CandidateStatus = "pending" | "approved" | "rejected";
 
@@ -879,6 +988,12 @@ export const AUDIT_ACTIONS = [
   "election.delete",
   "export.election_tally",
   "board.remove_photo",
+  "page.create",
+  "page.publish",
+  "page.unpublish",
+  "page.restore",
+  "page.delete",
+  "page.upload_image",
   "export.roster",
   "export.attendance",
   "export.committee",
@@ -893,7 +1008,8 @@ export type AuditTargetType =
   | "kin_group"
   | "roster"
   | "cycle"
-  | "election";
+  | "election"
+  | "page";
 
 /**
  * Append-only record of officer actions. A row is written in the same

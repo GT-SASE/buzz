@@ -159,3 +159,8 @@ export const HEADSHOT_UPLOAD_LIMIT = {
   limit: 6,
   intervalMs: 60_000,
 } as const;
+
+export const PAGE_IMAGE_UPLOAD_LIMIT = {
+  limit: 12,
+  intervalMs: 60_000,
+} as const;

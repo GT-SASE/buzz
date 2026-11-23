@@ -127,6 +127,13 @@
       "when": 1795460000000,
       "tag": "0017_elections_v2",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1795470000000,
+      "tag": "0018_page_builder_v2",
+      "breakpoints": true
     }
   ]
 }
