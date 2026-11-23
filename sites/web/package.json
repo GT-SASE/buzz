@@ -26,6 +26,8 @@
     "@trpc/client": "^11.28.3",
     "@trpc/react-query": "^11.28.3",
     "@trpc/server": "^11.28.3",
+    "@ui-sdk/core": "0.1.0-beta.16",
+    "@ui-sdk/react": "0.1.0-beta.16",
     "@vercel/analytics": "^2.0.1",
     "@vercel/speed-insights": "^2.1.0",
     "class-variance-authority": "^0.7.1",

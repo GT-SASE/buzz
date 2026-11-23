@@ -127,3 +127,7 @@ Add a portal admin page
 
 Add a public CMS page
 No code: an officer opens `/portal/admin/pages`, writes Markdown, sets a slug and publishes; it is served at `/{slug}` by `(marketing)/[slug]/page.tsx` (loader `sites/web/src/data/pages.ts`, cached, tag `pages`). Slugs that collide with a static route are rejected: when you add a top-level route folder, add its name to `RESERVED_PAGE_SLUGS` in `packages/api/src/page-slug.ts` (a test enforces this). For a coded page add `(marketing)/<name>/page.tsx`.
+
+## ui-sdk
+
+`@ui-sdk/react` and `@ui-sdk/core` (pinned betas) are installed in `sites/web`; `globals.css` declares the `ui-sdk` layer and imports `@ui-sdk/core/web.css` into the lowest `ui-sdk` layer, not `components` as the ui-sdk docs show: web.css styles `[data-slot="button"]`, `input`, `select-*` and bare `a`, the same slots the vendored Watermelon UI uses, so in `components` it restyles the whole site. In `ui-sdk` the site's Preflight and utilities win, so a ui-sdk component needs its own utilities for padding and borders (Preflight resets them). Before using ui-sdk, follow the `ui-sdk` skill if it is installed, and read `sites/web/node_modules/@ui-sdk/react/docs/llms.txt`. To build a new component, also search `sites/web/node_modules/@ui-sdk/react/docs/core.md` by heading (it is large) and read `rendering.md` next to it. The vendored Watermelon UI in `sites/web/src/components/ui/` stays as is.
