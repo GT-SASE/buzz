@@ -1174,6 +1174,65 @@ describe.skipIf(!process.env.DATABASE_URL)("elections v2", () => {
     );
 
     it(
+      "passes over an election that cannot open without taking a lock, and the officer page says why",
+      async () => {
+        const election = await makeElection("stuck", {
+          opensAt: new Date(Date.now() - 1000),
+        });
+        let transactions = 0;
+        const counting = new Proxy(db, {
+          get(target, property, receiver) {
+            if (property === "transaction") {
+              return (...args: unknown[]) => {
+                transactions += 1;
+                return (
+                  target.transaction as (...a: unknown[]) => Promise<unknown>
+                )(...args);
+              };
+            }
+            return Reflect.get(target, property, receiver) as unknown;
+          },
+        });
+
+        for (let i = 0; i < 3; i++) {
+          const run = await runScheduledFlips(counting);
+          expect(run.skipped).toContainEqual({
+            id: election.id,
+            reason: "Approve at least one candidate before opening voting.",
+          });
+        }
+        // Not one transaction, so no row lock and no failed write, per read.
+        expect(transactions).toBe(0);
+        expect(await phaseOf(election.id)).toBe("nominating");
+
+        const listed = (await callerFor(officer).election.list()).find(
+          (row) => row.id === election.id,
+        )!;
+        expect(listed.stuck).toBe(
+          "Approve at least one candidate before opening voting.",
+        );
+
+        // Approving someone clears it, and the next read opens it.
+        const runner = await makeUser("stuck-runner");
+        await checkIn(runner);
+        const candidate = await callerFor(runner).election.nominate({
+          positionId: election.positions[0]!.id,
+          statement: "Ready.",
+        });
+        await callerFor(officer).election.setCandidateStatus({
+          candidateId: candidate!.id,
+          status: "approved",
+        });
+        const after = (await callerFor(officer).election.list()).find(
+          (row) => row.id === election.id,
+        )!;
+        expect(after.stuck).toBeNull();
+        expect(after.phase).toBe("voting");
+      },
+      SLOW,
+    );
+
+    it(
       "shows the officer list a due election already moved",
       async () => {
         const runner = await makeUser("ll-runner");
