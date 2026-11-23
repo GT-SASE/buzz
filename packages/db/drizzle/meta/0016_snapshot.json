@@ -1,5 +1,5 @@
 {
-  "id": "e381edea-9eb2-4dbb-8946-6b7dcb3d923c",
+  "id": "13305829-9cef-46a0-bb98-4c025406f46f",
   "prevId": "c90fffd0-eb62-4417-89fe-7ad6eaee8a38",
   "version": "7",
   "dialect": "postgresql",
@@ -1532,6 +1532,56 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.buzz_member_profile": {
+      "name": "buzz_member_profile",
+      "schema": "",
+      "columns": {
+        "userId": {
+          "name": "userId",
+          "type": "varchar(255)",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "graduationYear": {
+          "name": "graduationYear",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updatedAt": {
+          "name": "updatedAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "buzz_member_profile_userId_buzz_user_id_fk": {
+          "name": "buzz_member_profile_userId_buzz_user_id_fk",
+          "tableFrom": "buzz_member_profile",
+          "tableTo": "buzz_user",
+          "columnsFrom": [
+            "userId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "buzz_member_profile_graduation_year_check": {
+          "name": "buzz_member_profile_graduation_year_check",
+          "value": "\"buzz_member_profile\".\"graduationYear\" is null or \"buzz_member_profile\".\"graduationYear\" between 2000 and 2100"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.buzz_mentorship_enrollment": {

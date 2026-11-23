@@ -22,13 +22,20 @@ export function MemberCard({
   memberSince,
   totalPoints,
   totalEvents,
+  tierPoints,
+  term,
 }: {
   name: string;
   memberSince: string | null;
+  /** This semester, from the ledger: each semester starts from zero. */
   totalPoints: number;
   totalEvents: number;
+  /** All-time points. The tier is earned for good, so it never resets. */
+  tierPoints: number;
+  /** `Fall 2026`. */
+  term: string;
 }) {
-  const tier = tierFor(totalPoints);
+  const tier = tierFor(tierPoints);
 
   return (
     <div className="w-full max-w-[26rem]">
@@ -73,7 +80,7 @@ export function MemberCard({
               {totalPoints}
             </p>
             <p className="text-ink-muted text-body-sm mt-2">
-              Event points · {totalEvents}{" "}
+              Event points, {term} · {totalEvents}{" "}
               {totalEvents === 1 ? "event" : "events"}
             </p>
           </div>

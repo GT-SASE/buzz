@@ -8,6 +8,7 @@ export const PAGE_SIZE = 25;
 
 export const actionLabels: Record<AuditAction, string> = {
   "member.set_role": "Changed a role",
+  "member.set_graduation_year": "Changed a graduation year",
   "committee.set_status": "Moved an application",
   "event.manual_check_in": "Checked someone in",
   "event.remove_check_in": "Removed a check-in",
@@ -45,6 +46,9 @@ const text = (value: unknown) =>
 const role = (value: unknown) =>
   typeof value === "string" ? roleLabel(value as UserRole) : "?";
 
+const year = (value: unknown) =>
+  typeof value === "number" ? String(value) : "unset";
+
 const rows = (value: unknown) => {
   const count = typeof value === "number" ? value : 0;
   return `${count} ${count === 1 ? "row" : "rows"}`;
@@ -61,6 +65,8 @@ export function describeChange(row: {
   switch (row.action) {
     case "member.set_role":
       return `${role(before?.role)} to ${role(after?.role)}`;
+    case "member.set_graduation_year":
+      return `${year(before?.graduationYear)} to ${year(after?.graduationYear)}`;
     case "committee.set_status":
       return `${text(before?.status)} to ${text(after?.status)}, ${text(after?.cycle)}`;
     case "event.manual_check_in":

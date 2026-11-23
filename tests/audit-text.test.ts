@@ -30,6 +30,12 @@ describe("describeChange", () => {
         "Member to Officer",
       ],
       [
+        "member.set_graduation_year",
+        { graduationYear: null },
+        { graduationYear: 2028 },
+        "unset to 2028",
+      ],
+      [
         "committee.set_status",
         { status: "submitted", cycle: "fall-2026" },
         { status: "accepted", cycle: "fall-2026" },

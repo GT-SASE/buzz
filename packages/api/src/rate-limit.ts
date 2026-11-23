@@ -145,6 +145,11 @@ export const LEADERBOARD_PREF_LIMIT = {
   intervalMs: 60_000,
 } as const;
 
+export const PROFILE_LIMIT = {
+  limit: 20,
+  intervalMs: 60_000,
+} as const;
+
 export const NOTIFICATION_PREFS_LIMIT = {
   limit: 20,
   intervalMs: 60_000,

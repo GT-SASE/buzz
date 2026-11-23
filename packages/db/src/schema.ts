@@ -779,6 +779,7 @@ export const rateLimits = createTable(
  */
 export const AUDIT_ACTIONS = [
   "member.set_role",
+  "member.set_graduation_year",
   "committee.set_status",
   "event.manual_check_in",
   "event.remove_check_in",
@@ -953,4 +954,36 @@ export const leaderboardPreferences = createTable(
       .$defaultFn(() => /* @__PURE__ */ new Date())
       .notNull(),
   }),
+);
+
+/**
+ * What a member says about themselves that the account row does not hold: the
+ * year they graduate. A row exists only once someone has set something; no row
+ * means unset. Members set it in settings and officers can correct it.
+ *
+ * A table beside `user` for the reason `notification_preference` is: a new
+ * `user` column would break Auth.js sign-in on a preview that shares the
+ * production database before its migration has run. It is separate from
+ * `leaderboard_preference` because that one is only the member's own switch,
+ * while an officer also edits this one, with an audit row.
+ */
+export const memberProfiles = createTable(
+  "member_profile",
+  (d) => ({
+    userId: d
+      .varchar({ length: 255 })
+      .primaryKey()
+      .references(() => users.id, { onDelete: "cascade" }),
+    graduationYear: d.smallint(),
+    updatedAt: d
+      .timestamp({ withTimezone: true })
+      .$defaultFn(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  }),
+  (t) => [
+    check(
+      idx("member_profile_graduation_year_check"),
+      sql`${t.graduationYear} is null or ${t.graduationYear} between 2000 and 2100`,
+    ),
+  ],
 );

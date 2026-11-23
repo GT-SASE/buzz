@@ -241,7 +241,7 @@ describe.skipIf(!process.env.DATABASE_URL)("points ledger backfill", () => {
         }
 
         // The board also reads the opt-out table, which 0016 adds.
-        for (const statement of statementsOf("0016_leaderboard_preferences")) {
+        for (const statement of statementsOf("0016_leaderboard_and_profile")) {
           await run(tx, statement);
         }
 

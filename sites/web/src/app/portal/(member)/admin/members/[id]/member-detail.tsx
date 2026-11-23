@@ -291,6 +291,78 @@ function RolePicker({
   );
 }
 
+function GraduationYearEditor({
+  memberId,
+  displayName,
+}: {
+  memberId: string;
+  displayName: string;
+}) {
+  const utils = api.useUtils();
+  const years = api.member.graduationYears.useQuery({ userIds: [memberId] });
+  const saved = years.data?.[memberId] ?? null;
+  const [text, setText] = useState<string | null>(null);
+  const shown = text ?? (saved === null ? "" : String(saved));
+  const year = shown.trim() === "" ? null : Number(shown.trim());
+  const invalid =
+    year !== null && !(Number.isInteger(year) && year >= 2000 && year <= 2100);
+
+  const save = api.member.setGraduationYear.useMutation({
+    onSuccess: async () => {
+      setText(null);
+      await Promise.all([
+        utils.member.graduationYears.invalidate(),
+        utils.audit.log.invalidate(),
+      ]);
+    },
+  });
+
+  return (
+    <section className="border-hairline mt-12 border-t pt-6">
+      <h2 className="text-navy text-body font-semibold">Graduation year</h2>
+      <form
+        className="mt-3 flex flex-wrap items-end gap-3"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!invalid) save.mutate({ userId: memberId, graduationYear: year });
+        }}
+      >
+        <label className="grid gap-1">
+          <span className="text-ink-muted text-body-sm">
+            Class of, for {displayName}. Blank means unset.
+          </span>
+          <input
+            name="graduationYear"
+            inputMode="numeric"
+            placeholder="2028"
+            value={shown}
+            aria-invalid={invalid}
+            onChange={(event) => setText(event.target.value)}
+            className="border-hairline min-h-11 w-32 rounded-md border px-3 text-base tabular-nums"
+          />
+        </label>
+        <Button
+          type="submit"
+          disabled={save.isPending || invalid || year === saved}
+          className="bg-navy hover:bg-navy-deep min-h-11 rounded-md font-semibold text-white"
+        >
+          {save.isPending ? "Saving..." : "Save year"}
+        </Button>
+        {invalid && (
+          <p role="alert" className="text-destructive text-body-sm">
+            Enter a year from 2000 to 2100.
+          </p>
+        )}
+        {save.error && (
+          <p role="alert" className="text-destructive text-body-sm">
+            {save.error.message}
+          </p>
+        )}
+      </form>
+    </section>
+  );
+}
+
 function MemberSkeleton() {
   return (
     <div role="status" aria-busy="true">
@@ -446,7 +518,7 @@ export function MemberDetail({
       </div>
 
       <dl className="mt-8 grid grid-cols-2 gap-3 sm:gap-4">
-        <Figure label="Total points" value={String(totalPoints)} />
+        <Figure label="All-time points" value={String(totalPoints)} />
         <Figure label="Events attended" value={String(totalEvents)} />
       </dl>
 
@@ -482,6 +554,8 @@ export function MemberDetail({
           />
         )}
       </div>
+
+      <GraduationYearEditor memberId={member.id} displayName={displayName} />
 
       {/* An officer has nothing to do on a super admin's access. */}
       {(canManageRoles || member.role !== "SUPER_ADMIN") && (

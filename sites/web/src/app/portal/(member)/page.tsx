@@ -100,8 +100,10 @@ async function DashboardBody() {
             memberSince={
               stats.memberSince ? formatMonth(stats.memberSince) : null
             }
-            totalPoints={stats.totalPoints}
-            totalEvents={stats.totalEvents}
+            totalPoints={stats.semester.totalPoints}
+            totalEvents={stats.semester.totalEvents}
+            tierPoints={stats.totalPoints}
+            term={semesterLabel(semester(new Date()))}
           />
           <div className="xl:hidden">{checkInCard}</div>
           {kin && kin.status !== "withdrawn" && (

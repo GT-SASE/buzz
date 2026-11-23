@@ -379,6 +379,61 @@ describe.skipIf(!process.env.DATABASE_URL)("leaderboard", () => {
     SLOW,
   );
 
+  it(
+    "the card and the board agree on this semester; the tier is all-time",
+    async () => {
+      const gina = await makeUser("gina");
+      const fallA = await makeEvent("2031-09-05T18:00:00Z", 10);
+      const fallB = await makeEvent("2031-10-05T18:00:00Z", 20);
+      const spring = await makeEvent("2032-02-05T18:00:00Z", 40);
+      const lastYear = await makeEvent("2031-03-05T18:00:00Z", 80);
+      for (const event of [fallA, fallB, spring, lastYear]) {
+        await callerFor(officer).event.manualCheckIn({
+          eventId: event.id,
+          email: gina.email,
+        });
+      }
+
+      const read = async () => {
+        const home = (await callerFor(gina).event.home()).stats;
+        const board = await callerFor(gina).member.leaderboard({
+          period: "semester",
+        });
+        return { home, board: board.you };
+      };
+
+      // Fall 2031: the card shows the semester, and so does the board.
+      const fall = await read();
+      expect(fall.home.semester).toEqual({ totalPoints: 30, totalEvents: 2 });
+      expect(fall.board).toMatchObject({ totalPoints: 30, totalEvents: 2 });
+      expect(fall.home).toMatchObject({ totalPoints: 150, totalEvents: 4 });
+
+      // Spring 2032 starts from the spring event alone.
+      setSystemTime(new Date("2032-02-10T16:00:00Z"));
+      const springRead = await read();
+      expect(springRead.home.semester).toEqual({
+        totalPoints: 40,
+        totalEvents: 1,
+      });
+      expect(springRead.board).toMatchObject({
+        totalPoints: 40,
+        totalEvents: 1,
+      });
+
+      // A new semester with no check-ins yet: zero on the card, nothing on
+      // the board, and the all-time total the tier is read from has not moved.
+      setSystemTime(new Date("2032-09-01T16:00:00Z"));
+      const empty = await read();
+      expect(empty.home.semester).toEqual({ totalPoints: 0, totalEvents: 0 });
+      expect(empty.board).toBeNull();
+      for (const result of [fall, springRead, empty]) {
+        expect(result.home.totalPoints).toBe(150);
+      }
+      setSystemTime(NOW);
+    },
+    SLOW,
+  );
+
   it("refuses a signed-out caller", async () => {
     const caller = createCaller({
       db,

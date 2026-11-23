@@ -5,11 +5,9 @@ import {
   count,
   desc,
   eq,
-  gte,
   ilike,
   inArray,
   isNull,
-  lt,
   lte,
   max,
   min,
@@ -27,6 +25,11 @@ import {
   memberSince,
   pointsSum,
 } from "../aggregates";
+import {
+  attendanceEvents,
+  attendanceFilter,
+  attendancePoints,
+} from "../attendance";
 import { recordAudit } from "../audit";
 import { notFound } from "../errors";
 import { shapeLeaderboard } from "../leaderboard-rank";
@@ -36,6 +39,7 @@ import {
   assertRateLimit,
   EXPORT_ROSTER_LIMIT,
   LEADERBOARD_PREF_LIMIT,
+  PROFILE_LIMIT,
 } from "../rate-limit";
 import {
   adminProcedure,
@@ -48,6 +52,7 @@ import {
   eventCheckIns,
   events,
   leaderboardPreferences,
+  memberProfiles,
   pointsLedger,
   resumes,
   sessions,
@@ -72,6 +77,9 @@ function rosterFilter(search: string | undefined) {
   const pattern = `%${escapeLikePattern(search)}%`;
   return or(ilike(users.name, pattern), ilike(users.email, pattern));
 }
+
+/** Empty in the form means unset, which arrives here as null. */
+const graduationYearSchema = z.number().int().min(2000).max(2100).nullable();
 
 const rosterSort = z.enum(["points", "name", "recent"]);
 
@@ -524,8 +532,8 @@ export const memberRouter = createTRPCRouter({
       const window = leaderboardWindow(input.period, new Date());
 
       const board = (withPreferences: boolean) => {
-        const totalPoints = sql<number>`sum(${pointsLedger.delta})`;
-        const totalEvents = sql<number>`sum(case when ${pointsLedger.source} = 'check_in_removed' then -1 else 1 end)`;
+        const totalPoints = attendancePoints;
+        const totalEvents = attendanceEvents;
         const firstAt = sql<Date>`min(${pointsLedger.at})`;
 
         const totals = ctx.db
@@ -537,18 +545,7 @@ export const memberRouter = createTRPCRouter({
           })
           .from(pointsLedger)
           .innerJoin(events, eq(events.id, pointsLedger.eventId))
-          .where(
-            and(
-              inArray(pointsLedger.source, [
-                "check_in",
-                "manual_check_in",
-                "check_in_removed",
-              ]),
-              isNull(events.archivedAt),
-              window ? gte(events.startsAt, window.from) : undefined,
-              window ? lt(events.startsAt, window.to) : undefined,
-            ),
-          )
+          .where(attendanceFilter(window))
           .groupBy(pointsLedger.userId)
           .having(sql`${totalEvents} > 0`)
           .as("totals");
@@ -623,6 +620,114 @@ export const memberRouter = createTRPCRouter({
         viewerId,
         input.limit,
       );
+    }),
+
+  /** The caller's own profile. Nothing saved means unset. */
+  profile: protectedProcedure.query(async ({ ctx }) => {
+    try {
+      const [row] = await ctx.db
+        .select({ graduationYear: memberProfiles.graduationYear })
+        .from(memberProfiles)
+        .where(eq(memberProfiles.userId, ctx.session.user.id));
+      return { graduationYear: row?.graduationYear ?? null };
+    } catch (error) {
+      // A preview built before 0016 ran: no one has a profile yet.
+      if (isUndefinedTable(error)) return { graduationYear: null };
+      throw error;
+    }
+  }),
+
+  setProfile: protectedProcedure
+    .input(z.object({ graduationYear: graduationYearSchema }))
+    .mutation(async ({ ctx, input }) => {
+      await assertRateLimit(
+        ctx.db,
+        `member-profile:${ctx.session.user.id}`,
+        PROFILE_LIMIT,
+      );
+      const values = {
+        graduationYear: input.graduationYear,
+        updatedAt: new Date(),
+      };
+      await ctx.db
+        .insert(memberProfiles)
+        .values({ userId: ctx.session.user.id, ...values })
+        .onConflictDoUpdate({ target: memberProfiles.userId, set: values });
+      return { graduationYear: input.graduationYear };
+    }),
+
+  /** For the roster: graduation years of the members on the page. */
+  graduationYears: adminProcedure
+    .input(z.object({ userIds: z.array(z.string().min(1)).max(100) }))
+    .query(async ({ ctx, input }) => {
+      if (input.userIds.length === 0) return {};
+      try {
+        const rows = await ctx.db
+          .select({
+            userId: memberProfiles.userId,
+            graduationYear: memberProfiles.graduationYear,
+          })
+          .from(memberProfiles)
+          .where(inArray(memberProfiles.userId, input.userIds));
+        const years: Record<string, number> = {};
+        for (const row of rows) {
+          if (row.graduationYear !== null)
+            years[row.userId] = row.graduationYear;
+        }
+        return years;
+      } catch (error) {
+        if (isUndefinedTable(error)) return {};
+        throw error;
+      }
+    }),
+
+  /** An officer's correction. Logged like every other officer edit. */
+  setGraduationYear: adminProcedure
+    .input(
+      z.object({
+        userId: z.string().min(1),
+        graduationYear: graduationYearSchema,
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      return ctx.db.transaction(async (tx) => {
+        const [member] = await tx
+          .select({ email: users.email })
+          .from(users)
+          .where(eq(users.id, input.userId));
+        if (!member) notFound("Member");
+
+        // Locked so the logged "before" is the year this edit replaces.
+        const [before] = await tx
+          .select({ graduationYear: memberProfiles.graduationYear })
+          .from(memberProfiles)
+          .where(eq(memberProfiles.userId, input.userId))
+          .for("update");
+        const was = before?.graduationYear ?? null;
+
+        const values = {
+          graduationYear: input.graduationYear,
+          updatedAt: new Date(),
+        };
+        await tx
+          .insert(memberProfiles)
+          .values({ userId: input.userId, ...values })
+          .onConflictDoUpdate({ target: memberProfiles.userId, set: values });
+
+        // The same year again changes nothing, so it logs nothing.
+        if (was !== input.graduationYear) {
+          await recordAudit(tx, {
+            actorId: ctx.session.user.id,
+            action: "member.set_graduation_year",
+            targetType: "member",
+            targetId: input.userId,
+            targetLabel: member.email,
+            before: { graduationYear: was },
+            after: { graduationYear: input.graduationYear },
+          });
+        }
+        return { graduationYear: input.graduationYear };
+      });
     }),
 
   /** Whether the caller's name is hidden on the board. Unsaved means shown. */

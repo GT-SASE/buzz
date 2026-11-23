@@ -197,7 +197,7 @@ describe("AuditView audit log", () => {
       "off@gatech.edu",
     ]);
     const actions = screen.getByLabelText("Action") as HTMLSelectElement;
-    expect(actions.options.length).toBe(12);
+    expect(actions.options.length).toBe(13);
   });
 });
 
