@@ -46,7 +46,7 @@ sites/web/src/components/site/  editorial components built on ui
 sites/web/src/data/             content constants and cached loaders (chapter-events.ts, pages.ts)
 sites/web/src/trpc/             tRPC client/server glue for the app
 tests/                          all tests (bun test); tests/setup, tests/helpers, tests/mocks
-scripts/                        vercel-build.mjs, smoke.mjs, uptime.mjs, site-url.mjs, install-gitleaks.sh, bench-procedures.ts, fonts/
+scripts/                        vercel-build.mjs, bundle-budget.mjs (per-route gzip budget, raise a line on purpose), axe-marketing.mjs (axe on built marketing routes), smoke.mjs, uptime.mjs, site-url.mjs, install-gitleaks.sh, bench-procedures.ts, fonts/
 ```
 
 ## Commands (run from repo root, Bun only)

@@ -1,6 +1,6 @@
 {
   "name": "@buzz/discord-bot",
-  "version": "2.5.0",
+  "version": "3.0.0",
   "private": true,
   "type": "module",
   "description": "Discord bot that tracks events, tasks and deadlines for a student organisation's events team.",
