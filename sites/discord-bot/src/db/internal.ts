@@ -101,19 +101,27 @@ export function raise(code: string, message: string): never {
  * Runs `work`, abandoning it at the client's deadline as `query` does. One abandoned
  * may still finish on the server, up to the role's statement and idle-in-transaction
  * timeouts, which roll a transaction back. Nothing is ever sent twice.
+ *
+ * A write that opened its own connection loses it at the deadline, so the server rolls
+ * its transaction back and no COMMIT can follow; a statement already running is
+ * cancelled by the statement timeout the connection was given. A caller that is told
+ * `unavailable` may still have had a single statement land, as with any lost reply.
  */
 async function withinDeadline<T>(
   db: DbClient,
-  work: () => Promise<T>,
+  work: (signal: AbortSignal) => Promise<T>,
 ): Promise<DbResult<T>> {
   let timer: ReturnType<typeof setTimeout> | undefined;
+  const controller = new AbortController();
   const deadline = new Promise<DbResult<T>>((resolve) => {
     timer = setTimeout(() => {
+      // Aborting drops the write's connection, so its transaction rolls back.
+      controller.abort();
       resolve(failure("unavailable"));
     }, db.deadlineMs);
   });
   const outcome = Promise.resolve()
-    .then(work)
+    .then(() => work(controller.signal))
     .then((value): DbResult<T> => ({ ok: true, value }), failureFromError);
   try {
     return await Promise.race([outcome, deadline]);
@@ -127,8 +135,10 @@ export function write<T>(
   db: DbClient,
   work: (orm: BotDb) => Promise<T>,
 ): Promise<DbResult<T>> {
-  return withinDeadline(db, () =>
-    db.open === undefined ? work(db.orm) : db.open(work),
+  return withinDeadline(db, (signal) =>
+    db.open === undefined
+      ? work(db.orm)
+      : db.open(work, { signal, deadlineMs: db.deadlineMs }),
   );
 }
 
@@ -141,10 +151,13 @@ export function transact<T>(
   db: DbClient,
   work: (tx: BotTx) => Promise<T>,
 ): Promise<DbResult<T>> {
-  return withinDeadline(db, () =>
+  return withinDeadline(db, (signal) =>
     db.open === undefined
       ? db.orm.transaction(work)
-      : db.open((orm) => orm.transaction(work)),
+      : db.open((orm) => orm.transaction(work), {
+          signal,
+          deadlineMs: db.deadlineMs,
+        }),
   );
 }
 

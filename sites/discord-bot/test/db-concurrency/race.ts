@@ -38,6 +38,8 @@ interface RaceDatabase {
   readonly observer: pg.Client;
   /** The observer, in the shape test/db/fixtures.ts takes. */
   readonly connection: Connection;
+  /** The connection string of the bot's login on this database. */
+  readonly botUrl: string;
   /** The bot's own client, logged in as bot_app. */
   readonly db: DbClient;
   /** A connection logged in as bot_app, for statements the bot never sends. */
@@ -224,6 +226,9 @@ export function raceDatabase(): RaceDatabase {
     },
     get connection() {
       return pgConnection(ready(observer));
+    },
+    get botUrl() {
+      return botUrl;
     },
     get db() {
       return ready(bot);

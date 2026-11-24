@@ -6,7 +6,8 @@
 
 import { Pool, neon, types } from "@neondatabase/serverless";
 import { drizzle } from "drizzle-orm/neon-serverless";
-import type { BotDb, Runner } from "./client.ts";
+import type { DbClient, Runner } from "./client.ts";
+import { openOn, statementTimeoutSql } from "./open.ts";
 import { TYPE_PARSERS } from "./parsers.ts";
 import * as schema from "./schema.ts";
 
@@ -34,18 +35,29 @@ export function neonRunner(connectionString: string): Runner {
  */
 export function neonOpen(
   connectionString: string,
-): <T>(work: (orm: BotDb) => Promise<T>) => Promise<T> {
-  return async (work) => {
+): NonNullable<DbClient["open"]> {
+  return openOn(async (deadlineMs) => {
     const pool = new Pool({
       connectionString,
       max: 1,
       connectionTimeoutMillis: 3000,
     });
     pool.on("error", () => undefined);
-    try {
-      return await work(drizzle({ client: pool, schema }));
-    } finally {
+    const client = await pool.connect().catch(async (error: unknown) => {
       await pool.end().catch(() => undefined);
-    }
-  };
+      throw error;
+    });
+    await client.query(statementTimeoutSql(deadlineMs));
+    return {
+      orm: drizzle({ client, schema }),
+      close: async () => {
+        client.release();
+        await pool.end();
+      },
+      destroy: () => {
+        client.release(true);
+        void pool.end().catch(() => undefined);
+      },
+    };
+  });
 }

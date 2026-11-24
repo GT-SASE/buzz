@@ -959,6 +959,30 @@ describe("claimInteraction", () => {
     await refused(OTHER_ROLE, "DELETE FROM discord_bot.interaction_claims");
   });
 
+  it("lets bot_app delete a claim only once it is a day old, whatever it asks for", async () => {
+    const aged = async (hours: number) => {
+      const id = fakeId();
+      await db.query(
+        `INSERT INTO discord_bot.interaction_claims (interaction_id, claimed_at)
+         VALUES ($1, now() - make_interval(hours => $2))`,
+        [id, hours],
+      );
+      return id;
+    };
+    const old = await aged(25);
+    const recent = await aged(1);
+    await asBot(
+      "DELETE FROM discord_bot.interaction_claims WHERE interaction_id = ANY($1)",
+      [[old, recent]],
+    );
+    await asBot("DELETE FROM discord_bot.interaction_claims");
+    const { rows } = await db.query<{ interaction_id: string }>(
+      "SELECT interaction_id FROM discord_bot.interaction_claims WHERE interaction_id = ANY($1)",
+      [[old, recent]],
+    );
+    expect(rows.map((row) => row.interaction_id)).toEqual([recent]);
+  });
+
   it("expires claims older than a day and keeps the rest", async () => {
     const claimAged = async (hours: number) => {
       const id = fakeId();

@@ -1,4 +1,9 @@
+import pg from "pg";
 import { describe, expect, it } from "bun:test";
+import { createDbClient, withDeadline } from "../../src/db/client.ts";
+import { transact } from "../../src/db/internal.ts";
+import { openOn, statementTimeoutSql } from "../../src/db/open.ts";
+import { pgOrm, pgSql } from "../support/sql-client.ts";
 import {
   assignEventStep,
   claimEventReminder,
@@ -10,6 +15,14 @@ import {
 } from "../../src/db/guild-config.ts";
 import { claimInteraction } from "../../src/db/interaction-claims.ts";
 import { claimReminder } from "../../src/db/reminders.ts";
+import { sql } from "drizzle-orm";
+import {
+  beginJobRun,
+  finishJobRun,
+  type JobName,
+} from "../../src/db/job-runs.ts";
+import { editTask, getTask } from "../../src/db/tasks.ts";
+import { interactionClaims } from "../../src/db/schema.ts";
 import { todayInZone, type DateOnly } from "../../src/lib/dates.ts";
 import { insertEvent, insertGuild, insertTask } from "../db/fixtures.ts";
 import { fakeId } from "../db/harness.ts";
@@ -188,5 +201,147 @@ describe("the same write from several instances at once", () => {
       [guildId],
     );
     expect(rows).toEqual([{ n: 1 }]);
+  });
+});
+
+/**
+ * A caller that gave up on a write must not leave it running: no COMMIT after the caller
+ * was told it failed, and no lock held for the rest of the transaction.
+ */
+describe("a write that outlives its deadline", () => {
+  const LOCK = "hashtextextended('deadline_test', 0)";
+  const slowClient = () =>
+    withDeadline(
+      createDbClient(
+        pgSql(new pg.Pool({ connectionString: db.botUrl })),
+        undefined,
+        openOn(async (deadlineMs) => {
+          const pool = new pg.Pool({ connectionString: db.botUrl, max: 1 });
+          const client = await pool.connect();
+          await client.query(statementTimeoutSql(deadlineMs));
+          return {
+            orm: pgOrm(client),
+            close: async () => {
+              client.release();
+              await pool.end();
+            },
+            destroy: () => {
+              client.release(true);
+              void pool.end().catch(() => undefined);
+            },
+          };
+        }),
+      ),
+      400,
+    );
+  const claimed = async (interactionId: string) =>
+    (
+      await db.observer.query(
+        "SELECT 1 FROM discord_bot.interaction_claims WHERE interaction_id = $1",
+        [interactionId],
+      )
+    ).rowCount;
+  const lockFree = async () =>
+    (
+      await db.observer.query<{ ok: boolean }>(
+        `SELECT pg_try_advisory_lock(${LOCK}) AS ok`,
+      )
+    ).rows[0]?.ok === true;
+  const idleInTransaction = async () =>
+    (
+      await db.observer.query<{ n: number }>(
+        "SELECT count(*)::int AS n FROM pg_stat_activity WHERE usename = 'bot_app' AND state LIKE 'idle in transaction%'",
+      )
+    ).rows[0]?.n;
+
+  it("a slow statement is cancelled by the server, leaving no row and no lock", async () => {
+    const interactionId = fakeId();
+    const result = await transact(slowClient(), async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(${sql.raw(LOCK)})`);
+      await tx.insert(interactionClaims).values({ interactionId });
+      await tx.execute(sql`select pg_sleep(3)`);
+    });
+    expect(result).toMatchObject({
+      ok: false,
+      error: { category: "unavailable" },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(await lockFree()).toBe(true);
+    await db.observer.query("SELECT pg_advisory_unlock_all()");
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+    expect(await claimed(interactionId)).toBe(0);
+  });
+
+  it("a transaction idle between statements is dropped, so it cannot commit later", async () => {
+    const interactionId = fakeId();
+    const result = await transact(slowClient(), async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(${sql.raw(LOCK)})`);
+      await tx.insert(interactionClaims).values({ interactionId });
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      await tx.execute(sql`select 1`);
+    });
+    expect(result).toMatchObject({
+      ok: false,
+      error: { category: "unavailable" },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(await lockFree()).toBe(true);
+    await db.observer.query("SELECT pg_advisory_unlock_all()");
+    expect(await idleInTransaction()).toBe(0);
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    expect(await claimed(interactionId)).toBe(0);
+  });
+});
+
+describe("the same transaction from several instances at once", () => {
+  it("only one of several edits of one task, all at the version they read, lands", async () => {
+    const guild = await insertGuild(db.connection);
+    const eventId = await insertEvent(db.connection, guild);
+    const taskId = await insertTask(db.connection, guild, eventId);
+    const read = await getTask(db.db, { guildId: guild.guildId, taskId });
+    if (!read.ok || read.value === null) throw new Error("task unreadable");
+    const task = read.value;
+    const results = await Promise.all(
+      Array.from({ length: ATTEMPTS }, (_, index) =>
+        editTask(db.db, {
+          guildId: guild.guildId,
+          taskId,
+          expectedUpdatedAt: task.updated_at,
+          description: `Edit ${String(index)}`,
+          dueDate: task.due_date,
+          assigneeId: fakeId(),
+          actorId: fakeId(),
+        }),
+      ),
+    );
+    expect(outcomes(results)).toBe(1);
+    expect(
+      results
+        .filter((result) => !result.ok)
+        .every((result) => result.error.category === "not_found"),
+    ).toBe(true);
+  });
+
+  it("two start and finish pairs of one job never leave two runs open or a success unseen", async () => {
+    for (let round = 0; round < 10; round += 1) {
+      const jobName = `pair_${fakeId()}` as JobName;
+      const start = () =>
+        beginJobRun(db.db, {
+          jobName,
+          staleAfterSeconds: 120,
+          slotStart: new Date(Date.now() - 3_600_000),
+        });
+      const first = await start();
+      const id = first.ok ? first.value : null;
+      if (id === null) throw new Error("no first run");
+      const [finished, again, third] = await Promise.all([
+        finishJobRun(db.db, { id, now: new Date(), results: {}, error: null }),
+        start(),
+        start(),
+      ]);
+      expect(finished.ok).toBe(true);
+      expect(again).toEqual({ ok: true, value: null });
+      expect(third).toEqual({ ok: true, value: null });
+    }
   });
 });

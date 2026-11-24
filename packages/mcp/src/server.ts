@@ -77,7 +77,7 @@ export function createServer(serverVersion = "0.0.0"): McpServer {
     "buzz_db_schema",
     {
       description:
-        "Describes both databases. buzz: Drizzle tables from packages/db/src/schema.ts (columns, PKs, FKs, unique constraints, indexes, checks). bot: the Discord bot's tables, enums, domains and functions (with signatures), read from an in-memory PGlite after applying sites/discord-bot/db/migrations, grouped by schema (a failing migration is returned as the error).",
+        "Describes both databases. buzz: Drizzle tables from packages/db/src/schema.ts (columns, PKs, FKs, unique constraints, indexes, checks). bot: the Discord bot's tables, enums, domains and functions (with signatures), read from an in-memory PGlite after applying sites/discord-bot/db/drizzle, grouped by schema (a failing migration is returned as the error).",
       inputSchema: {
         table: z
           .string()
@@ -98,7 +98,7 @@ export function createServer(serverVersion = "0.0.0"): McpServer {
     "buzz_migrations",
     {
       description:
-        "Lists buzz Drizzle migrations (packages/db/drizzle) and the bot's dbmate migrations (sites/discord-bot/db/migrations), each with its process. Bot migrations in production are a manual owner step.",
+        "Lists buzz Drizzle migrations (packages/db/drizzle) and the bot's Drizzle migrations (sites/discord-bot/db/drizzle), each with its process. Bot migrations in production are a manual owner step.",
     },
     guarded(() => migrations()),
   );

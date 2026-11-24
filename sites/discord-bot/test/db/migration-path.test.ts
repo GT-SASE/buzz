@@ -117,6 +117,15 @@ const SNAPSHOT = `
   SELECT 'schema acl', nspname, coalesce(nspacl::text, '')
     FROM pg_namespace WHERE nspname = 'discord_bot'
   UNION ALL
+  SELECT 'rls', c.relname, format('enabled %s | forced %s', c.relrowsecurity, c.relforcerowsecurity)
+    FROM pg_class c
+   WHERE c.relnamespace = 'discord_bot'::regnamespace AND c.relkind = 'r'
+     AND c.relname NOT IN ('schema_migrations', 'drizzle_migrations')
+  UNION ALL
+  SELECT 'policy', format('%s.%s', tablename, policyname),
+         format('%s | %s | %s | %s', cmd, roles, coalesce(qual, ''), coalesce(with_check, ''))
+    FROM pg_policies WHERE schemaname = 'discord_bot'
+  UNION ALL
   SELECT 'role', rolname,
          format('login %s | super %s | createrole %s | inherit %s | settings %s', rolcanlogin, rolsuper, rolcreaterole, rolinherit,
                 coalesce((SELECT array_agg(s ORDER BY s)::text FROM pg_db_role_setting, unnest(setconfig) s WHERE setrole = r.oid), ''))

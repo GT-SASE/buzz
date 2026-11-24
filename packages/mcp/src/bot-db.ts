@@ -6,29 +6,26 @@ import { repoPath } from "./repo";
 
 type Row = Record<string, string | boolean | null>;
 
-/** Each migration's `-- migrate:up` part, in the order dbmate runs them. */
+/** Each Drizzle migration's SQL, in the order drizzle-kit runs them. */
 function migrationsUp(): { name: string; sql: string }[] {
   const dir = repoPath(BOT_MIGRATIONS_DIR);
   return readdirSync(dir)
     .filter((f) => f.endsWith(".sql"))
     .sort()
-    .map((name) => {
-      const text = readFileSync(path.join(dir, name), "utf8");
-      const sql =
-        /^-- migrate:up[^\n]*\n([\s\S]*?)(?:^-- migrate:down|$(?![\s\S]))/m.exec(
-          text,
-        )?.[1];
-      if (sql === undefined)
-        throw new Error(`${name} is not a dbmate migration`);
-      return { name, sql };
-    });
+    .map((name) => ({
+      name,
+      sql: readFileSync(path.join(dir, name), "utf8").replaceAll(
+        "--> statement-breakpoint",
+        "",
+      ),
+    }));
 }
 
 const USER_SCHEMA = `n.nspname NOT IN ('pg_catalog', 'information_schema') AND n.nspname NOT LIKE 'pg\\_%'`;
 
 /**
  * Applies the bot's migrations to an in-memory PGlite, each in its own
- * transaction as dbmate does, then describes what they made from the catalogs.
+ * transaction, then describes what they made from the catalogs.
  * A migration that fails to apply throws; there is no partial output.
  */
 async function describe(): Promise<string> {

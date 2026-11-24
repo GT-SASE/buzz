@@ -41,7 +41,7 @@ What the database still enforces, whichever login writes, because it is a trigge
 - A new event gets its steps. A guild's time zone has to be one the server knows.
 - Every Discord ID is checked by the `discord_id` domain, and the `CHECK` constraints keep rows in step with their status.
 
-The grants are by column wherever a write changes only some. `events` and `tasks` keep the table-wide `INSERT` and `UPDATE` they had before. The only `DELETE` is on `interaction_claims`, because the daily cron must remove claims older than a day (an interaction token lasts 15 minutes) and a table with no history to lose is the one place that is safe. `task_reassignments` can be inserted into and not read, and `row_versions` not at all.
+The grants are by column wherever a write changes only some. `events` and `tasks` keep the table-wide `INSERT` and `UPDATE` they had before. The only `DELETE` is on `interaction_claims`, because the daily cron must remove claims older than a day (an interaction token lasts 15 minutes). Row-level security limits it to exactly those rows: a `DELETE` by `bot_app` of a newer claim removes nothing. The table's owner is not subject to the policy. `task_reassignments` can be inserted into and not read, and `row_versions` not at all.
 
 What only the code guarantees, and a hostile login could skip: the config version check, the audit row of a config change, the hand-off and reminder claim tokens, the assignee limit of a step, and the order in which steps may be done. These were enforced for a hostile login too when functions held the writes. The table above shows what that costs, and [After a `DATABASE_URL` leak](#after-a-database_url-leak) says what to check.
 
@@ -102,7 +102,7 @@ SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE usename = 'bot_app'
 
 #### After a `DATABASE_URL` leak
 
-Rotate `bot_app`'s password as above. The login cannot delete rows, read `discord_bot.row_versions`, touch buzz's tables in `public`, undelete a row or reopen a closed event, but it can change events, tasks, settings and reminder state directly in the tables, in the columns it has grants on, with none of the checks the bot's code makes. Compare `guild_config` and `managed_channels` with `discord_bot.row_versions` and `config_audit` from before the leak, and look for a `guild_config.version` that is ahead of its latest `config_audit.version_after`, which means a change that wrote no audit row, fix anything wrong with `/setup` or `/config`, and check that the next `reminders` row in `job_runs` succeeds. Do not trust `actor_id` or `created_by` for that window.
+Rotate `bot_app`'s password as above. The login cannot delete rows other than interaction claims more than a day old, read `discord_bot.row_versions`, touch buzz's tables in `public`, undelete a row or reopen a closed event, but it can change events, tasks, settings and reminder state directly in the tables, in the columns it has grants on, with none of the checks the bot's code makes. Compare `guild_config` and `managed_channels` with `discord_bot.row_versions` and `config_audit` from before the leak, and look for a `guild_config.version` that is ahead of its latest `config_audit.version_after`, which means a change that wrote no audit row, fix anything wrong with `/setup` or `/config`, and check that the next `reminders` row in `job_runs` succeeds. Do not trust `actor_id` or `created_by` for that window.
 
 #### After a bot token leak
 

@@ -33,7 +33,10 @@ export interface DbClient {
   readonly run: Runner;
   readonly orm: BotDb;
   /** Runs a write on a connection opened for it and closed after. Without it, `orm`. */
-  readonly open?: <T>(work: (orm: BotDb) => Promise<T>) => Promise<T>;
+  readonly open?: <T>(
+    work: (orm: BotDb) => Promise<T>,
+    limits: { signal: AbortSignal; deadlineMs: number },
+  ) => Promise<T>;
   readonly deadlineMs: number;
 }
 

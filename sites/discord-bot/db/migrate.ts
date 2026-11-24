@@ -131,13 +131,21 @@ export async function adoptDbmateDatabase(
 
 /** Adopts a dbmate database if this is one, then applies every newer migration. */
 export async function migrateBotDatabase(client: pg.Client): Promise<Adoption> {
-  const adoption = await adoptDbmateDatabase(client);
-  await migrate(drizzle(client), {
-    migrationsFolder: MIGRATIONS_FOLDER,
-    migrationsSchema: MIGRATIONS_SCHEMA,
-    migrationsTable: MIGRATIONS_TABLE,
-  });
-  return adoption;
+  // One run at a time on this database, for adopting and for Drizzle's own check of
+  // what is pending, which two runs would both pass before either applied 0001.
+  const key = "hashtextextended('discord_bot_migrate', 0)";
+  await client.query(`SELECT pg_advisory_lock(${key})`);
+  try {
+    const adoption = await adoptDbmateDatabase(client);
+    await migrate(drizzle(client), {
+      migrationsFolder: MIGRATIONS_FOLDER,
+      migrationsSchema: MIGRATIONS_SCHEMA,
+      migrationsTable: MIGRATIONS_TABLE,
+    });
+    return adoption;
+  } finally {
+    await client.query(`SELECT pg_advisory_unlock(${key})`);
+  }
 }
 
 if (import.meta.main) {
