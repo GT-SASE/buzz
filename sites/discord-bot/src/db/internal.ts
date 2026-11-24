@@ -1,9 +1,10 @@
 /**
- * Building and running statements. Lint keeps this file inside src/db/, so code
- * elsewhere holds a client and calls the functions there, but writes no SQL.
+ * Building and running statements, and the transactions writes run in. Lint keeps this
+ * file inside src/db/, so code elsewhere holds a client and calls the functions there,
+ * but writes no SQL.
  */
 
-import type { DbClient, Row } from "./client.ts";
+import type { BotDb, BotTx, DbClient, Row } from "./client.ts";
 import { failure, failureFromError, type DbResult } from "./errors.ts";
 import type { CappedList } from "./types.ts";
 
@@ -77,21 +78,92 @@ export async function query<T = Row>(
 }
 
 /**
- * The value of `select discord_bot.f(...) as value`. Write the whole statement, with each
- * argument named, so it reads on its own.
+ * What the database's own checks raise, raised from TypeScript. It carries a SQLSTATE and
+ * a severity as a server error does, so `failureFromError` reads it the same way, and
+ * throwing it inside a transaction rolls the transaction back.
  */
-export async function callFunction<T>(
-  db: DbClient,
-  statement: Query,
-): Promise<DbResult<T>> {
-  const rows = await query<{ value: T }>(db, statement);
-  if (!rows.ok) {
-    return rows;
+class RaisedError extends Error {
+  readonly severity = "ERROR";
+  readonly code: string;
+
+  constructor(code: string, message: string) {
+    super(message);
+    this.code = code;
   }
-  const [row, ...others] = rows.value;
-  return row === undefined || others.length > 0
-    ? failure("unexpected")
-    : { ok: true, value: row.value };
+}
+
+/** Fails the transaction it is thrown in, as RAISE EXCEPTION did, with a SQLSTATE. */
+export function raise(code: string, message: string): never {
+  throw new RaisedError(code, message);
+}
+
+/**
+ * Runs `work`, abandoning it at the client's deadline as `query` does. One abandoned
+ * may still finish on the server, up to the role's statement and idle-in-transaction
+ * timeouts, which roll a transaction back. Nothing is ever sent twice.
+ *
+ * A write that opened its own connection loses it at the deadline, so the server rolls
+ * its transaction back and no COMMIT can follow; a statement already running is
+ * cancelled by the statement timeout the connection was given. A caller that is told
+ * `unavailable` may still have had a single statement land, as with any lost reply.
+ */
+async function withinDeadline<T>(
+  db: DbClient,
+  work: (signal: AbortSignal) => Promise<T>,
+): Promise<DbResult<T>> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const controller = new AbortController();
+  const deadline = new Promise<DbResult<T>>((resolve) => {
+    timer = setTimeout(() => {
+      // Aborting drops the write's connection, so its transaction rolls back.
+      controller.abort();
+      resolve(failure("unavailable"));
+    }, db.deadlineMs);
+  });
+  const outcome = Promise.resolve()
+    .then(() => work(controller.signal))
+    .then((value): DbResult<T> => ({ ok: true, value }), failureFromError);
+  try {
+    return await Promise.race([outcome, deadline]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** One write statement built with Drizzle, which needs no transaction around it. */
+export function write<T>(
+  db: DbClient,
+  work: (orm: BotDb) => Promise<T>,
+): Promise<DbResult<T>> {
+  return withinDeadline(db, (signal) =>
+    db.open === undefined
+      ? work(db.orm)
+      : db.open(work, { signal, deadlineMs: db.deadlineMs }),
+  );
+}
+
+/**
+ * A write in a transaction, as a database function used to be: it takes its row locks, checks
+ * what it read and writes, all or nothing. Throw `raise(...)` to refuse. The quota
+ * triggers need the default isolation, read committed, so none is set here.
+ */
+export function transact<T>(
+  db: DbClient,
+  work: (tx: BotTx) => Promise<T>,
+): Promise<DbResult<T>> {
+  return withinDeadline(db, (signal) =>
+    db.open === undefined
+      ? db.orm.transaction(work)
+      : db.open((orm) => orm.transaction(work), {
+          signal,
+          deadlineMs: db.deadlineMs,
+        }),
+  );
+}
+
+/** The rows of a raw statement run through Drizzle, whichever driver ran it. */
+export function rowsOf<T = Row>(result: unknown): T[] {
+  return (result as { rows: T[] }).rows;
 }
 
 /** The first row, or null. For a read by key. */

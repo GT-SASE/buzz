@@ -2,25 +2,52 @@
  * The per-event workflow: Budget Sheet, Engage post, Engage picture added, Budget
  * approved, Slides and Food pickup, the people on each, the one-time ping that follows a
  * finished step, the undo of one, and the claim cycle of the event reminders. Every write
- * is a database function, which locks the step, checks the event and enforces the limits,
- * so nothing here can be raced past.
+ * is a transaction that locks the step, checks the event and enforces the limits, so
+ * nothing here can be raced past: the step is locked before its event, always, so two
+ * writes on one step queue on it and cannot deadlock.
  *
  * A write on an event that is unknown, in another guild or deleted fails as `not_found`,
  * and on a closed event as `parent_unavailable`. Who may make a write is decided before
- * calling it: these functions check only that the rows allow it.
+ * calling it: these writes check only that the rows allow it.
  */
 
 import type { DateOnly } from "../lib/dates.ts";
 import { STALE_CLAIM_MS } from "../reminders/plan.ts";
-import type { DbClient } from "./client.ts";
+import {
+  and,
+  count,
+  eq,
+  exists,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  ne,
+  notExists,
+  or,
+  sql as dsql,
+  type SQL,
+} from "drizzle-orm";
+import type { BotTx, DbClient } from "./client.ts";
 import { failure, refused, type DbResult } from "./errors.ts";
 import {
-  callFunction,
   capped,
   nullAsNotFound,
   query,
+  raise,
   sql,
+  transact,
+  write,
 } from "./internal.ts";
+import { eventReminderDayOpen, fromAllowedEvent } from "./reminder-rules.ts";
+import {
+  eventReminderLog,
+  eventStepAssignees,
+  eventSteps,
+  events,
+  guildConfig,
+} from "./schema.ts";
 import {
   ASSIGNABLE_STEP_KINDS,
   EVENT_STEP_KINDS,
@@ -30,6 +57,7 @@ import {
   type EventReminderCandidate,
   type EventReminderKind,
   type EventReminderStaleClaim,
+  type EventStepKind,
   type EventStep,
   type EventWorkflow,
   type HandoffStepKind,
@@ -39,9 +67,9 @@ import {
 } from "./types.ts";
 import { MAX_ID_LIST, isDbDate, isPickupTime } from "./validate.ts";
 
-/** Enforced by assign_event_step: see the baseline migration. */
+/** Enforced by `assignEventStep`, under the step's row lock. */
 export const MAX_ASSIGNEES_PER_STEP = 10;
-/** Enforced by assign_event_step, for Food pickup alone. */
+/** Enforced by `assignEventStep`, for Food pickup alone. */
 export const MAX_FOOD_PICKUP_ASSIGNEES = 15;
 
 const MAX_USER_STEPS = 100;
@@ -172,15 +200,165 @@ export async function assignEventStep(
   input: StepAssignment,
 ): Promise<DbResult<"added" | "needed_again" | "already_on">> {
   return nullAsNotFound(
-    await callFunction<"added" | "needed_again" | "already_on" | null>(
-      db,
-      sql`select discord_bot.assign_event_step(p_event_id => ${input.eventId},
-        p_guild_id => ${input.guildId},
-        p_kind => ${input.kind},
-        p_user_id => ${input.userId},
-        p_actor_id => ${input.actorId}) as value`,
-    ),
+    await transact(db, async (tx) => {
+      if ((input.kind as EventStepKind) === "budget_approved") {
+        raise("22023", "this step has no assignees");
+      }
+      if (
+        (await lockStepOnLiveEvent(tx, input, input.kind, "share")) === null
+      ) {
+        return null;
+      }
+
+      const [already] = await tx
+        .select({ id: eventStepAssignees.id })
+        .from(eventStepAssignees)
+        .where(
+          and(
+            eq(eventStepAssignees.eventId, input.eventId),
+            eq(eventStepAssignees.kind, input.kind),
+            eq(eventStepAssignees.userId, input.userId),
+            isNull(eventStepAssignees.removedAt),
+          ),
+        )
+        .limit(1);
+      if (already !== undefined) {
+        return "already_on" as const;
+      }
+
+      const [{ people } = { people: 0 }] = await tx
+        .select({ people: count() })
+        .from(eventStepAssignees)
+        .where(
+          and(
+            eq(eventStepAssignees.eventId, input.eventId),
+            eq(eventStepAssignees.kind, input.kind),
+            isNull(eventStepAssignees.removedAt),
+          ),
+        );
+      const most =
+        input.kind === "food_pickup"
+          ? MAX_FOOD_PICKUP_ASSIGNEES
+          : MAX_ASSIGNEES_PER_STEP;
+      if (people >= most) {
+        raise("CF431", "step assignee limit reached");
+      }
+
+      await tx.insert(eventStepAssignees).values({
+        eventId: input.eventId,
+        guildId: input.guildId,
+        kind: input.kind,
+        userId: input.userId,
+        assignedBy: input.actorId,
+      });
+
+      if (input.kind === "food_pickup") {
+        await syncFoodPickupStep(tx, input.eventId, input.actorId);
+      }
+
+      // Someone put on Slides means it is needed after all.
+      if (input.kind === "slides") {
+        const needed = await tx
+          .update(eventSteps)
+          .set({ notNeededAt: null, notNeededBy: null })
+          .where(
+            and(
+              eq(eventSteps.eventId, input.eventId),
+              eq(eventSteps.kind, "slides"),
+              isNotNull(eventSteps.notNeededAt),
+            ),
+          )
+          .returning({ eventId: eventSteps.eventId });
+        if (needed.length > 0) {
+          return "needed_again" as const;
+        }
+      }
+      return "added" as const;
+    }),
   );
+}
+
+/**
+ * Locks a step, then reads its event under the lock `eventLock` names. Null if the step
+ * is not there or its event is deleted, which the caller reports as not found. Raises
+ * CF410 for a closed event. The step is always locked before the event, so two writes on
+ * one step queue on it and cannot deadlock on the pair.
+ */
+async function lockStepOnLiveEvent(
+  tx: BotTx,
+  key: EventStepKey,
+  kind: EventStepKind,
+  eventLock: "share" | "update",
+): Promise<typeof eventSteps.$inferSelect | null> {
+  const [step] = await tx
+    .select()
+    .from(eventSteps)
+    .where(
+      and(
+        eq(eventSteps.eventId, key.eventId),
+        eq(eventSteps.guildId, key.guildId),
+        eq(eventSteps.kind, kind),
+      ),
+    )
+    .for("update");
+  if (step === undefined) {
+    return null;
+  }
+  const [event] = await tx
+    .select({ status: events.status, deletedAt: events.deletedAt })
+    .from(events)
+    .where(and(eq(events.id, key.eventId), eq(events.guildId, key.guildId)))
+    .for(eventLock);
+  if (event?.deletedAt !== null) {
+    return null;
+  }
+  if (event.status === "closed") {
+    raise("CF410", "event is closed");
+  }
+  return step;
+}
+
+/**
+ * Food pickup is done once it has a time and at least one person, and open again when
+ * either goes. Returns its status. Keeps who finished it and when while it stays done.
+ */
+async function syncFoodPickupStep(
+  tx: BotTx,
+  eventId: string,
+  actorId: string,
+): Promise<TaskStatus | undefined> {
+  const [event] = await tx
+    .select({ pickupTime: events.pickupTime })
+    .from(events)
+    .where(eq(events.id, eventId));
+  const [{ people } = { people: 0 }] = await tx
+    .select({ people: count() })
+    .from(eventStepAssignees)
+    .where(
+      and(
+        eq(eventStepAssignees.eventId, eventId),
+        eq(eventStepAssignees.kind, "food_pickup"),
+        isNull(eventStepAssignees.removedAt),
+      ),
+    );
+  const pickupTime = event?.pickupTime ?? null;
+  const ready = pickupTime !== null && people > 0;
+  const [step] = await tx
+    .update(eventSteps)
+    .set({
+      status: ready ? "done" : "open",
+      completedAt: ready
+        ? dsql`coalesce(${eventSteps.completedAt}, now())`
+        : null,
+      completedBy: ready
+        ? dsql`coalesce(${eventSteps.completedBy}, ${actorId}::text)`
+        : null,
+    })
+    .where(
+      and(eq(eventSteps.eventId, eventId), eq(eventSteps.kind, "food_pickup")),
+    )
+    .returning({ status: eventSteps.status });
+  return step?.status;
 }
 
 /**
@@ -193,14 +371,34 @@ export async function unassignEventStep(
   input: StepAssignment,
 ): Promise<DbResult<boolean>> {
   return liveEventBoolean(
-    await callFunction<boolean | null>(
-      db,
-      sql`select discord_bot.unassign_event_step(p_event_id => ${input.eventId},
-        p_guild_id => ${input.guildId},
-        p_kind => ${input.kind},
-        p_user_id => ${input.userId},
-        p_actor_id => ${input.actorId}) as value`,
-    ),
+    await transact(db, async (tx) => {
+      if ((input.kind as EventStepKind) === "budget_approved") {
+        raise("22023", "this step has no assignees");
+      }
+      if (
+        (await lockStepOnLiveEvent(tx, input, input.kind, "share")) === null
+      ) {
+        return null;
+      }
+
+      const removed = await tx
+        .update(eventStepAssignees)
+        .set({ removedAt: dsql`now()`, removedBy: input.actorId })
+        .where(
+          and(
+            eq(eventStepAssignees.eventId, input.eventId),
+            eq(eventStepAssignees.kind, input.kind),
+            eq(eventStepAssignees.userId, input.userId),
+            isNull(eventStepAssignees.removedAt),
+          ),
+        )
+        .returning({ id: eventStepAssignees.id });
+
+      if (removed.length > 0 && input.kind === "food_pickup") {
+        await syncFoodPickupStep(tx, input.eventId, input.actorId);
+      }
+      return removed.length > 0;
+    }),
   );
 }
 
@@ -215,13 +413,56 @@ export async function completeEventStep(
   input: EventStepKey & { kind: CompletableStepKind; actorId: string },
 ): Promise<DbResult<boolean>> {
   return liveEventBoolean(
-    await callFunction<boolean | null>(
-      db,
-      sql`select discord_bot.complete_event_step(p_event_id => ${input.eventId},
-        p_guild_id => ${input.guildId},
-        p_kind => ${input.kind},
-        p_actor_id => ${input.actorId}) as value`,
-    ),
+    await transact(db, async (tx) => {
+      if ((input.kind as EventStepKind) === "food_pickup") {
+        raise("22023", "this step cannot be marked done");
+      }
+
+      // Engage post is locked before the picture, in the order reopenEventStep locks
+      // them, so the two cannot deadlock, and it cannot be reopened until this commits.
+      let postStatus: TaskStatus | undefined;
+      if (input.kind === "engage_picture") {
+        [{ status: postStatus } = { status: undefined }] = await tx
+          .select({ status: eventSteps.status })
+          .from(eventSteps)
+          .where(
+            and(
+              eq(eventSteps.eventId, input.eventId),
+              eq(eventSteps.guildId, input.guildId),
+              eq(eventSteps.kind, "engage_post"),
+            ),
+          )
+          .for("share");
+      }
+
+      const step = await lockStepOnLiveEvent(tx, input, input.kind, "share");
+      if (step === null) {
+        return null;
+      }
+      if (step.status !== "open") {
+        return false;
+      }
+      if (input.kind === "engage_picture" && postStatus !== "done") {
+        raise("CF425", "engage post is not done");
+      }
+
+      await tx
+        .update(eventSteps)
+        .set({
+          status: "done",
+          completedAt: dsql`now()`,
+          completedBy: input.actorId,
+          notNeededAt: null,
+          notNeededBy: null,
+        })
+        .where(
+          and(
+            eq(eventSteps.eventId, input.eventId),
+            eq(eventSteps.kind, input.kind),
+          ),
+        );
+      return true;
+    }),
   );
 }
 
@@ -237,12 +478,55 @@ export async function claimStepHandoff(
   db: DbClient,
   key: HandoffKey,
 ): Promise<DbResult<boolean>> {
-  return callFunction<boolean>(
-    db,
-    sql`select discord_bot.claim_step_handoff(p_event_id => ${key.eventId},
-      p_guild_id => ${key.guildId},
-      p_kind => ${key.kind}) as value`,
-  );
+  return transact(db, async (tx) => {
+    if ((key.kind as EventStepKind) === "food_pickup") {
+      raise("22023", "this step has no hand-off");
+    }
+
+    // As every other step write: a closed event takes no more step changes.
+    const [closed] = await tx
+      .select({ id: events.id })
+      .from(events)
+      .where(
+        and(
+          eq(events.id, key.eventId),
+          eq(events.guildId, key.guildId),
+          isNull(events.deletedAt),
+          ne(events.status, "active"),
+        ),
+      );
+    if (closed !== undefined) {
+      raise("CF410", "event is closed");
+    }
+
+    const claimed = await tx
+      .update(eventSteps)
+      .set({ handoffClaimedAt: dsql`now()` })
+      .where(
+        and(
+          eq(eventSteps.eventId, key.eventId),
+          eq(eventSteps.guildId, key.guildId),
+          eq(eventSteps.kind, key.kind),
+          eq(eventSteps.status, "done"),
+          isNull(eventSteps.handoffClaimedAt),
+          exists(
+            tx
+              .select({ id: events.id })
+              .from(events)
+              .where(
+                and(
+                  eq(events.id, key.eventId),
+                  eq(events.guildId, key.guildId),
+                  isNull(events.deletedAt),
+                  eq(events.status, "active"),
+                ),
+              ),
+          ),
+        ),
+      )
+      .returning({ eventId: eventSteps.eventId });
+    return claimed.length > 0;
+  });
 }
 
 /** For after the claimed hand-off went out. False if it was not claimed or is recorded. */
@@ -250,12 +534,22 @@ export async function markStepHandoffSent(
   db: DbClient,
   key: HandoffKey,
 ): Promise<DbResult<boolean>> {
-  return callFunction<boolean>(
-    db,
-    sql`select discord_bot.mark_step_handoff_sent(p_event_id => ${key.eventId},
-      p_guild_id => ${key.guildId},
-      p_kind => ${key.kind}) as value`,
-  );
+  return write(db, async (orm) => {
+    const marked = await orm
+      .update(eventSteps)
+      .set({ handoffSentAt: dsql`now()` })
+      .where(
+        and(
+          eq(eventSteps.eventId, key.eventId),
+          eq(eventSteps.guildId, key.guildId),
+          eq(eventSteps.kind, key.kind),
+          isNotNull(eventSteps.handoffClaimedAt),
+          isNull(eventSteps.handoffSentAt),
+        ),
+      )
+      .returning({ eventId: eventSteps.eventId });
+    return marked.length > 0;
+  });
 }
 
 /**
@@ -268,12 +562,38 @@ export async function reopenEventStep(
   input: EventStepKey & { kind: CompletableStepKind },
 ): Promise<DbResult<boolean>> {
   return liveEventBoolean(
-    await callFunction<boolean | null>(
-      db,
-      sql`select discord_bot.reopen_event_step(p_event_id => ${input.eventId},
-        p_guild_id => ${input.guildId},
-        p_kind => ${input.kind}) as value`,
-    ),
+    await transact(db, async (tx) => {
+      if ((input.kind as EventStepKind) === "food_pickup") {
+        raise("22023", "this step cannot be reopened");
+      }
+      const step = await lockStepOnLiveEvent(tx, input, input.kind, "share");
+      if (step === null) {
+        return null;
+      }
+      if (step.status !== "done") {
+        return false;
+      }
+
+      await tx
+        .update(eventSteps)
+        .set({
+          status: "open",
+          completedAt: null,
+          completedBy: null,
+          handoffClaimedAt: null,
+          handoffSentAt: null,
+        })
+        .where(
+          and(
+            eq(eventSteps.eventId, input.eventId),
+            input.kind === "engage_post"
+              ? inArray(eventSteps.kind, ["engage_post", "engage_picture"])
+              : eq(eventSteps.kind, input.kind),
+            eq(eventSteps.status, "done"),
+          ),
+        );
+      return true;
+    }),
   );
 }
 
@@ -286,13 +606,32 @@ export async function setSlidesNotNeeded(
   input: EventStepKey & { notNeeded: boolean; actorId: string },
 ): Promise<DbResult<boolean>> {
   return liveEventBoolean(
-    await callFunction<boolean | null>(
-      db,
-      sql`select discord_bot.set_slides_not_needed(p_event_id => ${input.eventId},
-        p_guild_id => ${input.guildId},
-        p_not_needed => ${input.notNeeded},
-        p_actor_id => ${input.actorId}) as value`,
-    ),
+    await transact(db, async (tx) => {
+      const step = await lockStepOnLiveEvent(tx, input, "slides", "share");
+      if (step === null) {
+        return null;
+      }
+      if (
+        step.status !== "open" ||
+        (step.notNeededAt !== null) === input.notNeeded
+      ) {
+        return false;
+      }
+
+      await tx
+        .update(eventSteps)
+        .set({
+          notNeededAt: input.notNeeded ? dsql`now()` : null,
+          notNeededBy: input.notNeeded ? input.actorId : null,
+        })
+        .where(
+          and(
+            eq(eventSteps.eventId, input.eventId),
+            eq(eventSteps.kind, "slides"),
+          ),
+        );
+      return true;
+    }),
   );
 }
 
@@ -309,13 +648,23 @@ export async function setEventPickupTime(
     return refused();
   }
   return liveEventBoolean(
-    await callFunction<boolean | null>(
-      db,
-      sql`select discord_bot.set_event_pickup_time(p_event_id => ${input.eventId},
-        p_guild_id => ${input.guildId},
-        p_pickup_time => ${input.pickupTime},
-        p_actor_id => ${input.actorId}) as value`,
-    ),
+    await transact(db, async (tx) => {
+      // The event is locked for update, not share, as its own row changes.
+      if (
+        (await lockStepOnLiveEvent(tx, input, "food_pickup", "update")) === null
+      ) {
+        return null;
+      }
+
+      await tx
+        .update(events)
+        .set({ pickupTime: input.pickupTime })
+        .where(eq(events.id, input.eventId));
+
+      return (
+        (await syncFoodPickupStep(tx, input.eventId, input.actorId)) === "done"
+      );
+    }),
   );
 }
 
@@ -516,12 +865,27 @@ export async function claimEventReminder(
   if (!isDbDate(key.reminderDate)) {
     return refused();
   }
-  return callFunction<string | null>(
-    db,
-    sql`select discord_bot.claim_event_reminder(p_event_id => ${key.eventId},
-      p_kind => ${key.kind},
-      p_reminder_date => ${key.reminderDate}) as value`,
-  );
+  return write(db, async (orm) => {
+    // One statement: the row is inserted only for an event the reminder is allowed for,
+    // and a row already there, whoever holds it, is left as it is.
+    const [claimed] = await orm
+      .insert(eventReminderLog)
+      .select(
+        dsql`select ${events.id}, ${key.kind}::discord_bot.event_reminder_kind,
+          ${key.reminderDate}::date, 'claimed'::discord_bot.reminder_state,
+          gen_random_uuid(), 1, now(), null::timestamptz, null::discord_bot.discord_id
+          ${fromAllowedEvent(key.eventId, key.kind, key.reminderDate)}`,
+      )
+      .onConflictDoNothing({
+        target: [
+          eventReminderLog.eventId,
+          eventReminderLog.kind,
+          eventReminderLog.reminderDate,
+        ],
+      })
+      .returning({ claimToken: eventReminderLog.claimToken });
+    return claimed?.claimToken ?? null;
+  });
 }
 
 /** Takes over a stale claim given its last token. Null if that is not possible. */
@@ -532,14 +896,37 @@ export async function reclaimEventReminder(
   if (!isDbDate(key.reminderDate)) {
     return refused();
   }
-  return callFunction<string | null>(
-    db,
-    sql`select discord_bot.reclaim_event_reminder(p_event_id => ${key.eventId},
-      p_kind => ${key.kind},
-      p_reminder_date => ${key.reminderDate},
-      p_claim_token => ${key.claimToken},
-      p_stale_after_seconds => ${STALE_CLAIM_MS / 1000}) as value`,
-  );
+  return write(db, async (orm) => {
+    const [reclaimed] = await orm
+      .update(eventReminderLog)
+      .set({
+        claimToken: dsql`gen_random_uuid()`,
+        claimedAt: dsql`now()`,
+        attempts: dsql`${eventReminderLog.attempts} + 1`,
+      })
+      .where(
+        and(
+          eq(eventReminderLog.eventId, key.eventId),
+          eq(eventReminderLog.kind, key.kind),
+          eq(eventReminderLog.reminderDate, key.reminderDate),
+          eq(eventReminderLog.state, "claimed"),
+          eq(eventReminderLog.claimToken, key.claimToken),
+          lt(
+            eventReminderLog.claimedAt,
+            dsql`now() - make_interval(secs => ${STALE_CLAIM_MS / 1000}::int)`,
+          ),
+          exists(
+            dsql`(select 1 ${fromAllowedEvent(
+              dsql`${eventReminderLog.eventId}`,
+              key.kind,
+              key.reminderDate,
+            )})`,
+          ),
+        ),
+      )
+      .returning({ claimToken: eventReminderLog.claimToken });
+    return reclaimed?.claimToken ?? null;
+  });
 }
 
 /** False if the token no longer holds the claim. */
@@ -550,13 +937,26 @@ export async function markEventReminderSent(
   if (!isDbDate(key.reminderDate)) {
     return refused();
   }
-  return callFunction<boolean>(
-    db,
-    sql`select discord_bot.mark_event_reminder_sent(p_event_id => ${key.eventId},
-      p_kind => ${key.kind},
-      p_reminder_date => ${key.reminderDate},
-      p_claim_token => ${key.claimToken},
-      p_message_id => ${key.messageId}) as value`,
+  return write(db, async (orm) => {
+    const marked = await orm
+      .update(eventReminderLog)
+      .set({ state: "sent", sentAt: dsql`now()`, messageId: key.messageId })
+      .where(heldEventClaim(key))
+      .returning({ eventId: eventReminderLog.eventId });
+    return marked.length > 0;
+  });
+}
+
+/** The claim this token holds, still unsent. */
+function heldEventClaim(key: EventReminderKey & { claimToken: string }): SQL {
+  return (
+    and(
+      eq(eventReminderLog.eventId, key.eventId),
+      eq(eventReminderLog.kind, key.kind),
+      eq(eventReminderLog.reminderDate, key.reminderDate),
+      eq(eventReminderLog.state, "claimed"),
+      eq(eventReminderLog.claimToken, key.claimToken),
+    ) ?? dsql`true`
   );
 }
 
@@ -568,13 +968,14 @@ export async function markEventReminderSkipped(
   if (!isDbDate(key.reminderDate)) {
     return refused();
   }
-  return callFunction<boolean>(
-    db,
-    sql`select discord_bot.mark_event_reminder_skipped(p_event_id => ${key.eventId},
-      p_kind => ${key.kind},
-      p_reminder_date => ${key.reminderDate},
-      p_claim_token => ${key.claimToken}) as value`,
-  );
+  return write(db, async (orm) => {
+    const marked = await orm
+      .update(eventReminderLog)
+      .set({ state: "skipped" })
+      .where(heldEventClaim(key))
+      .returning({ eventId: eventReminderLog.eventId });
+    return marked.length > 0;
+  });
 }
 
 /**
@@ -594,14 +995,60 @@ export async function closeStaleEventClaim(
   if (!isDbDate(key.reminderDate) || !isDbDate(key.beforeDate)) {
     return refused();
   }
-  const closed = await callFunction<boolean>(
-    db,
-    sql`select discord_bot.close_stale_event_reminder(p_event_id => ${key.eventId},
-      p_kind => ${key.kind},
-      p_reminder_date => ${key.reminderDate},
-      p_claim_token => ${key.claimToken},
-      p_before_date => ${key.beforeDate}) as value`,
-  );
+  const closed = await write(db, async (orm) => {
+    // Decided and written in one statement, so an event restored or a guild switched
+    // back on in between does not have its claim closed anyway.
+    const marked = await orm
+      .update(eventReminderLog)
+      .set({ state: "skipped" })
+      .where(
+        and(
+          heldEventClaim(key),
+          notExists(
+            orm
+              .select({ id: events.id })
+              .from(events)
+              .innerJoin(guildConfig, eq(guildConfig.guildId, events.guildId))
+              .where(
+                and(
+                  eq(events.id, key.eventId),
+                  eq(guildConfig.remindersEnabled, false),
+                ),
+              ),
+          ),
+          notExists(
+            orm
+              .select({ id: events.id })
+              .from(events)
+              .where(
+                and(
+                  eq(events.id, key.eventId),
+                  eq(events.status, "active"),
+                  isNull(events.deletedAt),
+                  ne(events.threadStatus, "missing"),
+                  // The event is not past in every guild, or the claim's own day is not
+                  // and the kind may go out that day after the event, as Engage picture
+                  // late may. That ping goes out on one day only, so a claim closed here
+                  // is never sent.
+                  or(
+                    gte(events.eventDate, key.beforeDate),
+                    and(
+                      dsql`${key.reminderDate}::date >= ${key.beforeDate}::date`,
+                      eventReminderDayOpen(
+                        key.kind,
+                        key.reminderDate,
+                        events.eventDate,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ),
+        ),
+      )
+      .returning({ eventId: eventReminderLog.eventId });
+    return marked.length > 0;
+  });
   return closed.ok
     ? { ok: true, value: closed.value ? "closed" : "left" }
     : closed;

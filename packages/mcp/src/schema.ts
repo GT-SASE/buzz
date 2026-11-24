@@ -76,7 +76,7 @@ export async function describeSchema(
   return [
     `=== buzz database (Drizzle, ${SCHEMA_FILE}) ===`,
     buzz,
-    `=== bot database (dbmate SQL, ${BOT_MIGRATIONS_DIR}) ===`,
+    `=== bot database (Drizzle SQL, ${BOT_MIGRATIONS_DIR}) ===`,
     bot,
   ].join("\n\n");
 }

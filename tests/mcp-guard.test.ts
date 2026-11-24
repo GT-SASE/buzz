@@ -160,8 +160,8 @@ describe("workspace versions and migrations", () => {
     const v = await version();
     expect(v).toContain("@buzz/discord-bot");
     const m = migrations();
-    expect(m).toContain("== bot database (dbmate");
-    expect(m).toContain("20261111000000_baseline.sql");
+    expect(m).toContain("== bot database (Drizzle");
+    expect(m).toContain("0000_baseline.sql");
     expect(m).toContain("manual owner step");
     expect(m).toContain("packages/db/drizzle/0011_page.sql");
   });

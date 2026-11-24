@@ -10,16 +10,19 @@
 import { DISCORD_LIMITS } from "../discord/safe-text.ts";
 import type { DateOnly } from "../lib/dates.ts";
 import { isSnowflake } from "../lib/snowflake.ts";
+import { and, eq, isNull } from "drizzle-orm";
 import type { DbClient } from "./client.ts";
 import {
-  callFunction,
   capped,
   changedRow,
   firstRow,
   nullAsNotFound,
   query,
   sql,
+  transact,
 } from "./internal.ts";
+import { isoTimestamp } from "./parsers.ts";
+import { taskReassignments, tasks } from "./schema.ts";
 import { refused, type DbResult } from "./errors.ts";
 import type {
   CappedList,
@@ -386,14 +389,62 @@ export async function editTask(
   }
   // Null when the task is not at the version read, or no longer open and live.
   return nullAsNotFound(
-    await callFunction<TaskRow | null>(
-      db,
-      sql`select discord_bot.edit_task(p_task_id => ${key.taskId},
-        p_guild_id => ${key.guildId},
-        p_expected_updated_at => ${key.expectedUpdatedAt},
-        p_description => ${key.description}, p_due_date => ${key.dueDate},
-        p_assignee_id => ${key.assigneeId}, p_actor_id => ${key.actorId}) as value`,
-    ),
+    await transact(db, async (tx): Promise<TaskRow | null> => {
+      const [current] = await tx
+        .select({ assigneeId: tasks.assigneeId })
+        .from(tasks)
+        .where(
+          and(
+            eq(tasks.id, key.taskId),
+            eq(tasks.guildId, key.guildId),
+            eq(tasks.updatedAt, key.expectedUpdatedAt),
+            eq(tasks.status, "open"),
+            isNull(tasks.deletedAt),
+          ),
+        )
+        .for("update");
+      if (current === undefined) {
+        return null;
+      }
+
+      // The quota trigger counts this row, under the officer's lock, and refuses it at
+      // the limit, which fails the whole edit.
+      if (current.assigneeId !== key.assigneeId) {
+        await tx.insert(taskReassignments).values({
+          guildId: key.guildId,
+          actorId: key.actorId,
+          taskId: key.taskId,
+        });
+      }
+
+      const [edited] = await tx
+        .update(tasks)
+        .set({
+          description: key.description,
+          dueDate: key.dueDate,
+          assigneeId: key.assigneeId,
+        })
+        .where(eq(tasks.id, key.taskId))
+        .returning();
+      if (edited === undefined) {
+        return null;
+      }
+      return {
+        id: edited.id,
+        event_id: edited.eventId,
+        guild_id: edited.guildId,
+        assignee_id: edited.assigneeId,
+        description: edited.description,
+        due_date: edited.dueDate as DateOnly,
+        status: edited.status,
+        completed_at:
+          edited.completedAt === null ? null : isoTimestamp(edited.completedAt),
+        created_by: edited.createdBy,
+        deleted_at:
+          edited.deletedAt === null ? null : isoTimestamp(edited.deletedAt),
+        updated_at: isoTimestamp(edited.updatedAt),
+      };
+    }),
   );
 }
 

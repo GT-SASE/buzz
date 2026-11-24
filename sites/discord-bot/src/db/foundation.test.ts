@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { fakeId } from "../../test/support/ids.ts";
 import {
+  recordingOrm,
   recordingSql,
   serverError,
   unavailable,
@@ -72,7 +73,7 @@ describe("client", () => {
       expect(write.calls).toHaveLength(1);
 
       const call = recordingSql(() => error);
-      await claimInteraction(createDbClient(call.sql), {
+      await claimInteraction(createDbClient(call.sql, recordingOrm(call.sql)), {
         interactionId: fakeId(),
       });
       expect(call.calls).toHaveLength(1);
@@ -124,7 +125,34 @@ describe("errors from the driver", () => {
     ).toEqual({ category, code });
   });
 
+  it("reads the SQLSTATE under the wrapper Drizzle puts on a failed statement", () => {
+    const wrapped = Object.assign(new Error("Failed query: insert into x"), {
+      cause: Object.assign(new Error(text), {
+        code: "CF409",
+        severity: "ERROR",
+      }),
+    });
+    expect(failureFromError(wrapped).error).toEqual({
+      category: "stale_version",
+      code: "CF409",
+    });
+  });
+
   it.each<[string, unknown, "unavailable" | "unexpected"]>([
+    [
+      "a pool that lost its connection",
+      new Error("Connection terminated unexpectedly"),
+      "unavailable",
+    ],
+    [
+      "a refused connection under a wrapper",
+      Object.assign(new Error("Failed query: select 1"), {
+        cause: Object.assign(new Error("connect failed"), {
+          code: "ECONNREFUSED",
+        }),
+      }),
+      "unavailable",
+    ],
     ["a network failure", unavailable(), "unavailable"],
     [
       "an HTTP error",

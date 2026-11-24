@@ -13,9 +13,10 @@ import {
   spyOn,
   type Mock,
 } from "bun:test";
-import { pgliteSql, serverError } from "./sql-client.ts";
+import { bindRoles } from "../db/bot-writes.ts";
+import { pgliteClient, serverError } from "./sql-client.ts";
 import { asFetch, stubEnv } from "./stubs.ts";
-import { createDbClient, type DbClient } from "../../src/db/client.ts";
+import type { DbClient } from "../../src/db/client.ts";
 import type { EventRow } from "../../src/db/types.ts";
 import { createDiscordClient } from "../../src/discord/client.ts";
 import { managedChannelCheck } from "../../src/handlers/dependencies.ts";
@@ -91,39 +92,37 @@ export function eventWorld(): World {
   let seen: string[] = [];
   let allowed = { users: new Set<string>(), roles: new Set<string>() };
 
-  const db = createDbClient(
-    pgliteSql(
-      () => pg,
-      ({ sql }) => {
-        // On one line, so a pattern can match across the statement's line breaks.
-        const target = `SQL ${sql.replace(/\s+/g, " ").trim()}`;
-        seen.push(target);
-        const failure = dbFailures.find(
-          (entry) => entry.times > 0 && entry.pattern.test(target),
-        );
-        if (failure === undefined) {
-          return undefined;
-        }
-        failure.times -= 1;
-        return failure.status === 200 ? { rows: [] } : serverError("XX000");
-      },
-    ),
+  const db = pgliteClient(
+    () => pg,
+    ({ sql }) => {
+      // On one line, so a pattern can match across the statement's line breaks.
+      const target = `SQL ${sql.replace(/\s+/g, " ").trim()}`;
+      seen.push(target);
+      const failure = dbFailures.find(
+        (entry) => entry.times > 0 && entry.pattern.test(target),
+      );
+      if (failure === undefined) {
+        return undefined;
+      }
+      failure.times -= 1;
+      return failure.status === 200 ? { rows: [] } : serverError("XX000");
+    },
   );
 
   beforeAll(async () => {
     pg = await createMigratedDb();
-    await queryAs(
-      pg,
-      "bot_app",
-      `SELECT discord_bot.apply_role_bindings($1, 0, $2, $3, $4, NULL, NULL, NULL, NULL)`,
-      [GUILD_ID, fakeId(), OFFICER_ROLE, ADMIN_ROLE],
-    );
-    await queryAs(
-      pg,
-      "bot_app",
-      `SELECT discord_bot.apply_role_bindings($1, 0, $2, $3, $4, NULL, NULL, NULL, NULL)`,
-      [OTHER_GUILD, fakeId(), fakeId(), fakeId()],
-    );
+    await bindRoles(pg, {
+      guildId: GUILD_ID,
+      actorId: fakeId(),
+      officerRoleId: OFFICER_ROLE,
+      adminRoleId: ADMIN_ROLE,
+    });
+    await bindRoles(pg, {
+      guildId: OTHER_GUILD,
+      actorId: fakeId(),
+      officerRoleId: fakeId(),
+      adminRoleId: fakeId(),
+    });
   }, HOOK_TIMEOUT_MS);
 
   afterAll(async () => {

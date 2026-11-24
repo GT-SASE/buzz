@@ -54,6 +54,7 @@ pgpass.conf
 # Migrations are the one exception.
 *.sql
 !db/migrations/*.sql
+!db/drizzle/*.sql
 *.sql.*
 *.psql
 *.pgsql

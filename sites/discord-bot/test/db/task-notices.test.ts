@@ -5,6 +5,7 @@
 
 import { PermissionFlagsBits } from "discord-api-types/v10";
 import { beforeEach, describe, expect, it, spyOn } from "bun:test";
+import { changeConfig } from "./bot-writes.ts";
 import { DiscordClientError } from "../../src/discord/client.ts";
 import type {
   DiscordClient,
@@ -23,7 +24,6 @@ import {
 } from "../support/interactions.ts";
 import { fakeId } from "../support/ids.ts";
 import { insertEvent } from "./fixtures.ts";
-import { queryAs } from "./harness.ts";
 import {
   FAR_DUE,
   fakeClient,
@@ -204,21 +204,11 @@ describe("what an officer is told after a task change", () => {
   describe("under a removed forum", () => {
     it("keeps the task and says reminders are off until the forum is back", async () => {
       const removedForum = fakeId();
-      const version = async () => {
-        const rows = await queryAs<{ version: number }>(
-          world.backend.connection,
-          "bot_app",
-          `SELECT version FROM discord_bot.guild_config WHERE guild_id = $1`,
-          [GUILD_ID],
-        );
-        return rows[0]?.version ?? 0;
-      };
-      await queryAs(
-        world.backend.connection,
-        "bot_app",
-        `SELECT discord_bot.apply_config_change($1, $2, $3, NULL, ARRAY[$4]::text[])`,
-        [GUILD_ID, await version(), fakeId(), removedForum],
-      );
+      await changeConfig(world.backend.connection, {
+        guildId: GUILD_ID,
+        actorId: fakeId(),
+        addChannelIds: [removedForum],
+      });
       const eventId = await insertEvent(world.backend.connection, {
         ...world.fixture,
         channelId: removedForum,
@@ -230,12 +220,11 @@ describe("what an officer is told after a task change", () => {
           threadId: fakeId(),
         }),
       );
-      await queryAs(
-        world.backend.connection,
-        "bot_app",
-        `SELECT discord_bot.apply_config_change($1, $2, $3, NULL, NULL, ARRAY[$4]::text[])`,
-        [GUILD_ID, await version(), fakeId(), removedForum],
-      );
+      await changeConfig(world.backend.connection, {
+        guildId: GUILD_ID,
+        actorId: fakeId(),
+        removeChannelIds: [removedForum],
+      });
       const person = fakeId();
       const { client, edits } = fakeClient({
         sendMessage: () =>

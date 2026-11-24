@@ -85,26 +85,68 @@ const FORBIDDEN_CLASSES = new Set(["28"]);
 
 const SQLSTATE = /^[0-9A-Z]{5}$/;
 
+/** Node's and the driver's names for a connection that could not be made or was lost. */
+const NETWORK_ERROR_CODES = new Set([
+  "ECONNREFUSED",
+  "ECONNRESET",
+  "ENOTFOUND",
+  "EPIPE",
+  "ETIMEDOUT",
+  "EAI_AGAIN",
+]);
+const NETWORK_ERROR_MESSAGE =
+  /^(Connection terminated|Client has encountered a connection error|timeout exceeded when trying to connect|Error connecting to database|Cannot use a pool after calling end)/;
+
+interface ErrorLike {
+  code?: unknown;
+  severity?: unknown;
+  name?: unknown;
+  message?: unknown;
+  cause?: unknown;
+}
+
+/** An error and the errors under it. Drizzle wraps a failed statement's error as `cause`. */
+function chain(error: unknown): ErrorLike[] {
+  const found: ErrorLike[] = [];
+  let current: unknown = error;
+  while (typeof current === "object" && current !== null && found.length < 5) {
+    found.push(current);
+    current = (current as ErrorLike).cause;
+  }
+  return found;
+}
+
 /**
  * Reads only the SQLSTATE from a failed statement, never its message, which can quote
  * the statement, its parameters or the failing row. An error the server raised has a
- * severity. Neon's driver also throws `NeonDbError` with none when the request itself
- * failed, such as a network error, an HTTP error or an abort, and that is `unavailable`.
- * Anything else is a fault in the code, such as a TypeError, and is `unexpected` so that
- * it is not retried as an outage.
+ * severity, and may sit under a wrapper that Drizzle adds. Neon's driver also throws
+ * `NeonDbError` with none when the request itself failed, such as a network error, an
+ * HTTP error or an abort, and a pool that cannot reach the server throws a plain error
+ * with a network code or a fixed message; all of those are `unavailable`. Anything else
+ * is a fault in the code, such as a TypeError, and is `unexpected` so that it is not
+ * retried as an outage.
  */
 export function failureFromError(error: unknown): DbFailure {
-  if (typeof error !== "object" || error === null) {
+  const errors = chain(error);
+  if (errors.length === 0) {
     return failure("unexpected");
   }
-  const { code, severity, name } = error as {
-    code?: unknown;
-    severity?: unknown;
-    name?: unknown;
-  };
-  if (typeof severity !== "string") {
-    return failure(name === "NeonDbError" ? "unavailable" : "unexpected");
+  const served = errors.find((item) => typeof item.severity === "string");
+  if (served === undefined) {
+    return failure(
+      errors.some(
+        (item) =>
+          item.name === "NeonDbError" ||
+          (typeof item.code === "string" &&
+            NETWORK_ERROR_CODES.has(item.code)) ||
+          (typeof item.message === "string" &&
+            NETWORK_ERROR_MESSAGE.test(item.message)),
+      )
+        ? "unavailable"
+        : "unexpected",
+    );
   }
+  const { code } = served;
   if (typeof code !== "string" || !SQLSTATE.test(code)) {
     return failure("unavailable");
   }

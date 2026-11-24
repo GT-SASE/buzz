@@ -1,7 +1,9 @@
+import { and, eq, sql as dsql } from "drizzle-orm";
 import type { DbClient } from "./client.ts";
 import { EVENT_COLUMNS } from "./events.ts";
-import { callFunction, capped, firstRow, query, sql } from "./internal.ts";
+import { capped, firstRow, query, sql, transact } from "./internal.ts";
 import type { DbResult } from "./errors.ts";
+import { jobRuns, managedChannels } from "./schema.ts";
 import type { CappedList, EventRow, ManagedChannel } from "./types.ts";
 
 const MAX_CHANNELS = 500;
@@ -78,9 +80,27 @@ export async function markChannelUnavailable(
   db: DbClient,
   { guildId, channelId }: { guildId: string; channelId: string },
 ): Promise<DbResult<boolean>> {
-  return callFunction<boolean>(
-    db,
-    sql`select discord_bot.mark_channel_unavailable(p_guild_id => ${guildId},
-      p_channel_id => ${channelId}) as value`,
-  );
+  return transact(db, async (tx) => {
+    const changedRows = await tx
+      .update(managedChannels)
+      .set({ status: "unavailable" })
+      .where(
+        and(
+          eq(managedChannels.guildId, guildId),
+          eq(managedChannels.channelId, channelId),
+          eq(managedChannels.status, "active"),
+        ),
+      )
+      .returning({ channelId: managedChannels.channelId });
+    const changed = changedRows.length > 0;
+
+    // The health check reads the latest of these, so the finding is kept either way.
+    await tx.insert(jobRuns).values({
+      jobName: "mark_channel_unavailable",
+      status: "succeeded",
+      finishedAt: dsql`now()`,
+      results: { guild_id: guildId, channel_id: channelId, changed },
+    });
+    return changed;
+  });
 }

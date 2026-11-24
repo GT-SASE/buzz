@@ -76,7 +76,7 @@ describe("the bot's migrations next to buzz's tables", () => {
     expect(rows).toEqual([{ secret: "buzz data" }]);
   });
 
-  it("put every table, function and type, and dbmate's ledger, in discord_bot", async () => {
+  it("put every table, function and type, and the migration ledger, in discord_bot", async () => {
     const { rows } = await db.query<{ kind: string; name: string }>(
       `SELECT 'relation' AS kind, c.relnamespace::regnamespace::text || '.' || c.relname AS name
          FROM pg_class c
@@ -96,7 +96,7 @@ describe("the bot's migrations next to buzz's tables", () => {
     expect(rows).toEqual([]);
 
     const ledger = await db.query<{ n: number }>(
-      "SELECT count(*)::int AS n FROM discord_bot.schema_migrations",
+      "SELECT count(*)::int AS n FROM discord_bot.drizzle_migrations",
     );
     expect(ledger.rows[0]?.n).toBeGreaterThan(0);
 

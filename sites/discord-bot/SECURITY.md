@@ -18,16 +18,32 @@ No system is unhackable, and this one makes no such claim. The aim is to keep th
 
 The tests stand in for Discord, Vercel and Neon, so the controls below are proved against the real services only by the smoke checks in [docs/STAGING_CHECKLIST.md](docs/STAGING_CHECKLIST.md). [README.md](README.md) gives the current status.
 
-| Area              | Control                                                                                             |
-| ----------------- | --------------------------------------------------------------------------------------------------- |
-| Incoming requests | Signature checked on the raw body, old timestamps refused, allowlisted servers only                 |
-| Cron endpoint     | Protected by a shared secret, on the assumption that the URL is public                              |
-| Authorization     | Deny by default, with each action checked against the stored row rather than client-supplied values |
-| Database          | One narrow login role, grants with no `DELETE` or `TRUNCATE` for the bot, row history               |
-| Outgoing messages | One send helper, text escaped when rendered, mentions limited to named users, managed channels only |
-| Recovery          | Soft deletes, row history, Neon's point-in-time restore and occasional private exports              |
+| Area              | Control                                                                                                  |
+| ----------------- | -------------------------------------------------------------------------------------------------------- |
+| Incoming requests | Signature checked on the raw body, old timestamps refused, allowlisted servers only                      |
+| Cron endpoint     | Protected by a shared secret, on the assumption that the URL is public                                   |
+| Authorization     | Deny by default, with each action checked against the stored row rather than client-supplied values      |
+| Database          | One narrow login role, column-level grants, no `DELETE` or `TRUNCATE` for the bot, triggers, row history |
+| Outgoing messages | One send helper, text escaped when rendered, mentions limited to named users, managed channels only      |
+| Recovery          | Soft deletes, row history, Neon's point-in-time restore and occasional private exports                   |
 
 The bot shares a database with buzz. `bot_app` has no grant on buzz's tables, but a function created in `public` is executable by every role through Postgres's default PUBLIC grant, so any such function must `REVOKE EXECUTE ... FROM PUBLIC`. buzz has none today.
+
+### How the bot writes
+
+The bot writes its tables itself, in TypeScript (`src/db`), inside transactions that lock the rows they change, check the version or claim token they read, and write the audit row. It used to call roughly thirty `SECURITY DEFINER` database functions instead, and the login had no write access to most tables. Those functions stay in the database for now so that the code deployed before and after the switch both work, and a later change drops them.
+
+What the database still enforces, whichever login writes, because it is a trigger or a constraint:
+
+- `discord_bot.row_versions` keeps the old version of every changed row of the main tables, and `bot_app` can neither read nor write it.
+- An event holds at most 100 tasks and an officer makes at most 50 tasks and reassignments a day, counted under a lock.
+- A deleted task or event stays deleted, and a closed event stays closed. A new task or event under a removed channel, or a closed or deleted event, is refused.
+- A new event gets its steps. A guild's time zone has to be one the server knows.
+- Every Discord ID is checked by the `discord_id` domain, and the `CHECK` constraints keep rows in step with their status.
+
+The grants are by column wherever a write changes only some. `events` and `tasks` keep the table-wide `INSERT` and `UPDATE` they had before. The only `DELETE` is on `interaction_claims`, because the daily cron must remove claims older than a day (an interaction token lasts 15 minutes). Row-level security limits it to exactly those rows: a `DELETE` by `bot_app` of a newer claim removes nothing. The table's owner is not subject to the policy. `task_reassignments` can be inserted into and not read, and `row_versions` not at all.
+
+What only the code guarantees, and a hostile login could skip: the config version check, the audit row of a config change, the hand-off and reminder claim tokens, the assignee limit of a step, and the order in which steps may be done. These were enforced for a hostile login too when functions held the writes. The table above shows what that costs, and [After a `DATABASE_URL` leak](#after-a-database_url-leak) says what to check.
 
 Some of this also depends on settings in the services' dashboards, which the repository cannot enforce. [docs/SETUP.md](docs/SETUP.md) lists them.
 
@@ -36,7 +52,7 @@ Some of this also depends on settings in the services' dashboards, which the rep
 These remain even with every control above in place. [README.md](README.md) lists more.
 
 - A Discord Administrator, or anyone who can manage roles, can give themselves access to the bot.
-- A leaked bot token or `DATABASE_URL` bypasses this code, and rotating it does not undo what was done with it. Row history covers events, tasks, event steps and their people, settings, managed forums and setup drafts. It does not cover the reminder log, job runs or reassignment counts, but a Neon branch restored to before the leak holds them, so it can show what they were. [Check for misuse](#2-check-for-misuse) covers the rest.
+- A leaked bot token or `DATABASE_URL` bypasses this code, and rotating it does not undo what was done with it. With the writes in TypeScript, the login can also change config, claims and steps without the checks that code makes, within the grants above. Row history covers events, tasks, event steps and their people, settings, managed forums and setup drafts. It does not cover the reminder log, job runs or reassignment counts, but a Neon branch restored to before the leak holds them, so it can show what they were. [Check for misuse](#2-check-for-misuse) covers the rest.
 - Officer edits, completions and deletes record no actor. See [What can be attributed](#what-can-be-attributed).
 - Autocomplete must answer in the HTTP response, so it cannot be deferred, and it is not claimed. Someone holding a captured signed autocomplete request can replay it inside the 5-minute window and read up to 25 current task or event choices that its sender could see. Getting one needs a compromised host or proxy. `/mytasks` and `/event delete` defer for this reason, so replaying those returns no content. Claiming autocomplete would cost a write per keystroke, so this is accepted.
 - A takeover of the maintainer's GitHub, Vercel, Neon or Discord account defeats these controls, so two-factor authentication is required on all four.
@@ -86,7 +102,7 @@ SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE usename = 'bot_app'
 
 #### After a `DATABASE_URL` leak
 
-Rotate `bot_app`'s password as above. The login cannot delete rows, read `discord_bot.row_versions`, touch buzz's tables in `public`, undelete a row or reopen a closed event, but it can change events, tasks, settings and reminder state through the bot's functions. Compare `guild_config` and `managed_channels` with `discord_bot.row_versions` and `config_audit` from before the leak, fix anything wrong with `/setup` or `/config`, and check that the next `reminders` row in `job_runs` succeeds. Do not trust `actor_id` or `created_by` for that window.
+Rotate `bot_app`'s password as above. The login cannot delete rows other than interaction claims more than a day old, read `discord_bot.row_versions`, touch buzz's tables in `public`, undelete a row or reopen a closed event, but it can change events, tasks, settings and reminder state directly in the tables, in the columns it has grants on, with none of the checks the bot's code makes. Compare `guild_config` and `managed_channels` with `discord_bot.row_versions` and `config_audit` from before the leak, and look for a `guild_config.version` that is ahead of its latest `config_audit.version_after`, which means a change that wrote no audit row, fix anything wrong with `/setup` or `/config`, and check that the next `reminders` row in `job_runs` succeeds. Do not trust `actor_id` or `created_by` for that window.
 
 #### After a bot token leak
 

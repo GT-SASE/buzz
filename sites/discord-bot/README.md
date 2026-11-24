@@ -92,19 +92,20 @@ The bot receives Discord's HTTP interactions and opens no gateway connection. It
 
 Discord allows 3 seconds for the first reply. So the bot makes one database read, sends a private acknowledgement, and finishes the work with `waitUntil`.
 
-| Path             | Holds                                                      |
-| ---------------- | ---------------------------------------------------------- |
-| `api/`           | The two public endpoints. Every file here becomes a route. |
-| `src/discord/`   | Signature checks, safe text, message builders, REST client |
-| `src/handlers/`  | The router and each command                                |
-| `src/tasks/`     | The `/task` subcommands                                    |
-| `src/events/`    | Event input checks, the overview and the event's steps     |
-| `src/reminders/` | The daily run, its plan and the health check               |
-| `src/db/`        | All database access                                        |
-| `src/lib/`       | Settings, permissions and dates                            |
-| `db/migrations/` | The schema, grants and database functions                  |
-| `scripts/`       | Migrations, command registration and the repo's checks     |
-| `docs/adr/`      | Records of the design decisions and their costs            |
+| Path             | Holds                                                        |
+| ---------------- | ------------------------------------------------------------ |
+| `api/`           | The two public endpoints. Every file here becomes a route.   |
+| `src/discord/`   | Signature checks, safe text, message builders, REST client   |
+| `src/handlers/`  | The router and each command                                  |
+| `src/tasks/`     | The `/task` subcommands                                      |
+| `src/events/`    | Event input checks, the overview and the event's steps       |
+| `src/reminders/` | The daily run, its plan and the health check                 |
+| `src/db/`        | All database access                                          |
+| `src/lib/`       | Settings, permissions and dates                              |
+| `db/drizzle/`    | The schema (Drizzle), and the triggers, role and grants      |
+| `db/migrations/` | dbmate's six files, kept until the old functions are dropped |
+| `scripts/`       | Migrations, command registration and the repo's checks       |
+| `docs/adr/`      | Records of the design decisions and their costs              |
 
 ## Commands
 
@@ -169,10 +170,10 @@ No system is unhackable, and this one makes no such claim. The aim is to keep th
 
 **Database**
 
-- The bot logs in as `bot_app`, a role that owns nothing, belongs to no role and cannot create anything. It reaches Neon over HTTPS. Its tables, functions and migration record live in their own schema, `discord_bot`, inside buzz's database. `bot_app` has no privilege on buzz's tables in `public`, and buzz's Drizzle ignores `discord_bot`. No statement relies on `search_path`: each names `discord_bot`, and each function sets an empty one.
-- `bot_app` has no `DELETE` or `TRUNCATE` anywhere. It can read the app's tables and insert and update `events` and `tasks`. Every other write goes through functions that check a version, a claim or a limit, and config changes also write an audit row. A deleted task or event cannot be undeleted, and a closed event cannot be reopened.
+- The bot logs in as `bot_app`, a role that owns nothing, belongs to no role and cannot create anything. It reaches Neon over HTTPS for reads and over a WebSocket for writes, which need a transaction. Its tables, triggers and migration record live in their own schema, `discord_bot`, inside buzz's database. `bot_app` has no privilege on buzz's tables in `public`, and buzz's Drizzle ignores `discord_bot`. No statement relies on `search_path`: each names `discord_bot`, and each trigger function sets an empty one.
+- `bot_app` has no `DELETE` or `TRUNCATE` anywhere, apart from deleting day-old rows of `interaction_claims`. It can read the app's tables and insert and update them: `events` and `tasks` as a whole, every other table only in the columns its writes change. The writes that check a version, a claim or a limit are TypeScript in `src/db`, run in a transaction that takes the row locks and checks what it read, and config changes also write an audit row. What the database still enforces whoever writes, by trigger or constraint, is the row history, the task and reassignment quotas, a deleted row staying deleted, a closed event staying closed, a new event's steps, and the time zone check.
 - Triggers copy every changed or removed row of the main tables into `discord_bot.row_versions`, which `bot_app` cannot reach.
-- Deletes are soft. The one hard delete is `expire_interaction_claims`, which removes day-old interaction claims, short-lived tokens rather than club data. CI checks the grants on PGlite and on Postgres 17.
+- Deletes are soft. The one hard delete is the daily expiry of interaction claims, which removes day-old ones, short-lived tokens rather than club data. CI checks the grants on PGlite and on Postgres 17.
 
 **Outgoing messages**
 
@@ -229,7 +230,7 @@ There is no local bot. Discord needs a public HTTPS URL, so tests stand in for i
 
 | Command                       | What it does                                                                                                                                                                            | Needs                                                                         |
 | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| `bun run check`               | At the repository root: lint, typecheck, format, and the unit and PGlite tests of every workspace, through Turborepo, replaying any whose inputs are unchanged                                                                              | Nothing                                                                       |
+| `bun run check`               | At the repository root: lint, typecheck, format, and the unit and PGlite tests of every workspace, through Turborepo, replaying any whose inputs are unchanged                          | Nothing                                                                       |
 | `bun run typecheck`           | Type check with tsrs, the Rust port of TypeScript 7                                                                                                                                     | Nothing                                                                       |
 | `bun run typecheck:tsc`       | Type check with TypeScript 7's `tsc`, the deciding check while tsrs is a beta                                                                                                           | Nothing                                                                       |
 | `bun run lint`                | ESLint (only the clients may call `fetch`)                                                                                                                                              | Nothing                                                                       |
@@ -237,7 +238,8 @@ There is no local bot. Discord needs a public HTTPS URL, so tests stand in for i
 | `bun run test`                | Unit tests                                                                                                                                                                              | Nothing                                                                       |
 | `bun run test:db`             | Migrations, grants and access layer on PGlite, logged in as `bot_app`                                                                                                                   | Nothing                                                                       |
 | `bun run test:db:concurrency` | Races: double Done clicks, retried interactions, overlapping reminder runs, deletes against inserts, config saves and first setup, task quotas at their limit, task changes, lock order | `CONCURRENCY_DATABASE_URL` to a Postgres 17 superuser, and `BOT_APP_PASSWORD` |
-| `bun run db:migrate`          | Applies new files in `db/migrations` with dbmate, in order                                                                                                                              | `DATABASE_URL` for the database's owner role, never `bot_app`                 |
+| `bun run db:migrate`          | Applies new files in `db/drizzle` with drizzle-kit's migrator, in order, after marking the baseline applied on a database dbmate built                                                  | `DATABASE_URL` for the database's owner role, never `bot_app`                 |
+| `bun run db:generate`         | Makes a migration from a change to `src/db/schema.ts`. Add `--custom` for one written by hand, such as a trigger or a grant                                                             | Nothing                                                                       |
 
 Tests use `bun:test`. Unit tests sit next to the code as `src/**/*.test.ts` and `scripts/*.test.ts`, the PGlite tests are in `test/db/`, the race tests in `test/db-concurrency/`, and shared helpers in `test/support/`. Every run preloads `test/support/setup.ts`, which pins the time zone, undoes stubs after each test, and checks every body sent to Discord for live mentions and masked links. To run one file, give a path starting with `./`, since a bare word only filters file names:
 
@@ -246,7 +248,7 @@ bun test --isolate ./src/lib/dates.test.ts
 bun test ./test/db/db-rules.test.ts
 ```
 
-`bun run test:db` runs the migration files on PGlite and the tests send the bot's own SQL to it as `bot_app`. The concurrency tests need real Postgres 17. CI's database workflow runs one as a service, makes an owner, a database and the `discord_bot` schema, runs `bun run db:migrate` and checks nothing is left pending, sets `bot_app`'s password, then runs those tests through `pg`, logged in as `bot_app`. Point `CONCURRENCY_DATABASE_URL` at that migrated database.
+`bun run test:db` runs the migration files on PGlite and the tests run the bot's own writes against it as `bot_app`, and build the database a dbmate production one is to show that the switch to Drizzle leaves the same schema and grants. The concurrency tests need real Postgres 17. CI's database workflow runs one as a service, makes an owner, a database and the `discord_bot` schema, runs `bun run db:migrate`, sets `bot_app`'s password, then runs those tests through `pg`, logged in as `bot_app`. Point `CONCURRENCY_DATABASE_URL` at that migrated database.
 
 Gitleaks scans every commit on every ref, as CI does. You need a full clone.
 

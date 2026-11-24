@@ -1,13 +1,37 @@
 /**
  * Rules the schema enforces whoever calls it: the bot's grants, the row history, the
- * guards on deleted and closed rows, the CHECKs, and the claim functions' SQL.
- * access-layer.test.ts covers the same database through src/db.
+ * guards on deleted and closed rows, the CHECKs, and the claims the bot's write code
+ * makes. access-layer.test.ts covers the same database through src/db.
  */
 
 import type { PGlite } from "@electric-sql/pglite";
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
-import { todayInZone } from "../../src/lib/dates.ts";
+import {
+  expireInteractionClaims,
+  claimInteraction,
+} from "../../src/db/interaction-claims.ts";
+import { todayInZone, type DateOnly } from "../../src/lib/dates.ts";
+import { softDeleteEvent } from "../../src/db/events.ts";
+import {
+  assignEventStep,
+  claimEventReminder,
+  claimStepHandoff,
+  closeStaleEventClaim,
+  completeEventStep,
+  setEventPickupTime,
+} from "../../src/db/event-steps.ts";
+import {
+  claimReminder,
+  closeStaleClaim,
+  markReminderSent,
+  markReminderSkipped,
+  reclaimReminder,
+} from "../../src/db/reminders.ts";
+import { saveSetupDraft } from "../../src/db/guild-config.ts";
+import { editTask } from "../../src/db/tasks.ts";
+import type { EventReminderKind } from "../../src/db/types.ts";
 import { pgliteSql } from "../support/sql-client.ts";
+import { botClient, must } from "./bot-writes.ts";
 import { insertFinishedJobRun } from "../support/job-runs-fixture.ts";
 import {
   FIXTURE_DUE_DATE as DUE,
@@ -34,21 +58,29 @@ const FOREIGN_KEY_VIOLATION = "23503";
 const UNIQUE_VIOLATION = "23505";
 const PARENT_UNAVAILABLE = "CF410";
 
-const READ_ONLY_TABLES = [
+/** The tables bot_app reads. */
+const ALL_TABLES = [
   "config_audit",
   "event_reminder_log",
   "event_step_assignees",
   "event_steps",
+  "events",
   "guild_config",
+  "interaction_claims",
+  "job_runs",
   "managed_channels",
   "reminder_log",
   "setup_drafts",
-];
-const ALL_TABLES = [...READ_ONLY_TABLES, "events", "job_runs", "tasks"].sort();
-/** Reached only through functions, so bot_app has no grant on it. */
-const NO_GRANT_TABLES = ["interaction_claims", "task_reassignments"];
-/** dbmate's record of applied migrations. */
-const LEDGER_TABLES = ["schema_migrations"];
+  "tasks",
+].sort();
+/** Written by the bot and never read back, so bot_app has no SELECT on it. */
+const NO_READ_TABLES = ["row_versions", "task_reassignments"];
+/** The migration tool's record of applied migrations. */
+const LEDGER_TABLES = ["drizzle_migrations"];
+/** The only table the bot deletes from: claims are worth keeping for a day. */
+const DELETABLE_TABLES = ["interaction_claims"];
+
+const bot = () => botClient(db);
 
 let db: PGlite;
 let guild: GuildFixture;
@@ -80,22 +112,46 @@ describe("grants", () => {
     // One row in every table, so a read that returns nothing proves nothing.
     const eventId = await insertEvent(db, guild);
     const taskId = await insertTask(db, guild, eventId);
-    await asBot(`SELECT discord_bot.claim_reminder($1, 'due_day', '${DUE}')`, [
-      taskId,
-    ]);
-    await asBot(
-      `SELECT discord_bot.assign_event_step($1, $2, 'budget_sheet', $3, $3)`,
-      [eventId, guild.guildId, fakeId()],
+    must(
+      await claimReminder(bot(), {
+        taskId,
+        kind: "due_day",
+        dueDate: DUE as DateOnly,
+      }),
     );
-    await asBot(
-      // A step reminder can be claimed only for today or yesterday in the guild's zone.
-      `SELECT discord_bot.claim_event_reminder($1, 'daily_steps', (now() AT TIME ZONE 'America/New_York')::date)`,
-      [eventId],
+    must(
+      await assignEventStep(bot(), {
+        eventId,
+        guildId: guild.guildId,
+        kind: "budget_sheet",
+        userId: fakeId(),
+        actorId: fakeId(),
+      }),
     );
-    await asBot(
-      `SELECT discord_bot.save_setup_draft($1, $2, $3, $3, $3, $3, $3, $3, 'abcdefgh12345678')`,
-      [guild.guildId, fakeId(), fakeId()],
+    must(
+      await claimEventReminder(bot(), {
+        eventId,
+        // A step reminder can be claimed only for today or yesterday in the guild's zone.
+        kind: "daily_steps",
+        reminderDate: todayInZone(new Date(), "America/New_York"),
+      }),
     );
+    const person = fakeId();
+    must(
+      await saveSetupDraft(bot(), {
+        guildId: guild.guildId,
+        actorId: person,
+        roles: {
+          officerRoleId: person,
+          adminRoleId: person,
+          eboardRoleId: person,
+          eventsCommitteeRoleId: person,
+          treasuryRoleId: person,
+          marketingRoleId: person,
+        },
+      }),
+    );
+    must(await claimInteraction(bot(), { interactionId: fakeId() }));
     await insertFinishedJobRun(db, { status: "succeeded" });
   });
 
@@ -115,30 +171,83 @@ describe("grants", () => {
     },
   );
 
+  // The columns a write may change are granted by name, so a column the code never
+  // writes, such as a row's key, is refused even on a table the bot updates.
   it.each([
     ["config_audit", "guild_id"],
-    ["event_reminder_log", "state"],
-    ["event_step_assignees", "removed_at"],
-    ["event_steps", "status"],
+    ["event_reminder_log", "event_id"],
+    ["event_reminder_log", "kind"],
+    ["event_step_assignees", "user_id"],
+    ["event_steps", "guild_id"],
+    ["event_steps", "kind"],
     ["guild_config", "guild_id"],
-    ["job_runs", "status"],
+    ["guild_config", "created_at"],
+    ["job_runs", "job_name"],
+    ["job_runs", "started_at"],
+    ["job_runs", "heartbeat_at"],
     ["managed_channels", "guild_id"],
+    ["managed_channels", "channel_id"],
     ["reminder_log", "task_id"],
-    ["setup_drafts", "fingerprint"],
-  ])("bot_app cannot insert into or update %s directly", async (table, col) => {
-    await refused(BOT_APP, `INSERT INTO discord_bot.${table} DEFAULT VALUES`);
+    ["reminder_log", "due_date"],
+    ["setup_drafts", "guild_id"],
+    ["interaction_claims", "interaction_id"],
+    ["task_reassignments", "actor_id"],
+    ["row_versions", "old_row"],
+  ])("bot_app cannot update %s.%s", async (table, col) => {
     await refused(BOT_APP, `UPDATE discord_bot.${table} SET ${col} = ${col}`);
   });
 
-  it.each([...ALL_TABLES, ...NO_GRANT_TABLES, ...LEDGER_TABLES])(
-    "bot_app cannot DELETE from or TRUNCATE %s",
+  it.each(["config_audit", "interaction_claims", "task_reassignments"])(
+    "bot_app cannot update any column of %s",
     async (table) => {
-      await refused(BOT_APP, `DELETE FROM discord_bot.${table}`);
+      const { rows } = await db.query<{ column_name: string }>(
+        `SELECT column_name FROM information_schema.columns
+         WHERE table_schema = 'discord_bot' AND table_name = $1
+           AND is_identity = 'NO'`,
+        [table],
+      );
+      for (const { column_name: column } of rows) {
+        await refused(
+          BOT_APP,
+          `UPDATE discord_bot.${table} SET ${column} = ${column}`,
+        );
+      }
+    },
+  );
+
+  it.each(["event_steps", "row_versions"])(
+    "bot_app cannot insert into %s, which only a trigger writes",
+    async (table) => {
+      await refused(BOT_APP, `INSERT INTO discord_bot.${table} DEFAULT VALUES`);
+    },
+  );
+
+  it.each(
+    [...ALL_TABLES, ...NO_READ_TABLES, ...LEDGER_TABLES].filter(
+      (table) => !DELETABLE_TABLES.includes(table),
+    ),
+  )("bot_app cannot DELETE from %s", async (table) => {
+    await refused(BOT_APP, `DELETE FROM discord_bot.${table}`);
+  });
+
+  it.each([...ALL_TABLES, ...NO_READ_TABLES, ...LEDGER_TABLES])(
+    "bot_app cannot TRUNCATE %s",
+    async (table) => {
       await refused(BOT_APP, `TRUNCATE discord_bot.${table}`);
     },
   );
 
-  it.each([...NO_GRANT_TABLES, ...LEDGER_TABLES])(
+  it("bot_app may delete from the tables DELETABLE_TABLES names, and nothing else", async () => {
+    const { rows } = await db.query<{ table_name: string }>(
+      `SELECT DISTINCT table_name FROM information_schema.table_privileges
+       WHERE table_schema = 'discord_bot' AND grantee = $1
+         AND privilege_type IN ('DELETE', 'TRUNCATE')`,
+      [BOT_APP],
+    );
+    expect(rows.map((row) => row.table_name)).toEqual(DELETABLE_TABLES);
+  });
+
+  it.each([...NO_READ_TABLES, ...LEDGER_TABLES])(
     "bot_app cannot read %s",
     async (table) => {
       await refused(BOT_APP, `SELECT * FROM discord_bot.${table}`);
@@ -149,7 +258,7 @@ describe("grants", () => {
     "ALTER TABLE discord_bot.tasks ADD COLUMN forged text",
     "ALTER TABLE discord_bot.tasks DISABLE TRIGGER ALL",
     "SELECT discord_bot.require_open_parent()",
-    "ALTER FUNCTION discord_bot.claim_interaction(text) SECURITY INVOKER",
+    "ALTER FUNCTION discord_bot.record_row_version() SECURITY INVOKER",
     "CREATE TABLE discord_bot.forged (id int)",
     "ALTER ROLE bot_app CREATEROLE",
   ])("bot_app cannot run %s", async (sql) => {
@@ -289,10 +398,7 @@ describe("deleted and closed rows", () => {
 
   it("a deleted event cannot be undeleted by the bot", async () => {
     const eventId = await insertEvent(db, guild);
-    await asBot(`SELECT discord_bot.soft_delete_event($1, $2)`, [
-      eventId,
-      guild.guildId,
-    ]);
+    must(await softDeleteEvent(bot(), { eventId, guildId: guild.guildId }));
     await refused(
       BOT_APP,
       "UPDATE discord_bot.events SET deleted_at = NULL WHERE id = $1",
@@ -328,10 +434,12 @@ describe("deleted and closed rows", () => {
       );
     const oldEvent = await insertEvent(db, guild);
     await link(oldEvent);
-    await asBot(`SELECT discord_bot.soft_delete_event($1, $2)`, [
-      oldEvent,
-      guild.guildId,
-    ]);
+    must(
+      await softDeleteEvent(bot(), {
+        eventId: oldEvent,
+        guildId: guild.guildId,
+      }),
+    );
     expect(
       await errorCodeOf(link(await insertEvent(db, guild))),
     ).toBeUndefined();
@@ -346,11 +454,15 @@ describe("deleted and closed rows", () => {
   });
 
   it.each([
-    ["deleted", `SELECT discord_bot.soft_delete_event($1, $2)`],
+    ["deleted", "soft delete"],
     ["closed", `UPDATE discord_bot.events SET status = 'closed' WHERE id = $1`],
-  ])("rejects a new task on a %s event", async (_name, sql) => {
+  ])("rejects a new task on a %s event", async (name, sql) => {
     const eventId = await insertEvent(db, guild);
-    await asBot(sql, sql.includes("$2") ? [eventId, guild.guildId] : [eventId]);
+    if (name === "deleted") {
+      must(await softDeleteEvent(bot(), { eventId, guildId: guild.guildId }));
+    } else {
+      await asBot(sql, [eventId]);
+    }
     expect(await errorCodeOf(insertTask(db, guild, eventId))).toBe(
       PARENT_UNAVAILABLE,
     );
@@ -377,22 +489,27 @@ describe("deleted and closed rows", () => {
 
   it("refuses a step's hand-off on a closed event", async () => {
     const eventId = await insertEvent(db, guild);
-    await asBot(
-      "SELECT discord_bot.complete_event_step($1, $2, 'budget_sheet', $3)",
-      [eventId, guild.guildId, fakeId()],
+    must(
+      await completeEventStep(bot(), {
+        eventId,
+        guildId: guild.guildId,
+        kind: "budget_sheet",
+        actorId: fakeId(),
+      }),
     );
     await asBot(
       "UPDATE discord_bot.events SET status = 'closed' WHERE id = $1",
       [eventId],
     );
-    expect(
-      await errorCodeOf(
-        asBot("SELECT discord_bot.claim_step_handoff($1, $2, 'budget_sheet')", [
-          eventId,
-          guild.guildId,
-        ]),
-      ),
-    ).toBe(PARENT_UNAVAILABLE);
+    const handoff = await claimStepHandoff(bot(), {
+      eventId,
+      guildId: guild.guildId,
+      kind: "budget_sheet",
+    });
+    expect(handoff).toEqual({
+      ok: false,
+      error: { category: "parent_unavailable", code: PARENT_UNAVAILABLE },
+    });
   });
 
   it("counts a task edit against the officer's limit only when the person changes", async () => {
@@ -403,15 +520,16 @@ describe("deleted and closed rows", () => {
         "SELECT assignee_id, updated_at::text AS v FROM discord_bot.tasks WHERE id = $1",
         [taskId],
       );
-      await asBot(
-        `SELECT discord_bot.edit_task($1, $2, $3, 'Book the room', '2030-01-10', $4, $5)`,
-        [
+      must(
+        await editTask(bot(), {
           taskId,
-          guild.guildId,
-          rows[0]?.v,
-          assignee ?? rows[0]?.assignee_id,
-          actor,
-        ],
+          guildId: guild.guildId,
+          expectedUpdatedAt: rows[0]?.v ?? "",
+          description: "Book the room",
+          dueDate: "2030-01-10" as DateOnly,
+          assigneeId: assignee ?? rows[0]?.assignee_id ?? "",
+          actorId: actor,
+        }),
       );
       const counted = await db.query<{ n: number }>(
         "SELECT count(*)::int AS n FROM discord_bot.task_reassignments WHERE actor_id = $1",
@@ -504,28 +622,39 @@ describe("schema constraints", () => {
 
 describe("task reminder claims", () => {
   const claim = async (taskId: string, dueDate = DUE) =>
-    (
-      await asBot<{ token: string | null }>(
-        `SELECT discord_bot.claim_reminder($1, 'one_day', $2) AS token`,
-        [taskId, dueDate],
-      )
-    )[0]?.token ?? null;
-  const reclaim = async (taskId: string, token: string) =>
-    (
-      await asBot<{ token: string | null }>(
-        `SELECT discord_bot.reclaim_reminder($1, 'one_day', '${DUE}', $2, 120) AS token`,
-        [taskId, token],
-      )
-    )[0]?.token ?? null;
-  const mark = async (taskId: string, how: "sent" | "skipped", token: string) =>
-    (
-      await asBot<{ marked: boolean }>(
-        how === "sent"
-          ? `SELECT discord_bot.mark_reminder_sent($1, 'one_day', '${DUE}', $2, $3) AS marked`
-          : `SELECT discord_bot.mark_reminder_skipped($1, 'one_day', '${DUE}', $2) AS marked`,
-        how === "sent" ? [taskId, token, fakeId()] : [taskId, token],
-      )
-    )[0]?.marked;
+    must(
+      await claimReminder(bot(), {
+        taskId,
+        kind: "one_day",
+        dueDate: dueDate as DateOnly,
+      }),
+    );
+  const reclaim = async (taskId: string, claimToken: string) =>
+    must(
+      await reclaimReminder(bot(), {
+        taskId,
+        kind: "one_day",
+        dueDate: DUE as DateOnly,
+        claimToken,
+      }),
+    );
+  const mark = async (
+    taskId: string,
+    how: "sent" | "skipped",
+    claimToken: string,
+  ) => {
+    const key = {
+      taskId,
+      kind: "one_day" as const,
+      dueDate: DUE as DateOnly,
+      claimToken,
+    };
+    return must(
+      how === "sent"
+        ? await markReminderSent(bot(), { ...key, messageId: fakeId() })
+        : await markReminderSkipped(bot(), key),
+    );
+  };
   const age = (taskId: string, interval: string) =>
     db.query(
       `UPDATE discord_bot.reminder_log SET claimed_at = now() - $2::interval WHERE task_id = $1`,
@@ -587,22 +716,27 @@ describe("task reminder claims", () => {
 });
 
 describe("closing a stale claim", () => {
-  const closeTask = async (taskId: string, token: string) =>
-    (
-      await asBot<{ closed: boolean }>(
-        `SELECT discord_bot.close_stale_reminder($1, 'one_day', '${DUE}', $2) AS closed`,
-        [taskId, token],
-      )
-    )[0]?.closed;
+  const closeTask = async (taskId: string, claimToken: string) => {
+    const closed = must(
+      await closeStaleClaim(bot(), {
+        taskId,
+        kind: "one_day",
+        dueDate: DUE as DateOnly,
+        claimToken,
+      }),
+    );
+    return closed.outcome === "closed";
+  };
   const claimTask = async (taskId: string) =>
     present(
-      (
-        await asBot<{ token: string }>(
-          `SELECT discord_bot.claim_reminder($1, 'one_day', '${DUE}') AS token`,
-          [taskId],
-        )
-      )[0],
-    ).token;
+      must(
+        await claimReminder(bot(), {
+          taskId,
+          kind: "one_day",
+          dueDate: DUE as DateOnly,
+        }),
+      ),
+    );
   const stateOf = async (taskId: string) =>
     (
       await db.query<{ state: string }>(
@@ -628,13 +762,20 @@ describe("closing a stale claim", () => {
     expect(await closeTask(taskId, token)).toBe(false);
   });
 
-  const closeEvent = async (eventId: string, token: string, before: string) =>
-    (
-      await asBot<{ closed: boolean }>(
-        `SELECT discord_bot.close_stale_event_reminder($1, 'event_today', $2, $3, $4) AS closed`,
-        [eventId, EVENT_DAY, token, before],
-      )
-    )[0]?.closed;
+  const closeEvent = async (
+    eventId: string,
+    claimToken: string,
+    before: string,
+  ) =>
+    must(
+      await closeStaleEventClaim(bot(), {
+        eventId,
+        kind: "event_today",
+        reminderDate: EVENT_DAY as DateOnly,
+        claimToken,
+        beforeDate: before as DateOnly,
+      }),
+    ) === "closed";
   const EVENT_DAY = "2030-01-15";
 
   it("leaves an event's claim while it is live and the guild has reminders on, and closes it otherwise", async () => {
@@ -696,13 +837,16 @@ describe("closing a stale claim", () => {
       );
       return present(rows[0]).claim_token;
     };
-    const closeOf = async (kind: string, day: string, token: string) =>
-      (
-        await asBot<{ closed: boolean }>(
-          `SELECT discord_bot.close_stale_event_reminder($1, $2::discord_bot.event_reminder_kind, $3, $4, '2030-01-14') AS closed`,
-          [eventId, kind, day, token],
-        )
-      )[0]?.closed;
+    const closeOf = async (kind: string, day: string, claimToken: string) =>
+      must(
+        await closeStaleEventClaim(bot(), {
+          eventId,
+          kind: kind as EventReminderKind,
+          reminderDate: day as DateOnly,
+          claimToken,
+          beforeDate: "2030-01-14" as DateOnly,
+        }),
+      ) === "closed";
 
     const late = await claimFor("engage_picture_late", "2030-01-15");
     const lateGone = await claimFor("engage_picture_late", "2030-01-12");
@@ -734,26 +878,36 @@ describe("closing a stale claim", () => {
 
 describe("event reminder claims", () => {
   const claim = async (eventId: string, kind: string, date: string) =>
-    (
-      await asBot<{ token: string | null }>(
-        "SELECT discord_bot.claim_event_reminder($1, $2::discord_bot.event_reminder_kind, $3) AS token",
-        [eventId, kind, date],
-      )
-    )[0]?.token ?? null;
+    must(
+      await claimEventReminder(bot(), {
+        eventId,
+        kind: kind as EventReminderKind,
+        reminderDate: date as DateOnly,
+      }),
+    );
 
   it("sets up Food pickup and its reminders without waiting for the budget", async () => {
     const eventId = await insertEvent(db, guild);
     const actor = fakeId();
-    await asBot(
-      "SELECT discord_bot.assign_event_step($1, $2, 'food_pickup', $3, $3)",
-      [eventId, guild.guildId, actor],
+    must(
+      await assignEventStep(bot(), {
+        eventId,
+        guildId: guild.guildId,
+        kind: "food_pickup",
+        userId: actor,
+        actorId: actor,
+      }),
     );
     expect(
-      await asBot(
-        "SELECT discord_bot.set_event_pickup_time($1, $2, '17:30', $3) AS done",
-        [eventId, guild.guildId, actor],
+      must(
+        await setEventPickupTime(bot(), {
+          eventId,
+          guildId: guild.guildId,
+          pickupTime: "17:30",
+          actorId: actor,
+        }),
       ),
-    ).toEqual([{ done: true }]);
+    ).toBe(true);
 
     // The fixture's event is on 2030-01-15, and a reminder is claimed for today.
     const today = todayInZone(new Date(), "America/New_York");
@@ -778,14 +932,9 @@ describe("event reminder claims", () => {
   });
 });
 
-describe("claim_interaction", () => {
+describe("claimInteraction", () => {
   const claim = async (interactionId: string) =>
-    (
-      await asBot<{ claimed: boolean }>(
-        "SELECT discord_bot.claim_interaction($1) AS claimed",
-        [interactionId],
-      )
-    )[0]?.claimed;
+    must(await claimInteraction(bot(), { interactionId }));
 
   it("is true for the first claim of each interaction and false after, even on replay", async () => {
     const interactionId = fakeId();
@@ -805,9 +954,33 @@ describe("claim_interaction", () => {
   it("is closed to other roles, as is expiry", async () => {
     await refused(
       OTHER_ROLE,
-      `SELECT discord_bot.claim_interaction('${fakeId()}')`,
+      `INSERT INTO discord_bot.interaction_claims (interaction_id) VALUES ('${fakeId()}')`,
     );
-    await refused(OTHER_ROLE, "SELECT discord_bot.expire_interaction_claims()");
+    await refused(OTHER_ROLE, "DELETE FROM discord_bot.interaction_claims");
+  });
+
+  it("lets bot_app delete a claim only once it is a day old, whatever it asks for", async () => {
+    const aged = async (hours: number) => {
+      const id = fakeId();
+      await db.query(
+        `INSERT INTO discord_bot.interaction_claims (interaction_id, claimed_at)
+         VALUES ($1, now() - make_interval(hours => $2))`,
+        [id, hours],
+      );
+      return id;
+    };
+    const old = await aged(25);
+    const recent = await aged(1);
+    await asBot(
+      "DELETE FROM discord_bot.interaction_claims WHERE interaction_id = ANY($1)",
+      [[old, recent]],
+    );
+    await asBot("DELETE FROM discord_bot.interaction_claims");
+    const { rows } = await db.query<{ interaction_id: string }>(
+      "SELECT interaction_id FROM discord_bot.interaction_claims WHERE interaction_id = ANY($1)",
+      [[old, recent]],
+    );
+    expect(rows.map((row) => row.interaction_id)).toEqual([recent]);
   });
 
   it("expires claims older than a day and keeps the rest", async () => {
@@ -823,7 +996,9 @@ describe("claim_interaction", () => {
     const old = await claimAged(25);
     const recent = await claimAged(23);
 
-    await asBot("SELECT discord_bot.expire_interaction_claims()");
+    expect(must(await expireInteractionClaims(bot()))).toBeGreaterThanOrEqual(
+      1,
+    );
 
     const { rows } = await db.query<{ interaction_id: string }>(
       "SELECT interaction_id FROM discord_bot.interaction_claims WHERE interaction_id = ANY($1)",

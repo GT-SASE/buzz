@@ -3,8 +3,8 @@
  * bot_app. The statements are the ones production sends: only where they run differs.
  */
 
-import { createDbClient, type DbClient } from "../../src/db/client.ts";
-import { pgliteSql } from "../support/sql-client.ts";
+import type { DbClient } from "../../src/db/client.ts";
+import { pgliteClient } from "../support/sql-client.ts";
 import { createMigratedDb, type Connection } from "./harness.ts";
 
 export interface Backend {
@@ -20,14 +20,12 @@ export async function openBackend(): Promise<Backend> {
   const database = await createMigratedDb();
   return {
     connection: database,
-    db: createDbClient(pgliteSql(database)),
+    db: pgliteClient(database),
     dbWith: (before) =>
-      createDbClient(
-        pgliteSql(database, async (call) => {
-          await before(call.sql);
-          return undefined;
-        }),
-      ),
+      pgliteClient(database, async (call) => {
+        await before(call.sql);
+        return undefined;
+      }),
     close: () => database.close(),
   };
 }

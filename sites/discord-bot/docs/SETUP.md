@@ -65,7 +65,7 @@ This needs Postgres 17 or newer, which buzz's project already is. You need the o
 
 ### Make the schema and `bot_app`
 
-In Neon's SQL editor, signed in as the owner, run this. Make the password first with `openssl rand -hex 32` and save it in the password manager. The schema has to exist before the first migration, because dbmate keeps its record of applied migrations in `discord_bot.schema_migrations`.
+In Neon's SQL editor, signed in as the owner, run this. Make the password first with `openssl rand -hex 32` and save it in the password manager. The schema has to exist before the first migration, because the migration tool keeps its record of applied migrations in `discord_bot.drizzle_migrations`.
 
 ```sql
 CREATE SCHEMA IF NOT EXISTS discord_bot;
@@ -76,14 +76,16 @@ If `bot_app` already exists (a second run), use `ALTER ROLE bot_app PASSWORD '<p
 
 ### Run the migrations
 
-From `sites/discord-bot`, with the owner's string. The script already passes `--migrations-table discord_bot.schema_migrations`.
+From `sites/discord-bot`, with the owner's string. `db/migrate.ts` applies the files in `db/drizzle` and keeps its record in `discord_bot.drizzle_migrations`.
 
 ```sh
 read -rs OWNER_URL
 DATABASE_URL="$OWNER_URL" bun run db:migrate
 ```
 
-**Expect:** `Applying:` and `Applied:` for each file in `db/migrations`. Run it again and it prints nothing. buzz's own `bun run db:migrate` is separate and never touches `discord_bot`: its `drizzle.config.ts` has `schemaFilter: ["public"]`.
+**Expect:** `New database: every file run.` Run it again and it prints `Ledger present: newer files run.` and changes nothing.
+
+**A database dbmate built.** Production was migrated by dbmate until Drizzle took over, so it holds `discord_bot.schema_migrations` with six versions and no `discord_bot.drizzle_migrations`. The first run there prints `Adopted a dbmate database: 0000_baseline.sql marked applied, newer files run.`: it writes the baseline's row into the new record in one transaction, so Drizzle skips that file, and then runs `0001`, which only restates triggers, the role and grants. It refuses, and writes nothing, if `schema_migrations` does not hold exactly the six versions listed in `db/migrate.ts`: finish with dbmate from an older checkout (`bun run db:migrate:legacy`) first. buzz's own `bun run db:migrate` is separate and never touches `discord_bot`: its `drizzle.config.ts` has `schemaFilter: ["public"]`.
 
 **Failure looks like:** `permission denied`. Use the project's owner role, never `bot_app`. `schema "discord_bot" does not exist` means the SQL above was not run.
 

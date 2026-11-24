@@ -17,7 +17,7 @@
  *
  * Two admins can race. The version shown is carried in Confirm's custom_id and
  * compared with the database's: whoever was shown an old one gets a refresh message,
- * and the database function settles the case where both clicks arrive at once.
+ * and the write's version check settles the case where both clicks arrive at once.
  */
 
 import {

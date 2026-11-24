@@ -1,16 +1,19 @@
 import { DISCORD_LIMITS } from "../discord/safe-text.ts";
 import type { DateOnly } from "../lib/dates.ts";
 import { isSnowflake } from "../lib/snowflake.ts";
+import { and, asc, eq, isNull, sql as dsql } from "drizzle-orm";
 import type { DbClient } from "./client.ts";
 import {
-  callFunction,
   capped,
   changedRow,
   firstRow,
   nullAsNotFound,
   query,
   sql,
+  transact,
+  write,
 } from "./internal.ts";
+import { events, tasks } from "./schema.ts";
 import { refused, type DbResult } from "./errors.ts";
 import type { CappedList, EventChoice, EventRow } from "./types.ts";
 import {
@@ -282,11 +285,22 @@ export async function claimEventPostAttempt(
   db: DbClient,
   key: EventKey,
 ): Promise<DbResult<boolean>> {
-  return callFunction<boolean>(
-    db,
-    sql`select discord_bot.claim_event_post_attempt(p_event_id => ${key.eventId},
-      p_guild_id => ${key.guildId}) as value`,
-  );
+  return write(db, async (orm) => {
+    const claimed = await orm
+      .update(events)
+      .set({ postAttemptAt: dsql`now()` })
+      .where(
+        and(
+          eq(events.id, key.eventId),
+          eq(events.guildId, key.guildId),
+          isNull(events.deletedAt),
+          eq(events.threadStatus, "pending"),
+          isNull(events.postAttemptAt),
+        ),
+      )
+      .returning({ id: events.id });
+    return claimed.length > 0;
+  });
 }
 
 /** Gives the reservation back. Only after Discord clearly refused to make the post. */
@@ -294,11 +308,21 @@ export async function releaseEventPostAttempt(
   db: DbClient,
   key: EventKey,
 ): Promise<DbResult<boolean>> {
-  return callFunction<boolean>(
-    db,
-    sql`select discord_bot.release_event_post_attempt(p_event_id => ${key.eventId},
-      p_guild_id => ${key.guildId}) as value`,
-  );
+  return write(db, async (orm) => {
+    const released = await orm
+      .update(events)
+      .set({ postAttemptAt: null })
+      .where(
+        and(
+          eq(events.id, key.eventId),
+          eq(events.guildId, key.guildId),
+          isNull(events.deletedAt),
+          eq(events.threadStatus, "pending"),
+        ),
+      )
+      .returning({ id: events.id });
+    return released.length > 0;
+  });
 }
 
 /** Soft-deletes the event and its tasks. Returns how many tasks were deleted. */
@@ -306,12 +330,45 @@ export async function softDeleteEvent(
   db: DbClient,
   key: EventKey,
 ): Promise<DbResult<number>> {
-  // The function returns null when there is no live event with that ID in that guild.
+  // Null when there is no live event with that ID in that guild.
   return nullAsNotFound(
-    await callFunction<number | null>(
-      db,
-      sql`select discord_bot.soft_delete_event(p_event_id => ${key.eventId},
-        p_guild_id => ${key.guildId}) as value`,
-    ),
+    await transact(db, async (tx) => {
+      // The event's tasks are locked first, in a fixed order, so two deletes of the same
+      // event, or a delete and an edit, wait on each other and cannot deadlock.
+      await tx
+        .select({ id: tasks.id })
+        .from(tasks)
+        .where(
+          and(
+            eq(tasks.eventId, key.eventId),
+            eq(tasks.guildId, key.guildId),
+            isNull(tasks.deletedAt),
+          ),
+        )
+        .orderBy(asc(tasks.id))
+        .for("no key update");
+
+      const deleted = await tx
+        .update(events)
+        .set({ deletedAt: dsql`now()` })
+        .where(
+          and(
+            eq(events.id, key.eventId),
+            eq(events.guildId, key.guildId),
+            isNull(events.deletedAt),
+          ),
+        )
+        .returning({ id: events.id });
+      if (deleted.length === 0) {
+        return null;
+      }
+
+      const deletedTasks = await tx
+        .update(tasks)
+        .set({ deletedAt: dsql`now()` })
+        .where(and(eq(tasks.eventId, key.eventId), isNull(tasks.deletedAt)))
+        .returning({ id: tasks.id });
+      return deletedTasks.length;
+    }),
   );
 }

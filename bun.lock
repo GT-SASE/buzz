@@ -108,6 +108,7 @@
         "@neondatabase/serverless": "1.2.1",
         "@vercel/functions": "2.2.13",
         "discord-api-types": "0.38.60",
+        "drizzle-orm": "0.45.4",
         "zod": "4.6.7",
       },
       "devDependencies": {
@@ -115,6 +116,7 @@
         "@types/node": "^26.6.6",
         "@types/pg": "^8.23.1",
         "dbmate": "2.38.2",
+        "drizzle-kit": "0.31.11",
         "pg": "^8.23.1",
         "tsrs": "0.20.1-ts7.1.0-beta",
         "typescript-7": "npm:typescript@^7.0.0",

@@ -6,7 +6,7 @@
 
 import type { PGlite } from "@electric-sql/pglite";
 import { afterAll, beforeAll, beforeEach, spyOn } from "bun:test";
-import { createDbClient, type DbClient } from "../../src/db/client.ts";
+import type { DbClient } from "../../src/db/client.ts";
 import { createDiscordClient } from "../../src/discord/client.ts";
 import { managedChannelCheck } from "../../src/handlers/dependencies.ts";
 import { slotStart } from "../../src/reminders/plan.ts";
@@ -16,7 +16,7 @@ import {
   type RunResult,
 } from "../../src/reminders/run.ts";
 import { messageBody, type MessageBody } from "../support/json.ts";
-import { pgliteSql, type Intercept } from "../support/sql-client.ts";
+import { pgliteClient, type Intercept } from "../support/sql-client.ts";
 import { recordSentBody } from "../support/discord-server.ts";
 import { asFetch, stubEnv } from "../support/stubs.ts";
 import {
@@ -190,7 +190,7 @@ export function useReminderWorld(): ReminderWorld {
 
   beforeAll(async () => {
     database = await createMigratedDb();
-    db = createDbClient(pgliteSql(database, (call) => world.sqlGate(call)));
+    db = pgliteClient(database, (call) => world.sqlGate(call));
   }, HOOK_TIMEOUT_MS);
 
   afterAll(() => database?.close());

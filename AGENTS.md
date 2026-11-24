@@ -12,8 +12,8 @@ trusting any list in prose, including this file:
 
 - `buzz_guide` this file (also the resource `buzz://AGENTS.md`)
 - `buzz_trpc_procedures [filter]` every tRPC procedure: access, query/mutation, file:line
-- `buzz_db_schema [table] [database=all|buzz|bot]` buzz Drizzle tables (columns, keys, indexes) and the bot's tables, enums, domains and functions with signatures, read from the catalogs of an in-memory PGlite after applying `sites/discord-bot/db/migrations`, grouped by schema; a failing migration is returned as the error
-- `buzz_migrations` buzz Drizzle SQL and the bot's dbmate files, latest of each, and each process (bot production migrations are a manual owner step)
+- `buzz_db_schema [table] [database=all|buzz|bot]` buzz Drizzle tables (columns, keys, indexes) and the bot's tables, enums, domains and functions with signatures, read from the catalogs of an in-memory PGlite after applying `sites/discord-bot/db/drizzle`, grouped by schema; a failing migration is returned as the error
+- `buzz_migrations` buzz Drizzle SQL and the bot's Drizzle files, latest of each, and each process (bot production migrations are a manual owner step)
 - `buzz_routes` Next routes tagged marketing / portal member / portal admin / api, plus the bot's Vercel functions and crons
 - `buzz_bot_commands [filter]` the bot's slash commands, subcommands and options, from the definitions `register-commands.ts` sends
 - `buzz_version` footer version rule, computed build, every workspace (including `@buzz/discord-bot`) with mismatches flagged, README table
@@ -36,7 +36,7 @@ packages/db/drizzle/            generated SQL migrations + meta; commit them
 packages/db/scripts/            seeds
 packages/auth/src/              NextAuth config and auth()
 packages/mcp/src/               this MCP server
-sites/discord-bot/              the events Discord bot: api/ (Vercel functions), src/, db/migrations (dbmate), its own README and docs/
+sites/discord-bot/              the events Discord bot: api/ (Vercel functions), src/, db/drizzle (drizzle-kit; `src/db/schema.ts` is the schema, writes are TypeScript in `src/db`), its own README and docs/
 sites/web/src/app/(marketing)/  public pages, prerendered; [slug] serves CMS pages
 sites/web/src/app/portal/(member)/        member portal pages (needs a session)
 sites/web/src/app/portal/(member)/admin/  officer pages; adminNav lives in sites/web/src/data/portal.ts
@@ -60,7 +60,7 @@ Use `bun`, `bun run`, `bun x`. Never npm, pnpm, npx, bunx. Spell out `bun run te
 - `bun run format:write`, `bun run lint:fix`
 - `bun run db:generate | db:migrate | db:push | db:seed | db:seed:calendar | db:studio`
 - `bun run smoke` = `bun scripts/smoke.mjs` against the live site
-- Discord bot (`sites/discord-bot`, `bun run --cwd sites/discord-bot <script>`): `build` (Vercel Build Output in `.vercel/output`), `smoke` (loads the built functions from a temp folder, expects 401s), `test`, `test:db`, `test:db:concurrency` (needs `CONCURRENCY_DATABASE_URL` and `BOT_APP_PASSWORD`, see its README), `db:migrate` (dbmate into the `discord_bot` schema, which must exist first; `DATABASE_URL` of a disposable DB only), `commands:register <guild-id>...` (replaces those servers' slash commands; needs the Discord env vars, never run it in a test)
+- Discord bot (`sites/discord-bot`, `bun run --cwd sites/discord-bot <script>`): `build` (Vercel Build Output in `.vercel/output`), `smoke` (loads the built functions from a temp folder, expects 401s), `test`, `test:db`, `test:db:concurrency` (needs `CONCURRENCY_DATABASE_URL` and `BOT_APP_PASSWORD`, see its README), `db:migrate` (drizzle-kit migrator into the `discord_bot` schema, which must exist first, adopting a dbmate-built database; `DATABASE_URL` of a disposable DB only), `commands:register <guild-id>...` (replaces those servers' slash commands; needs the Discord env vars, never run it in a test)
 - `bun run hooks:install` and `bun run gitleaks:install`: pre-push secret scan, rules in `.gitleaks.toml`
 
 ## Tests

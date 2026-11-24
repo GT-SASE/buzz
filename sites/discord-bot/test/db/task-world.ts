@@ -7,6 +7,7 @@
  */
 
 import { afterAll, afterEach, beforeAll, mock, type Mock } from "bun:test";
+import { bindRoles, changeConfig } from "./bot-writes.ts";
 import type { DiscordClient } from "../../src/discord/client.ts";
 import { setEventThread } from "../../src/db/events.ts";
 import type { DbResult } from "../../src/db/errors.ts";
@@ -35,7 +36,7 @@ import {
 import { fakeId } from "../support/ids.ts";
 import { openBackend, type Backend } from "./backend.ts";
 import { insertEvent, insertGuild, type GuildFixture } from "./fixtures.ts";
-import { HOOK_TIMEOUT_MS, queryAs } from "./harness.ts";
+import { HOOK_TIMEOUT_MS } from "./harness.ts";
 
 export const EPHEMERAL = 64;
 export const SUPPRESS_EMBEDS = 4;
@@ -235,7 +236,7 @@ export function useTaskWorld(): TaskWorld {
       insert: /^insert into tasks/,
       update: /^update tasks/,
       // A change of text, date or person goes through this one function.
-      edit: /^select discord_bot.edit_task\(/,
+      edit: /^select "assignee_id" from "discord_bot"."tasks"/,
     }[write];
     const db = world.backend.dbWith(async (text) => {
       if (!staged && statement.test(text)) {
@@ -289,18 +290,17 @@ export function useTaskWorld(): TaskWorld {
   beforeAll(async () => {
     world.backend = await openBackend();
     const forum = fakeId();
-    await queryAs(
-      world.backend.connection,
-      "bot_app",
-      `SELECT discord_bot.apply_role_bindings($1, 0, $2, $3, $4, NULL, NULL, NULL, NULL)`,
-      [GUILD_ID, fakeId(), OFFICER_ROLE, ADMIN_ROLE],
-    );
-    await queryAs(
-      world.backend.connection,
-      "bot_app",
-      `SELECT discord_bot.apply_config_change($1, 1, $2, NULL, ARRAY[$3]::text[])`,
-      [GUILD_ID, fakeId(), forum],
-    );
+    await bindRoles(world.backend.connection, {
+      guildId: GUILD_ID,
+      actorId: fakeId(),
+      officerRoleId: OFFICER_ROLE,
+      adminRoleId: ADMIN_ROLE,
+    });
+    await changeConfig(world.backend.connection, {
+      guildId: GUILD_ID,
+      actorId: fakeId(),
+      addChannelIds: [forum],
+    });
     world.fixture = {
       guildId: GUILD_ID,
       officerRoleId: OFFICER_ROLE,

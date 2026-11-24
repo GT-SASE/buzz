@@ -7,7 +7,7 @@ import {
   pgConnection,
   type Connection,
 } from "../db/harness.ts";
-import { pgSql } from "../support/sql-client.ts";
+import { pgOrm, pgSql } from "../support/sql-client.ts";
 import {
   botUrlForDatabase,
   concurrencyContext,
@@ -38,6 +38,8 @@ interface RaceDatabase {
   readonly observer: pg.Client;
   /** The observer, in the shape test/db/fixtures.ts takes. */
   readonly connection: Connection;
+  /** The connection string of the bot's login on this database. */
+  readonly botUrl: string;
   /** The bot's own client, logged in as bot_app. */
   readonly db: DbClient;
   /** A connection logged in as bot_app, for statements the bot never sends. */
@@ -55,10 +57,15 @@ interface RaceDatabase {
    * then T1 finishes. Returns what the bot's call returned.
    */
   race<T>(
-    first: Statement,
+    first: Statement | Statement[],
     second: (db: DbClient) => Promise<T>,
     finish?: "COMMIT" | "ROLLBACK",
   ): Promise<T>;
+}
+
+/** A list of statements, as opposed to one `[text, params]` pair. */
+function isStatements(value: Statement | Statement[]): value is Statement[] {
+  return Array.isArray(value[0]);
 }
 
 export function settled(query: Promise<pg.QueryResult>): Promise<Outcome> {
@@ -127,7 +134,7 @@ export function raceDatabase(): RaceDatabase {
     observer = client;
     cleanups.unshift(() => client.end());
     const pool = new pg.Pool({ connectionString: botUrl });
-    bot = createDbClient(pgSql(pool));
+    bot = createDbClient(pgSql(pool), pgOrm(pool));
     cleanups.unshift(() => pool.end());
   }, HOOK_TIMEOUT_MS);
 
@@ -220,6 +227,9 @@ export function raceDatabase(): RaceDatabase {
     get connection() {
       return pgConnection(ready(observer));
     },
+    get botUrl() {
+      return botUrl;
+    },
     get db() {
       return ready(bot);
     },
@@ -233,7 +243,10 @@ export function raceDatabase(): RaceDatabase {
     async race(first, second, finish = "COMMIT") {
       const one = ready(t1);
       await one.query("BEGIN");
-      await one.query(first[0], first[1]);
+      const statements: Statement[] = isStatements(first) ? first : [first];
+      for (const [text, params] of statements) {
+        await one.query(text, params);
+      }
       const outcome = second(ready(bot));
       try {
         await waitUntilBlocked();

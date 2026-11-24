@@ -56,15 +56,15 @@ describe("mcp bot introspection", () => {
       "CONSTRAINT event_steps_pkey: PRIMARY KEY (event_id, kind)",
     );
     expect(out).toMatch(/INDEX events_live_thread_uq|events_live_thread_uq/);
-    // Functions carry their argument list and SECURITY DEFINER flag; the replaced
-    // assign_event_step appears once, with its final return type.
-    const assign = out
+    // Functions carry their argument list and SECURITY DEFINER flag. Only the triggers
+    // are left in the database; the writes are TypeScript.
+    const recorder = out
       .split("\n")
-      .filter((l) => l.startsWith("function discord_bot.assign_event_step("));
-    expect(assign).toHaveLength(1);
-    expect(assign[0]).toContain("p_kind discord_bot.event_step_kind");
-    expect(assign[0]).toContain("returns text");
-    expect(assign[0]).toContain("security definer");
+      .filter((l) => l.startsWith("function discord_bot.record_row_version("));
+    expect(recorder).toHaveLength(1);
+    expect(recorder[0]).toContain("returns trigger");
+    expect(recorder[0]).toContain("security definer");
+    expect(out).not.toContain("function discord_bot.assign_event_step(");
   }, 60_000);
 
   it("filters bot objects by name and keeps the schema heading", async () => {

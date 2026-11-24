@@ -5,10 +5,20 @@
  */
 
 import type { PGlite } from "@electric-sql/pglite";
+import { drizzle as drizzlePglite } from "drizzle-orm/pglite";
+import { drizzle as drizzlePg } from "drizzle-orm/node-postgres";
+import { drizzle as drizzleProxy } from "drizzle-orm/pg-proxy";
 import pg from "pg";
-import type { Row, Runner } from "../../src/db/client.ts";
+import {
+  createDbClient,
+  type BotDb,
+  type DbClient,
+  type Row,
+  type Runner,
+} from "../../src/db/client.ts";
+import * as schema from "../../src/db/schema.ts";
 import { TYPE_PARSERS } from "../../src/db/parsers.ts";
-import { BOT_APP, onSessionAlone } from "../db/harness.ts";
+import { BOT_APP, holdSession, onSessionAlone } from "../db/harness.ts";
 
 /** One statement as src/db sends it. */
 export interface SqlCall {
@@ -78,10 +88,150 @@ export function pgliteSql(
 }
 
 /**
+ * What Drizzle's PGlite driver needs of a client: statements one at a time, and a
+ * transaction that hands its statements to a callback.
+ */
+interface PgliteClientLike {
+  query: (
+    text: string,
+    params: unknown[],
+    options?: Record<string, unknown>,
+  ) => Promise<unknown>;
+  transaction: <T>(work: (tx: PgliteClientLike) => Promise<T>) => Promise<T>;
+}
+
+/**
+ * Drizzle over the migrated database on PGlite, logged in as bot_app, as `pgliteSql` is
+ * for plain statements. A statement alone, and a whole transaction, each hold the
+ * session, so no other caller's statement runs under the role or inside the
+ * transaction. `intercept` sees each statement first, as it does for `pgliteSql`. The
+ * first statement of a transaction is seen before the transaction begins, so a test that
+ * stages a race at it can use the database without waiting on the transaction it is
+ * about to start. Later ones are seen inside it, and may answer with an error.
+ */
+export function pgliteOrm(
+  source: PGlite | (() => PGlite),
+  intercept?: Intercept,
+): BotDb {
+  const database = (): PGlite =>
+    typeof source === "function" ? source() : source;
+
+  /** What the intercept answers a statement with, instead of running it. */
+  const seen = async (
+    text: string,
+    params: unknown[],
+  ): Promise<{ rows: unknown[]; fields: [] } | undefined> => {
+    const answer = await intercept?.({ sql: text, params });
+    if (answer instanceof Error) {
+      throw answer;
+    }
+    return answer === undefined ? undefined : { rows: answer.rows, fields: [] };
+  };
+
+  const client: PgliteClientLike = {
+    query: async (text, params, options) => {
+      const answered = await seen(text, params);
+      if (answered !== undefined) {
+        return answered;
+      }
+      const db = database();
+      return onSessionAlone(db, async () => {
+        await db.exec(`SET ROLE ${BOT_APP}`);
+        try {
+          return await db.query(text, params, options);
+        } finally {
+          await db.exec("RESET ROLE");
+        }
+      });
+    },
+    transaction: async (work) => {
+      const db = database();
+      // The session is taken at the first statement that runs, after the intercept has
+      // seen it, and kept to the end, so nothing else runs between the statements of one
+      // transaction.
+      let release: (() => void) | undefined;
+      const inside: PgliteClientLike = {
+        query: async (text, params, options) => {
+          const answered = await seen(text, params);
+          if (answered !== undefined) {
+            return answered;
+          }
+          if (release === undefined) {
+            release = await holdSession(db);
+            await db.exec(`SET ROLE ${BOT_APP}`);
+            await db.exec("BEGIN");
+          }
+          return db.query(text, params, options);
+        },
+        transaction: () => {
+          throw new Error("no nested transactions in tests");
+        },
+      };
+      try {
+        const result = await work(inside);
+        if (release !== undefined) await db.exec("COMMIT");
+        return result;
+      } catch (error) {
+        if (release !== undefined) await db.exec("ROLLBACK");
+        throw error;
+      } finally {
+        if (release !== undefined) {
+          await db.exec("RESET ROLE");
+          release();
+        }
+      }
+    },
+  };
+  return drizzlePglite({
+    client: client as unknown as PGlite,
+    schema,
+  });
+}
+
+/** A client for the migrated PGlite database: reads and single statements, and transactions. */
+export function pgliteClient(
+  source: PGlite | (() => PGlite),
+  intercept?: Intercept,
+): DbClient {
+  return createDbClient(
+    pgliteSql(source, intercept),
+    pgliteOrm(source, intercept),
+  );
+}
+
+/**
+ * Drizzle that runs nothing and answers every statement with no rows, for a test of code
+ * that only has to get as far as writing. It has no transaction.
+ */
+export function stubOrm(): BotDb {
+  return drizzleProxy(() => Promise.resolve({ rows: [] }), {
+    schema,
+  });
+}
+
+/**
+ * Drizzle that sends every statement to `run`, one at a time with no transaction around
+ * it, for a test of what a single write sends and how a failure of it is reported.
+ */
+export function recordingOrm(run: Runner): BotDb {
+  return drizzleProxy(
+    async (text, params) => ({
+      rows: await run(text, params, new AbortController().signal),
+    }),
+    { schema },
+  );
+}
+
+/** Drizzle over a pg pool, for the concurrency tests. Log the pool in as bot_app. */
+export function pgOrm(pool: pg.Pool | pg.Client): BotDb {
+  return drizzlePg(pool, { schema });
+}
+
+/**
  * Runs every statement through a pg pool, for the concurrency tests on a real Postgres,
  * where each statement needs a connection of its own. Log the pool in as bot_app.
  */
-export function pgSql(pool: pg.Pool): Runner {
+export function pgSql(pool: pg.Pool | pg.Client): Runner {
   const builtin = pg.types.getTypeParser as (
     oid: number,
   ) => (value: string) => unknown;
@@ -117,9 +267,13 @@ export function recordingSql(respond: Intercept = () => ({ rows: [] })): {
   return { sql, calls };
 }
 
-/** Whether a statement names this table or function, for a test to fail or answer it. */
-export function names(call: SqlCall, name: string): boolean {
-  return new RegExp(`\\b${name}\\b`).test(call.sql);
+/**
+ * Whether a statement names this table, for a test to fail or answer it, or matches this
+ * pattern, for one statement among several on the same table.
+ */
+export function names(call: SqlCall, name: string | RegExp): boolean {
+  const pattern = typeof name === "string" ? new RegExp(`\\b${name}\\b`) : name;
+  return pattern.test(call.sql);
 }
 
 /**

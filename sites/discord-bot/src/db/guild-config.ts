@@ -1,8 +1,23 @@
 import { hash } from "node:crypto";
+import { and, asc, eq, inArray, ne, sql as dsql } from "drizzle-orm";
 import { isUsableTimeZone } from "../lib/dates.ts";
 import type { DbClient } from "./client.ts";
-import { callFunction, capped, firstRow, query, sql } from "./internal.ts";
-import { refused, type DbResult } from "./errors.ts";
+import {
+  capped,
+  firstRow,
+  query,
+  raise,
+  sql,
+  transact,
+  write,
+} from "./internal.ts";
+import { failure, refused, type DbResult } from "./errors.ts";
+import {
+  configAudit,
+  guildConfig,
+  managedChannels,
+  setupDrafts,
+} from "./schema.ts";
 import type {
   CappedList,
   ConfigChange,
@@ -70,16 +85,82 @@ export async function applyRoleBindings(
     marketingRoleId,
   }: RoleBindings,
 ): Promise<DbResult<number>> {
-  return callFunction<number>(
-    db,
-    sql`select discord_bot.apply_role_bindings(p_guild_id => ${guildId},
-      p_expected_version => ${expectedVersion}, p_actor_id => ${actorId},
-      p_officer_role_id => ${officerRoleId}, p_admin_role_id => ${adminRoleId},
-      p_eboard_role_id => ${eboardRoleId},
-      p_events_committee_role_id => ${eventsCommitteeRoleId},
-      p_treasury_role_id => ${treasuryRoleId},
-      p_marketing_role_id => ${marketingRoleId}) as value`,
-  );
+  const roles = {
+    officer_role_id: officerRoleId,
+    admin_role_id: adminRoleId,
+    eboard_role_id: eboardRoleId,
+    events_committee_role_id: eventsCommitteeRoleId,
+    treasury_role_id: treasuryRoleId,
+    marketing_role_id: marketingRoleId,
+  };
+  return transact(db, async (tx) => {
+    const [current] = await tx
+      .select()
+      .from(guildConfig)
+      .where(eq(guildConfig.guildId, guildId))
+      .for("update");
+
+    let written: { version: number } | undefined;
+    let oldValues: Record<string, string | null> | null = null;
+    if (current !== undefined) {
+      if (current.version !== expectedVersion) {
+        raise("CF409", "config version is stale");
+      }
+      oldValues = {
+        officer_role_id: current.officerRoleId,
+        admin_role_id: current.adminRoleId,
+        eboard_role_id: current.eboardRoleId,
+        events_committee_role_id: current.eventsCommitteeRoleId,
+        treasury_role_id: current.treasuryRoleId,
+        marketing_role_id: current.marketingRoleId,
+      };
+      [written] = await tx
+        .update(guildConfig)
+        .set({
+          officerRoleId,
+          adminRoleId,
+          eboardRoleId,
+          eventsCommitteeRoleId,
+          treasuryRoleId,
+          marketingRoleId,
+          version: dsql`${guildConfig.version} + 1`,
+        })
+        .where(eq(guildConfig.guildId, guildId))
+        .returning({ version: guildConfig.version });
+    } else {
+      if (expectedVersion !== 0) {
+        raise("CF409", "config version is stale");
+      }
+      // A concurrent first setup can pass the check above. The conflict returns no row,
+      // which is reported as a stale version.
+      [written] = await tx
+        .insert(guildConfig)
+        .values({
+          guildId,
+          officerRoleId,
+          adminRoleId,
+          eboardRoleId,
+          eventsCommitteeRoleId,
+          treasuryRoleId,
+          marketingRoleId,
+        })
+        .onConflictDoNothing({ target: guildConfig.guildId })
+        .returning({ version: guildConfig.version });
+    }
+    if (written === undefined) {
+      raise("CF409", "config version is stale");
+    }
+
+    await tx.insert(configAudit).values({
+      guildId,
+      actorId,
+      action: "role_bindings",
+      oldValues,
+      newValues: roles,
+      versionAfter: written.version,
+    });
+    return written.version;
+  });
 }
 
 /** How long a /setup draft stays usable. Older ones read as absent. */
@@ -117,16 +198,25 @@ export async function saveSetupDraft(
   }: { guildId: string; actorId: string; roles: SetupRoles },
 ): Promise<DbResult<string>> {
   const fingerprint = setupDraftFingerprint(roles);
-  const saved = await callFunction<boolean>(
-    db,
-    sql`select discord_bot.save_setup_draft(p_guild_id => ${guildId},
-      p_actor_id => ${actorId}, p_officer_role_id => ${roles.officerRoleId},
-      p_admin_role_id => ${roles.adminRoleId},
-      p_eboard_role_id => ${roles.eboardRoleId},
-      p_events_committee_role_id => ${roles.eventsCommitteeRoleId},
-      p_treasury_role_id => ${roles.treasuryRoleId},
-      p_marketing_role_id => ${roles.marketingRoleId},
-      p_fingerprint => ${fingerprint}) as value`,
+  // Everything but the guild, which is the draft's key and is not granted for update.
+  const draft = {
+    actorId,
+    officerRoleId: roles.officerRoleId,
+    adminRoleId: roles.adminRoleId,
+    eboardRoleId: roles.eboardRoleId,
+    eventsCommitteeRoleId: roles.eventsCommitteeRoleId,
+    treasuryRoleId: roles.treasuryRoleId,
+    marketingRoleId: roles.marketingRoleId,
+    fingerprint,
+  };
+  const saved = await write(db, (orm) =>
+    orm
+      .insert(setupDrafts)
+      .values({ guildId, ...draft })
+      .onConflictDoUpdate({
+        target: setupDrafts.guildId,
+        set: { ...draft, createdAt: dsql`now()` },
+      }),
   );
   return saved.ok ? { ok: true, value: fingerprint } : saved;
 }
@@ -211,15 +301,119 @@ export async function applyConfigChange(
   )) {
     return refused();
   }
-  return callFunction<number>(
-    db,
-    sql`select discord_bot.apply_config_change(p_guild_id => ${guildId},
-      p_expected_version => ${expectedVersion}, p_actor_id => ${actorId},
-      p_reminders_enabled => ${remindersEnabled},
-      p_add_channel_ids => ${[...addChannelIds]}::text[],
-      p_remove_channel_ids => ${[...removeChannelIds]}::text[],
-      p_timezone => ${timezone}) as value`,
-  );
+  const added = [...new Set(addChannelIds)];
+  const removed = [...new Set(removeChannelIds)];
+  // 25 is the most a Discord select menu can submit at once.
+  if (
+    (remindersEnabled === null &&
+      timezone === null &&
+      addChannelIds.length === 0 &&
+      removeChannelIds.length === 0) ||
+    addChannelIds.length > 25 ||
+    removeChannelIds.length > 25 ||
+    [...added, ...removed].some(
+      (channelId) => (channelId as string | null) === null,
+    ) ||
+    added.some((channelId) => removed.includes(channelId))
+  ) {
+    return failure("constraint", "22023");
+  }
+
+  return transact(db, async (tx) => {
+    const [current] = await tx
+      .select()
+      .from(guildConfig)
+      .where(eq(guildConfig.guildId, guildId))
+      .for("update");
+    if (current?.version !== expectedVersion) {
+      raise("CF409", "config version is stale");
+    }
+
+    const activeChannels = async (): Promise<string[]> =>
+      (
+        await tx
+          .select({ channelId: managedChannels.channelId })
+          .from(managedChannels)
+          .where(
+            and(
+              eq(managedChannels.guildId, guildId),
+              eq(managedChannels.status, "active"),
+            ),
+          )
+          .orderBy(asc(managedChannels.channelId))
+      ).map((row) => row.channelId);
+
+    const oldChannels = await activeChannels();
+    const addedIds = added
+      .filter((channelId) => !oldChannels.includes(channelId))
+      .sort();
+
+    if (added.length > 0) {
+      await tx
+        .insert(managedChannels)
+        .values(added.map((channelId) => ({ guildId, channelId })))
+        .onConflictDoUpdate({
+          target: [managedChannels.guildId, managedChannels.channelId],
+          set: { status: "active" },
+        });
+    }
+
+    if (removed.length > 0) {
+      const changed = await tx
+        .update(managedChannels)
+        .set({ status: "removed" })
+        .where(
+          and(
+            eq(managedChannels.guildId, guildId),
+            inArray(managedChannels.channelId, removed),
+            ne(managedChannels.status, "removed"),
+          ),
+        )
+        .returning({ channelId: managedChannels.channelId });
+      if (changed.length !== removed.length) {
+        raise("22023", "channel to remove is not managed");
+      }
+    }
+
+    const newChannels = await activeChannels();
+
+    const [updated] = await tx
+      .update(guildConfig)
+      .set({
+        ...(remindersEnabled === null ? {} : { remindersEnabled }),
+        ...(timezone === null ? {} : { timezone }),
+        version: dsql`${guildConfig.version} + 1`,
+      })
+      .where(eq(guildConfig.guildId, guildId))
+      .returning({
+        version: guildConfig.version,
+        remindersEnabled: guildConfig.remindersEnabled,
+        timezone: guildConfig.timezone,
+      });
+    if (updated === undefined) {
+      raise("CF409", "config version is stale");
+    }
+
+    await tx.insert(configAudit).values({
+      guildId,
+      actorId,
+      action: "settings",
+      oldValues: {
+        reminders_enabled: current.remindersEnabled,
+        timezone: current.timezone,
+        active_channel_ids: oldChannels,
+      },
+      newValues: {
+        reminders_enabled: updated.remindersEnabled,
+        timezone: updated.timezone,
+        active_channel_ids: newChannels,
+        added_channel_ids: addedIds,
+        removed_channel_ids: [...removed].sort(),
+      },
+      versionAfter: updated.version,
+    });
+    return updated.version;
+  });
 }
 
 /** The latest changes for the config panel, newest first. */

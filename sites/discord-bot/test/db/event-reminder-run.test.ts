@@ -5,6 +5,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
+import { changeConfig } from "./bot-writes.ts";
 import {
   assignEventStep,
   completeEventStep,
@@ -164,14 +165,13 @@ async function configChange(
   guild: WorkflowGuildFixture,
   ...change: [boolean | null, string[], string[]]
 ): Promise<void> {
-  await queryAs(
-    w.database,
-    "bot_app",
-    `SELECT discord_bot.apply_config_change($1,
-       (SELECT version FROM discord_bot.guild_config WHERE guild_id = $1), $1, $2,
-       $3::text[], $4::text[])`,
-    [guild.guildId, ...change],
-  );
+  await changeConfig(w.database, {
+    guildId: guild.guildId,
+    actorId: guild.guildId.replace(/.$/, "1"),
+    remindersEnabled: change[0],
+    addChannelIds: change[1],
+    removeChannelIds: change[2],
+  });
 }
 
 /** Ways a guild stops its event reminders, each undone by passing true. */

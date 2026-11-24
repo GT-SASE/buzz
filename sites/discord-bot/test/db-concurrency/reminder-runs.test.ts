@@ -1,15 +1,19 @@
 import { describe, expect, it } from "bun:test";
 import { claimEventReminder } from "../../src/db/event-steps.ts";
-import { beginJobRun } from "../../src/db/job-runs.ts";
+import {
+  beginJobRun,
+  finishJobRun,
+  type JobName,
+} from "../../src/db/job-runs.ts";
 import { claimReminder } from "../../src/db/reminders.ts";
 import { todayInZone, type DateOnly } from "../../src/lib/dates.ts";
 import { slotStart } from "../../src/reminders/plan.ts";
 import { insertEvent, insertGuild, insertTask } from "../db/fixtures.ts";
 import { fakeId, present } from "../db/harness.ts";
-import { raceDatabase, settled } from "./race.ts";
+import { must } from "../db/bot-writes.ts";
+import { raceDatabase } from "./race.ts";
 
-const LOCK_NOT_AVAILABLE = "55P03";
-/** The wait begin_job_run and finish_job_run allow themselves, in the migrations. */
+/** The wait beginJobRun and finishJobRun allow themselves for the job's lock. */
 const LOCK_WAIT_MS = 3_000;
 /** Longer than any wait a statement here should make. */
 const LONGEST_WAIT_MS = 10_000;
@@ -21,34 +25,60 @@ const ROUNDS = 25;
  * both get past it, as they can once a run's lock has gone stale.
  */
 const db = raceDatabase();
-const beginSql = "SELECT discord_bot.begin_job_run($1, 120, $2) AS id";
-const finishSql = `SELECT discord_bot.finish_job_run($1, now(), '{}', NULL) AS rows`;
 const slot = () => new Date(slotStart(new Date()));
+
+/** The job's lock, as beginJobRun and finishJobRun take it, for a transaction to hold. */
+const lockOf = (jobName: string): [string, unknown[]] => [
+  "SELECT pg_advisory_xact_lock(hashtextextended('job_runs:' || $1::text, 0))",
+  [jobName],
+];
 
 describe("two overlapping reminder runs", () => {
   it("only one of two starts gets the run", async () => {
-    const second = await db.race([beginSql, ["reminders", slot()]], (bot) =>
-      beginJobRun(bot, {
-        jobName: "reminders",
-        staleAfterSeconds: 120,
-        slotStart: slot(),
-      }),
+    // A start in progress: its running row, which the other start's insert waits on.
+    const second = await db.race(
+      [
+        [
+          "INSERT INTO discord_bot.job_runs (job_name) VALUES ($1) RETURNING id",
+          ["reminders"],
+        ],
+      ],
+      (bot) =>
+        beginJobRun(bot, {
+          jobName: "reminders",
+          staleAfterSeconds: 120,
+          slotStart: slot(),
+        }),
     );
     expect(second).toEqual({ ok: true, value: null });
   });
 
   it("a start waits for a finish in progress, then sees its success", async () => {
-    const { rows } = await db.observer.query<{ id: string }>(beginSql, [
-      "health_check",
-      slot(),
-    ]);
+    const id = present(
+      must(
+        await beginJobRun(db.db, {
+          jobName: "health_check",
+          staleAfterSeconds: 120,
+          slotStart: slot(),
+        }),
+      ),
+    );
 
-    const second = await db.race([finishSql, [rows[0]?.id]], (bot) =>
-      beginJobRun(bot, {
-        jobName: "health_check",
-        staleAfterSeconds: 120,
-        slotStart: slot(),
-      }),
+    const second = await db.race(
+      [
+        lockOf("health_check"),
+        [
+          `UPDATE discord_bot.job_runs SET status = 'succeeded', finished_at = now()
+           WHERE id = $1 AND status = 'running'`,
+          [id],
+        ],
+      ],
+      (bot) =>
+        beginJobRun(bot, {
+          jobName: "health_check",
+          staleAfterSeconds: 120,
+          slotStart: slot(),
+        }),
     );
 
     expect(second).toEqual({ ok: true, value: null });
@@ -65,8 +95,11 @@ describe("two overlapping reminder runs", () => {
 
     const second = await db.race(
       [
-        "SELECT discord_bot.claim_reminder($1, 'one_day', '2030-01-10')",
-        [taskId],
+        [
+          `INSERT INTO discord_bot.reminder_log (task_id, kind, due_date)
+           VALUES ($1, 'one_day', '2030-01-10')`,
+          [taskId],
+        ],
       ],
       (bot) =>
         claimReminder(bot, {
@@ -92,8 +125,11 @@ describe("two overlapping reminder runs", () => {
 
     const second = await db.race(
       [
-        "SELECT discord_bot.claim_event_reminder($1, 'daily_steps', $2)",
-        [eventId, today],
+        [
+          `INSERT INTO discord_bot.event_reminder_log (event_id, kind, reminder_date)
+           VALUES ($1, 'daily_steps', $2)`,
+          [eventId, today],
+        ],
       ],
       (bot) =>
         claimEventReminder(bot, {
@@ -118,15 +154,19 @@ describe("two overlapping reminder runs", () => {
  * start before the test began will do.
  */
 describe("the job lock", () => {
-  const beginOwnSql =
-    "SELECT discord_bot.begin_job_run($1, 120, now() - interval '1 hour') AS id";
   const newJob = () => `lock_order_${fakeId()}`;
+  const longAgo = () => new Date(Date.now() - 3_600_000);
+  const start = (jobName: string) =>
+    beginJobRun(db.db, {
+      jobName: jobName as JobName,
+      staleAfterSeconds: 120,
+      slotStart: longAgo(),
+    });
+  const finish = (id: string) =>
+    finishJobRun(db.db, { id, now: new Date(), results: {}, error: null });
 
   async function startRun(jobName: string): Promise<string> {
-    const { rows } = await db.observer.query<{ id: string }>(beginOwnSql, [
-      jobName,
-    ]);
-    return present(rows[0]?.id);
+    return present(must(await start(jobName)));
   }
 
   async function statuses(jobName: string): Promise<string[]> {
@@ -147,17 +187,18 @@ describe("the job lock", () => {
 
   it("the waiting start gets the run if the first one rolls back", async () => {
     const jobName = newJob();
-    await db.t1.query("BEGIN");
-    await db.t1.query(beginOwnSql, [jobName]);
-    const second = settled(db.t2.query(beginOwnSql, [jobName]));
-    try {
-      await db.waitUntilBlocked(db.t2, db.t1);
-    } finally {
-      await db.t1.query("ROLLBACK");
-    }
-    expect(await second).toEqual({
-      rows: [{ id: expect.any(String) as string }],
-    });
+    const second = await db.race(
+      [
+        lockOf(jobName),
+        [
+          "INSERT INTO discord_bot.job_runs (job_name) VALUES ($1) RETURNING id",
+          [jobName],
+        ],
+      ],
+      () => start(jobName),
+      "ROLLBACK",
+    );
+    expect(second).toEqual({ ok: true, value: expect.any(String) as string });
   });
 
   it("a start never slips in beside a success when fired together", async () => {
@@ -165,11 +206,11 @@ describe("the job lock", () => {
       const jobName = newJob();
       const id = await startRun(jobName);
       const [finished, started] = await Promise.all([
-        settled(db.t1.query(finishSql, [id])),
-        settled(db.t2.query(beginOwnSql, [jobName])),
+        finish(id),
+        start(jobName),
       ]);
-      expect(finished.code).toBeUndefined();
-      expect(started).toEqual({ rows: [{ id: null }] });
+      expect(finished.ok).toBe(true);
+      expect(started).toEqual({ ok: true, value: null });
       expect(await statuses(jobName)).toEqual(["succeeded"]);
     }
   });
@@ -179,17 +220,21 @@ describe("the job lock", () => {
     await holdLockElsewhere(jobName);
 
     const before = Date.now();
-    const refused = await settled(db.t2.query(beginOwnSql, [jobName]));
+    const refused = await start(jobName);
     const waited = Date.now() - before;
 
-    expect(refused.code).toBe(LOCK_NOT_AVAILABLE);
+    expect(refused).toEqual({
+      ok: false,
+      error: { category: "unavailable", code: "55P03" },
+    });
     expect(waited).toBeGreaterThanOrEqual(LOCK_WAIT_MS - 100);
     expect(waited).toBeLessThan(LONGEST_WAIT_MS);
     expect(await statuses(jobName)).toEqual([]);
 
     await db.t1.query("SELECT pg_advisory_unlock_all()");
-    expect(await settled(db.t2.query(beginOwnSql, [jobName]))).toEqual({
-      rows: [{ id: expect.any(String) as string }],
+    expect(await start(jobName)).toEqual({
+      ok: true,
+      value: expect.any(String) as string,
     });
   });
 
@@ -198,13 +243,16 @@ describe("the job lock", () => {
     const id = await startRun(jobName);
     await holdLockElsewhere(jobName);
 
-    const refused = await settled(db.t2.query(finishSql, [id]));
+    const refused = await finish(id);
 
-    expect(refused.code).toBe(LOCK_NOT_AVAILABLE);
+    expect(refused).toEqual({
+      ok: false,
+      error: { category: "unavailable", code: "55P03" },
+    });
     expect(await statuses(jobName)).toEqual(["running"]);
 
     await db.t1.query("SELECT pg_advisory_unlock_all()");
-    expect((await settled(db.t2.query(finishSql, [id]))).code).toBeUndefined();
+    expect((await finish(id)).ok).toBe(true);
     expect(await statuses(jobName)).toEqual(["succeeded"]);
   });
 });

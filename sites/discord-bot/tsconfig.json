@@ -19,5 +19,5 @@
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true
   },
-  "include": ["api", "src", "scripts", "test"]
+  "include": ["api", "src", "scripts", "test", "db", "drizzle.config.ts"]
 }
