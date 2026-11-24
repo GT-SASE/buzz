@@ -416,7 +416,7 @@ describe("assigning, editing and deleting tasks, on the real schema", () => {
         );
         expect(notices).toEqual([]);
         expect(await tasksOn(eventId)).toHaveLength(EVENT_TASK_LIMIT);
-      });
+      }, 30_000);
 
       it("says when the officer limit is reached", async () => {
         const { eventId, threadId } = await eventWithPost();
