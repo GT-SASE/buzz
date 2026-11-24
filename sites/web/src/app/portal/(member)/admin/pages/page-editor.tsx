@@ -117,7 +117,7 @@ function PageForm({ saved }: { saved: RouterOutputs["page"]["byId"] | null }) {
     if (invalid) return;
     try {
       let id = saved?.id;
-      let published: { revalidate: string[] } | undefined;
+      let published: { slug: string; revalidate: string[] } | undefined;
       if (id) await saveDraft.mutateAsync({ id, ...fields() });
       else id = (await create.mutateAsync(fields())).id;
       if (andPublish) {
