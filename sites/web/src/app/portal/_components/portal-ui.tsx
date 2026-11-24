@@ -37,18 +37,21 @@ export function EmptyState({
   title,
   body,
   children,
+  headingLevel: Heading = "h3",
 }: {
   title: string;
   body: string;
   children?: React.ReactNode;
+  /** Pass "h2" where no h2 comes before it, so levels do not skip. */
+  headingLevel?: "h2" | "h3";
 }) {
   return (
     <Card className="border-hairline bg-paper/60 rounded-xl border-dashed py-12 text-center shadow-xs">
       <CardContent>
         <SaseDino className="mx-auto mb-5 h-20" />
-        <h3 className="font-display text-navy text-h3 font-bold text-balance">
+        <Heading className="font-display text-navy text-h3 font-bold text-balance">
           {title}
-        </h3>
+        </Heading>
         <p className="text-ink-muted text-body max-w-measure mx-auto mt-3">
           {body}
         </p>
