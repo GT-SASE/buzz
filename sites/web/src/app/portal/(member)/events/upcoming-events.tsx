@@ -34,9 +34,15 @@ function EventRow({
     ]);
   const rsvp = api.event.rsvp.useMutation({
     onSuccess: async (result) => {
-      toast.success(
-        result.invited ? "You're in. Calendar invite sent." : "You're in.",
-      );
+      if (result.waitlisted) {
+        toast.success(
+          `You're on the waitlist, number ${result.waitlistPosition}. We'll email you if a seat opens.`,
+        );
+      } else {
+        toast.success(
+          result.invited ? "You're in. Calendar invite sent." : "You're in.",
+        );
+      }
       await refresh();
     },
     onError: (error) => toast.error(error.message),
@@ -83,11 +89,25 @@ function EventRow({
           <Badge className="bg-gold-bright text-navy border-transparent">
             Going
           </Badge>
+        ) : event.waitlistPosition !== null ? (
+          <Badge variant="secondary">Waitlist #{event.waitlistPosition}</Badge>
+        ) : event.full ? (
+          <Badge variant="secondary">Full</Badge>
         ) : null}
       </div>
 
       {event.description && (
         <p className="text-ink-muted text-body-sm mt-3">{event.description}</p>
+      )}
+
+      {event.rsvpOpen && event.seatsLeft !== null && !event.rsvpedAt && (
+        <p className="text-ink-muted text-body-sm mt-3 tabular-nums">
+          {event.full
+            ? event.waitlistPosition !== null
+              ? "This event is full. You are on the waitlist."
+              : "This event is full. Join the waitlist and we will email you if a seat opens."
+            : `${event.seatsLeft} ${event.seatsLeft === 1 ? "seat" : "seats"} left.`}
+        </p>
       )}
 
       <div className="mt-5 flex flex-wrap items-center gap-3 empty:hidden">
@@ -105,7 +125,7 @@ function EventRow({
           </p>
         )}
         {event.rsvpOpen &&
-          (event.rsvpedAt ? (
+          (event.rsvpedAt || event.waitlistPosition !== null ? (
             <Button
               type="button"
               variant="ghost"
@@ -113,7 +133,11 @@ function EventRow({
               onClick={() => cancel.mutate({ eventId: event.id })}
               className="text-ink-muted min-h-11"
             >
-              {cancel.isPending ? "Cancelling..." : "Cancel RSVP"}
+              {cancel.isPending
+                ? "Cancelling..."
+                : event.waitlistPosition !== null
+                  ? "Leave waitlist"
+                  : "Cancel RSVP"}
             </Button>
           ) : (
             <Button
@@ -122,7 +146,11 @@ function EventRow({
               onClick={() => rsvp.mutate({ eventId: event.id })}
               className="bg-navy hover:bg-navy-deep min-h-11 text-white"
             >
-              {rsvp.isPending ? "Saving..." : "RSVP"}
+              {rsvp.isPending
+                ? "Saving..."
+                : event.full
+                  ? "Join waitlist"
+                  : "RSVP"}
             </Button>
           ))}
       </div>

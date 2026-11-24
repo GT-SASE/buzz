@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, mock } from "bun:test";
+import { liveCode } from "./helpers/check-in-code";
 
 /**
  * What the audit page and the points ledger promise, on a real Postgres:
@@ -412,7 +413,7 @@ describe.skipIf(!process.env.DATABASE_URL)(
           const event = await makeEvent("scan", 4);
 
           const result = await callerFor(member).event.checkIn({
-            code: event.checkInCode,
+            code: liveCode(event),
           });
 
           expect(result.pointsEarned).toBe(4);
@@ -436,7 +437,7 @@ describe.skipIf(!process.env.DATABASE_URL)(
 
           await expect(
             callerFor(member, refusingInserts(pointsLedger)).event.checkIn({
-              code: event.checkInCode,
+              code: liveCode(event),
             }),
           ).rejects.toThrow();
 
@@ -459,8 +460,8 @@ describe.skipIf(!process.env.DATABASE_URL)(
           const dropped = await makeEvent("totals-drop", 3);
           const free = await makeEvent("totals-free", 0);
 
-          await callerFor(member).event.checkIn({ code: scanned.checkInCode });
-          await callerFor(other).event.checkIn({ code: scanned.checkInCode });
+          await callerFor(member).event.checkIn({ code: liveCode(scanned) });
+          await callerFor(other).event.checkIn({ code: liveCode(scanned) });
           await caller.event.manualCheckIn({
             eventId: stamped.id,
             email: member.email,

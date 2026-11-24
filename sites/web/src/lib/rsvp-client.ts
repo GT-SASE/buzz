@@ -73,14 +73,27 @@ export async function fetchSignedIn() {
   }
 }
 
-/** The ids, of those asked about, this member has RSVPed to. */
-export function fetchRsvped(eventIds: string[]) {
+/**
+ * Of the events asked about: the ones this member has RSVPed to, the ones they
+ * are waiting on (with their place in line) and the ones with no seat left.
+ */
+export type RsvpState = {
+  going: string[];
+  waitlisted: { eventId: string; position: number }[];
+  full: string[];
+};
+
+export function fetchRsvpState(eventIds: string[]) {
   const input = encodeURIComponent(JSON.stringify({ json: { eventIds } }));
-  return trpc<string[]>(`event.myRsvps?input=${input}`, {});
+  return trpc<RsvpState>(`event.rsvpState?input=${input}`, {});
 }
 
 export function sendRsvp(eventId: string) {
-  return mutate<{ invited: boolean }>("event.rsvp", eventId);
+  return mutate<{
+    invited: boolean;
+    waitlisted: boolean;
+    waitlistPosition: number | null;
+  }>("event.rsvp", eventId);
 }
 
 export function sendCancel(eventId: string) {

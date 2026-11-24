@@ -27,6 +27,9 @@ packages/api/src/root.ts        appRouter; every router must be added here by ha
 packages/api/src/routers/*.ts   tRPC routers (chapter committee election event member mentorship page resume)
 packages/api/src/trpc.ts        context and procedure builders (protected, admin, superAdmin)
 packages/api/src/*.ts           helpers (page-slug, terms, ...) with unit tests; rate-limit.ts is the Postgres rate limiter (`buzz_rate_limit`)
+packages/api/src/check-in-code.ts  rotating check-in codes: stored key + HMAC of a 30 s window, current and previous accepted, secret derived from AUTH_SECRET (no extra env var); tests pass a code from `tests/helpers/check-in-code.ts`, never the stored key
+packages/api/src/waitlist.ts    RSVP capacity (seats = `maxCheckIns`), waitlist promotion; every RSVP/cancel/seat change locks the event row first
+packages/api/src/series.ts      recurring events: occurrences are real rows, dates keep the Atlanta wall-clock time
 packages/api/src/notify.ts      every email and Discord channel post the chapter sends on its own (committee decisions, event changes, election phases); `mail.ts` is the Gmail transport; call after the transaction commits, never inside it
 packages/db/src/schema.ts       Drizzle schema; all tables are prefixed buzz_
 packages/db/drizzle/            generated SQL migrations + meta; commit them

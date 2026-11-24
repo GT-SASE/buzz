@@ -27,3 +27,6 @@ for (const name of [
 ]) {
   delete process.env[name];
 }
+
+/** Check-in codes are signed with a key derived from this; set one for tests. */
+process.env.AUTH_SECRET ??= "test-auth-secret-test-auth-secret-0123456789";

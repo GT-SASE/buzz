@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, mock } from "bun:test";
+import { liveCode } from "./helpers/check-in-code";
 
 mock.module("../packages/auth/src/index.ts", () => ({
   auth: async () => null,
@@ -332,7 +333,10 @@ describe.skipIf(!process.env.DATABASE_URL)("points rules", () => {
       eventIds.push(row!.id);
 
       const caller = callerFor(deputy);
-      await caller.event.checkIn({ code });
+      const scan = () => ({
+        code: liveCode({ id: row!.id, checkInCode: code }),
+      });
+      await caller.event.checkIn(scan());
       const saved = await db.query.eventCheckIns.findFirst({
         where: and(
           eq(eventCheckIns.eventId, row!.id),
@@ -344,7 +348,7 @@ describe.skipIf(!process.env.DATABASE_URL)("points rules", () => {
         actedByUserId: null,
         pointsEarned: 10,
       });
-      await expect(caller.event.checkIn({ code })).rejects.toMatchObject({
+      await expect(caller.event.checkIn(scan())).rejects.toMatchObject({
         code: "CONFLICT",
       });
     },

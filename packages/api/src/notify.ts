@@ -237,6 +237,7 @@ export async function notifyEventChange(
   event: InviteEvent,
   change: EventChange,
   loadRecipients: () => Promise<Recipient[]>,
+  { channel: post = true }: { channel?: boolean } = {},
 ): Promise<Notice> {
   const [members, channel] = await Promise.all([
     toMembers(db, "event", loadRecipients, (mail, to) =>
@@ -247,9 +248,54 @@ export async function notifyEventChange(
         { change, mail },
       ),
     ),
-    postToChannel(eventChannelPost(event, change)),
+    post
+      ? postToChannel(eventChannelPost(event, change))
+      : Promise.resolve("off" as const),
   ]);
   return { ...members, channel };
+}
+
+/**
+ * Members who just moved off a waitlist onto a seat. Transactional like a
+ * committee decision, so it ignores the event-email opt-out: it answers
+ * something the member did (joining the waitlist), and they are holding a
+ * seat that goes to the next person if they never learn they have it. The
+ * email is the calendar invite, the same entry an RSVP creates. No channel
+ * post: it concerns one member, not the chapter.
+ */
+export async function notifyWaitlistPromotion(
+  event: InviteEvent,
+  promoted: Recipient[],
+): Promise<Notice> {
+  if (promoted.length === 0) return noNotice;
+  try {
+    const mail = mailer();
+    const { sent, failed } = await inBatches(promoted, (member) =>
+      sendCalendarInvite("REQUEST", event, member.email, {
+        change: "promoted",
+        mail,
+      }),
+    );
+    return { ...noNotice, sent, failed };
+  } catch (error) {
+    console.error("Could not notify promoted members:", error);
+    return { ...noNotice, failed: promoted.length };
+  }
+}
+
+/** Several notices as one, for an edit that touched a whole series. */
+export function sumNotices(notices: Notice[]): Notice {
+  const channel: Notice["channel"][] = notices.map((n) => n.channel);
+  return {
+    sent: notices.reduce((total, n) => total + n.sent, 0),
+    failed: notices.reduce((total, n) => total + n.failed, 0),
+    skipped: notices.reduce((total, n) => total + n.skipped, 0),
+    channel: channel.includes("failed")
+      ? "failed"
+      : channel.includes("posted")
+        ? "posted"
+        : "off",
+  };
 }
 
 const ELECTION_COPY: Partial<

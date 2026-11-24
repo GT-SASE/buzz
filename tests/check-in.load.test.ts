@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, mock } from "bun:test";
+import { liveCode } from "./helpers/check-in-code";
 
 /**
  * `packages/api/src/trpc.ts` imports the auth package at module load, and
@@ -120,7 +121,7 @@ describe.skipIf(!HAS_DB)("a room scanning at once", () => {
     const started = Date.now();
     const results = await Promise.allSettled(
       memberIds.map((id) =>
-        callerFor(id).event.checkIn({ code: event.checkInCode }),
+        callerFor(id).event.checkIn({ code: liveCode(event) }),
       ),
     );
     const elapsed = Date.now() - started;
@@ -175,7 +176,7 @@ describe.skipIf(!HAS_DB)("a room scanning at once", () => {
 
     const results = await Promise.allSettled(
       memberIds.map((id) =>
-        callerFor(id).event.checkIn({ code: event.checkInCode }),
+        callerFor(id).event.checkIn({ code: liveCode(event) }),
       ),
     );
 
@@ -200,7 +201,7 @@ describe.skipIf(!HAS_DB)("a room scanning at once", () => {
 
     await Promise.all(
       memberIds.map((id) =>
-        callerFor(id).event.checkIn({ code: event.checkInCode }),
+        callerFor(id).event.checkIn({ code: liveCode(event) }),
       ),
     );
 
@@ -226,7 +227,7 @@ describe.skipIf(!HAS_DB)("a room scanning at once", () => {
     // first response lands.
     const results = await Promise.allSettled(
       Array.from({ length: 8 }, () =>
-        callerFor(member).event.checkIn({ code: event.checkInCode }),
+        callerFor(member).event.checkIn({ code: liveCode(event) }),
       ),
     );
 

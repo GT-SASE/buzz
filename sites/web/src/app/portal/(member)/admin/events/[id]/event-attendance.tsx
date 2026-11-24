@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
 
-import { CheckInQr } from "~/app/portal/_components/check-in-qr";
+import { RotatingCheckInQr } from "~/app/portal/_components/rotating-check-in-qr";
 import { EmptyState } from "~/app/portal/_components/portal-ui";
 import { downloadCsv, toCsv } from "~/app/portal/_lib/csv";
 import { formatEventTime } from "~/app/portal/_lib/format";
@@ -287,6 +287,7 @@ export function EventAttendance({ eventId }: { eventId: string }) {
   const invalidate = async () => {
     await Promise.all([
       utils.event.getById.invalidate({ id: eventId }),
+      utils.event.presentCode.invalidate({ id: eventId }),
       utils.event.listAll.invalidate(),
       utils.chapter.overview.invalidate(),
       utils.member.list.invalidate(),
@@ -309,11 +310,11 @@ export function EventAttendance({ eventId }: { eventId: string }) {
     },
     onError: (error) => toast.error(error.message),
   });
-  // Never echo the new code into the toast: it is a bearer credential and
-  // toasts outlive the screen they were raised on.
+  // Never echo a code into the toast: toasts outlive the screen they were
+  // raised on.
   const rotate = api.event.regenerateCode.useMutation({
     onSuccess: async () => {
-      toast.success("Code rotated. The old one no longer admits anyone.");
+      toast.success("Every code shown so far has stopped working.");
       await invalidate();
     },
     onError: (error) => toast.error(error.message),
@@ -330,8 +331,17 @@ export function EventAttendance({ eventId }: { eventId: string }) {
     );
   }
 
-  const { event, roster, rosterTotal, isPast, notYetOpen, opensAt, rsvps } =
-    detail.data;
+  const {
+    event,
+    roster,
+    rosterTotal,
+    isPast,
+    notYetOpen,
+    opensAt,
+    rsvps,
+    waitlist,
+    series,
+  } = detail.data;
 
   // The same facts the check-in procedure tests before it lets anyone in, so
   // the panel cannot advertise a door the server would refuse.
@@ -391,6 +401,14 @@ export function EventAttendance({ eventId }: { eventId: string }) {
               {event.title}
             </h1>
             <CheckInStatus state={state} opensAt={opensAt} />
+            {series && (
+              <span className="text-ink-muted text-body-sm">
+                Repeats{" "}
+                {series.cadence === "biweekly"
+                  ? "every two weeks"
+                  : "every week"}
+              </span>
+            )}
           </div>
           <p className="text-ink-muted text-body mt-2">
             {formatEventTime(event.startsAt)}
@@ -422,9 +440,10 @@ export function EventAttendance({ eventId }: { eventId: string }) {
             </Eyebrow>
             {state === "open" || state === "scheduled" ? (
               <div className="mt-4 flex justify-center">
-                <CheckInQr
-                  code={event.checkInCode}
+                <RotatingCheckInQr
+                  eventId={event.id}
                   className="size-48 rounded-lg bg-white p-3 sm:size-52"
+                  barClassName="max-w-52"
                 />
               </div>
             ) : (
@@ -438,14 +457,14 @@ export function EventAttendance({ eventId }: { eventId: string }) {
             )}
           </div>
           <p className="relative mt-4 text-sm text-white/75">
-            Rotate immediately if this code was leaked or photographed outside
-            the event.
+            The QR changes every 30 seconds, and a code stops working about a
+            minute after it was shown. Revoke if someone filmed the screen live.
           </p>
           <div className="relative mt-4">
             <ConfirmDialog
-              title="Replace the QR on screen?"
-              body="Every slide, poster and photograph of the current QR stops working the moment you do this, and the old one cannot be brought back."
-              action="Yes, rotate"
+              title="Revoke the codes on screen?"
+              body="Every QR shown so far, including the one on screen this second, stops working at once. The screen picks up a fresh one within a few seconds."
+              action="Yes, revoke"
               danger
               onConfirm={() => rotate.mutate({ id: event.id })}
             >
@@ -454,7 +473,7 @@ export function EventAttendance({ eventId }: { eventId: string }) {
                 disabled={rotate.isPending}
                 className="border-hairline text-navy hover:bg-cream min-h-11 rounded-lg px-4 font-semibold"
               >
-                {rotate.isPending ? "Rotating..." : "Rotate QR"}
+                {rotate.isPending ? "Revoking..." : "Revoke codes"}
               </Button>
             </ConfirmDialog>
           </div>
@@ -516,6 +535,20 @@ export function EventAttendance({ eventId }: { eventId: string }) {
               <p className="text-ink-muted text-body-sm mt-1">
                 Nobody has RSVPed yet.
               </p>
+            )}
+            {waitlist.length > 0 && (
+              <div className="border-hairline mt-5 border-t pt-4">
+                <span className="text-eyebrow tracking-caps text-ink-muted text-xs font-semibold uppercase">
+                  Waitlist
+                </span>
+                <ol className="text-ink-muted text-body-sm mt-2 grid list-inside list-decimal gap-1">
+                  {waitlist.map((row) => (
+                    <li key={row.userId} className="break-all">
+                      {row.name ?? row.email}
+                    </li>
+                  ))}
+                </ol>
+              </div>
             )}
           </div>
         </div>

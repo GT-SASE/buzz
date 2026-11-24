@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 
-import { CheckInQr } from "~/app/portal/_components/check-in-qr";
+import { RotatingCheckInQr } from "~/app/portal/_components/rotating-check-in-qr";
 import { formatEventTime } from "~/app/portal/_lib/format";
 import { Badge } from "~/components/ui/badge";
 import { api } from "~/trpc/react";
@@ -111,13 +111,18 @@ export function PresentScreen({ eventId }: { eventId: string }) {
         ) : event ? (
           <div className="flex h-full min-h-0 w-full flex-col items-center justify-center gap-4 sm:gap-5">
             <div className="flex min-h-0 w-full flex-1 items-center justify-center">
-              <CheckInQr
-                code={event.checkInCode}
-                className="aspect-square h-full max-h-[min(72vh,42rem)] w-auto max-w-full rounded-lg bg-white p-5 sm:p-8"
+              <RotatingCheckInQr
+                eventId={event.id}
+                showCode
+                codeClassName="text-[clamp(1rem,2vw,1.75rem)] text-white/80"
+                className="aspect-square h-full max-h-[min(66vh,40rem)] w-auto max-w-full rounded-lg bg-white p-5 sm:p-8"
               />
             </div>
             <p className="text-gold-bright tracking-masthead shrink-0 text-[clamp(1rem,2vw,2rem)] font-semibold uppercase">
               Scan to check in
+            </p>
+            <p className="shrink-0 text-[clamp(0.875rem,1.4vw,1.25rem)] text-white/55">
+              The code changes every 30 seconds. A photo of it stops working.
             </p>
           </div>
         ) : null}
