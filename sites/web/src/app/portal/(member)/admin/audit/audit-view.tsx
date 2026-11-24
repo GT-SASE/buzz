@@ -354,6 +354,7 @@ function AuditLogPanel() {
           </div>
         ) : offset > 0 ? (
           <EmptyState
+            headingLevel="h2"
             title="Nothing on this page."
             body="The log is shorter than it was when this page was opened."
           >
@@ -363,6 +364,7 @@ function AuditLogPanel() {
           </EmptyState>
         ) : filtered ? (
           <EmptyState
+            headingLevel="h2"
             title="No entries match."
             body="Widen the dates, or pick another officer or action."
           >
@@ -372,6 +374,7 @@ function AuditLogPanel() {
           </EmptyState>
         ) : (
           <EmptyState
+            headingLevel="h2"
             title="Nothing logged yet."
             body="Role changes, application decisions, manual check-ins, point awards, exports and resume downloads appear here as they happen."
           />
@@ -603,6 +606,7 @@ function LedgerPanel() {
           </div>
         ) : offset > 0 ? (
           <EmptyState
+            headingLevel="h2"
             title="Nothing on this page."
             body="The ledger is shorter than it was when this page was opened."
           >
@@ -612,6 +616,7 @@ function LedgerPanel() {
           </EmptyState>
         ) : filtered ? (
           <EmptyState
+            headingLevel="h2"
             title="No points match."
             body="Try part of a name, another source, or wider dates."
           >
@@ -621,6 +626,7 @@ function LedgerPanel() {
           </EmptyState>
         ) : (
           <EmptyState
+            headingLevel="h2"
             title="No points yet."
             body="Check-ins and KIN awards appear here as they happen."
           />

@@ -1,13 +1,16 @@
 "use client";
 
-import { useRef, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
+import { FileInput, FileInputTrigger } from "@ui-sdk/react/file-input";
 import { toast } from "sonner";
 
 import { InitialDisc } from "~/components/site/brand";
 import { Button } from "~/components/ui/button";
 import { api } from "~/trpc/react";
 
-const ACCEPT = "image/jpeg,image/png,image/webp";
+const ACCEPT = ["image/jpeg", "image/png", "image/webp"];
+// The server still enforces the limit.
+const MAX_BYTES = 5 * 1024 * 1024;
 
 /**
  * Shown only to members on the current board: the public board page shows
@@ -17,7 +20,7 @@ const ACCEPT = "image/jpeg,image/png,image/webp";
 export function HeadshotSettings({ name }: { name: string }) {
   const utils = api.useUtils();
   const mine = api.headshot.mine.useQuery();
-  const input = useRef<HTMLInputElement>(null);
+  const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
 
   if (!mine.data || mine.data.roles.length === 0) return null;
@@ -33,7 +36,7 @@ export function HeadshotSettings({ name }: { name: string }) {
         return;
       }
       toast.success(method === "POST" ? "Photo saved." : "Photo removed.");
-      if (input.current) input.current.value = "";
+      setFile(null);
       await utils.headshot.mine.invalidate();
     } catch {
       toast.error("Could not reach the server. Try again.");
@@ -44,7 +47,6 @@ export function HeadshotSettings({ name }: { name: string }) {
 
   function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const file = input.current?.files?.[0];
     if (!file) {
       toast.error("Choose an image first.");
       return;
@@ -71,15 +73,30 @@ export function HeadshotSettings({ name }: { name: string }) {
           className="size-20 text-2xl"
         />
         <form className="grid min-w-0 flex-1 gap-3" onSubmit={onSubmit}>
-          <label className="grid gap-1">
-            <span className="sr-only">Choose a photo</span>
-            <input
-              ref={input}
-              type="file"
-              accept={ACCEPT}
-              className="text-body-sm file:border-hairline file:text-navy min-h-11 w-full file:mr-3 file:min-h-11 file:rounded-lg file:border file:bg-transparent file:px-4 file:font-semibold"
-            />
-          </label>
+          <FileInput
+            accept={ACCEPT}
+            maxSize={MAX_BYTES}
+            disabled={busy}
+            value={file ? [file] : []}
+            onValueChange={(value) => setFile(value[0] ?? null)}
+            onReject={() =>
+              toast.error("Use a JPEG, PNG or WebP image up to 5 MB.")
+            }
+          >
+            <div className="flex min-w-0 items-center gap-3">
+              <FileInputTrigger
+                aria-label={
+                  file ? "Replace board photo file" : "Choose a photo"
+                }
+                className="border-hairline text-navy hover:bg-cream focus-visible:ring-navy min-h-11 shrink-0 rounded-lg border bg-transparent px-4 font-semibold focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-50"
+              >
+                {file ? "Replace file" : "Choose File"}
+              </FileInputTrigger>
+              <span className="text-body-sm min-w-0 truncate">
+                {file?.name ?? "No file chosen"}
+              </span>
+            </div>
+          </FileInput>
           <div className="flex flex-wrap gap-2">
             <Button
               type="submit"
