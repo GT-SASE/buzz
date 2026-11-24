@@ -1,14 +1,21 @@
 /**
- * When a reminder may be claimed, as conditions on the rows it concerns. Every claim and
- * every takeover of a stale claim states them in the same statement that writes, so what
- * was true when the check ran is still true when the claim lands.
- *
- * These are fragments of a select, `from` and `where`, not a query of their own: Drizzle's
- * insert-from-select wants every column of the table it fills, and a takeover wants the
- * select as an `exists` under an update, so the caller names the columns it needs.
+ * When a reminder may be claimed, as the rows it concerns. Every claim and every takeover
+ * of a stale claim puts these conditions in the same statement that writes, so what was
+ * true when the check ran is still true when the claim lands. Each is a select the caller
+ * uses as a source for an insert, or as an `exists` under an update.
  */
 
-import { sql, type SQL, type SQLWrapper } from "drizzle-orm";
+import {
+  and,
+  eq,
+  exists,
+  gte,
+  isNull,
+  lte,
+  sql,
+  type SQLWrapper,
+} from "drizzle-orm";
+import type { BotDb } from "./client.ts";
 import {
   eventSteps,
   events,
@@ -29,71 +36,101 @@ export function eventReminderDayOpen(
   kind: EventReminderKind,
   reminderDate: string,
   eventDate: SQLWrapper,
-): SQL {
+) {
   return kind === "engage_picture_late"
-    ? sql`true`
+    ? undefined
     : sql`${reminderDate}::date <= ${eventDate}`;
 }
 
 /**
- * `from ... where ...` for the event, if a reminder of this kind for this date may be
- * claimed for it: it is live and active, its channel is managed and active, the guild's
- * reminders are on, the date suits the kind, and the date is today or yesterday in the
- * guild's zone, so a run can claim neither a day long gone nor one still to come. A
- * pickup reminder also needs Food pickup set up, which means done. Names `events` and
- * the tables it joins, so a select list that precedes it can use their columns.
+ * The event, if a reminder of this kind for this date may be claimed for it: it is live
+ * and active, its channel is managed and active, the guild's reminders are on, the date
+ * suits the kind, and the date is today or yesterday in the guild's zone, so a run can
+ * claim neither a day long gone nor one still to come. A pickup reminder also needs Food
+ * pickup set up, which means done.
  */
-export function fromAllowedEvent(
+export function allowedEvent(
+  orm: BotDb,
   eventId: SQLWrapper | string,
   kind: EventReminderKind,
   reminderDate: string,
-): SQL {
+) {
   const today = sql`(now() at time zone ${guildConfig.timezone})::date`;
-  const pickupGate =
-    kind === "pickup_before" || kind === "pickup_day"
-      ? sql`and exists (
-          select 1 from ${eventSteps}
-          where ${eventSteps.eventId} = ${events.id}
-            and ${eventSteps.kind} = 'food_pickup'
-            and ${eventSteps.status} = 'done')`
-      : sql``;
-  return sql`from ${events}
-    join ${managedChannels}
-      on ${managedChannels.guildId} = ${events.guildId}
-      and ${managedChannels.channelId} = ${events.channelId}
-    join ${guildConfig} on ${guildConfig.guildId} = ${events.guildId}
-    where ${events.id} = ${eventId}
-      and ${events.status} = 'active'
-      and ${events.deletedAt} is null
-      and ${managedChannels.status} = 'active'
-      and ${guildConfig.remindersEnabled}
-      and ${eventReminderDayOpen(kind, reminderDate, events.eventDate)}
-      and ${reminderDate}::date >= ${today} - 1
-      and ${reminderDate}::date <= ${today}
-      ${pickupGate}`;
+  const date = sql`${reminderDate}::date`;
+  return orm
+    .select({ id: events.id })
+    .from(events)
+    .innerJoin(
+      managedChannels,
+      and(
+        eq(managedChannels.guildId, events.guildId),
+        eq(managedChannels.channelId, events.channelId),
+      ),
+    )
+    .innerJoin(guildConfig, eq(guildConfig.guildId, events.guildId))
+    .where(
+      and(
+        eq(events.id, eventId),
+        eq(events.status, "active"),
+        isNull(events.deletedAt),
+        eq(managedChannels.status, "active"),
+        eq(guildConfig.remindersEnabled, true),
+        eventReminderDayOpen(kind, reminderDate, events.eventDate),
+        gte(date, sql`${today} - 1`),
+        lte(date, today),
+        kind === "pickup_before" || kind === "pickup_day"
+          ? exists(
+              orm
+                .select({ one: sql`1` })
+                .from(eventSteps)
+                .where(
+                  and(
+                    eq(eventSteps.eventId, events.id),
+                    eq(eventSteps.kind, "food_pickup"),
+                    eq(eventSteps.status, "done"),
+                  ),
+                ),
+            )
+          : undefined,
+      ),
+    );
 }
 
 /**
- * `from ... where ...` for the open task, if a reminder for its due date may be claimed
- * for it: it is live and open, due that day, on a live active event, in a channel that is
- * managed and active, in a guild with reminders on. Names `tasks` and the tables it joins.
+ * The open task, if a reminder for its due date may be claimed for it: it is live and
+ * open, due that day, on a live active event, in a channel that is managed and active, in
+ * a guild with reminders on.
  */
-export function fromRemindableTask(
+export function remindableTask(
+  orm: BotDb,
   taskId: SQLWrapper | string,
   dueDate: string,
-): SQL {
-  return sql`from ${tasks}
-    join ${events} on ${events.id} = ${tasks.eventId} and ${events.guildId} = ${tasks.guildId}
-    join ${managedChannels}
-      on ${managedChannels.guildId} = ${events.guildId}
-      and ${managedChannels.channelId} = ${events.channelId}
-    join ${guildConfig} on ${guildConfig.guildId} = ${tasks.guildId}
-    where ${tasks.id} = ${taskId}
-      and ${tasks.dueDate} = ${dueDate}::date
-      and ${tasks.status} = 'open'
-      and ${tasks.deletedAt} is null
-      and ${events.status} = 'active'
-      and ${events.deletedAt} is null
-      and ${managedChannels.status} = 'active'
-      and ${guildConfig.remindersEnabled}`;
+) {
+  return orm
+    .select({ id: tasks.id, dueDate: tasks.dueDate })
+    .from(tasks)
+    .innerJoin(
+      events,
+      and(eq(events.id, tasks.eventId), eq(events.guildId, tasks.guildId)),
+    )
+    .innerJoin(
+      managedChannels,
+      and(
+        eq(managedChannels.guildId, events.guildId),
+        eq(managedChannels.channelId, events.channelId),
+      ),
+    )
+    .innerJoin(guildConfig, eq(guildConfig.guildId, tasks.guildId))
+    .where(
+      and(
+        eq(tasks.id, taskId),
+        eq(tasks.dueDate, dueDate),
+        eq(tasks.status, "open"),
+        isNull(tasks.deletedAt),
+        eq(events.status, "active"),
+        isNull(events.deletedAt),
+        eq(managedChannels.status, "active"),
+        eq(guildConfig.remindersEnabled, true),
+      ),
+    );
 }

@@ -1,29 +1,21 @@
 /**
- * Neon's HTTP driver for reads: one HTTPS request per statement, so there is no
- * connection to open, keep or lose between requests. Writes that need a transaction use
- * its WebSocket pool, below.
+ * Neon for the bot: the HTTP driver for reads and single statements, and a WebSocket
+ * connection for each transaction.
  */
 
-import { Pool, neon, types } from "@neondatabase/serverless";
+import { Pool, neon } from "@neondatabase/serverless";
+import { drizzle as drizzleHttp } from "drizzle-orm/neon-http";
 import { drizzle } from "drizzle-orm/neon-serverless";
-import type { DbClient, Runner } from "./client.ts";
-import { openOn, statementTimeoutSql } from "./open.ts";
-import { TYPE_PARSERS } from "./parsers.ts";
+import type { BotDb, DbClient } from "./client.ts";
+import { limitStatements, openOn } from "./open.ts";
 import * as schema from "./schema.ts";
 
-const parsers = {
-  getTypeParser: (
-    oid: number,
-    format?: "text" | "binary",
-  ): ((value: string) => unknown) =>
-    TYPE_PARSERS.get(oid) ??
-    (types.getTypeParser(oid, format) as (value: string) => unknown),
-};
-
-export function neonRunner(connectionString: string): Runner {
-  const sql = neon(connectionString);
-  return (text, params, signal) =>
-    sql.query(text, [...params], { types: parsers, fetchOptions: { signal } });
+/**
+ * Reads and single statements: one HTTPS request each, so there is no connection to open,
+ * keep or lose between requests.
+ */
+export function neonHttp(connectionString: string): BotDb {
+  return drizzleHttp({ client: neon(connectionString), schema });
 }
 
 /**
@@ -47,9 +39,10 @@ export function neonOpen(
       await pool.end().catch(() => undefined);
       throw error;
     });
-    await client.query(statementTimeoutSql(deadlineMs));
+    const orm = drizzle({ client, schema });
+    await limitStatements(orm, deadlineMs);
     return {
-      orm: drizzle({ client, schema }),
+      orm,
       close: async () => {
         client.release();
         await pool.end();

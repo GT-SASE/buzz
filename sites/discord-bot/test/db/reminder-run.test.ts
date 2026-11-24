@@ -11,7 +11,6 @@ import type { ReminderKind } from "../../src/db/types.ts";
 import { botClient, must } from "./bot-writes.ts";
 import {
   pgliteOrm,
-  pgliteSql,
   serverError,
   testDatabaseUrl,
 } from "../support/sql-client.ts";
@@ -52,7 +51,7 @@ const w = useReminderWorld();
 
 // The cron endpoint's own client runs on the same database.
 void mock.module("../../src/db/neon.ts", () => ({
-  neonRunner: () => pgliteSql(w.database, (call) => w.sqlGate(call)),
+  neonHttp: () => pgliteOrm(w.database, (call) => w.sqlGate(call)),
   neonOpen: () => (work: (orm: unknown) => Promise<unknown>) =>
     work(pgliteOrm(w.database, (call) => w.sqlGate(call))),
 }));

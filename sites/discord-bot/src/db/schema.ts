@@ -14,6 +14,7 @@
  */
 
 import { sql } from "drizzle-orm";
+import { isoTimestamp } from "./parsers.ts";
 import {
   bigint,
   boolean,
@@ -24,11 +25,13 @@ import {
   index,
   integer,
   jsonb,
+  pgPolicy,
+  pgRole,
   pgSchema,
+  pgView,
   primaryKey,
   text,
   time,
-  timestamp,
   unique,
   uniqueIndex,
   uuid,
@@ -41,12 +44,24 @@ const discordId = customType<{ data: string }>({
   dataType: () => "discord_bot.discord_id",
 });
 
-/** `timestamptz` read and written as text, so microseconds survive. See `parsers.ts`. */
-const timestamptz = (name: string) =>
-  timestamp(name, { withTimezone: true, mode: "string" });
+/**
+ * `timestamptz` read and written as text, so microseconds survive, and read as ISO text,
+ * `2030-01-10T12:00:00.123456+00:00`, which a Date parses. An edit sends `updated_at`
+ * back as the version it read, and a Date would round it to milliseconds and never match.
+ */
+const timestamptz = customType<{ data: string; driverData: string }>({
+  dataType: () => "timestamp with time zone",
+  fromDriver: isoTimestamp,
+});
 
-const createdAt = () => timestamptz("created_at").notNull().defaultNow();
-const updatedAt = () => timestamptz("updated_at").notNull().defaultNow();
+const createdAt = () =>
+  timestamptz("created_at")
+    .notNull()
+    .default(sql`now()`);
+const updatedAt = () =>
+  timestamptz("updated_at")
+    .notNull()
+    .default(sql`now()`);
 
 // Enums ---------------------------------------------------------------------------------
 
@@ -116,7 +131,20 @@ export const threadStatus = botSchema.enum("thread_status", [
 
 // Tables --------------------------------------------------------------------------------
 
-/** The old version of every changed row. Written by a trigger only. */
+/** The login the bot connects as. It exists already: the migrations only grant to it. */
+export const botApp = pgRole("bot_app").existing();
+
+/** The server's list of time zone names, which a guild's zone has to be one of. */
+export const timezoneNames = pgView("pg_timezone_names", {
+  name: text("name"),
+}).existing();
+
+/**
+ * The old version of every changed row of the seven tables that keep one. Written by the
+ * bot with each update. `xid` is the transaction that made the change: while the old
+ * triggers still run, the bot skips a version the trigger already kept in the same
+ * transaction, which the index lets it find. Rows from before it was added have none.
+ */
 export const rowVersions = botSchema.table(
   "row_versions",
   {
@@ -127,10 +155,14 @@ export const rowVersions = botSchema.table(
     operation: text("operation").notNull(),
     rowId: text("row_id").notNull(),
     oldRow: jsonb("old_row").notNull(),
-    changedAt: timestamptz("changed_at").notNull().defaultNow(),
+    changedAt: timestamptz("changed_at")
+      .notNull()
+      .default(sql`now()`),
+    xid: text("xid").default(sql`pg_current_xact_id()::text`),
   },
   (t) => [
     primaryKey({ name: "row_versions_pkey", columns: [t.id] }),
+    index("row_versions_change_idx").on(t.xid, t.sourceTable, t.rowId),
     check(
       "row_versions_operation_known",
       sql`${t.operation} = ANY (ARRAY['UPDATE'::text, 'DELETE'::text])`,
@@ -406,7 +438,9 @@ export const eventReminderLog = botSchema.table(
       .notNull()
       .default(sql`gen_random_uuid()`),
     attempts: integer("attempts").notNull().default(1),
-    claimedAt: timestamptz("claimed_at").notNull().defaultNow(),
+    claimedAt: timestamptz("claimed_at")
+      .notNull()
+      .default(sql`now()`),
     sentAt: timestamptz("sent_at"),
     messageId: discordId("message_id"),
   },
@@ -499,7 +533,9 @@ export const reminderLog = botSchema.table(
       .notNull()
       .default(sql`gen_random_uuid()`),
     attempts: integer("attempts").notNull().default(1),
-    claimedAt: timestamptz("claimed_at").notNull().defaultNow(),
+    claimedAt: timestamptz("claimed_at")
+      .notNull()
+      .default(sql`now()`),
     sentAt: timestamptz("sent_at"),
     messageId: discordId("message_id"),
     refusedAttempts: integer("refused_attempts").notNull().default(0),
@@ -573,16 +609,43 @@ export const taskReassignments = botSchema.table(
  * delivered or retried more than once. An interaction's token lasts 15 minutes, so a
  * row is only useful for about that long. The daily cron deletes rows older than a day.
  */
-export const interactionClaims = botSchema.table(
-  "interaction_claims",
-  {
-    interactionId: discordId("interaction_id").notNull(),
-    claimedAt: timestamptz("claimed_at").notNull().defaultNow(),
-  },
-  (t) => [
-    primaryKey({ name: "interaction_claims_pkey", columns: [t.interactionId] }),
-  ],
-);
+export const interactionClaims = botSchema
+  .table(
+    "interaction_claims",
+    {
+      interactionId: discordId("interaction_id").notNull(),
+      claimedAt: timestamptz("claimed_at")
+        .notNull()
+        .default(sql`now()`),
+    },
+    (t) => [
+      primaryKey({
+        name: "interaction_claims_pkey",
+        columns: [t.interactionId],
+      }),
+      // bot_app may read and add claims, and delete only those past a day: what the daily
+      // expiry removes. The table's owner is not subject to row-level security.
+      pgPolicy("interaction_claims_read", {
+        as: "permissive",
+        for: "select",
+        to: botApp,
+        using: sql`true`,
+      }),
+      pgPolicy("interaction_claims_insert", {
+        as: "permissive",
+        for: "insert",
+        to: botApp,
+        withCheck: sql`true`,
+      }),
+      pgPolicy("interaction_claims_expire", {
+        as: "permissive",
+        for: "delete",
+        to: botApp,
+        using: sql`${t.claimedAt} < now() - interval '1 day'`,
+      }),
+    ],
+  )
+  .enableRLS();
 
 export const jobRuns = botSchema.table(
   "job_runs",
@@ -592,8 +655,12 @@ export const jobRuns = botSchema.table(
       .default(sql`gen_random_uuid()`),
     jobName: text("job_name").notNull(),
     status: jobRunStatus("status").notNull().default("running"),
-    startedAt: timestamptz("started_at").notNull().defaultNow(),
-    heartbeatAt: timestamptz("heartbeat_at").notNull().defaultNow(),
+    startedAt: timestamptz("started_at")
+      .notNull()
+      .default(sql`now()`),
+    heartbeatAt: timestamptz("heartbeat_at")
+      .notNull()
+      .default(sql`now()`),
     finishedAt: timestamptz("finished_at"),
     results: jsonb("results")
       .notNull()

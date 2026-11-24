@@ -1,5 +1,5 @@
 /**
- * Runners for tests: the migrated database on PGlite, logged in as bot_app, or a
+ * Clients for tests: the migrated database on PGlite, logged in as bot_app, or a
  * recorder that runs nothing. The statements are the ones src/db sends in production:
  * only where they run differs.
  */
@@ -8,16 +8,13 @@ import type { PGlite } from "@electric-sql/pglite";
 import { drizzle as drizzlePglite } from "drizzle-orm/pglite";
 import { drizzle as drizzlePg } from "drizzle-orm/node-postgres";
 import { drizzle as drizzleProxy } from "drizzle-orm/pg-proxy";
-import pg from "pg";
+import type pg from "pg";
 import {
   createDbClient,
   type BotDb,
   type DbClient,
-  type Row,
-  type Runner,
 } from "../../src/db/client.ts";
 import * as schema from "../../src/db/schema.ts";
-import { TYPE_PARSERS } from "../../src/db/parsers.ts";
 import { BOT_APP, holdSession, onSessionAlone } from "../db/harness.ts";
 
 /** One statement as src/db sends it. */
@@ -49,44 +46,6 @@ export function unavailable(): Error {
   );
 }
 
-/** PGlite reads each type as Neon's driver is told to in production. */
-const PGLITE_PARSERS = Object.fromEntries(TYPE_PARSERS);
-
-/**
- * Runs every statement on the migrated database as bot_app, the role the bot logs in as,
- * so the grants, triggers and functions all apply. `intercept` sees each one first, and
- * may answer it instead. Pass a function for a database made later, such as in a
- * `beforeAll`.
- */
-export function pgliteSql(
-  source: PGlite | (() => PGlite),
-  intercept?: Intercept,
-): Runner {
-  return async (text, params) => {
-    // The intercept runs first and outside the session lock, so it may itself use the
-    // database, as a test staging a race does.
-    const answer = await intercept?.({ sql: text, params });
-    if (answer instanceof Error) {
-      throw answer;
-    }
-    if (answer !== undefined) {
-      return answer.rows as Row[];
-    }
-    const database = typeof source === "function" ? source() : source;
-    return onSessionAlone(database, async () => {
-      await database.exec(`SET ROLE ${BOT_APP}`);
-      try {
-        const result = await database.query<Row>(text, [...params], {
-          parsers: PGLITE_PARSERS,
-        });
-        return result.rows;
-      } finally {
-        await database.exec("RESET ROLE");
-      }
-    });
-  };
-}
-
 /**
  * What Drizzle's PGlite driver needs of a client: statements one at a time, and a
  * transaction that hands its statements to a callback.
@@ -101,10 +60,9 @@ interface PgliteClientLike {
 }
 
 /**
- * Drizzle over the migrated database on PGlite, logged in as bot_app, as `pgliteSql` is
- * for plain statements. A statement alone, and a whole transaction, each hold the
+ * Drizzle over the migrated database on PGlite, logged in as bot_app. A statement alone, and a whole transaction, each hold the
  * session, so no other caller's statement runs under the role or inside the
- * transaction. `intercept` sees each statement first, as it does for `pgliteSql`. The
+ * transaction. `intercept` sees each statement first, and may answer it instead. The
  * first statement of a transaction is seen before the transaction begins, so a test that
  * stages a race at it can use the database without waiting on the transaction it is
  * about to start. Later ones are seen inside it, and may answer with an error.
@@ -193,78 +151,65 @@ export function pgliteClient(
   source: PGlite | (() => PGlite),
   intercept?: Intercept,
 ): DbClient {
-  return createDbClient(
-    pgliteSql(source, intercept),
-    pgliteOrm(source, intercept),
-  );
+  return createDbClient(pgliteOrm(source, intercept));
 }
 
 /**
- * Drizzle that runs nothing and answers every statement with no rows, for a test of code
- * that only has to get as far as writing. It has no transaction.
+ * Drizzle that sends every statement to `respond` and runs nothing, for a test of what the
+ * bot sends and how a failure of it is reported. It has no transaction. A row `respond`
+ * answers with is given as an object, and goes back as the array Drizzle reads by
+ * position, in the order of its keys.
  */
-export function stubOrm(): BotDb {
-  return drizzleProxy(() => Promise.resolve({ rows: [] }), {
-    schema,
-  });
-}
-
-/**
- * Drizzle that sends every statement to `run`, one at a time with no transaction around
- * it, for a test of what a single write sends and how a failure of it is reported.
- */
-export function recordingOrm(run: Runner): BotDb {
-  return drizzleProxy(
-    async (text, params) => ({
-      rows: await run(text, params, new AbortController().signal),
-    }),
+export function recordingOrm(respond: Intercept = () => ({ rows: [] })): {
+  orm: BotDb;
+  calls: SqlCall[];
+} {
+  const calls: SqlCall[] = [];
+  const orm = drizzleProxy(
+    async (text, params, method) => {
+      const call = { sql: text, params };
+      calls.push(call);
+      const answer = (await respond(call)) ?? { rows: [] };
+      if (answer instanceof Error) {
+        throw answer;
+      }
+      return {
+        rows:
+          method === "all"
+            ? answer.rows.map((row) =>
+                Array.isArray(row)
+                  ? (row as unknown[])
+                  : Object.values(row as Record<string, unknown>),
+              )
+            : answer.rows,
+      };
+    },
     { schema },
   );
+  // The statements are only recorded, so a transaction is just its statements.
+  Object.assign(orm, {
+    transaction: <T>(work: (tx: unknown) => Promise<T>) => work(orm),
+  });
+  return { orm: orm, calls };
 }
 
-/** Drizzle over a pg pool, for the concurrency tests. Log the pool in as bot_app. */
+/** A client that runs nothing and answers with no rows. */
+export function stubOrm(): BotDb {
+  return recordingOrm().orm;
+}
+
+/** Drizzle over a pg pool or client, for the concurrency tests. Log in as bot_app. */
 export function pgOrm(pool: pg.Pool | pg.Client): BotDb {
   return drizzlePg(pool, { schema });
 }
 
-/**
- * Runs every statement through a pg pool, for the concurrency tests on a real Postgres,
- * where each statement needs a connection of its own. Log the pool in as bot_app.
- */
-export function pgSql(pool: pg.Pool | pg.Client): Runner {
-  const builtin = pg.types.getTypeParser as (
-    oid: number,
-  ) => (value: string) => unknown;
-  const types = {
-    getTypeParser: (oid: number) => TYPE_PARSERS.get(oid) ?? builtin(oid),
-  };
-
-  return async (text, params) => {
-    const result = await pool.query<Row>({
-      text,
-      values: [...params],
-      types,
-    });
-    return result.rows;
-  };
-}
-
-/** A runner that runs nothing. It records each statement and answers with `respond`. */
-export function recordingSql(respond: Intercept = () => ({ rows: [] })): {
-  sql: Runner;
+/** A client that runs nothing. It records each statement and answers with `respond`. */
+export function recordingClient(respond?: Intercept): {
+  db: DbClient;
   calls: SqlCall[];
 } {
-  const calls: SqlCall[] = [];
-  const sql: Runner = async (text, params) => {
-    const call = { sql: text, params };
-    calls.push(call);
-    const answer = (await respond(call)) ?? { rows: [] };
-    if (answer instanceof Error) {
-      throw answer;
-    }
-    return answer.rows as Row[];
-  };
-  return { sql, calls };
+  const { orm, calls } = recordingOrm(respond);
+  return { db: createDbClient(orm), calls };
 }
 
 /**

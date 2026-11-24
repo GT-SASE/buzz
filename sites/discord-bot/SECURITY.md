@@ -31,19 +31,19 @@ The bot shares a database with buzz. `bot_app` has no grant on buzz's tables, bu
 
 ### How the bot writes
 
-The bot writes its tables itself, in TypeScript (`src/db`), inside transactions that lock the rows they change, check the version or claim token they read, and write the audit row. It used to call roughly thirty `SECURITY DEFINER` database functions instead, and the login had no write access to most tables. Those functions stay in the database for now so that the code deployed before and after the switch both work, and a later change drops them.
+The bot writes its tables itself, in TypeScript (`src/db`), inside transactions that lock the rows they change, check the version or claim token they read, and write the audit row. It used to call roughly thirty `SECURITY DEFINER` database functions instead, and the login had no write access to most tables. It also does, in the same transactions, what the database's triggers did around a write: keeps the old version of the row in `discord_bot.row_versions`, moves `updated_at`, refuses to undelete a row or reopen a closed event, refuses a task or event under a closed, deleted or removed parent, gives a new event its steps, checks a guild's time zone, and counts the task and reassignment quotas under locks taken in a fixed order.
 
-What the database still enforces, whichever login writes, because it is a trigger or a constraint:
+Until the migration that drops them runs, the triggers and the old functions are still in the database, so the code deployed before and after the switch both work. While both write, a change leaves one history row: a unique index over the transaction, the table, the row and the old version makes the second writer's insert a no-op. After the drop, these are enforced by the bot's code only, and a hostile `bot_app` login could skip them:
 
-- `discord_bot.row_versions` keeps the old version of every changed row of the main tables, and `bot_app` can neither read nor write it.
-- An event holds at most 100 tasks and an officer makes at most 50 tasks and reassignments a day, counted under a lock.
-- A deleted task or event stays deleted, and a closed event stays closed. A new task or event under a removed channel, or a closed or deleted event, is refused.
-- A new event gets its steps. A guild's time zone has to be one the server knows.
-- Every Discord ID is checked by the `discord_id` domain, and the `CHECK` constraints keep rows in step with their status.
+- the history of a change (it can also add rows to `row_versions`, which it cannot read, change or remove);
+- the task and reassignment quotas, and the checks on a deleted row, a closed event and a removed channel;
+- the config version check, the audit row of a config change, the hand-off and reminder claim tokens, the assignee limit of a step, and the order in which steps may be done.
 
-The grants are by column wherever a write changes only some. `events` and `tasks` keep the table-wide `INSERT` and `UPDATE` they had before. The only `DELETE` is on `interaction_claims`, because the daily cron must remove claims older than a day (an interaction token lasts 15 minutes). Row-level security limits it to exactly those rows: a `DELETE` by `bot_app` of a newer claim removes nothing. The table's owner is not subject to the policy. `task_reassignments` can be inserted into and not read, and `row_versions` not at all.
+What the database enforces whichever login writes: every `CHECK`, key and unique index, the `discord_id` domain, the column grants below, and row-level security on `interaction_claims`.
 
-What only the code guarantees, and a hostile login could skip: the config version check, the audit row of a config change, the hand-off and reminder claim tokens, the assignee limit of a step, and the order in which steps may be done. These were enforced for a hostile login too when functions held the writes. The table above shows what that costs, and [After a `DATABASE_URL` leak](#after-a-database_url-leak) says what to check.
+The grants are by column wherever a write changes only some. `events` and `tasks` keep the table-wide `INSERT` and `UPDATE` they had before. The only `DELETE` is on `interaction_claims`, because the daily cron must remove claims older than a day (an interaction token lasts 15 minutes). Row-level security limits it to exactly those rows: a `DELETE` by `bot_app` of a newer claim removes nothing. The table's owner is not subject to the policy. `row_versions` can be inserted into and not read, changed or removed.
+
+The table above shows what that costs, and [After a `DATABASE_URL` leak](#after-a-database_url-leak) says what to check.
 
 Some of this also depends on settings in the services' dashboards, which the repository cannot enforce. [docs/SETUP.md](docs/SETUP.md) lists them.
 

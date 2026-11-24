@@ -12,10 +12,10 @@
     "typecheck:tsc": "tsc --noEmit",
     "test": "bun test --isolate ./src ./scripts",
     "test:db": "bun test --isolate --parallel ./test/db/",
+    "test:db:no-triggers": "BOT_TEST_NO_TRIGGERS=1 bun test --isolate --parallel ./test/db/",
     "test:db:concurrency": "bun test --timeout 30000 --preload ./test/db-concurrency/preload.ts ./test/db-concurrency/",
     "db:migrate": "bun db/migrate.ts",
     "commands:register": "bun --env-file=.env scripts/register-commands.ts",
-    "db:migrate:legacy": "dbmate --migrations-dir db/migrations --migrations-table discord_bot.schema_migrations --no-dump-schema up",
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
@@ -29,7 +29,6 @@
     "@electric-sql/pglite": "0.5.17",
     "@types/node": "^26.6.6",
     "@types/pg": "^8.23.1",
-    "dbmate": "2.38.2",
     "drizzle-kit": "0.31.11",
     "pg": "^8.23.1",
     "tsrs": "0.20.1-ts7.1.0-beta",

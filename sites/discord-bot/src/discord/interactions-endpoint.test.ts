@@ -19,11 +19,7 @@ import {
   spyOn,
 } from "bun:test";
 import { POST } from "../../api/interactions.ts";
-import {
-  recordingSql,
-  stubOrm,
-  testDatabaseUrl,
-} from "../../test/support/sql-client.ts";
+import { stubOrm, testDatabaseUrl } from "../../test/support/sql-client.ts";
 import { asFetch, stubEnv, type FetchLike } from "../../test/support/stubs.ts";
 import * as registry from "../handlers/registry.ts";
 import { isDeclaredLengthWithin, readBodyWithin } from "../lib/read-body.ts";
@@ -36,7 +32,7 @@ const waitUntil = mock<(work: Promise<unknown>) => void>();
 await mock.module("@vercel/functions", () => ({ waitUntil }));
 // The database the endpoint builds from its settings reads nothing, and saves a draft.
 await mock.module("../db/neon.ts", () => ({
-  neonRunner: () => recordingSql().sql,
+  neonHttp: () => stubOrm(),
   neonOpen: () => (work: (orm: unknown) => Promise<unknown>) => work(stubOrm()),
 }));
 

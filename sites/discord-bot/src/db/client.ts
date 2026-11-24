@@ -1,28 +1,18 @@
 /**
- * The database client: something that runs one statement, and how long a statement may
- * take. Production builds it on first use, so importing this file reads no setting.
+ * The database client: Drizzle for reads and single statements, a way to open a
+ * connection for a transaction, and how long a statement may take. Production builds it on
+ * first use, so importing this file reads no setting.
  */
 
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 import { getDatabaseUrl } from "../lib/env.ts";
-import { neonOpen, neonRunner } from "./neon.ts";
+import { neonHttp, neonOpen } from "./neon.ts";
 import type * as schema from "./schema.ts";
 
-/** A row as the driver returns it, with the column types read as `TYPE_PARSERS` says. */
-export type Row = Record<string, unknown>;
-
-/** Sends one statement with `$n` parameters and returns its rows. */
-export type Runner = (
-  text: string,
-  params: readonly unknown[],
-  signal: AbortSignal,
-) => Promise<Row[]>;
-
 /**
- * Drizzle over a connection that can hold a transaction: `orm.transaction(...)` for a
- * write that takes locks or checks a version, and the builder for a single statement.
- * Neon's HTTP driver sends one statement per request, so it cannot hold either: reads go
- * through `run`, writes through `orm`.
+ * Drizzle on a connection. In production, reads and single statements go over Neon's
+ * HTTP driver, one request each with nothing to open or lose between requests; a
+ * transaction needs one connection for all its statements, so `open` gives it one.
  */
 export type BotDb = PgDatabase<PgQueryResultHKT, typeof schema>;
 
@@ -30,7 +20,6 @@ export type BotDb = PgDatabase<PgQueryResultHKT, typeof schema>;
 export type BotTx = Parameters<Parameters<BotDb["transaction"]>[0]>[0];
 
 export interface DbClient {
-  readonly run: Runner;
   readonly orm: BotDb;
   /** Runs a write on a connection opened for it and closed after. Without it, `orm`. */
   readonly open?: <T>(
@@ -50,29 +39,11 @@ const DEFAULT_DEADLINE_MS = 8000;
  */
 const INTERACTION_DEADLINE_MS = 2200;
 
-/** What a client built with no write connection does when a write reaches for one. */
-// eslint-disable-next-line @typescript-eslint/no-unsafe-class-instance-assignment -- a stand-in that fails when used
-const NO_WRITE_CONNECTION = new Proxy(
-  {},
-  {
-    get(): never {
-      throw new Error("this client has no connection for writes");
-    },
-  },
-) as BotDb;
-
-/**
- * A client on Neon in production, or PGlite or pg in tests. A client for tests that
- * only read, or that stub `run`, needs no `orm`.
- */
-export function createDbClient(
-  run: Runner,
-  orm: BotDb = NO_WRITE_CONNECTION,
-  open?: DbClient["open"],
-): DbClient {
+/** A client on Neon in production, or PGlite or pg in tests. */
+export function createDbClient(orm: BotDb, open?: DbClient["open"]): DbClient {
   return open === undefined
-    ? { run, orm, deadlineMs: DEFAULT_DEADLINE_MS }
-    : { run, orm, open, deadlineMs: DEFAULT_DEADLINE_MS };
+    ? { orm, deadlineMs: DEFAULT_DEADLINE_MS }
+    : { orm, open, deadlineMs: DEFAULT_DEADLINE_MS };
 }
 
 /**
@@ -81,8 +52,8 @@ export function createDbClient(
  */
 export function withDeadline(db: DbClient, deadlineMs: number): DbClient {
   return db.open === undefined
-    ? { run: db.run, orm: db.orm, deadlineMs }
-    : { run: db.run, orm: db.orm, open: db.open, deadlineMs };
+    ? { orm: db.orm, deadlineMs }
+    : { orm: db.orm, open: db.open, deadlineMs };
 }
 
 let client: DbClient | undefined;
@@ -90,7 +61,7 @@ let client: DbClient | undefined;
 /** One client for the life of the function instance, for handlers and the cron. */
 export function getDb(): DbClient {
   const url = getDatabaseUrl();
-  client ??= createDbClient(neonRunner(url), undefined, neonOpen(url));
+  client ??= createDbClient(neonHttp(url), neonOpen(url));
   return client;
 }
 

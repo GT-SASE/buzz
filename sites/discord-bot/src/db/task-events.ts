@@ -1,9 +1,11 @@
 /** What the task commands read about events: the post they run in, and the picker. */
 
+import { and, asc, desc, eq, gte, ilike, isNull, lte } from "drizzle-orm";
 import { DISCORD_LIMITS } from "../discord/safe-text.ts";
 import type { DbClient } from "./client.ts";
-import { EVENT_CHOICE_COLUMNS, EVENT_COLUMNS } from "./events.ts";
-import { firstRow, query, sql } from "./internal.ts";
+import { EVENT_CHOICE, EVENT_ROW } from "./events.ts";
+import { firstRow, read } from "./internal.ts";
+import { events } from "./schema.ts";
 import { refused, type DbResult } from "./errors.ts";
 import type { EventChoice, EventRow } from "./types.ts";
 import { idPrefixRange, isSearchTerm, searchPattern } from "./validate.ts";
@@ -14,11 +16,20 @@ export async function findEventByThread(
   { guildId, threadId }: { guildId: string; threadId: string },
 ): Promise<DbResult<EventRow | null>> {
   return firstRow(
-    await query<EventRow>(
+    await read(
       db,
-      sql`select ${EVENT_COLUMNS} from discord_bot.events
-      where thread_id = ${threadId} and guild_id = ${guildId} and deleted_at is null
-      limit 1`,
+      (orm) =>
+        orm
+          .select(EVENT_ROW)
+          .from(events)
+          .where(
+            and(
+              eq(events.threadId, threadId),
+              eq(events.guildId, guildId),
+              isNull(events.deletedAt),
+            ),
+          )
+          .limit(1) as unknown as Promise<EventRow[]>,
     ),
   );
 }
@@ -29,12 +40,25 @@ export async function searchOpenEventsByIdPrefix(
   { guildId, prefix }: { guildId: string; prefix: string },
 ): Promise<DbResult<EventChoice[]>> {
   const { low, high } = idPrefixRange(prefix);
-  return await query<EventChoice>(
+  return read(
     db,
-    sql`select ${EVENT_CHOICE_COLUMNS} from discord_bot.events
-      where guild_id = ${guildId} and status = 'active' and deleted_at is null
-        and id >= ${low} and id <= ${high}
-      order by id limit ${DISCORD_LIMITS.autocompleteChoices}`,
+    (orm) =>
+      orm
+        .select(EVENT_CHOICE)
+        .from(events)
+        .where(
+          and(
+            eq(events.guildId, guildId),
+            eq(events.status, "active"),
+            isNull(events.deletedAt),
+            gte(events.id, low),
+            lte(events.id, high),
+          ),
+        )
+        .orderBy(asc(events.id))
+        .limit(DISCORD_LIMITS.autocompleteChoices) as unknown as Promise<
+        EventChoice[]
+      >,
   );
 }
 
@@ -49,11 +73,23 @@ export async function searchOpenEvents(
   if (!isSearchTerm(term)) {
     return refused();
   }
-  return await query<EventChoice>(
+  return read(
     db,
-    sql`select ${EVENT_CHOICE_COLUMNS} from discord_bot.events
-      where guild_id = ${guildId} and status = 'active' and deleted_at is null
-        and name ilike ${searchPattern(term)}
-      order by event_date desc, id limit ${DISCORD_LIMITS.autocompleteChoices}`,
+    (orm) =>
+      orm
+        .select(EVENT_CHOICE)
+        .from(events)
+        .where(
+          and(
+            eq(events.guildId, guildId),
+            eq(events.status, "active"),
+            isNull(events.deletedAt),
+            ilike(events.name, searchPattern(term)),
+          ),
+        )
+        .orderBy(desc(events.eventDate), asc(events.id))
+        .limit(DISCORD_LIMITS.autocompleteChoices) as unknown as Promise<
+        EventChoice[]
+      >,
   );
 }

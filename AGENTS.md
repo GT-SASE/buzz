@@ -60,7 +60,7 @@ Use `bun`, `bun run`, `bun x`. Never npm, pnpm, npx, bunx. Spell out `bun run te
 - `bun run format:write`, `bun run lint:fix`
 - `bun run db:generate | db:migrate | db:push | db:seed | db:seed:calendar | db:studio`
 - `bun run smoke` = `bun scripts/smoke.mjs` against the live site
-- Discord bot (`sites/discord-bot`, `bun run --cwd sites/discord-bot <script>`): `build` (Vercel Build Output in `.vercel/output`), `smoke` (loads the built functions from a temp folder, expects 401s), `test`, `test:db`, `test:db:concurrency` (needs `CONCURRENCY_DATABASE_URL` and `BOT_APP_PASSWORD`, see its README), `db:migrate` (drizzle-kit migrator into the `discord_bot` schema, which must exist first, adopting a dbmate-built database; `DATABASE_URL` of a disposable DB only), `commands:register <guild-id>...` (replaces those servers' slash commands; needs the Discord env vars, never run it in a test)
+- Discord bot (`sites/discord-bot`, `bun run --cwd sites/discord-bot <script>`): `build` (Vercel Build Output in `.vercel/output`), `smoke` (loads the built functions from a temp folder, expects 401s), `test`, `test:db`, `test:db:concurrency` (needs `CONCURRENCY_DATABASE_URL` and `BOT_APP_PASSWORD`, see its README), `db:migrate` (drizzle-kit migrator into the `discord_bot` schema, which must exist first; `DATABASE_URL` of a disposable DB only), `commands:register <guild-id>...` (replaces those servers' slash commands; needs the Discord env vars, never run it in a test)
 - `bun run hooks:install` and `bun run gitleaks:install`: pre-push secret scan, rules in `.gitleaks.toml`
 
 ## Tests

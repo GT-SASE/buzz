@@ -1,6 +1,4 @@
-import { sql } from "drizzle-orm";
-
-import { db } from "@buzz/db";
+import { db, users } from "@buzz/db";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -14,7 +12,7 @@ export async function GET() {
   const startedAt = Date.now();
 
   try {
-    await db.execute(sql`select 1`);
+    await db.select({ id: users.id }).from(users).limit(1);
   } catch (error) {
     console.error(
       JSON.stringify({

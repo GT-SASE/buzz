@@ -13,7 +13,7 @@ import {
   type ConfigChangeInput,
   type RoleBindings,
 } from "../../src/db/guild-config.ts";
-import { pgOrm, pgSql, pgliteClient } from "../support/sql-client.ts";
+import { pgOrm, pgliteClient } from "../support/sql-client.ts";
 import { queryAs, type Connection } from "./harness.ts";
 
 /**
@@ -24,7 +24,7 @@ export function botClient(db: Connection | PGlite): DbClient {
   const client = (db as Connection).pgClient;
   return client === undefined
     ? pgliteClient(db as PGlite)
-    : createDbClient(pgSql(client), pgOrm(client));
+    : createDbClient(pgOrm(client));
 }
 
 /** A result a test needs to have succeeded, or fails with the category it failed as. */

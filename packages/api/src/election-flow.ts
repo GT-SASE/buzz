@@ -1,3 +1,5 @@
+import { randomInt } from "node:crypto";
+
 import { TRPCError } from "@trpc/server";
 import {
   and,
@@ -10,7 +12,6 @@ import {
   lt,
   lte,
   or,
-  sql,
 } from "drizzle-orm";
 
 import { recordAudit } from "./audit";
@@ -152,21 +153,36 @@ async function freezeRoll(tx: Tx, electionId: string, min: number, now: Date) {
  * the election row FOR UPDATE, so no ballot can be cast meanwhile.
  */
 async function shuffleBallots(tx: Tx, electionId: string) {
-  await tx.execute(sql`
-    with moved as (
-      delete from ${electionBallots}
-      where ${electionBallots.positionId} in (
-        select ${electionPositions.id} from ${electionPositions}
-        where ${electionPositions.electionId} = ${electionId}
-      )
-      returning ${electionBallots.positionId} as "positionId",
-                ${electionBallots.candidateId} as "candidateId"
+  const moved = await tx
+    .delete(electionBallots)
+    .where(
+      inArray(
+        electionBallots.positionId,
+        tx
+          .select({ id: electionPositions.id })
+          .from(electionPositions)
+          .where(eq(electionPositions.electionId, electionId)),
+      ),
     )
-    insert into ${electionBallots} (id, "positionId", "candidateId")
-    select gen_random_uuid()::text, "positionId", "candidateId"
-    from moved
-    order by random()
-  `);
+    .returning({
+      positionId: electionBallots.positionId,
+      candidateId: electionBallots.candidateId,
+    });
+  // Fisher-Yates over the platform's random numbers, so no order survives from the read.
+  for (let i = moved.length - 1; i > 0; i -= 1) {
+    const j = randomInt(i + 1);
+    const first = moved[i];
+    const second = moved[j];
+    if (first !== undefined && second !== undefined) {
+      moved[i] = second;
+      moved[j] = first;
+    }
+  }
+  // New ids come from the column's default. Rows go in one batch at a time, in order.
+  const BATCH = 1000;
+  for (let from = 0; from < moved.length; from += BATCH) {
+    await tx.insert(electionBallots).values(moved.slice(from, from + BATCH));
+  }
 }
 
 export type AdvanceOptions = {

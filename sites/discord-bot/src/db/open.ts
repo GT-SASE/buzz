@@ -4,7 +4,9 @@
  * rather than letting it run on and commit after the caller was told it failed.
  */
 
+import { sql } from "drizzle-orm";
 import type { BotDb, DbClient } from "./client.ts";
+import { evaluate } from "./internal.ts";
 
 /** A connection with Drizzle on it, and the two ways to end it. */
 export interface WriteConnection {
@@ -21,8 +23,14 @@ export interface WriteConnection {
  * connection alone would not: a backend in a long statement does not notice the socket
  * closing until the statement ends.
  */
-export function statementTimeoutSql(deadlineMs: number): string {
-  return `SELECT set_config('statement_timeout', '${String(Math.trunc(deadlineMs))}ms', false)`;
+export async function limitStatements(
+  orm: BotDb,
+  deadlineMs: number,
+): Promise<void> {
+  await evaluate(
+    orm,
+    sql`set_config('statement_timeout', ${String(Math.trunc(deadlineMs))} || 'ms', false)`,
+  );
 }
 
 export function openOn(

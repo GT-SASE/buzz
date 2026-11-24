@@ -293,7 +293,11 @@ describe("/event create", () => {
   describe("when the database fails", () => {
     it("names and logs a post it can't save, and /event link in it attaches it", async () => {
       const forum = await world.addManagedForum();
-      world.failDb(/^SQL update discord_bot.events/, 500, 1);
+      world.failDb(
+        /^SQL update "discord_bot"."events" set "thread_id"/,
+        500,
+        1,
+      );
 
       await world.send(create());
 

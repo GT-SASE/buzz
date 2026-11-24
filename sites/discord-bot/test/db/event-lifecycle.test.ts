@@ -251,7 +251,7 @@ describe("the event picker", () => {
 
   it("reports a database failure as no choices", async () => {
     await seed();
-    world.failDb(/^SQL select .* from discord_bot.events/);
+    world.failDb(/^SQL select .* from "discord_bot"."events"/);
 
     expect(await choices("status", "")).toEqual([]);
   });

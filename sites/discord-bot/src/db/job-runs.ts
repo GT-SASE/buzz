@@ -1,7 +1,6 @@
-import { and, eq, gt, gte, lt, lte, or, sql as dsql } from "drizzle-orm";
+import { and, desc, eq, gt, gte, lt, lte, or, sql } from "drizzle-orm";
 import type { BotTx, DbClient } from "./client.ts";
-import { changedRow, firstRow, query, sql, transact } from "./internal.ts";
-import { isoTimestamp } from "./parsers.ts";
+import { changedRow, evaluate, firstRow, read, transact } from "./internal.ts";
 import { jobRuns } from "./schema.ts";
 import {
   errorSummary,
@@ -11,6 +10,18 @@ import {
 } from "./errors.ts";
 import type { JobRun } from "./types.ts";
 import { isUuid } from "./validate.ts";
+
+/** The columns of a `JobRun`. */
+const JOB_RUN = {
+  id: jobRuns.id,
+  job_name: jobRuns.jobName,
+  status: jobRuns.status,
+  started_at: jobRuns.startedAt,
+  heartbeat_at: jobRuns.heartbeatAt,
+  finished_at: jobRuns.finishedAt,
+  results: jobRuns.results,
+  error: jobRuns.error,
+};
 
 export type JobName = "reminders" | "health_check";
 
@@ -84,7 +95,7 @@ export async function beginJobRun(
     // A run that stopped beating, or whose clock is ahead of the server's, is abandoned.
     await tx
       .update(jobRuns)
-      .set({ status: "failed", finishedAt: dsql`now()`, error: "abandoned" })
+      .set({ status: "failed", finishedAt: sql`now()`, error: "abandoned" })
       .where(
         and(
           eq(jobRuns.jobName, jobName),
@@ -92,9 +103,9 @@ export async function beginJobRun(
           or(
             lt(
               jobRuns.heartbeatAt,
-              dsql`now() - make_interval(secs => ${staleAfterSeconds}::int)`,
+              sql`now() - make_interval(secs => ${staleAfterSeconds}::int)`,
             ),
-            gt(jobRuns.heartbeatAt, dsql`clock_timestamp()`),
+            gt(jobRuns.heartbeatAt, sql`clock_timestamp()`),
           ),
         ),
       );
@@ -107,7 +118,7 @@ export async function beginJobRun(
           eq(jobRuns.jobName, jobName),
           eq(jobRuns.status, "succeeded"),
           gte(jobRuns.startedAt, slotStart.toISOString()),
-          lte(jobRuns.startedAt, dsql`clock_timestamp()`),
+          lte(jobRuns.startedAt, sql`clock_timestamp()`),
         ),
       )
       .limit(1);
@@ -120,7 +131,7 @@ export async function beginJobRun(
       .values({ jobName })
       .onConflictDoNothing({
         target: jobRuns.jobName,
-        where: dsql`status = 'running'`,
+        where: sql`status = 'running'`,
       })
       .returning({ id: jobRuns.id });
     return started?.id ?? null;
@@ -132,9 +143,10 @@ export async function beginJobRun(
  * each other. Gives up after three seconds rather than queue behind a stuck one.
  */
 async function lockJob(tx: BotTx, jobName: string): Promise<void> {
-  await tx.execute(
-    dsql`select set_config('lock_timeout', '3s', true),
-      pg_advisory_xact_lock(hashtextextended(${`job_runs:${jobName}`}::text, 0))`,
+  await evaluate(tx, sql`set_config('lock_timeout', '3s', true)`);
+  await evaluate(
+    tx,
+    sql`pg_advisory_xact_lock(hashtextextended(${`job_runs:${jobName}`}::text, 0))`,
   );
 }
 
@@ -171,7 +183,7 @@ export async function finishJobRun(
       .update(jobRuns)
       .set({
         status: error === null ? "succeeded" : "failed",
-        finishedAt: dsql`least(${now.toISOString()}::timestamptz, now())`,
+        finishedAt: sql`least(${now.toISOString()}::timestamptz, now())`,
         results,
         error: error === null ? null : errorSummary(error),
       })
@@ -186,10 +198,9 @@ export async function finishJobRun(
             id: row.id,
             job_name: row.jobName,
             status: row.status,
-            started_at: isoTimestamp(row.startedAt),
-            heartbeat_at: isoTimestamp(row.heartbeatAt),
-            finished_at:
-              row.finishedAt === null ? null : isoTimestamp(row.finishedAt),
+            started_at: row.startedAt,
+            heartbeat_at: row.heartbeatAt,
+            finished_at: row.finishedAt,
             results: row.results as JobRun["results"],
             error: row.error,
           })),
@@ -203,12 +214,15 @@ export async function getLatestJobRun(
   { jobName }: { jobName: JobName },
 ): Promise<DbResult<JobRun | null>> {
   return firstRow(
-    await query<JobRun>(
+    await read(
       db,
-      sql`select id, job_name, status, started_at, heartbeat_at, finished_at, results,
-        error
-      from discord_bot.job_runs where job_name = ${jobName}
-      order by started_at desc limit 1`,
+      (orm) =>
+        orm
+          .select(JOB_RUN)
+          .from(jobRuns)
+          .where(eq(jobRuns.jobName, jobName))
+          .orderBy(desc(jobRuns.startedAt))
+          .limit(1) as unknown as Promise<JobRun[]>,
     ),
   );
 }
@@ -219,12 +233,17 @@ export async function getLatestSucceededJobRun(
   { jobName }: { jobName: JobName },
 ): Promise<DbResult<JobRun | null>> {
   return firstRow(
-    await query<JobRun>(
+    await read(
       db,
-      sql`select id, job_name, status, started_at, heartbeat_at, finished_at, results,
-        error
-      from discord_bot.job_runs where job_name = ${jobName} and status = 'succeeded'
-      order by started_at desc limit 1`,
+      (orm) =>
+        orm
+          .select(JOB_RUN)
+          .from(jobRuns)
+          .where(
+            and(eq(jobRuns.jobName, jobName), eq(jobRuns.status, "succeeded")),
+          )
+          .orderBy(desc(jobRuns.startedAt))
+          .limit(1) as unknown as Promise<JobRun[]>,
     ),
   );
 }
