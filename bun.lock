@@ -5,6 +5,7 @@
     "": {
       "name": "buzz",
       "devDependencies": {
+        "@axe-core/playwright": "4.14.0",
         "@eslint/js": "^10.0.1",
         "@happy-dom/global-registrator": "^21.0.4",
         "@modelcontextprotocol/sdk": "^1.32.2",
@@ -18,19 +19,20 @@
         "eslint-config-next": "^16.4.6",
         "eslint-plugin-drizzle": "^0.2.3",
         "jiti": "^2.7.0",
+        "playwright-core": "1.65.0",
         "prettier": "^3.10.1",
         "prettier-plugin-tailwindcss": "^0.8.1",
         "react": "^19.3.1",
         "react-dom": "^19.3.1",
         "tsrs": "0.20.1-ts7.1.0-beta",
         "turbo": "^2.11.11",
-        "typescript": "^6.0.2",
+        "typescript": "6.0.3",
         "typescript-eslint": "^8.73.0",
       },
     },
     "packages/api": {
       "name": "@buzz/api",
-      "version": "2.5.0",
+      "version": "3.0.0",
       "dependencies": {
         "@buzz/auth": "workspace:*",
         "@buzz/db": "workspace:*",
@@ -48,7 +50,7 @@
     },
     "packages/auth": {
       "name": "@buzz/auth",
-      "version": "2.5.0",
+      "version": "3.0.0",
       "dependencies": {
         "@auth/core": "^0.41.3",
         "@auth/drizzle-adapter": "^1.11.3",
@@ -66,7 +68,7 @@
     },
     "packages/db": {
       "name": "@buzz/db",
-      "version": "2.5.0",
+      "version": "3.0.0",
       "dependencies": {
         "@vercel/functions": "^3.11.3",
         "drizzle-orm": "^0.45.4",
@@ -84,13 +86,13 @@
     },
     "packages/mcp": {
       "name": "@buzz/mcp",
-      "version": "2.5.0",
+      "version": "3.0.0",
       "dependencies": {
         "@buzz/db": "workspace:*",
         "@electric-sql/pglite": "0.5.17",
         "@modelcontextprotocol/sdk": "^1.32.2",
         "drizzle-orm": "^0.45.4",
-        "typescript": "^6.0.2",
+        "typescript": "6.0.3",
         "zod": "^4.6.7",
       },
       "devDependencies": {
@@ -101,7 +103,7 @@
     },
     "sites/discord-bot": {
       "name": "@buzz/discord-bot",
-      "version": "2.5.0",
+      "version": "3.0.0",
       "dependencies": {
         "@neondatabase/serverless": "1.2.1",
         "@vercel/functions": "2.2.13",
@@ -120,7 +122,7 @@
     },
     "sites/web": {
       "name": "@buzz/web",
-      "version": "2.5.0",
+      "version": "3.0.0",
       "dependencies": {
         "@buzz/api": "workspace:*",
         "@buzz/auth": "workspace:*",
@@ -189,6 +191,8 @@
     "@auth/core": ["@auth/core@0.41.3", "", { "dependencies": { "@panva/hkdf": "1.2.1", "jose": "6.2.12", "oauth4webapi": "3.8.8", "preact": "10.24.3", "preact-render-to-string": "6.5.11" }, "peerDependencies": { "@simplewebauthn/browser": "^9.0.1", "@simplewebauthn/server": "^9.0.2", "nodemailer": "^7.0.7 || ^8.0.5" }, "optionalPeers": ["@simplewebauthn/browser", "@simplewebauthn/server", "nodemailer"] }, "sha512-sJ3JMHHkXMD3aOjopv7mOBTO1Ocw4b0fAEXJBz6k7YHLpYQI6C40jCUPc5fNvUKxXRXNE1/sRISA15UrwWJBTw=="],
 
     "@auth/drizzle-adapter": ["@auth/drizzle-adapter@1.11.3", "", { "dependencies": { "@auth/core": "0.41.3" } }, "sha512-TxqVasPVuf7LDAT1Yuu6bftpuet8o0tjdXW+mXpnXWdSRPQsomdzMoz9RsXkFN/JfdK+/DwdgOEmOTv1gbiFNw=="],
+
+    "@axe-core/playwright": ["@axe-core/playwright@4.14.0", "", { "dependencies": { "axe-core": "~4.14.0" }, "peerDependencies": { "playwright-core": ">= 1.0.0" } }, "sha512-SGUhG5PIHd2eMdpgBF2PyQLOhX+qyDR2PT4cmoS4Qk2ak+jX/rrSvst9l0PGv5WTHolKpUMvVmoHpr4cZgf1RQ=="],
 
     "@babel/code-frame": ["@babel/code-frame@7.29.7", "", { "dependencies": { "@babel/helper-validator-identifier": "7.29.7", "js-tokens": "4.0.0", "picocolors": "1.1.1" } }, "sha512-Aup7aUOfpbAUg2ROOJN6Iw5f9DMBlzu0mIkm/malLQFN/YQgO48wCj0Kxa3sEHJvPVFg7siR+qRInwXd2qhQKw=="],
 
@@ -1682,6 +1686,8 @@
 
     "pkg-up": ["pkg-up@3.1.0", "", { "dependencies": { "find-up": "3.0.0" } }, "sha512-nDywThFk1i4BQK4twPQ6TA4RT8bDY96yeuCVBWL3ePARCiEKDRSrNGbFIgUJpLp+XeIR65v8ra7WuJOFUBtkMA=="],
 
+    "playwright-core": ["playwright-core@1.65.0", "", { "bin": { "playwright-core": "cli.js" } }, "sha512-vNSKgH6YqtN7cdT/L334zo0a+YwkrpicyrHJlWWPIm/Q+Nn2SWInil01oT0mbu96U4GgoRtCYQD9CzJQgju+lA=="],
+
     "pngjs": ["pngjs@5.0.0", "", {}, "sha512-40QW5YalBNfQo5yRYmiw7Yz6TKKVr3h6970B2YE+3fQpsWcrbj1PzJgxeJ19DRQjhMbKPIuMY8rFaXc8moolVw=="],
 
     "possible-typed-array-names": ["possible-typed-array-names@1.1.0", "", {}, "sha512-/+5VFTchJDoVj3bhoqi6UeymcD00DAwb1nJwamzPvHEszJ4FpF6SNNbUbOS8yI56qHzdV8eK0qEfOSiodkTdxg=="],
@@ -1942,7 +1948,7 @@
 
     "typed-array-length": ["typed-array-length@1.0.8", "", { "dependencies": { "call-bind": "1.0.9", "for-each": "0.3.5", "gopd": "1.2.0", "is-typed-array": "1.1.15", "possible-typed-array-names": "1.1.0", "reflect.getprototypeof": "1.0.10" } }, "sha512-phPGCwqr2+Qo0fwniCE8e4pKnGu/yFb5nD5Y8bf0EEeiI5GklnACYA9GFy/DrAeRrKHXvHn+1SUsOWgJp6RO+g=="],
 
-    "typescript": ["typescript@6.0.2", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-bGdAIrZ0wiGDo5l8c++HWtbaNCWTS4UTv7RaTH/ThVIgjkveJt83m74bBHMJkuCbslY8ixgLBVZJIOiQlQTjfQ=="],
+    "typescript": ["typescript@6.0.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw=="],
 
     "typescript-7": ["typescript@7.0.2", "", { "optionalDependencies": { "@typescript/typescript-aix-ppc64": "7.0.2", "@typescript/typescript-darwin-arm64": "7.0.2", "@typescript/typescript-darwin-x64": "7.0.2", "@typescript/typescript-freebsd-arm64": "7.0.2", "@typescript/typescript-freebsd-x64": "7.0.2", "@typescript/typescript-linux-arm": "7.0.2", "@typescript/typescript-linux-arm64": "7.0.2", "@typescript/typescript-linux-loong64": "7.0.2", "@typescript/typescript-linux-mips64el": "7.0.2", "@typescript/typescript-linux-ppc64": "7.0.2", "@typescript/typescript-linux-riscv64": "7.0.2", "@typescript/typescript-linux-s390x": "7.0.2", "@typescript/typescript-linux-x64": "7.0.2", "@typescript/typescript-netbsd-arm64": "7.0.2", "@typescript/typescript-netbsd-x64": "7.0.2", "@typescript/typescript-openbsd-arm64": "7.0.2", "@typescript/typescript-openbsd-x64": "7.0.2", "@typescript/typescript-sunos-x64": "7.0.2", "@typescript/typescript-win32-arm64": "7.0.2", "@typescript/typescript-win32-x64": "7.0.2" }, "bin": { "tsc": "bin/tsc" } }, "sha512-8FYau96o3NKOhbjKi/qNvG/W5jhzxkbdm5sj9AbZ/5T5sWqn3hJgLfGx27sRKZWTvyzCP8dLRBTf5tBTSRVUNA=="],
 

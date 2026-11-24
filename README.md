@@ -103,6 +103,7 @@ The site is stamped with `MAJOR.MINOR.PATCH`, shown in the footer and returned w
 | 2.3 | 2026-10 | /status uptime page, self-hosted fonts, Turborepo |
 | 2.4 | 2026-11 | Bun and parallel CI |
 | 2.5 | 2026-11 | Admin page builder |
+| 3.0 | 2026-11-23 | Officer operations, Elections v2, Events v2, page builder v2 |
 
 ## Agent tooling
 
