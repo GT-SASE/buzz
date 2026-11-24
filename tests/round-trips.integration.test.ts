@@ -27,8 +27,7 @@ const {
 } = await import("../packages/db/src/index");
 const { createCaller } = await import("../packages/api/src/root");
 const { schoolYear, semester } = await import("../packages/api/src/terms");
-const { inArray } =
-  await import("../packages/db/node_modules/drizzle-orm/index.js");
+const { inArray } = await import("drizzle-orm");
 
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;

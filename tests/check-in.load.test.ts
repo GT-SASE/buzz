@@ -16,8 +16,7 @@ mock.module("../packages/auth/src/index.ts", () => ({
   signOut: async () => undefined,
 }));
 
-const { and, eq, inArray } =
-  await import("../packages/db/node_modules/drizzle-orm/index.js");
+const { and, eq, inArray } = await import("drizzle-orm");
 const { createCaller } = await import("../packages/api/src/root");
 const { db, eventCheckIns, events, users } =
   await import("../packages/db/src/index");
@@ -152,18 +151,21 @@ describe.skipIf(!HAS_DB)("a room scanning at once", () => {
 
     // Throughput, recorded rather than asserted tightly: this runs against a
     // remote Neon instance from a laptop, so the absolute number is mostly
-    // network. Written to a file because a test runner swallows stdout, and
-    // the point is to be able to compare the number across a change — a
-    // regression into serial execution shows up as a multiple, not a few
-    // percent.
-    writeFileSync(
-      resolve(import.meta.dirname, "../.bench-check-in.json"),
-      JSON.stringify(
-        { room: ROOM, elapsedMs: elapsed, perScanMs: elapsed / ROOM },
-        null,
-        2,
-      ),
-    );
+    // network. Written to the file named by BENCH_JSON, and only then, because
+    // a test runner swallows stdout and the point is to compare the number
+    // across a change — a regression into serial execution shows up as a
+    // multiple, not a few percent. Without it a plain test run leaves nothing
+    // behind.
+    if (process.env.BENCH_JSON) {
+      writeFileSync(
+        resolve(process.env.BENCH_JSON),
+        JSON.stringify(
+          { room: ROOM, elapsedMs: elapsed, perScanMs: elapsed / ROOM },
+          null,
+          2,
+        ),
+      );
+    }
     expect(elapsed).toBeLessThan(30_000);
   }, 120_000);
 

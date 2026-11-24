@@ -72,8 +72,7 @@ const {
 } = await import("../packages/db/src/index");
 const { createCaller } = await import("../packages/api/src/root");
 const { noNotice, optedOutOf } = await import("../packages/api/src/notify");
-const { eq, inArray } =
-  await import("../packages/db/node_modules/drizzle-orm/index.js");
+const { eq, inArray } = await import("drizzle-orm");
 
 const SLOW = 60_000;
 const HOUR_MS = 60 * 60 * 1000;

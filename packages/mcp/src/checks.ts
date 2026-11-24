@@ -21,7 +21,7 @@ const TURBO_TASKS: Record<CheckTask, string[]> = {
   format: ["//#format:check"],
   test: ["//#test"],
   "typecheck:tsc": ["typecheck:tsc", "//#typecheck:tsc:self"],
-  // The bot's own turbo tasks; both wait for //#test (see turbo.json).
+  // The bot's own turbo tasks.
   "bot:test": ["test"],
   "bot:test:db": ["test:db"],
   "bot:test:db:concurrency": [],

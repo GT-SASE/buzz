@@ -29,8 +29,7 @@ const {
 } = await import("../packages/db/src/index");
 const { createCaller } = await import("../packages/api/src/root");
 const { schoolYear, semester } = await import("../packages/api/src/terms");
-const { and, asc, eq, inArray, isNull, sum } =
-  await import("../packages/db/node_modules/drizzle-orm/index.js");
+const { and, asc, eq, inArray, isNull, sum } = await import("drizzle-orm");
 const resumeRoute =
   await import("../sites/web/src/app/api/portal/admin/members/[id]/resume/route");
 

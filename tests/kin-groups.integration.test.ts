@@ -11,8 +11,7 @@ const { db, kinGroups, kinMemberships, mentorshipEnrollments, users } =
   await import("../packages/db/src/index");
 const { createCaller } = await import("../packages/api/src/root");
 const { schoolYear, semester } = await import("../packages/api/src/terms");
-const { and, eq, inArray } =
-  await import("../packages/db/node_modules/drizzle-orm/index.js");
+const { and, eq, inArray } = await import("drizzle-orm");
 
 type TestUser = { id: string; email: string; role: "MEMBER" | "ADMIN" };
 

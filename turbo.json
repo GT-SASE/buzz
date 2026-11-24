@@ -11,14 +11,10 @@
       "dependsOn": ["^typecheck:tsc"],
       "tags": ["ci"]
     },
-    // The bot's timing tests fail when they share the CPU with the root tests,
-    // so its test tasks wait for them and then run one after the other.
     "test": {
-      "dependsOn": ["//#test"],
       "tags": ["ci"]
     },
     "test:db": {
-      "dependsOn": ["test"],
       "tags": ["ci"]
     },
     "build": {
@@ -43,12 +39,14 @@
         "VERCEL_URL"
       ]
     },
-    "//#lint": {
+    // Turbo has no named input sets. A task with no script still gets a hash, and
+    // every task that depends on it folds that hash into its own, so these two
+    // carry the globs the root tasks below share. Each of those tasks lists only
+    // package.json (always an input anyway), so its inputs are exactly these.
+    "//#sources": {
       "inputs": [
         "$TURBO_ROOT$/sites/web/src/**",
         "$TURBO_ROOT$/sites/web/*.{ts,js,json}",
-        "$TURBO_ROOT$/sites/discord-bot/{api,src,scripts,test}/**",
-        "$TURBO_ROOT$/sites/discord-bot/*.{ts,js,json}",
         "$TURBO_ROOT$/packages/*/src/**",
         "$TURBO_ROOT$/packages/*/*.{ts,json}",
         "$TURBO_ROOT$/packages/db/drizzle/**",
@@ -58,90 +56,42 @@
         "$TURBO_ROOT$/*.{ts,json,mjs,toml}",
         "$TURBO_ROOT$/bun.lock",
         "!**/*.tsbuildinfo",
-        "!**/next-env.d.ts",
-        "!.bench-check-in.json"
-      ],
+        "!**/next-env.d.ts"
+      ]
+    },
+    // The bot's files, for the root tasks that read them (eslint and prettier).
+    "//#bot-sources": {
+      "inputs": [
+        "$TURBO_ROOT$/sites/discord-bot/{api,src,scripts,test}/**",
+        "$TURBO_ROOT$/sites/discord-bot/*.{ts,js,json}",
+        "!**/*.tsbuildinfo"
+      ]
+    },
+    "//#lint": {
+      "inputs": ["package.json"],
+      "dependsOn": ["//#sources", "//#bot-sources"],
       "tags": ["ci"]
     },
     "//#format:check": {
-      "inputs": [
-        "$TURBO_ROOT$/sites/web/src/**",
-        "$TURBO_ROOT$/sites/web/*.{ts,js,json}",
-        "$TURBO_ROOT$/sites/discord-bot/{api,src,scripts,test}/**",
-        "$TURBO_ROOT$/sites/discord-bot/*.{ts,js,json}",
-        "$TURBO_ROOT$/packages/*/src/**",
-        "$TURBO_ROOT$/packages/*/*.{ts,json}",
-        "$TURBO_ROOT$/packages/db/drizzle/**",
-        "$TURBO_ROOT$/packages/db/scripts/**",
-        "$TURBO_ROOT$/tests/**",
-        "$TURBO_ROOT$/scripts/**",
-        "$TURBO_ROOT$/*.{ts,json,mjs,toml}",
-        "$TURBO_ROOT$/bun.lock",
-        "!**/*.tsbuildinfo",
-        "!**/next-env.d.ts",
-        "!.bench-check-in.json"
-      ],
+      "inputs": ["package.json"],
+      "dependsOn": ["//#sources", "//#bot-sources"],
       "tags": ["ci"]
     },
     "//#typecheck:self": {
-      "inputs": [
-        "$TURBO_ROOT$/sites/web/src/**",
-        "$TURBO_ROOT$/sites/web/*.{ts,js,json}",
-        "$TURBO_ROOT$/packages/*/src/**",
-        "$TURBO_ROOT$/packages/*/*.{ts,json}",
-        "$TURBO_ROOT$/packages/db/drizzle/**",
-        "$TURBO_ROOT$/packages/db/scripts/**",
-        "$TURBO_ROOT$/tests/**",
-        "$TURBO_ROOT$/scripts/**",
-        "$TURBO_ROOT$/*.{ts,json,mjs,toml}",
-        "$TURBO_ROOT$/bun.lock",
-        "!**/*.tsbuildinfo",
-        "!**/next-env.d.ts",
-        "!.bench-check-in.json"
-      ],
+      "inputs": ["package.json"],
+      "dependsOn": ["//#sources"],
       "tags": ["ci"]
     },
     "//#typecheck:tsc:self": {
-      "inputs": [
-        "$TURBO_ROOT$/sites/web/src/**",
-        "$TURBO_ROOT$/sites/web/*.{ts,js,json}",
-        "$TURBO_ROOT$/packages/*/src/**",
-        "$TURBO_ROOT$/packages/*/*.{ts,json}",
-        "$TURBO_ROOT$/packages/db/drizzle/**",
-        "$TURBO_ROOT$/packages/db/scripts/**",
-        "$TURBO_ROOT$/tests/**",
-        "$TURBO_ROOT$/scripts/**",
-        "$TURBO_ROOT$/*.{ts,json,mjs,toml}",
-        "$TURBO_ROOT$/bun.lock",
-        "!**/*.tsbuildinfo",
-        "!**/next-env.d.ts",
-        "!.bench-check-in.json"
-      ],
+      "inputs": ["package.json"],
+      "dependsOn": ["//#sources"],
       "tags": ["ci"]
     },
     "//#test": {
-      "inputs": [
-        "$TURBO_ROOT$/sites/web/src/**",
-        "$TURBO_ROOT$/sites/web/*.{ts,js,json}",
-        "$TURBO_ROOT$/packages/*/src/**",
-        "$TURBO_ROOT$/packages/*/*.{ts,json}",
-        "$TURBO_ROOT$/packages/db/drizzle/**",
-        "$TURBO_ROOT$/packages/db/scripts/**",
-        "$TURBO_ROOT$/tests/**",
-        "$TURBO_ROOT$/scripts/**",
-        "$TURBO_ROOT$/*.{ts,json,mjs,toml}",
-        "$TURBO_ROOT$/bun.lock",
-        "!**/*.tsbuildinfo",
-        "!**/next-env.d.ts",
-        "!.bench-check-in.json"
-      ],
+      "inputs": ["package.json"],
+      "dependsOn": ["//#sources"],
       "env": ["TEST_DATABASE_URL"],
       "tags": ["ci"]
-    },
-    "//#test:ci": {
-      "with": ["@buzz/db#postgres"],
-      "cache": false,
-      "tags": ["ci", "ci:cpus:4"]
     }
   }
 }

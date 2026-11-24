@@ -30,7 +30,7 @@ build/
 # turbo
 .turbo/
 
-# throughput measurement written by the check-in load test
+# throughput measurement the check-in load test writes when BENCH_JSON points here
 .bench-check-in.json
 
 # misc

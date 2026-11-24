@@ -24,7 +24,12 @@ import {
   type GuildFixture,
   type WorkflowGuildFixture,
 } from "./fixtures.ts";
-import { createMigratedDb, fakeId, present } from "./harness.ts";
+import {
+  createMigratedDb,
+  fakeId,
+  HOOK_TIMEOUT_MS,
+  present,
+} from "./harness.ts";
 
 const API = "https://discord.com/api/v10";
 
@@ -186,7 +191,7 @@ export function useReminderWorld(): ReminderWorld {
   beforeAll(async () => {
     database = await createMigratedDb();
     db = createDbClient(pgliteSql(database, (call) => world.sqlGate(call)));
-  });
+  }, HOOK_TIMEOUT_MS);
 
   afterAll(() => database?.close());
 

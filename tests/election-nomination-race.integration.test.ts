@@ -17,8 +17,7 @@ mock.module("../packages/auth/src/index.ts", () => ({
 const { db, electionCandidates, electionPositions, elections, users } =
   await import("../packages/db/src/index");
 const { createCaller } = await import("../packages/api/src/root");
-const { eq, inArray } =
-  await import("../packages/db/node_modules/drizzle-orm/index.js");
+const { eq, inArray } = await import("drizzle-orm");
 
 type TestUser = { id: string; email: string; role: "MEMBER" | "ADMIN" };
 

@@ -1,5 +1,13 @@
-import { readFileSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { createHash } from "node:crypto";
+import {
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+} from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { PGlite } from "@electric-sql/pglite";
 import type pg from "pg";
 
@@ -128,11 +136,8 @@ async function migrateAsOwner(db: Connection): Promise<void> {
   }
 }
 
-/**
- * A fresh database with every migration applied. `beforeMigrations` runs as the owner
- * first, to put something else in the database, as buzz's own tables are on Neon.
- */
-export async function createMigratedDb(
+/** A fresh server with every migration applied, built from nothing. */
+async function buildMigratedDb(
   beforeMigrations?: (db: PGlite) => Promise<void>,
 ): Promise<PGlite> {
   const db = new PGlite();
@@ -147,6 +152,86 @@ export async function createMigratedDb(
     }
   }
   await migrateAsOwner(db);
+  return db;
+}
+
+const DUMP_DIR = join(
+  import.meta.dirname,
+  "..",
+  "..",
+  "node_modules",
+  ".cache",
+  "pglite-migrated",
+);
+
+/**
+ * The tar every test file starts from, named after what goes into it: this file, each
+ * migration and the PGlite version. Change any of them and a new tar is built.
+ */
+function dumpPath(): string {
+  const pglite = join(
+    dirname(fileURLToPath(import.meta.resolve("@electric-sql/pglite"))),
+    "..",
+    "package.json",
+  );
+  const hash = createHash("sha256")
+    .update(readFileSync(import.meta.filename))
+    .update(readFileSync(pglite));
+  for (const name of readdirSync(MIGRATIONS_DIR).sort()) {
+    hash.update(name).update(readFileSync(join(MIGRATIONS_DIR, name)));
+  }
+  return join(DUMP_DIR, `${hash.digest("hex").slice(0, 20)}.tar`);
+}
+
+let dump: Promise<Blob> | undefined;
+
+/**
+ * The data directory of a fresh server with every migration applied, as a tar that
+ * `new PGlite({ loadDataDir })` restores in a fraction of the time it takes to boot
+ * PGlite and run the migrations. The first caller on a machine builds it and keeps it
+ * on disk, so the other test files, which run in their own processes, load it instead
+ * of building it again.
+ */
+export function migratedDump(): Promise<Blob> {
+  dump ??= (async () => {
+    const path = dumpPath();
+    const kept = Bun.file(path);
+    if (await kept.exists()) return new Blob([await kept.arrayBuffer()]);
+    const db = await buildMigratedDb();
+    const built = await db.dumpDataDir("none");
+    await db.close();
+    // Written beside the target and renamed into place, so a file that is read is
+    // always whole. Two files that build at once both write the same bytes, so a
+    // rename that loses to the other is harmless.
+    const temporary = `${path}.${String(process.pid)}.tmp`;
+    try {
+      mkdirSync(DUMP_DIR, { recursive: true });
+      for (const old of readdirSync(DUMP_DIR)) {
+        if (old.endsWith(".tar") && join(DUMP_DIR, old) !== path) {
+          rmSync(join(DUMP_DIR, old), { force: true });
+        }
+      }
+      await Bun.write(temporary, built);
+      renameSync(temporary, path);
+    } catch {
+      rmSync(temporary, { force: true });
+    }
+    return built;
+  })();
+  return dump;
+}
+
+/**
+ * A fresh database with every migration applied. `beforeMigrations` runs as the owner
+ * first, to put something else in the database, as buzz's own tables are on Neon; a
+ * database that needs it is built from nothing, any other is restored from the shared tar.
+ */
+export async function createMigratedDb(
+  beforeMigrations?: (db: PGlite) => Promise<void>,
+): Promise<PGlite> {
+  if (beforeMigrations !== undefined) return buildMigratedDb(beforeMigrations);
+  const db = new PGlite({ loadDataDir: await migratedDump() });
+  await db.waitReady;
   return db;
 }
 

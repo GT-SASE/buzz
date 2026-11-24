@@ -21,8 +21,7 @@ mock.module("../packages/auth/src/index.ts", () => ({
 
 const { db } = await import("../packages/db/src/index");
 const { createCaller } = await import("../packages/api/src/root");
-const { sql } =
-  await import("../packages/db/node_modules/drizzle-orm/index.js");
+const { sql } = await import("drizzle-orm");
 
 const MIGRATIONS = new URL("../packages/db/drizzle/", import.meta.url);
 const LEDGER_MIGRATION = "0014_audit_log_points_ledger";

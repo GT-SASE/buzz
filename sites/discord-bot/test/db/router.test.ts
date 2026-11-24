@@ -54,7 +54,12 @@ import {
   type Handler,
 } from "../../src/handlers/router.ts";
 import { handlerDb, type Seed } from "./handler-db.ts";
-import { createMigratedDb, MIGRATION_OWNER, queryAs } from "./harness.ts";
+import {
+  createMigratedDb,
+  HOOK_TIMEOUT_MS,
+  MIGRATION_OWNER,
+  queryAs,
+} from "./harness.ts";
 import { pgliteSql, testDatabaseUrl } from "../support/sql-client.ts";
 import { asFetch, stubEnv } from "../support/stubs.ts";
 
@@ -799,7 +804,7 @@ describe("the client built by liveDependencies", () => {
       `SELECT discord_bot.apply_role_bindings($1, 0, $2, $3, $4, NULL, NULL, NULL, NULL)`,
       [GUILD_ID, fakeId(), OFFICER_ROLE, ADMIN_ROLE],
     );
-  });
+  }, HOOK_TIMEOUT_MS);
 
   afterAll(() => database.close());
 

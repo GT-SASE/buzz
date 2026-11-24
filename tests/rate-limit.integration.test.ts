@@ -8,8 +8,7 @@ import {
 } from "../packages/api/src/rate-limit";
 import { db, rateLimits } from "../packages/db/src/index";
 
-const { eq, like } =
-  await import("../packages/db/node_modules/drizzle-orm/index.js");
+const { eq, like } = await import("drizzle-orm");
 
 const MINUTE = 60_000;
 const OPTIONS = { limit: 3, intervalMs: MINUTE };

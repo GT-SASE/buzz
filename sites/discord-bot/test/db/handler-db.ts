@@ -5,7 +5,7 @@
  */
 
 import { PGlite } from "@electric-sql/pglite";
-import { onTestFinished } from "bun:test";
+import { beforeAll, onTestFinished } from "bun:test";
 import { createDbClient, type DbClient } from "../../src/db/client.ts";
 import {
   GUILD_ID,
@@ -15,7 +15,7 @@ import {
   type DraftRow,
 } from "../support/interactions.ts";
 import { names, pgliteSql, serverError } from "../support/sql-client.ts";
-import { createMigratedDb, fakeId } from "./harness.ts";
+import { fakeId, HOOK_TIMEOUT_MS, migratedDump } from "./harness.ts";
 
 export interface Seed {
   config?: ConfigRow | null;
@@ -45,15 +45,14 @@ export interface HandlerDb {
   readonly claims: () => Promise<number>;
 }
 
-let template: Promise<File | Blob> | undefined;
+// Every file that imports this loads the migrated tar before its first test, in a
+// hook with HOOK_TIMEOUT_MS to do it. Left to the first handlerDb call, the
+// PGlite boot and every migration counted against that one test's timeout and
+// failed it on a busy machine.
+beforeAll(migratedDump, HOOK_TIMEOUT_MS);
 
 async function migratedCopy(): Promise<PGlite> {
-  template ??= createMigratedDb().then(async (db) => {
-    const dump = await db.dumpDataDir("none");
-    await db.close();
-    return dump;
-  });
-  const db = new PGlite({ loadDataDir: await template });
+  const db = new PGlite({ loadDataDir: await migratedDump() });
   await db.waitReady;
   return db;
 }

@@ -27,8 +27,7 @@ mock.module("../packages/auth/src/index.ts", () => ({
   signOut: async () => undefined,
 }));
 
-const { sql } =
-  await import("../packages/db/node_modules/drizzle-orm/index.js");
+const { sql } = await import("drizzle-orm");
 const { createCaller } = await import("../packages/api/src/root");
 const { db } = await import("../packages/db/src/index");
 const { schoolYear, semester } = await import("../packages/api/src/terms");

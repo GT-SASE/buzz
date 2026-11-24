@@ -22,8 +22,7 @@ const { ANNOUNCEMENT_SLUG } = await import("../packages/api/src/page-slug");
 const { getAnnouncement } = await import("../sites/web/src/data/announcement");
 const { getPublishedPage, getPublishedPageList } =
   await import("../sites/web/src/data/pages");
-const { eq, like } =
-  await import("../packages/db/node_modules/drizzle-orm/index.js");
+const { eq, like } = await import("drizzle-orm");
 
 function officer(id: string) {
   return createCaller({

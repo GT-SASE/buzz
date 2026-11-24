@@ -9,8 +9,7 @@ mock.module("next/cache", () => ({
 }));
 
 const { db, events, users } = await import("../packages/db/src/index");
-const { eq, inArray } =
-  await import("../packages/db/node_modules/drizzle-orm/index.js");
+const { eq, inArray } = await import("drizzle-orm");
 const { getChapterCalendar, getChapterEvent } =
   await import("../sites/web/src/data/chapter-events");
 
