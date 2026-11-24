@@ -453,8 +453,11 @@ export const pageRouter = createTRPCRouter({
       if (isUniqueViolation(error)) slugTaken();
       throw error;
     }
-    ctx.revalidatePages?.(result.slugs);
-    return { slug: result.slug, version: result.version };
+    return {
+      slug: result.slug,
+      version: result.version,
+      revalidate: result.slugs,
+    };
   }),
 
   /** Take the page off the public site. The text and history stay. */
@@ -482,8 +485,7 @@ export const pageRouter = createTRPCRouter({
       });
       return [page.slug, ...(await redirectSlugs(tx, page.id))];
     });
-    ctx.revalidatePages?.(slug);
-    return { slug: slug[0]! };
+    return { slug: slug[0]!, revalidate: slug };
   }),
 
   /**
@@ -566,7 +568,6 @@ export const pageRouter = createTRPCRouter({
       });
       return { id: page.id, slug: page.slug, old };
     });
-    ctx.revalidatePages?.([deleted.slug, ...deleted.old]);
-    return deleted;
+    return { ...deleted, revalidate: [deleted.slug, ...deleted.old] };
   }),
 });

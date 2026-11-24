@@ -12,6 +12,7 @@ import { cn } from "~/lib/utils";
 import { api, type RouterOutputs } from "~/trpc/react";
 import { pageSlugProblem, slugFromTitle } from "@buzz/api/page-slug";
 import { PageHistory } from "./page-history";
+import { revalidatePages } from "./revalidate-pages";
 
 const Markdown = lazy(() =>
   import("~/components/site/markdown").then((m) => ({ default: m.Markdown })),
@@ -72,8 +73,9 @@ function PageForm({ saved }: { saved: RouterOutputs["page"]["byId"] | null }) {
   const invalid =
     draft.title.trim() === "" || pageSlugProblem(draft.slug) !== null;
 
-  const refresh = () =>
+  const refresh = (slugs: string[] = []) =>
     Promise.all([
+      ...(slugs.length > 0 ? [revalidatePages(slugs)] : []),
       utils.page.list.invalidate(),
       utils.page.byId.invalidate(),
       utils.page.versions.invalidate(),
@@ -85,16 +87,19 @@ function PageForm({ saved }: { saved: RouterOutputs["page"]["byId"] | null }) {
   const saveDraft = api.page.saveDraft.useMutation({ onError: fail });
   const publish = api.page.publish.useMutation({ onError: fail });
   const unpublish = api.page.unpublish.useMutation({
-    onSuccess: async () => {
+    onSuccess: async ({ revalidate }) => {
       toast.success("Page taken down. It is a draft again.");
-      await refresh();
+      await refresh(revalidate);
     },
     onError: fail,
   });
   const remove = api.page.delete.useMutation({
-    onSuccess: async () => {
+    onSuccess: async ({ revalidate }) => {
       toast.success("Page deleted.");
-      await utils.page.list.invalidate();
+      await Promise.all([
+        revalidatePages(revalidate),
+        utils.page.list.invalidate(),
+      ]);
       router.replace("/portal/admin/pages");
     },
     onError: fail,
@@ -112,15 +117,16 @@ function PageForm({ saved }: { saved: RouterOutputs["page"]["byId"] | null }) {
     if (invalid) return;
     try {
       let id = saved?.id;
+      let published: { revalidate: string[] } | undefined;
       if (id) await saveDraft.mutateAsync({ id, ...fields() });
       else id = (await create.mutateAsync(fields())).id;
       if (andPublish) {
-        const { slug } = await publish.mutateAsync({ id });
-        toast.success(`Published at /${slug}.`);
+        published = await publish.mutateAsync({ id });
+        toast.success(`Published at /${published.slug}.`);
       } else {
         toast.success("Draft saved. The public page is unchanged.");
       }
-      await refresh();
+      await refresh(published?.revalidate);
       if (!saved) router.replace(`/portal/admin/pages/${id}`);
     } catch {
       // The mutation's onError already showed the message.

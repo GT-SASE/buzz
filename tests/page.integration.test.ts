@@ -43,7 +43,6 @@ describe.skipIf(!process.env.DATABASE_URL)("page builder", () => {
   const officerId = `pg-officer-${suffix}`;
   const memberId = `pg-member-${suffix}`;
   const prefix = `pb-${suffix}`;
-  const revalidated: string[][] = [];
 
   function callerFor(id: string, role: "MEMBER" | "ADMIN") {
     return createCaller({
@@ -53,9 +52,6 @@ describe.skipIf(!process.env.DATABASE_URL)("page builder", () => {
         expires: new Date(Date.now() + 86_400_000).toISOString(),
       },
       headers: new Headers(),
-      revalidatePages: (slugs: string[]) => {
-        revalidated.push(slugs);
-      },
     });
   }
   const officer = () => callerFor(officerId, "ADMIN");
@@ -212,15 +208,14 @@ describe.skipIf(!process.env.DATABASE_URL)("page builder", () => {
 
     // Moving back onto an old address drops the redirect that was there.
     await officer().page.saveDraft({ id: page.id, ...fields(a) });
-    await officer().page.publish({ id: page.id });
+    const published = await officer().page.publish({ id: page.id });
     expect(await getPageRedirect(a)).toBeNull();
     expect(await liveBody(a)).toBe("# Hello");
     expect(await getPageRedirect(b)).toBe(a);
     expect(await getPageRedirect(c)).toBe(a);
 
-    // The mutation asked for every address to be dropped from the cache.
-    const last = revalidated.at(-1)!;
-    expect(new Set(last)).toEqual(new Set([a, a, b, c]));
+    // The mutation names every address the cache must drop.
+    expect(new Set(published.revalidate)).toEqual(new Set([a, b, c]));
 
     // A draft again, a page redirects nowhere.
     await officer().page.unpublish({ id: page.id });
@@ -320,15 +315,18 @@ describe.skipIf(!process.env.DATABASE_URL)("page builder", () => {
     expect(deleted?.before).toEqual({ slug, published: false });
   });
 
-  it("asks for a cache drop after publish, unpublish and delete", async () => {
+  it("names the addresses to drop from the cache after publish, unpublish and delete", async () => {
     const slug = `${prefix}-cache`;
-    const before = revalidated.length;
-    const page = await livePage(slug);
-    expect(revalidated.at(-1)).toContain(slug);
-    await officer().page.unpublish({ id: page.id });
-    await officer().page.delete({ id: page.id });
-    expect(revalidated.length).toBe(before + 3);
-    expect(revalidated.at(-1)).toContain(slug);
+    const page = await officer().page.create(fields(slug, "# Hello"));
+    expect(
+      (await officer().page.publish({ id: page.id })).revalidate,
+    ).toContain(slug);
+    expect(
+      (await officer().page.unpublish({ id: page.id })).revalidate,
+    ).toContain(slug);
+    expect((await officer().page.delete({ id: page.id })).revalidate).toContain(
+      slug,
+    );
   });
 
   it("keeps members out", async () => {
