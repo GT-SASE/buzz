@@ -62,10 +62,6 @@ export async function adoptDbmateDatabase(
       old: string | null;
       ledger: string | null;
     };
-    if (old === null) {
-      await client.query("COMMIT");
-      return "new_database";
-    }
     if (ledger !== null) {
       const { rows } = await client.query(
         `SELECT count(*)::int AS count FROM ${LEDGER}`,
@@ -74,6 +70,10 @@ export async function adoptDbmateDatabase(
         await client.query("COMMIT");
         return "already_ledgered";
       }
+    }
+    if (old === null) {
+      await client.query("COMMIT");
+      return "new_database";
     }
 
     // Two runs at once would both see an empty ledger and both write the row.

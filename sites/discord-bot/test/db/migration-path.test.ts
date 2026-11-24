@@ -219,10 +219,10 @@ describe("a database dbmate built", () => {
 });
 
 describe("a new database", () => {
-  it("has no dbmate ledger and nothing to adopt", async () => {
+  it("has no dbmate ledger, and a later run finds its own record", async () => {
     await fresh.exec(`SET ROLE ${MIGRATION_OWNER}`);
     try {
-      expect(await adoptDbmateDatabase(fresh)).toBe("new_database");
+      expect(await adoptDbmateDatabase(fresh)).toBe("already_ledgered");
     } finally {
       await fresh.exec("RESET ROLE");
     }
