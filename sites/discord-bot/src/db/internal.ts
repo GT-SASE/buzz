@@ -84,8 +84,21 @@ export function read<T>(
   return withinDeadline(db, () => work(db.orm));
 }
 
-/** One write statement built with Drizzle, which needs no transaction around it. */
-export const write = read;
+/**
+ * One write statement built with Drizzle, which needs no transaction around it. Like a
+ * transaction it runs on its own connection, so the deadline can drop it and the role's
+ * statement timeout can cancel it.
+ */
+export function write<T>(
+  db: DbClient,
+  work: (orm: BotDb) => Promise<T>,
+): Promise<DbResult<T>> {
+  return withinDeadline(db, (signal) =>
+    db.open === undefined
+      ? work(db.orm)
+      : db.open(work, { signal, deadlineMs: db.deadlineMs }),
+  );
+}
 
 /**
  * A write in a transaction: it takes its row locks, checks what it read and writes, all

@@ -141,9 +141,9 @@ export const timezoneNames = pgView("pg_timezone_names", {
 
 /**
  * The old version of every changed row of the seven tables that keep one. Written by the
- * bot with each update. `xid` is the transaction that made the change: the same change
- * written twice in one transaction, once by an old trigger and once by the bot while both
- * run, is one row. Rows from before it was added have none, and null never collides.
+ * bot with each update. `xid` is the transaction that made the change: while the old
+ * triggers still run, the bot skips a version the trigger already kept in the same
+ * transaction, which the index lets it find. Rows from before it was added have none.
  */
 export const rowVersions = botSchema.table(
   "row_versions",
@@ -162,12 +162,7 @@ export const rowVersions = botSchema.table(
   },
   (t) => [
     primaryKey({ name: "row_versions_pkey", columns: [t.id] }),
-    uniqueIndex("row_versions_once_per_change_uq").on(
-      t.xid,
-      t.sourceTable,
-      t.rowId,
-      sql`md5(${t.oldRow}::text)`,
-    ),
+    index("row_versions_change_idx").on(t.xid, t.sourceTable, t.rowId),
     check(
       "row_versions_operation_known",
       sql`${t.operation} = ANY (ARRAY['UPDATE'::text, 'DELETE'::text])`,

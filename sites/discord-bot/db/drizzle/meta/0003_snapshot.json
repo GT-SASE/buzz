@@ -1371,8 +1371,8 @@
         }
       },
       "indexes": {
-        "row_versions_once_per_change_uq": {
-          "name": "row_versions_once_per_change_uq",
+        "row_versions_change_idx": {
+          "name": "row_versions_change_idx",
           "columns": [
             {
               "expression": "xid",
@@ -1391,15 +1391,9 @@
               "isExpression": false,
               "asc": true,
               "nulls": "last"
-            },
-            {
-              "expression": "md5(\"old_row\"::text)",
-              "isExpression": true,
-              "asc": true,
-              "nulls": "last"
             }
           ],
-          "isUnique": true,
+          "isUnique": false,
           "with": {},
           "method": "btree",
           "concurrently": false

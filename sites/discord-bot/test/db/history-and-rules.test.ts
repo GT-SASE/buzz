@@ -224,6 +224,37 @@ describe("one history row for each change, whoever writes it", () => {
     expect(await historyOf("events", eventId)).toHaveLength(1);
   });
 
+  // While the triggers exist the bot skips what they kept; a row that goes A, B, A, X in one
+  // transaction must still leave all three old versions and raise nothing.
+  it.skipIf(NO_TRIGGERS)(
+    "a row changed A to B, B to A and A to X in one transaction keeps three old versions",
+    async () => {
+      const guild = await insertGuild(db);
+      const taskId = await insertTask(db, guild, await insertEvent(db, guild));
+      const result = await transact(bot(), async (tx) => {
+        for (const description of ["B", "A", "X"]) {
+          await updateRecorded(
+            tx,
+            tasks,
+            { description },
+            eq(tasks.id, taskId),
+            {
+              id: tasks.id,
+            },
+          );
+        }
+      });
+      expect(result.ok).toBe(true);
+      const history = await historyOf("tasks", taskId);
+      expect(history).toHaveLength(3);
+      expect(history.map((row) => row.old_row.description)).toEqual([
+        expect.not.stringMatching(/^(A|B|X)$/),
+        "B",
+        "A",
+      ]);
+    },
+  );
+
   it("keeps nothing for a write that changes nothing, and leaves updated_at alone", async () => {
     const guild = await insertGuild(db);
     const eventId = await insertEvent(db, guild);

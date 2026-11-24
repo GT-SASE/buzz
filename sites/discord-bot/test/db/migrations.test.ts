@@ -1,9 +1,9 @@
 /**
  * The bot's migrations applied to a database that already holds data. Production had
  * 0000 and 0001 when 0002 came, with history rows in `row_versions`, some of them from a
- * row that returned to an earlier state. 0002 adds the column and the unique index that
- * stop a history row being written twice for one change; it must not collide with a row
- * it did not write, and the database it leaves must be the one a fresh server gets.
+ * row that returned to an earlier state. 0002 adds the column and the index the bot uses
+ * to find a version a trigger already kept in its transaction; it must leave the old
+ * history as it was, and the database it leaves must be the one a fresh server gets.
  */
 
 import { cpSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
@@ -124,13 +124,11 @@ describe("0002 on a database that holds history", () => {
     expect(rows).toEqual([{ n: 4, unstamped: 4 }]);
   });
 
-  it("stamps a new row with its transaction, and writes a change once", async () => {
+  it("stamps a new row with its transaction", async () => {
     await stepped.exec(`
       BEGIN;
       INSERT INTO discord_bot.row_versions (source_table, operation, row_id, old_row)
         VALUES ('tasks', 'UPDATE', 'b', '{"state": 1}');
-      INSERT INTO discord_bot.row_versions (source_table, operation, row_id, old_row)
-        VALUES ('tasks', 'UPDATE', 'b', '{"state": 1}') ON CONFLICT DO NOTHING;
       COMMIT;
     `);
     const { rows } = await stepped.query<{ n: number; stamped: number }>(
