@@ -95,11 +95,11 @@ Check the size on the project's usage page in the Neon console. `discord_bot.row
 
    If it prints `behind main`, rebase the branch on `main`, push it and start again. Step 2 replaces the migrations folder with the branch's, so on a branch that is behind it would drop `main`'s newer migrations, and steps 2 and 3 would check the wrong set. If `main` moves before the merge, repeat these checks.
 
-2. Check the branch's migrations. A new file is made with `dbmate new`, which names it by the time, and an applied file never changes. In the same checkout:
+2. Check the branch's migrations. A new file is made with `bun run db:generate` (add `--custom` for SQL written by hand), and an applied file never changes. In the same checkout:
 
    ```sh
-   git restore --source=origin/<branch> -- db/migrations
-   git diff --stat origin/main -- db/migrations
+   git restore --source=origin/<branch> -- db/drizzle
+   git diff --stat origin/main -- db/drizzle
    ```
 
    The diff must show only added files.
@@ -117,10 +117,9 @@ Check the size on the project's usage page in the Neon console. `discord_bot.row
    ```sh
    read -rs OWNER_URL
    DATABASE_URL="$OWNER_URL" bun run db:migrate
-   DATABASE_URL="$OWNER_URL" bun x --bun --no-install dbmate --migrations-dir db/migrations status
    ```
 
-   The first lists the files it applied, and the second should show nothing pending.
+   It prints which of the three cases it was, and a second run prints `Ledger present: newer files run.` and changes nothing.
 
 5. Merge to `main`, run the smoke checks that touch the change on the test server, and check the next `reminders` and `health_check` rows.
 
@@ -170,20 +169,20 @@ Then point `DATABASE_URL` in Vercel at the new `bot_app` string, redeploy, turn 
 
 **No retention period is set yet. This is an owner decision, and it has not been made.** Nothing removes member data on a schedule. Whether the club or the university has rules about this data has not been checked.
 
-| Where                  | What it holds                                                    | How long                                                                           |
-| ---------------------- | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| `events`, `tasks`      | Discord IDs of assignees and creators, task text and event names | Until someone decides otherwise. Deletes are soft, so the row stays                |
+| Where                      | What it holds                                                    | How long                                                                           |
+| -------------------------- | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `events`, `tasks`          | Discord IDs of assignees and creators, task text and event names | Until someone decides otherwise. Deletes are soft, so the row stays                |
 | `discord_bot.row_versions` | Old copies of events, tasks, steps, settings, forums and drafts  | No limit                                                                           |
-| `config_audit`         | Discord IDs of who changed settings, role and forum IDs          | No limit                                                                           |
-| `task_reassignments`   | Discord IDs of who reassigned a task                             | No limit                                                                           |
-| `reminder_log`         | Which reminder went out for which task, and its message ID       | No limit                                                                           |
-| `event_reminder_log`   | Which step or pickup reminder went out for which event, and when | No limit                                                                           |
-| `job_runs`             | Counts and event IDs                                             | No limit                                                                           |
-| `interaction_claims`   | Interaction IDs                                                  | Hard-deleted by `expire_interaction_claims` after a day                            |
-| Neon's history         | Everything above                                                 | The plan's restore window                                                          |
-| Manual exports         | Everything above                                                 | The last two are kept, as [RECOVERY.md](RECOVERY.md#a-manual-export) says          |
-| Vercel logs            | Fixed text, IDs and error codes                                  | One hour on Hobby                                                                  |
-| Discord                | The bot's posts and mentions                                     | The bot does not remove them. Deleting an event leaves its post, with a note in it |
+| `config_audit`             | Discord IDs of who changed settings, role and forum IDs          | No limit                                                                           |
+| `task_reassignments`       | Discord IDs of who reassigned a task                             | No limit                                                                           |
+| `reminder_log`             | Which reminder went out for which task, and its message ID       | No limit                                                                           |
+| `event_reminder_log`       | Which step or pickup reminder went out for which event, and when | No limit                                                                           |
+| `job_runs`                 | Counts and event IDs                                             | No limit                                                                           |
+| `interaction_claims`       | Interaction IDs                                                  | Hard-deleted by `expire_interaction_claims` after a day                            |
+| Neon's history             | Everything above                                                 | The plan's restore window                                                          |
+| Manual exports             | Everything above                                                 | The last two are kept, as [RECOVERY.md](RECOVERY.md#a-manual-export) says          |
+| Vercel logs                | Fixed text, IDs and error codes                                  | One hour on Hobby                                                                  |
+| Discord                    | The bot's posts and mentions                                     | The bot does not remove them. Deleting an event leaves its post, with a note in it |
 
 The bot stores no member names in their own column, but task text and event names are free text, so a name can be in them.
 

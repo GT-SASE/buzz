@@ -681,7 +681,7 @@ describe("adding a forum", () => {
   it("says it may have saved when the write fails for another reason", async () => {
     const w = await world();
     const { dependencies, edits } = w;
-    w.fail("apply_config_change");
+    w.fail(/insert into "discord_bot"."config_audit"/);
 
     await run(ROUTER, addPayload(NEW_FORUM), dependencies);
 

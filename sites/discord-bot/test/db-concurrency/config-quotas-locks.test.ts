@@ -18,6 +18,7 @@ import {
   insertGuild,
   insertTask,
 } from "../db/fixtures.ts";
+import { softDeleteEvent } from "../../src/db/events.ts";
 import { errorCodeOf, fakeId, present } from "../db/harness.ts";
 import { botUrlForDatabase, concurrencyContext } from "./global-setup.ts";
 import { raceDatabase, settled } from "./race.ts";
@@ -52,13 +53,15 @@ describe("the bot's role over a real connection", () => {
 
   it.each([
     "DELETE FROM discord_bot.tasks",
-    "DELETE FROM discord_bot.interaction_claims",
+    "DELETE FROM discord_bot.config_audit",
     "TRUNCATE discord_bot.tasks",
-    "TRUNCATE discord_bot.config_audit",
+    "TRUNCATE discord_bot.interaction_claims",
     "ALTER TABLE discord_bot.tasks DISABLE TRIGGER ALL",
     "CREATE TABLE discord_bot.forged (id int)",
     "SELECT * FROM discord_bot.row_versions",
-    "INSERT INTO discord_bot.task_reassignments (guild_id, actor_id, task_id) VALUES ('1', '1', gen_random_uuid())",
+    "SELECT * FROM discord_bot.task_reassignments",
+    "UPDATE discord_bot.config_audit SET action = action",
+    "UPDATE discord_bot.guild_config SET guild_id = guild_id",
     "SET ROLE migration_owner",
   ])("cannot run %s", async (sql) => {
     expect(await errorCodeOf(db.t1.query(sql))).toBe(INSUFFICIENT_PRIVILEGE);
@@ -80,13 +83,26 @@ describe("the bot's role over a real connection", () => {
  * overwrite the other.
  */
 describe("two config saves at once", () => {
-  const changeSql =
-    "SELECT discord_bot.apply_config_change($1, $2, $3, $4) AS version";
-  const bindingsSql =
-    "SELECT discord_bot.apply_role_bindings($1, $2, $3, $4, $5, $6, $7, $8, $9) AS version";
+  // A save in progress, as the bot's transaction leaves it: the config row changed and
+  // its audit row written, none of it committed.
+  const changeSql = `WITH changed AS (
+      UPDATE discord_bot.guild_config SET reminders_enabled = $4, version = version + 1
+      WHERE guild_id = $1 AND version = $2 RETURNING guild_id, version)
+    INSERT INTO discord_bot.config_audit (guild_id, actor_id, action, new_values, version_after)
+    SELECT guild_id, $3, 'settings', '{}', version FROM changed`;
+  const bindingsSql = `WITH changed AS (
+      UPDATE discord_bot.guild_config SET officer_role_id = $4, admin_role_id = $5, version = version + 1
+      WHERE guild_id = $1 AND version = $2 RETURNING guild_id, version)
+    INSERT INTO discord_bot.config_audit (guild_id, actor_id, action, new_values, version_after)
+    SELECT guild_id, $3, 'role_bindings', '{}', version FROM changed`;
+  const firstSetupSql = `WITH made AS (
+      INSERT INTO discord_bot.guild_config (guild_id, officer_role_id, admin_role_id)
+      VALUES ($1, $3, $4) RETURNING guild_id, version)
+    INSERT INTO discord_bot.config_audit (guild_id, actor_id, action, new_values, version_after)
+    SELECT guild_id, $2, 'role_bindings', '{}', version FROM made`;
 
-  /** Arguments after the version for a full set of role bindings: actor, then roles. */
-  const roles = () => Array.from({ length: 7 }, () => fakeId());
+  /** An actor, an officer role and an admin role. */
+  const roles = () => Array.from({ length: 3 }, () => fakeId());
 
   /** The bot's own save of a full set of role bindings. */
   const bindings = (
@@ -179,7 +195,7 @@ describe("two config saves at once", () => {
       const saved = bindings(guildId, 0);
 
       const second = await db.race(
-        [bindingsSql, [guildId, 0, ...first]],
+        [firstSetupSql, [guildId, ...first]],
         (bot) => applyRoleBindings(bot, saved),
         finish,
       );
@@ -207,11 +223,12 @@ describe("two config saves at once", () => {
 describe("two writes for the last place under a quota", () => {
   const insertBySql = `INSERT INTO discord_bot.tasks (event_id, guild_id, assignee_id, description, due_date, created_by)
                        VALUES ($1, $2, $3, 'Book the room', '${FIXTURE_DUE_DATE}', $4) RETURNING id`;
-  // edit_task with the task's own text and date and a new person, which counts as a
-  // reassignment by the actor.
-  const reassignSql = `SELECT discord_bot.edit_task(task.id, task.guild_id, task.updated_at,
-                         task.description, task.due_date, $2, $3) AS task
-                       FROM discord_bot.tasks AS task WHERE task.id = $1`;
+  // An edit with the task's own text and date and a new person, which counts as a
+  // reassignment by the actor: the reassignment written, then the task changed.
+  const reassignSql = `INSERT INTO discord_bot.task_reassignments (guild_id, actor_id, task_id)
+    SELECT guild_id, $2, id FROM discord_bot.tasks WHERE id = $1`;
+  const reassignedSql =
+    "UPDATE discord_bot.tasks SET assignee_id = $2 WHERE id = $1";
   const actorLimit = {
     ok: false,
     error: { category: "actor_task_limit", code: "CF430" },
@@ -316,7 +333,10 @@ describe("two writes for the last place under a quota", () => {
     const task = read.value;
 
     const second = await db.race(
-      [reassignSql, [first, fakeId(), officer]],
+      [
+        [reassignSql, [first, officer]],
+        [reassignedSql, [first, fakeId()]],
+      ],
       (bot) =>
         editTask(bot, {
           guildId: guild.guildId,
@@ -349,7 +369,7 @@ describe("two writes for the last place under a quota", () => {
     await db.t1.query("ROLLBACK");
 
     await db.t1.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
-    const reassign = db.t1.query(reassignSql, [taskId, fakeId(), fakeId()]);
+    const reassign = db.t1.query(reassignSql, [taskId, fakeId()]);
     expect(await errorCodeOf(reassign)).toBe(FEATURE_NOT_SUPPORTED);
     await db.t1.query("ROLLBACK");
   });
@@ -360,8 +380,12 @@ describe("two writes for the last place under a quota", () => {
  * as a deadlock or a wait that never ends, not as a wrong answer.
  */
 describe("a task update against its event's soft delete", () => {
-  const softDeleteSql =
-    "SELECT discord_bot.soft_delete_event($1, $2) AS deleted_tasks";
+  // A soft delete in progress: the event and its tasks marked deleted, none committed.
+  const softDeleteSql = `WITH gone AS (
+      UPDATE discord_bot.events SET deleted_at = now()
+      WHERE id = $1 AND guild_id = $2 AND deleted_at IS NULL RETURNING id)
+    UPDATE discord_bot.tasks SET deleted_at = now()
+    WHERE event_id IN (SELECT id FROM gone) AND deleted_at IS NULL`;
   const markDoneSql = `UPDATE discord_bot.tasks SET status = 'done', completed_at = now()
                        WHERE id = $1 AND deleted_at IS NULL`;
 
@@ -386,9 +410,9 @@ describe("a task update against its event's soft delete", () => {
       "SELECT id FROM discord_bot.tasks WHERE id = $1 FOR NO KEY UPDATE",
       [taskId],
     );
-    const deleted = settled(db.t2.query(softDeleteSql, [eventId, guildId]));
+    const deleted = softDeleteEvent(db.db, { guildId, eventId });
     try {
-      await db.waitUntilBlocked(db.t2, db.t1);
+      await db.waitUntilBlocked(undefined, db.t1);
       // With the event locked first, this statement and the delete would wait on each
       // other.
       await db.t1.query(markDoneSql, [taskId]);
@@ -396,7 +420,7 @@ describe("a task update against its event's soft delete", () => {
       await db.t1.query("COMMIT");
     }
 
-    expect(await deleted).toEqual({ rows: [{ deleted_tasks: 1 }] });
+    expect(await deleted).toEqual({ ok: true, value: 1 });
     const { rows } = await db.observer.query(
       `SELECT t.status, t.deleted_at IS NOT NULL AS task_gone, e.deleted_at IS NOT NULL AS event_gone
        FROM discord_bot.tasks t JOIN discord_bot.events e ON e.id = t.event_id
@@ -430,10 +454,10 @@ describe("a task update against its event's soft delete", () => {
       const { guildId, eventId, taskIds } = await eventWithTasks(5);
       const [update, deleted] = await Promise.all([
         settled(db.t1.query(markDoneSql, [taskIds[4]])),
-        settled(db.t2.query(softDeleteSql, [eventId, guildId])),
+        softDeleteEvent(db.db, { guildId, eventId }),
       ]);
       expect(update.code).toBeUndefined();
-      expect(deleted.code).toBeUndefined();
+      expect(deleted.ok).toBe(true);
     }
   });
 });

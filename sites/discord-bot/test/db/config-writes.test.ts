@@ -1,7 +1,13 @@
 import type { PGlite } from "@electric-sql/pglite";
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
+import type { DbResult } from "../../src/db/errors.ts";
 import {
-  BOT_APP,
+  applyConfigChange,
+  applyRoleBindings,
+} from "../../src/db/guild-config.ts";
+import { markChannelUnavailable } from "../../src/db/managed-channels.ts";
+import { botClient } from "./bot-writes.ts";
+import {
   HOOK_TIMEOUT_MS,
   INSUFFICIENT_PRIVILEGE,
   OTHER_ROLE,
@@ -46,9 +52,15 @@ afterAll(async () => {
   await db.close();
 });
 
-async function versionFrom(sql: string, params: unknown[]): Promise<number> {
-  const rows = await queryAs<{ version: number }>(db, BOT_APP, sql, params);
-  return (rows[0] as { version: number }).version;
+/** The new version, or the SQLSTATE the write failed with, as a rejection to match on. */
+async function versionOf(result: Promise<DbResult<number>>): Promise<number> {
+  const outcome = await result;
+  if (!outcome.ok) {
+    throw Object.assign(new Error(outcome.error.category), {
+      code: outcome.error.code ?? undefined,
+    });
+  }
+  return outcome.value;
 }
 
 function applyRoles(
@@ -58,19 +70,19 @@ function applyRoles(
   admin: string,
   more: MoreRoles = {},
 ): Promise<number> {
-  return versionFrom(
-    `SELECT discord_bot.apply_role_bindings($1, $2, $3, $4, $5, $6, $7, $8, $9) AS version`,
-    [
+  return versionOf(
+    applyRoleBindings(botClient(db), {
       guildId,
-      expected,
-      fakeId(),
-      officer,
-      admin,
-      more.eboard ?? null,
-      more.eventsCommittee ?? null,
-      more.treasury ?? null,
-      more.marketing ?? null,
-    ],
+      // A caller that sends no version is still a caller, and is stale.
+      expectedVersion: expected as unknown as number,
+      actorId: fakeId(),
+      officerRoleId: officer,
+      adminRoleId: admin,
+      eboardRoleId: more.eboard ?? null,
+      eventsCommitteeRoleId: more.eventsCommittee ?? null,
+      treasuryRoleId: more.treasury ?? null,
+      marketingRoleId: more.marketing ?? null,
+    }),
   );
 }
 
@@ -79,17 +91,16 @@ function applyChange(
   expected: number,
   change: Change,
 ): Promise<number> {
-  return versionFrom(
-    `SELECT discord_bot.apply_config_change($1, $2, $3, $4, $5, $6, $7) AS version`,
-    [
+  return versionOf(
+    applyConfigChange(botClient(db), {
       guildId,
-      expected,
-      change.actor ?? fakeId(),
-      change.reminders ?? null,
-      change.add ?? [],
-      change.remove ?? [],
-      change.timezone ?? null,
-    ],
+      expectedVersion: expected,
+      actorId: change.actor ?? fakeId(),
+      remindersEnabled: change.reminders ?? null,
+      addChannelIds: (change.add ?? []) as string[],
+      removeChannelIds: (change.remove ?? []) as string[],
+      timezone: change.timezone ?? null,
+    }),
   );
 }
 
@@ -134,7 +145,7 @@ async function channelsOf(guildId: string) {
   return rows;
 }
 
-describe("apply_role_bindings", () => {
+describe("applyRoleBindings", () => {
   it("creates the config, rebinds every role, unbinds on null and audits each change", async () => {
     const guildId = fakeId();
     const officer = fakeId();
@@ -223,7 +234,7 @@ describe("apply_role_bindings", () => {
   );
 });
 
-describe("apply_config_change", () => {
+describe("applyConfigChange", () => {
   it("turns reminders off, bumps the version and audits old and new values", async () => {
     const guildId = await setUpGuild();
     const actor = fakeId();
@@ -277,7 +288,6 @@ describe("apply_config_change", () => {
   it.each<[string, number, Change, string]>([
     ["no change", 1, {}, INVALID_PARAMETER],
     ["a stale version", 0, { add: [fakeId()] }, STALE_VERSION],
-    ["an unknown timezone", 1, { timezone: "Mars/Phobos" }, INVALID_PARAMETER],
     ["a null channel", 1, { add: [null] }, INVALID_PARAMETER],
     [
       "a channel both added and removed",
@@ -314,6 +324,38 @@ describe("apply_config_change", () => {
     },
   );
 
+  it("refuses an unknown time zone before it reaches the database", async () => {
+    const guildId = await setUpGuild();
+    const result = await applyConfigChange(botClient(db), {
+      guildId,
+      expectedVersion: 1,
+      actorId: fakeId(),
+      remindersEnabled: null,
+      addChannelIds: [],
+      removeChannelIds: [],
+      timezone: "Mars/Phobos",
+    });
+    expect(result).toEqual({
+      ok: false,
+      error: { category: "invalid_input", code: null },
+    });
+    expect((await configOf(guildId))?.version).toBe(1);
+  });
+
+  it("is backed by the database, which refuses an unknown time zone from any writer", async () => {
+    const guildId = await setUpGuild();
+    expect(
+      await errorCodeOf(
+        queryAs(
+          db,
+          "bot_app",
+          `UPDATE discord_bot.guild_config SET timezone = 'Mars/Phobos' WHERE guild_id = $1`,
+          [guildId],
+        ),
+      ),
+    ).toBe(INVALID_PARAMETER);
+  });
+
   it("rolls everything back if the audit row cannot be written", async () => {
     const guildId = await setUpGuild();
     await db.exec(`
@@ -342,19 +384,17 @@ describe("apply_config_change", () => {
   });
 });
 
-it("mark_channel_unavailable marks an active channel once, leaving the version and audit alone, until it is added again", async () => {
+it("markChannelUnavailable marks an active channel once, leaving the version and audit alone, until it is added again", async () => {
   const guildId = await setUpGuild();
   const channel = fakeId();
   await applyChange(guildId, 1, { add: [channel] });
-  const mark = async () =>
-    (
-      await queryAs<{ marked: boolean }>(
-        db,
-        BOT_APP,
-        `SELECT discord_bot.mark_channel_unavailable($1, $2) AS marked`,
-        [guildId, channel],
-      )
-    )[0]?.marked;
+  const mark = async () => {
+    const marked = await markChannelUnavailable(botClient(db), {
+      guildId,
+      channelId: channel,
+    });
+    return marked.ok ? marked.value : undefined;
+  };
 
   expect(await mark()).toBe(true);
   expect(await mark()).toBe(false);
@@ -368,12 +408,13 @@ it("mark_channel_unavailable marks an active channel once, leaving the version a
   expect((await channelsOf(guildId))[0]?.status).toBe("active");
 });
 
-it("other roles cannot call any of the three config functions", async () => {
+it("other roles cannot write any of the config tables", async () => {
   const guildId = await setUpGuild();
   for (const sql of [
-    `SELECT discord_bot.apply_role_bindings('${guildId}', 1, '${fakeId()}', '${fakeId()}', '${fakeId()}', NULL, NULL, NULL, NULL)`,
-    `SELECT discord_bot.apply_config_change('${guildId}', 1, '${fakeId()}', false)`,
-    `SELECT discord_bot.mark_channel_unavailable('${guildId}', '${fakeId()}')`,
+    `INSERT INTO discord_bot.guild_config (guild_id, officer_role_id, admin_role_id) VALUES ('${fakeId()}', '${fakeId()}', '${fakeId()}')`,
+    `UPDATE discord_bot.guild_config SET reminders_enabled = false WHERE guild_id = '${guildId}'`,
+    `UPDATE discord_bot.managed_channels SET status = 'unavailable' WHERE guild_id = '${guildId}'`,
+    `INSERT INTO discord_bot.config_audit (guild_id, actor_id, action, new_values, version_after) VALUES ('${guildId}', '${fakeId()}', 'settings', '{}', 9)`,
   ]) {
     expect(await errorCodeOf(queryAs(db, OTHER_ROLE, sql))).toBe(
       INSUFFICIENT_PRIVILEGE,

@@ -1,5 +1,8 @@
-import type { DbClient } from "./client.ts";
-import { callFunction, changedRow, firstRow, query, sql } from "./internal.ts";
+import { and, eq, gt, gte, lt, lte, or, sql as dsql } from "drizzle-orm";
+import type { BotTx, DbClient } from "./client.ts";
+import { changedRow, firstRow, query, sql, transact } from "./internal.ts";
+import { isoTimestamp } from "./parsers.ts";
+import { jobRuns } from "./schema.ts";
 import {
   errorSummary,
   refused,
@@ -75,11 +78,63 @@ export async function beginJobRun(
     slotStart: Date;
   },
 ): Promise<DbResult<string | null>> {
-  return callFunction<string | null>(
-    db,
-    sql`select discord_bot.begin_job_run(p_job_name => ${jobName},
-      p_stale_after_seconds => ${staleAfterSeconds},
-      p_slot_start => ${slotStart.toISOString()}) as value`,
+  return transact(db, async (tx) => {
+    await lockJob(tx, jobName);
+
+    // A run that stopped beating, or whose clock is ahead of the server's, is abandoned.
+    await tx
+      .update(jobRuns)
+      .set({ status: "failed", finishedAt: dsql`now()`, error: "abandoned" })
+      .where(
+        and(
+          eq(jobRuns.jobName, jobName),
+          eq(jobRuns.status, "running"),
+          or(
+            lt(
+              jobRuns.heartbeatAt,
+              dsql`now() - make_interval(secs => ${staleAfterSeconds}::int)`,
+            ),
+            gt(jobRuns.heartbeatAt, dsql`clock_timestamp()`),
+          ),
+        ),
+      );
+
+    const [done] = await tx
+      .select({ id: jobRuns.id })
+      .from(jobRuns)
+      .where(
+        and(
+          eq(jobRuns.jobName, jobName),
+          eq(jobRuns.status, "succeeded"),
+          gte(jobRuns.startedAt, slotStart.toISOString()),
+          lte(jobRuns.startedAt, dsql`clock_timestamp()`),
+        ),
+      )
+      .limit(1);
+    if (done !== undefined) {
+      return null;
+    }
+
+    const [started] = await tx
+      .insert(jobRuns)
+      .values({ jobName })
+      .onConflictDoNothing({
+        target: jobRuns.jobName,
+        where: dsql`status = 'running'`,
+      })
+      .returning({ id: jobRuns.id });
+    return started?.id ?? null;
+  });
+}
+
+/**
+ * One transaction at a time per job, until it ends, so a finish and a start cannot pass
+ * each other. Gives up after three seconds rather than queue behind a stuck one.
+ */
+async function lockJob(tx: BotTx, jobName: string): Promise<void> {
+  await tx.execute(
+    dsql`select set_config('lock_timeout', '3s', true),
+      pg_advisory_xact_lock(hashtextextended(${`job_runs:${jobName}`}::text, 0))`,
   );
 }
 
@@ -102,15 +157,45 @@ export async function finishJobRun(
   if (!areJobResults(results) || (error !== null && !isJobRunError(error))) {
     return refused();
   }
-  // The function returns the finished row in a JSON array, empty if it finished nothing.
-  const finished = await callFunction<JobRun[]>(
-    db,
-    sql`select discord_bot.finish_job_run(p_id => ${id},
-      p_finished_at => ${now.toISOString()},
-      p_results => ${JSON.stringify(results)}::jsonb,
-      p_error => ${error === null ? null : errorSummary(error)}) as value`,
+  const finished = await transact(db, async (tx) => {
+    const [run] = await tx
+      .select({ jobName: jobRuns.jobName })
+      .from(jobRuns)
+      .where(eq(jobRuns.id, id));
+    if (run === undefined) {
+      return [];
+    }
+    await lockJob(tx, run.jobName);
+
+    return tx
+      .update(jobRuns)
+      .set({
+        status: error === null ? "succeeded" : "failed",
+        finishedAt: dsql`least(${now.toISOString()}::timestamptz, now())`,
+        results,
+        error: error === null ? null : errorSummary(error),
+      })
+      .where(and(eq(jobRuns.id, id), eq(jobRuns.status, "running")))
+      .returning();
+  });
+  return changedRow(
+    finished.ok
+      ? {
+          ok: true,
+          value: finished.value.map((row): JobRun => ({
+            id: row.id,
+            job_name: row.jobName,
+            status: row.status,
+            started_at: isoTimestamp(row.startedAt),
+            heartbeat_at: isoTimestamp(row.heartbeatAt),
+            finished_at:
+              row.finishedAt === null ? null : isoTimestamp(row.finishedAt),
+            results: row.results as JobRun["results"],
+            error: row.error,
+          })),
+        }
+      : finished,
   );
-  return changedRow(finished);
 }
 
 export async function getLatestJobRun(

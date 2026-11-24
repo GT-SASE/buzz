@@ -9,12 +9,16 @@ import {
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PGlite } from "@electric-sql/pglite";
+import { drizzle } from "drizzle-orm/pglite";
+import { migrate } from "drizzle-orm/pglite/migrator";
 import type pg from "pg";
 
 export { fakeId } from "../support/ids.ts";
 
 /** What the helpers here need from a database, so PGlite and pg both fit. */
 export interface Connection {
+  /** The pg client behind a connection to a real server, which Drizzle can use. */
+  readonly pgClient?: pg.Client;
   // Callers name the row they expect, as they do with PGlite's own query.
   // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-parameters
   query<Row = Record<string, unknown>>(
@@ -26,6 +30,7 @@ export interface Connection {
 
 export function pgConnection(client: pg.Client): Connection {
   return {
+    pgClient: client,
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-parameters
     query: async <Row>(sql: string, params: unknown[] = []) => {
       const result = await client.query(sql, params);
@@ -35,7 +40,17 @@ export function pgConnection(client: pg.Client): Connection {
   };
 }
 
-const MIGRATIONS_DIR = join(
+/** What the bot is built from: the Drizzle migrations. */
+export const MIGRATIONS_DIR = join(
+  import.meta.dirname,
+  "..",
+  "..",
+  "db",
+  "drizzle",
+);
+
+/** What dbmate built until Drizzle took over, kept to build the database a production one is. */
+const LEGACY_MIGRATIONS_DIR = join(
   import.meta.dirname,
   "..",
   "..",
@@ -45,11 +60,11 @@ const MIGRATIONS_DIR = join(
 
 /** Each migration's version and its `-- migrate:up` part, in the order dbmate runs them. */
 function migrationsUp(): { version: string; sql: string }[] {
-  return readdirSync(MIGRATIONS_DIR)
+  return readdirSync(LEGACY_MIGRATIONS_DIR)
     .filter((name) => name.endsWith(".sql"))
     .sort()
     .map((name) => {
-      const text = readFileSync(join(MIGRATIONS_DIR, name), "utf8");
+      const text = readFileSync(join(LEGACY_MIGRATIONS_DIR, name), "utf8");
       const version = /^([0-9]+)_/.exec(name)?.[1];
       const sql =
         /^-- migrate:up[^\n]*\n([\s\S]*?)(?:^-- migrate:down|$(?![\s\S]))/m.exec(
@@ -63,10 +78,10 @@ function migrationsUp(): { version: string; sql: string }[] {
 }
 
 /**
- * Applies every migration, each in its own transaction, and records it in dbmate's
- * ledger, as `dbmate up` does.
+ * Applies every dbmate migration, each in its own transaction, and records it in dbmate's
+ * ledger, as `dbmate up` does: the database as it was in production before Drizzle.
  */
-async function applyMigrations(db: Connection): Promise<void> {
+async function applyLegacyMigrations(db: Connection): Promise<void> {
   await db.exec(
     "CREATE TABLE IF NOT EXISTS discord_bot.schema_migrations (version varchar(128) PRIMARY KEY)",
   );
@@ -108,7 +123,7 @@ export const INSUFFICIENT_PRIVILEGE = "42501";
  * What a new server has before the first migration: an owner that is not a superuser but
  * may create roles, and owns the database and its public schema, as on Neon, plus the
  * empty discord_bot schema docs/SETUP.md has the owner make before the first migration
- * (dbmate keeps its ledger there). Safe to run more than once in a cluster.
+ * (the migration tool keeps its ledger there). Safe to run more than once in a cluster.
  */
 const SERVER_SETUP = `
   DO $$
@@ -127,14 +142,38 @@ const SERVER_SETUP = `
 `;
 
 /** Applies every migration as the owner, as `bun run db:migrate` does on Neon. */
-async function migrateAsOwner(db: Connection): Promise<void> {
+async function migrateAsOwner(db: PGlite): Promise<void> {
   await db.exec(`SET ROLE ${MIGRATION_OWNER}`);
   try {
-    await applyMigrations(db);
+    await migrate(drizzle(db), {
+      migrationsFolder: MIGRATIONS_DIR,
+      migrationsSchema: "discord_bot",
+      migrationsTable: "drizzle_migrations",
+    });
   } finally {
     await db.exec("RESET ROLE");
   }
 }
+
+/**
+ * A server as production was before Drizzle: every dbmate file applied as the owner and
+ * recorded in `discord_bot.schema_migrations`, and no Drizzle ledger.
+ */
+export async function createLegacyDb(): Promise<PGlite> {
+  const db = new PGlite();
+  await db.waitReady;
+  await db.exec(SERVER_SETUP);
+  await db.exec(`SET ROLE ${MIGRATION_OWNER}`);
+  try {
+    await applyLegacyMigrations(db);
+  } finally {
+    await db.exec("RESET ROLE");
+  }
+  return db;
+}
+
+/** Applies the Drizzle migrations to a database, as the owner, as `db:migrate` does. */
+export const migrateWithDrizzle = migrateAsOwner;
 
 /** A fresh server with every migration applied, built from nothing. */
 async function buildMigratedDb(
@@ -178,8 +217,11 @@ function dumpPath(): string {
     .update(readFileSync(import.meta.filename))
     .update(readFileSync(pglite));
   for (const name of readdirSync(MIGRATIONS_DIR).sort()) {
-    hash.update(name).update(readFileSync(join(MIGRATIONS_DIR, name)));
+    if (name.endsWith(".sql")) {
+      hash.update(name).update(readFileSync(join(MIGRATIONS_DIR, name)));
+    }
   }
+  hash.update(readFileSync(join(MIGRATIONS_DIR, "meta", "_journal.json")));
   return join(DUMP_DIR, `${hash.digest("hex").slice(0, 20)}.tar`);
 }
 
@@ -279,6 +321,21 @@ const sessionQueues = new WeakMap<object, Promise<unknown>>();
  * Runs `fn` alone on this connection. PGlite has one session, and a caller that switches
  * its role must not let another caller's statement run under that role.
  */
+export async function holdSession(db: object): Promise<() => void> {
+  const previous = sessionQueues.get(db) ?? Promise.resolve();
+  let release: () => void = () => undefined;
+  const done = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  sessionQueues.set(
+    db,
+    previous.then(() => done),
+  );
+  await previous;
+  return release;
+}
+
+/** Runs `fn` alone on this connection, as `holdSession` does for a longer stretch. */
 export function onSessionAlone<T>(
   db: object,
   fn: () => Promise<T>,

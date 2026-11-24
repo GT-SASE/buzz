@@ -31,7 +31,7 @@ export const MAX_ATTEMPTS_WITH_PING = 3;
 const MS_PER_DAY = 86_400_000;
 /**
  * When a schedule slot starts: the first cron in scripts/deployment.ts, which cron-endpoint.test.ts
- * checks. `begin_job_run` is given the slot's start.
+ * checks. `beginJobRun` is given the slot's start.
  */
 export const SLOT_START_HOUR_UTC = 15;
 

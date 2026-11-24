@@ -1,3 +1,4 @@
+import { bindRoles, changeConfig } from "./bot-writes.ts";
 import { fakeId, queryAs, type Connection } from "./harness.ts";
 
 export const FIXTURE_DUE_DATE = "2030-01-10";
@@ -32,27 +33,21 @@ export async function insertGuild(
     marketingRoleId: fakeId(),
     channelId: fakeId(),
   };
-  await queryAs(
-    db,
-    "bot_app",
-    `SELECT discord_bot.apply_role_bindings($1, 0, $2, $3, $4, $5, $6, $7, $8)`,
-    [
-      fixture.guildId,
-      fakeId(),
-      fixture.officerRoleId,
-      fixture.adminRoleId,
-      fixture.eboardRoleId,
-      fixture.eventsCommitteeRoleId,
-      fixture.treasuryRoleId,
-      fixture.marketingRoleId,
-    ],
-  );
-  await queryAs(
-    db,
-    "bot_app",
-    `SELECT discord_bot.apply_config_change($1, 1, $2, NULL, ARRAY[$3]::text[])`,
-    [fixture.guildId, fakeId(), fixture.channelId],
-  );
+  await bindRoles(db, {
+    guildId: fixture.guildId,
+    actorId: fakeId(),
+    officerRoleId: fixture.officerRoleId,
+    adminRoleId: fixture.adminRoleId,
+    eboardRoleId: fixture.eboardRoleId,
+    eventsCommitteeRoleId: fixture.eventsCommitteeRoleId,
+    treasuryRoleId: fixture.treasuryRoleId,
+    marketingRoleId: fixture.marketingRoleId,
+  });
+  await changeConfig(db, {
+    guildId: fixture.guildId,
+    actorId: fakeId(),
+    addChannelIds: [fixture.channelId],
+  });
   return fixture;
 }
 

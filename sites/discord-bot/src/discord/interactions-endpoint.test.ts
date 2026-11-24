@@ -20,8 +20,8 @@ import {
 } from "bun:test";
 import { POST } from "../../api/interactions.ts";
 import {
-  names,
   recordingSql,
+  stubOrm,
   testDatabaseUrl,
 } from "../../test/support/sql-client.ts";
 import { asFetch, stubEnv, type FetchLike } from "../../test/support/stubs.ts";
@@ -36,10 +36,8 @@ const waitUntil = mock<(work: Promise<unknown>) => void>();
 await mock.module("@vercel/functions", () => ({ waitUntil }));
 // The database the endpoint builds from its settings reads nothing, and saves a draft.
 await mock.module("../db/neon.ts", () => ({
-  neonRunner: () =>
-    recordingSql((call) => ({
-      rows: names(call, "save_setup_draft") ? [{ value: true }] : [],
-    })).sql,
+  neonRunner: () => recordingSql().sql,
+  neonOrm: () => stubOrm(),
 }));
 
 const { publicKey, privateKey } = generateKeyPairSync("ed25519");

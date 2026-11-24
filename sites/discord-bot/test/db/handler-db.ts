@@ -6,7 +6,7 @@
 
 import { PGlite } from "@electric-sql/pglite";
 import { beforeAll, onTestFinished } from "bun:test";
-import { createDbClient, type DbClient } from "../../src/db/client.ts";
+import type { DbClient } from "../../src/db/client.ts";
 import {
   GUILD_ID,
   type ChangeRow,
@@ -14,7 +14,7 @@ import {
   type ConfigRow,
   type DraftRow,
 } from "../support/interactions.ts";
-import { names, pgliteSql, serverError } from "../support/sql-client.ts";
+import { names, pgliteClient, serverError } from "../support/sql-client.ts";
 import { fakeId, HOOK_TIMEOUT_MS, migratedDump } from "./harness.ts";
 
 export interface Seed {
@@ -33,7 +33,7 @@ export interface HandlerDb {
   readonly db: DbClient;
   readonly pg: PGlite;
   /** Fails each statement that names this table or function, with this SQLSTATE. */
-  readonly fail: (name: string, code?: string) => void;
+  readonly fail: (name: string | RegExp, code?: string) => void;
   /** How many statements the bot has sent. */
   readonly sent: () => number;
   readonly config: () => Promise<ConfigRow | null>;
@@ -133,15 +133,13 @@ export async function handlerDb(fields: Seed = {}): Promise<HandlerDb> {
   onTestFinished(() => pg.close());
   await seed(pg, fields);
 
-  const failing: { name: string; code: string }[] = [];
+  const failing: { name: string | RegExp; code: string }[] = [];
   let sent = 0;
-  const db = createDbClient(
-    pgliteSql(pg, (call) => {
-      sent += 1;
-      const failure = failing.find(({ name }) => names(call, name));
-      return failure === undefined ? undefined : serverError(failure.code);
-    }),
-  );
+  const db = pgliteClient(pg, (call) => {
+    sent += 1;
+    const failure = failing.find(({ name }) => names(call, name));
+    return failure === undefined ? undefined : serverError(failure.code);
+  });
 
   const rows = async <T>(text: string): Promise<T[]> =>
     (await pg.query<T>(text, [GUILD_ID])).rows;

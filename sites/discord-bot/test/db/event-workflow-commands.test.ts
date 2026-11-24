@@ -15,8 +15,19 @@ import {
   expect,
   it,
 } from "bun:test";
-import { completeEventStep } from "../../src/db/event-steps.ts";
-import type { AssignableStepKind, EventRow } from "../../src/db/types.ts";
+import {
+  assignEventStep,
+  claimStepHandoff,
+  completeEventStep,
+  reopenEventStep,
+  setEventPickupTime,
+} from "../../src/db/event-steps.ts";
+import { applyRoleBindings } from "../../src/db/guild-config.ts";
+import type {
+  AssignableStepKind,
+  CompletableStepKind,
+  EventRow,
+} from "../../src/db/types.ts";
 import {
   DiscordClientError,
   DiscordErrorCode,
@@ -35,6 +46,7 @@ import {
   OFFICER_ROLE,
 } from "../support/interactions.ts";
 import { fakeId } from "../support/ids.ts";
+import { botClient, configVersion, must } from "./bot-writes.ts";
 import { insertEvent, insertGuild } from "./fixtures.ts";
 import { handlerDb, type HandlerDb } from "./handler-db.ts";
 import {
@@ -68,26 +80,18 @@ async function bindRoles(
   treasury: string | null,
   marketing: string | null,
 ): Promise<void> {
-  const rows = await queryAs<{ version: number }>(
-    world.pg,
-    "bot_app",
-    `SELECT version FROM discord_bot.guild_config WHERE guild_id = $1`,
-    [GUILD_ID],
-  );
-  await queryAs(
-    world.pg,
-    "bot_app",
-    `SELECT discord_bot.apply_role_bindings($1, $2, $3, $4, $5, $6, NULL, $7, $8)`,
-    [
-      GUILD_ID,
-      rows[0]?.version,
-      fakeId(),
-      OFFICER_ROLE,
-      ADMIN_ROLE,
-      EBOARD_ROLE,
-      treasury,
-      marketing,
-    ],
+  must(
+    await applyRoleBindings(botClient(world.pg), {
+      guildId: GUILD_ID,
+      expectedVersion: await configVersion(world.pg, GUILD_ID),
+      actorId: fakeId(),
+      officerRoleId: OFFICER_ROLE,
+      adminRoleId: ADMIN_ROLE,
+      eboardRoleId: EBOARD_ROLE,
+      eventsCommitteeRoleId: null,
+      treasuryRoleId: treasury,
+      marketingRoleId: marketing,
+    }),
   );
 }
 
@@ -781,15 +785,7 @@ describe("the event workflow functions", () => {
     await db.close();
   });
 
-  const value = async (sql: string, params: unknown[]): Promise<unknown> => {
-    const rows = await queryAs<{ value: unknown }>(
-      db,
-      "bot_app",
-      `SELECT ${sql} AS value`,
-      params,
-    );
-    return rows[0]?.value;
-  };
+  const bot = () => botClient(db);
 
   it("makes the steps for a new event in the same insert", async () => {
     const eventId = await insertEvent(db, guild);
@@ -810,54 +806,105 @@ describe("the event workflow functions", () => {
     );
   });
 
-  it.each([
+  /** The SQLSTATE a refused write failed with, or null if it did not fail. */
+  const codeOf = (result: { ok: boolean; error?: { code: string | null } }) =>
+    result.ok ? null : (result.error?.code ?? null);
+
+  it.each<
+    [
+      string,
+      (
+        eventId: string,
+      ) => Promise<{ ok: boolean; error?: { code: string | null } }>,
+    ]
+  >([
     [
       "assign Budget approved",
-      `discord_bot.assign_event_step($1, $2, 'budget_approved', $3, $3)`,
+      (eventId) =>
+        assignEventStep(bot(), {
+          eventId,
+          guildId: guild.guildId,
+          kind: "budget_approved" as AssignableStepKind,
+          userId: fakeId(),
+          actorId: fakeId(),
+        }),
     ],
     [
       "complete Food pickup",
-      `discord_bot.complete_event_step($1, $2, 'food_pickup', $3)`,
+      (eventId) =>
+        completeEventStep(bot(), {
+          eventId,
+          guildId: guild.guildId,
+          kind: "food_pickup" as CompletableStepKind,
+          actorId: fakeId(),
+        }),
     ],
     [
-      "a null pickup time",
-      `discord_bot.set_event_pickup_time($1, $2, NULL, $3)`,
+      "reopen Food pickup",
+      (eventId) =>
+        reopenEventStep(bot(), {
+          eventId,
+          guildId: guild.guildId,
+          kind: "food_pickup" as CompletableStepKind,
+        }),
     ],
-  ])("refuses to %s", async (_name, sql) => {
+  ])("refuses to %s", async (_name, write) => {
     const eventId = await insertEvent(db, guild);
-    expect(
-      await errorCodeOf(value(sql, [eventId, guild.guildId, fakeId()])),
-    ).toBe("22023");
+    expect(codeOf(await write(eventId))).toBe("22023");
   });
 
-  it("refuses to reopen Food pickup", async () => {
+  it("refuses a null pickup time before it reaches the database", async () => {
     const eventId = await insertEvent(db, guild);
     expect(
-      await errorCodeOf(
-        value(`discord_bot.reopen_event_step($1, $2, 'food_pickup')`, [
-          eventId,
-          guild.guildId,
-        ]),
-      ),
-    ).toBe("22023");
+      await setEventPickupTime(bot(), {
+        eventId,
+        guildId: guild.guildId,
+        pickupTime: null as unknown as string,
+        actorId: fakeId(),
+      }),
+    ).toEqual({ ok: false, error: { category: "invalid_input", code: null } });
   });
 
   it("cannot be steered to another guild's event by its ID alone", async () => {
     const eventId = await insertEvent(db, guild);
     const other = await insertGuild(db);
-    for (const sql of [
-      `discord_bot.assign_event_step($1, $2, 'budget_sheet', $3, $3)`,
-      `discord_bot.complete_event_step($1, $2, 'budget_sheet', $3)`,
-      `discord_bot.set_event_pickup_time($1, $2, '12:00', $3)`,
-    ]) {
-      expect(await value(sql, [eventId, other.guildId, fakeId()])).toBeNull();
-    }
+    const actorId = fakeId();
+    const notFound = {
+      ok: false as const,
+      error: { category: "not_found" as const, code: null },
+    };
     expect(
-      await value(`discord_bot.claim_step_handoff($1, $2, 'budget_sheet')`, [
+      await assignEventStep(bot(), {
         eventId,
-        other.guildId,
-      ]),
-    ).toBe(false);
+        guildId: other.guildId,
+        kind: "budget_sheet",
+        userId: actorId,
+        actorId,
+      }),
+    ).toEqual(notFound);
+    expect(
+      await completeEventStep(bot(), {
+        eventId,
+        guildId: other.guildId,
+        kind: "budget_sheet",
+        actorId,
+      }),
+    ).toEqual(notFound);
+    expect(
+      await setEventPickupTime(bot(), {
+        eventId,
+        guildId: other.guildId,
+        pickupTime: "12:00",
+        actorId,
+      }),
+    ).toEqual(notFound);
+    expect(
+      await claimStepHandoff(bot(), {
+        eventId,
+        guildId: other.guildId,
+        kind: "budget_sheet",
+      }),
+    ).toEqual({ ok: true, value: false });
   });
 
   it("does not let bot_app call the internal functions, or another role the writers", async () => {
@@ -868,8 +915,8 @@ describe("the event workflow functions", () => {
     ).toBe(INSUFFICIENT_PRIVILEGE);
     const eventId = await insertEvent(db, guild);
     for (const sql of [
-      `SELECT discord_bot.complete_event_step('${eventId}', '${guild.guildId}', 'budget_sheet', '${fakeId()}')`,
-      `SELECT discord_bot.claim_event_reminder('${eventId}', 'daily_steps', '2030-01-15')`,
+      `UPDATE discord_bot.event_steps SET status = 'open' WHERE event_id = '${eventId}'`,
+      `INSERT INTO discord_bot.event_reminder_log (event_id, kind, reminder_date) VALUES ('${eventId}', 'daily_steps', '2030-01-15')`,
     ]) {
       expect(await errorCodeOf(queryAs(db, OTHER_ROLE, sql))).toBe(
         INSUFFICIENT_PRIVILEGE,

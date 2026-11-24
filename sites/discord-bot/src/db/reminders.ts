@@ -1,8 +1,22 @@
 import type { DateOnly } from "../lib/dates.ts";
 import { STALE_CLAIM_MS } from "../reminders/plan.ts";
-import type { DbClient } from "./client.ts";
+import {
+  and,
+  eq,
+  exists,
+  isNull,
+  lt,
+  ne,
+  notExists,
+  or,
+  sql as dsql,
+  type SQL,
+} from "drizzle-orm";
+import type { BotTx, DbClient } from "./client.ts";
 import { refused, type DbResult } from "./errors.ts";
-import { callFunction, capped, query, sql } from "./internal.ts";
+import { capped, query, raise, sql, transact, write } from "./internal.ts";
+import { fromRemindableTask } from "./reminder-rules.ts";
+import { events, managedChannels, reminderLog, tasks } from "./schema.ts";
 import type {
   CappedList,
   EventStatus,
@@ -181,14 +195,54 @@ export async function claimReminder(
   if (!isDbDate(key.dueDate)) {
     return refused();
   }
-  return callFunction<string | null>(
-    db,
-    sql`select discord_bot.claim_reminder(p_task_id => ${key.taskId},
-      p_kind => ${key.kind},
-      p_due_date => ${key.dueDate},
-      p_assignee_id => ${key.asRead?.assigneeId ?? null},
-      p_updated_at => ${key.asRead?.updatedAt ?? null}) as value`,
-  );
+  return transact(db, async (tx) => {
+    await refuseIfTaskChanged(tx, key);
+    const [claimed] = await tx
+      .insert(reminderLog)
+      .select(
+        dsql`select ${tasks.id}, ${key.kind}::discord_bot.reminder_kind, ${tasks.dueDate},
+          'claimed'::discord_bot.reminder_state, gen_random_uuid(), 1, now(),
+          null::timestamptz, null::discord_bot.discord_id, 0
+          ${fromRemindableTask(key.taskId, key.dueDate)}`,
+      )
+      .onConflictDoNothing({
+        target: [reminderLog.taskId, reminderLog.kind, reminderLog.dueDate],
+      })
+      .returning({ claimToken: reminderLog.claimToken });
+    return claimed?.claimToken ?? null;
+  });
+}
+
+/**
+ * Fails as `task_changed` if the task is the one the caller read, due that day and
+ * open, but no longer has the assignee and version it read. A caller that read nothing
+ * has nothing to be out of date.
+ */
+async function refuseIfTaskChanged(
+  tx: BotTx,
+  key: ReminderKey & { asRead?: TaskAsRead | undefined },
+): Promise<void> {
+  if (key.asRead === undefined) {
+    return;
+  }
+  const [changed] = await tx
+    .select({ id: tasks.id })
+    .from(tasks)
+    .where(
+      and(
+        eq(tasks.id, key.taskId),
+        eq(tasks.dueDate, key.dueDate),
+        eq(tasks.status, "open"),
+        isNull(tasks.deletedAt),
+        or(
+          ne(tasks.assigneeId, key.asRead.assigneeId),
+          ne(tasks.updatedAt, key.asRead.updatedAt),
+        ),
+      ),
+    );
+  if (changed !== undefined) {
+    raise("CF412", "task changed since it was read");
+  }
 }
 
 /** Takes over a stale claim given its last token. Null if that is no longer possible. */
@@ -199,15 +253,42 @@ export async function reclaimReminder(
   if (!isDbDate(key.dueDate)) {
     return refused();
   }
-  return callFunction<string | null>(
-    db,
-    sql`select discord_bot.reclaim_reminder(p_task_id => ${key.taskId},
-      p_kind => ${key.kind},
-      p_due_date => ${key.dueDate},
-      p_claim_token => ${key.claimToken},
-      p_stale_after_seconds => ${STALE_CLAIM_MS / 1000},
-      p_assignee_id => ${key.asRead?.assigneeId ?? null},
-      p_updated_at => ${key.asRead?.updatedAt ?? null}) as value`,
+  return transact(db, async (tx) => {
+    await refuseIfTaskChanged(tx, key);
+    const [reclaimed] = await tx
+      .update(reminderLog)
+      .set({
+        claimToken: dsql`gen_random_uuid()`,
+        claimedAt: dsql`now()`,
+        attempts: dsql`${reminderLog.attempts} + 1`,
+      })
+      .where(
+        and(
+          heldClaim(key),
+          lt(
+            reminderLog.claimedAt,
+            dsql`now() - make_interval(secs => ${STALE_CLAIM_MS / 1000}::int)`,
+          ),
+          exists(
+            dsql`(select 1 ${fromRemindableTask(dsql`${reminderLog.taskId}`, key.dueDate)})`,
+          ),
+        ),
+      )
+      .returning({ claimToken: reminderLog.claimToken });
+    return reclaimed?.claimToken ?? null;
+  });
+}
+
+/** The claim this token holds, still unsent. */
+function heldClaim(key: ReminderKey & { claimToken: string }): SQL {
+  return (
+    and(
+      eq(reminderLog.taskId, key.taskId),
+      eq(reminderLog.kind, key.kind),
+      eq(reminderLog.dueDate, key.dueDate),
+      eq(reminderLog.state, "claimed"),
+      eq(reminderLog.claimToken, key.claimToken),
+    ) ?? dsql`true`
   );
 }
 
@@ -260,13 +341,51 @@ export async function closeStaleClaim(
   if (!isDbDate(key.dueDate)) {
     return refused();
   }
-  const closed = await callFunction<boolean>(
-    db,
-    sql`select discord_bot.close_stale_reminder(p_task_id => ${key.taskId},
-      p_kind => ${key.kind},
-      p_due_date => ${key.dueDate},
-      p_claim_token => ${key.claimToken}) as value`,
-  );
+  // Decided and written in one statement, so a task reopened or an event restored in
+  // between does not have its claim closed anyway.
+  const closed = await write(db, async (orm) => {
+    const marked = await orm
+      .update(reminderLog)
+      .set({ state: "skipped" })
+      .where(
+        and(
+          heldClaim(key),
+          notExists(
+            orm
+              .select({ id: tasks.id })
+              .from(tasks)
+              .innerJoin(
+                events,
+                and(
+                  eq(events.id, tasks.eventId),
+                  eq(events.guildId, tasks.guildId),
+                ),
+              )
+              .innerJoin(
+                managedChannels,
+                and(
+                  eq(managedChannels.guildId, events.guildId),
+                  eq(managedChannels.channelId, events.channelId),
+                ),
+              )
+              .where(
+                and(
+                  eq(tasks.id, key.taskId),
+                  eq(tasks.status, "open"),
+                  isNull(tasks.deletedAt),
+                  eq(tasks.dueDate, key.dueDate),
+                  eq(events.status, "active"),
+                  isNull(events.deletedAt),
+                  ne(events.threadStatus, "missing"),
+                  eq(managedChannels.status, "active"),
+                ),
+              ),
+          ),
+        ),
+      )
+      .returning({ taskId: reminderLog.taskId });
+    return marked.length > 0;
+  });
   if (!closed.ok) {
     return closed;
   }
@@ -281,14 +400,14 @@ export async function markReminderSent(
   if (!isDbDate(key.dueDate)) {
     return refused();
   }
-  return callFunction<boolean>(
-    db,
-    sql`select discord_bot.mark_reminder_sent(p_task_id => ${key.taskId},
-      p_kind => ${key.kind},
-      p_due_date => ${key.dueDate},
-      p_claim_token => ${key.claimToken},
-      p_message_id => ${key.messageId}) as value`,
-  );
+  return write(db, async (orm) => {
+    const marked = await orm
+      .update(reminderLog)
+      .set({ state: "sent", sentAt: dsql`now()`, messageId: key.messageId })
+      .where(heldClaim(key))
+      .returning({ taskId: reminderLog.taskId });
+    return marked.length > 0;
+  });
 }
 
 /** False if the token no longer holds the claim. */
@@ -299,13 +418,14 @@ export async function markReminderSkipped(
   if (!isDbDate(key.dueDate)) {
     return refused();
   }
-  return callFunction<boolean>(
-    db,
-    sql`select discord_bot.mark_reminder_skipped(p_task_id => ${key.taskId},
-      p_kind => ${key.kind},
-      p_due_date => ${key.dueDate},
-      p_claim_token => ${key.claimToken}) as value`,
-  );
+  return write(db, async (orm) => {
+    const marked = await orm
+      .update(reminderLog)
+      .set({ state: "skipped" })
+      .where(heldClaim(key))
+      .returning({ taskId: reminderLog.taskId });
+    return marked.length > 0;
+  });
 }
 
 /**
@@ -320,11 +440,17 @@ export async function recordReminderRefused(
   if (!isDbDate(key.dueDate)) {
     return refused();
   }
-  return callFunction<boolean>(
-    db,
-    sql`select discord_bot.record_reminder_refused(p_task_id => ${key.taskId},
-      p_kind => ${key.kind},
-      p_due_date => ${key.dueDate},
-      p_claim_token => ${key.claimToken}) as value`,
-  );
+  return write(db, async (orm) => {
+    const recorded = await orm
+      .update(reminderLog)
+      .set({ refusedAttempts: dsql`${reminderLog.refusedAttempts} + 1` })
+      .where(
+        and(
+          heldClaim(key),
+          lt(reminderLog.refusedAttempts, reminderLog.attempts),
+        ),
+      )
+      .returning({ taskId: reminderLog.taskId });
+    return recorded.length > 0;
+  });
 }

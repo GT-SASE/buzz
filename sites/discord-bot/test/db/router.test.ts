@@ -11,6 +11,7 @@ import {
   mock,
   spyOn,
 } from "bun:test";
+import { bindRoles } from "./bot-writes.ts";
 import { POST } from "../../api/interactions.ts";
 import { withDeadline } from "../../src/db/client.ts";
 import { discordServer } from "../support/discord-server.ts";
@@ -60,7 +61,11 @@ import {
   MIGRATION_OWNER,
   queryAs,
 } from "./harness.ts";
-import { pgliteSql, testDatabaseUrl } from "../support/sql-client.ts";
+import {
+  pgliteOrm,
+  pgliteSql,
+  testDatabaseUrl,
+} from "../support/sql-client.ts";
 import { asFetch, stubEnv } from "../support/stubs.ts";
 
 // Only the interactions endpoint below uses these two.
@@ -71,14 +76,15 @@ void mock.module("@vercel/functions", () => ({
   },
 }));
 const live = { database: undefined as PGlite | undefined };
+const liveDatabase = (): PGlite => {
+  if (live.database === undefined) {
+    throw new Error("the database is not set up");
+  }
+  return live.database;
+};
 void mock.module("../../src/db/neon.ts", () => ({
-  neonRunner: () =>
-    pgliteSql(() => {
-      if (live.database === undefined) {
-        throw new Error("the database is not set up");
-      }
-      return live.database;
-    }),
+  neonRunner: () => pgliteSql(liveDatabase),
+  neonOrm: () => pgliteOrm(liveDatabase),
 }));
 
 const FIXED_REFUSAL = {
@@ -197,7 +203,7 @@ async function setup(fields: Seed = { config: configRow() }) {
   return {
     db: database.db,
     pg: database.pg,
-    fail: (name: string) => {
+    fail: (name: string | RegExp) => {
       database.fail(name);
     },
     sent: () => database.sent(),
@@ -548,7 +554,7 @@ describe("claims", () => {
 
   it("does not run if the claim fails, and says so privately", async () => {
     const { dependencies, edits, fail } = await setup();
-    fail("claim_interaction");
+    fail(/insert into "discord_bot"."interaction_claims"/);
 
     await run(
       router,
@@ -798,12 +804,12 @@ describe("the client built by liveDependencies", () => {
   beforeAll(async () => {
     database = await createMigratedDb();
     live.database = database;
-    await queryAs(
-      database,
-      "bot_app",
-      `SELECT discord_bot.apply_role_bindings($1, 0, $2, $3, $4, NULL, NULL, NULL, NULL)`,
-      [GUILD_ID, fakeId(), OFFICER_ROLE, ADMIN_ROLE],
-    );
+    await bindRoles(database, {
+      guildId: GUILD_ID,
+      actorId: fakeId(),
+      officerRoleId: OFFICER_ROLE,
+      adminRoleId: ADMIN_ROLE,
+    });
   }, HOOK_TIMEOUT_MS);
 
   afterAll(() => database.close());

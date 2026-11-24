@@ -5,7 +5,12 @@
 
 import { beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
 import * as endpoint from "../../api/cron/reminders.ts";
+import type { DateOnly } from "../../src/lib/dates.ts";
+import { claimReminder, reclaimReminder } from "../../src/db/reminders.ts";
+import type { ReminderKind } from "../../src/db/types.ts";
+import { botClient, must } from "./bot-writes.ts";
 import {
+  pgliteOrm,
   pgliteSql,
   serverError,
   testDatabaseUrl,
@@ -48,6 +53,7 @@ const w = useReminderWorld();
 // The cron endpoint's own client runs on the same database.
 void mock.module("../../src/db/neon.ts", () => ({
   neonRunner: () => pgliteSql(w.database, (call) => w.sqlGate(call)),
+  neonOrm: () => pgliteOrm(w.database, (call) => w.sqlGate(call)),
 }));
 
 async function eventWithThread(
@@ -130,11 +136,12 @@ async function staleClaim(
   dueDate: string,
   attempts = 1,
 ): Promise<void> {
-  await queryAs(
-    w.database,
-    "bot_app",
-    `SELECT discord_bot.claim_reminder($1, $2, $3)`,
-    [taskId, kind, dueDate],
+  must(
+    await claimReminder(botClient(w.database), {
+      taskId,
+      kind: kind as ReminderKind,
+      dueDate: dueDate as DateOnly,
+    }),
   );
   await w.database.query(
     `UPDATE discord_bot.reminder_log SET attempts = $2, claimed_at = now() - interval '2 hours'
@@ -746,7 +753,7 @@ describe("each guild's own zone", () => {
 });
 
 describe("reminder claims check the task's parents", () => {
-  const turnOff = `SELECT discord_bot.apply_config_change($1, 2, $1, false)`;
+  const turnOff = `UPDATE discord_bot.guild_config SET reminders_enabled = false, version = version + 1 WHERE guild_id = $1`;
   /** Each change, given the guild, must stop new claims and takeovers. */
   const STOPPERS: [string, string, string][] = [
     ["reminders turned off", "bot_app", turnOff],
@@ -758,8 +765,7 @@ describe("reminder claims check the task's parents", () => {
     [
       "the channel unavailable",
       "bot_app",
-      `SELECT discord_bot.mark_channel_unavailable(guild_id, channel_id)
-       FROM discord_bot.managed_channels WHERE guild_id = $1`,
+      `UPDATE discord_bot.managed_channels SET status = 'unavailable' WHERE guild_id = $1`,
     ],
     [
       "the event closed",
@@ -785,20 +791,13 @@ describe("reminder claims check the task's parents", () => {
     return { taskId, stop };
   }
 
-  async function tokenOf(sql: string, params: unknown[]) {
-    const rows = await queryAs<{ token: string | null }>(
-      w.database,
-      "bot_app",
-      sql,
-      params,
-    );
-    return rows[0]?.token ?? null;
-  }
-
-  const claim = (taskId: string) =>
-    tokenOf(
-      `SELECT discord_bot.claim_reminder($1, 'due_day', '${FIXTURE_DUE_DATE}') AS token`,
-      [taskId],
+  const claim = async (taskId: string) =>
+    must(
+      await claimReminder(botClient(w.database), {
+        taskId,
+        kind: "due_day",
+        dueDate: FIXTURE_DUE_DATE as DateOnly,
+      }),
     );
 
   async function staleThenReclaim(taskId: string, token: string | null) {
@@ -806,9 +805,13 @@ describe("reminder claims check the task's parents", () => {
       `UPDATE discord_bot.reminder_log SET claimed_at = now() - interval '2 hours' WHERE task_id = $1`,
       [taskId],
     );
-    return tokenOf(
-      `SELECT discord_bot.reclaim_reminder($1, 'due_day', '${FIXTURE_DUE_DATE}', $2, 120) AS token`,
-      [taskId, token ?? ""],
+    return must(
+      await reclaimReminder(botClient(w.database), {
+        taskId,
+        kind: "due_day",
+        dueDate: FIXTURE_DUE_DATE as DateOnly,
+        claimToken: token ?? "00000000-0000-4000-8000-000000000000",
+      }),
     );
   }
 
@@ -925,8 +928,8 @@ describe("the job lock", () => {
   });
 
   it.each([
-    `SELECT discord_bot.begin_job_run('reminders', 1, now())`,
-    `SELECT discord_bot.finish_job_run(gen_random_uuid(), now(), '{}', NULL)`,
+    `INSERT INTO discord_bot.job_runs (job_name) VALUES ('reminders')`,
+    `UPDATE discord_bot.job_runs SET status = 'failed', finished_at = now()`,
   ])("is closed to a role with no grants: %s", async (sql) => {
     expect(await errorCodeOf(queryAs(w.database, OTHER_ROLE, sql))).toBe(
       INSUFFICIENT_PRIVILEGE,
@@ -1063,7 +1066,7 @@ describe("the health check", () => {
       return setTimeoutNow(handler, ms);
     }) as unknown as typeof setTimeout);
     w.sqlGate = (call) => {
-      if (call.sql.includes("expire_interaction_claims")) {
+      if (call.sql.includes('delete from "discord_bot"."interaction_claims"')) {
         expiryDelay = lastDelay;
       }
       return undefined;

@@ -70,12 +70,28 @@ jobs:
           \c bot
           CREATE SCHEMA discord_bot AUTHORIZATION migration_owner;
           SQL
-      # status fails if any migration is still pending.
-      - name: Apply the migrations as the owner with dbmate
+      - name: Apply the migrations as the owner
         run: |
           export DATABASE_URL="postgres://migration_owner:${OWNER_PASSWORD}@localhost:5432/bot?sslmode=disable"
-          bun run db:migrate
-          bun x --bun --no-install dbmate --migrations-dir db/migrations --migrations-table discord_bot.schema_migrations status --exit-code
+          bun run db:migrate | tee migrate.out
+          grep -q '^New database: every file run.$' migrate.out
+          # A second run finds its record and changes nothing.
+          bun run db:migrate | grep -q '^Ledger present'
+      # Production was built by dbmate. Build the same here with its six files, then run
+      # the migration tool on it: it must adopt the baseline, not run it, and run the rest.
+      - name: Migrate a database dbmate built, as production is
+        run: |
+          psql -v ON_ERROR_STOP=1 -U postgres <<'SQL'
+          CREATE DATABASE bot_from_dbmate OWNER migration_owner;
+          \c bot_from_dbmate
+          CREATE SCHEMA discord_bot AUTHORIZATION migration_owner;
+          SQL
+          export DATABASE_URL="postgres://migration_owner:${OWNER_PASSWORD}@localhost:5432/bot_from_dbmate?sslmode=disable"
+          bun run db:migrate:legacy
+          bun run db:migrate | tee migrate.out
+          grep -q '^Adopted a dbmate database' migrate.out
+          bun run db:migrate | grep -q '^Ledger present'
+          PGPASSWORD="${OWNER_PASSWORD}" psql -v ON_ERROR_STOP=1 -U migration_owner -d bot_from_dbmate -tA -c "SELECT count(*) FROM discord_bot.drizzle_migrations" | grep -qx 2
       # The owner may do this only because it made bot_app, which gave it ADMIN on the
       # role, so this also checks that grant.
       - name: Set bot_app's password as the owner

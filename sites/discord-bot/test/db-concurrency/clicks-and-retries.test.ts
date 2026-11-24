@@ -17,7 +17,8 @@ import {
 } from "../../src/db/tasks.ts";
 import type { DateOnly } from "../../src/lib/dates.ts";
 import { insertEvent, insertGuild, insertTask } from "../db/fixtures.ts";
-import { fakeId, queryAs } from "../db/harness.ts";
+import { fakeId } from "../db/harness.ts";
+import { must } from "../db/bot-writes.ts";
 import { raceDatabase } from "./race.ts";
 
 /**
@@ -44,7 +45,9 @@ async function eventWithTask(assignee = fakeId()) {
 }
 
 describe("a retried interaction", () => {
-  const claimSql = "SELECT discord_bot.claim_interaction($1)";
+  // The statement claimInteraction sends, on a connection that holds its transaction open.
+  const claimSql =
+    "INSERT INTO discord_bot.interaction_claims (interaction_id) VALUES ($1) ON CONFLICT (interaction_id) DO NOTHING";
 
   it.each([
     ["only one of the two deliveries", "COMMIT", false],
@@ -94,7 +97,8 @@ describe("a double click on Done", () => {
 
     const second = await db.race(
       [
-        "SELECT discord_bot.complete_event_step($1, $2, 'budget_sheet', $3)",
+        `UPDATE discord_bot.event_steps SET status = 'done', completed_at = now(), completed_by = $3
+         WHERE event_id = $1 AND guild_id = $2 AND kind = 'budget_sheet' AND status = 'open'`,
         [eventId, guildId, fakeId()],
       ],
       (bot) =>
@@ -111,16 +115,20 @@ describe("a double click on Done", () => {
 
   it("hands a finished step off once, so the next role is pinged once", async () => {
     const { guildId, eventId } = await eventWithTask();
-    await queryAs(
-      db.connection,
-      "bot_app",
-      "SELECT discord_bot.complete_event_step($1, $2, 'budget_sheet', $3)",
-      [eventId, guildId, fakeId()],
+    must(
+      await completeEventStep(db.db, {
+        guildId,
+        eventId,
+        kind: "budget_sheet",
+        actorId: fakeId(),
+      }),
     );
 
     const second = await db.race(
       [
-        "SELECT discord_bot.claim_step_handoff($1, $2, 'budget_sheet')",
+        `UPDATE discord_bot.event_steps SET handoff_claimed_at = now()
+         WHERE event_id = $1 AND guild_id = $2 AND kind = 'budget_sheet'
+           AND status = 'done' AND handoff_claimed_at IS NULL`,
         [eventId, guildId],
       ],
       (bot) =>
@@ -138,10 +146,9 @@ describe("a double click on Done", () => {
 });
 
 describe("a task change racing another change", () => {
-  // edit_task with the task's own date, as an edit through the bot sends it.
-  const editSql = `SELECT discord_bot.edit_task(task.id, task.guild_id, task.updated_at,
-                     $2, task.due_date, $3, $4) AS task
-                   FROM discord_bot.tasks AS task WHERE task.id = $1`;
+  // An edit in progress: the task's row, locked and changed, as editTask leaves it.
+  const editSql = `UPDATE discord_bot.tasks SET description = $2, assignee_id = $3
+                   WHERE id = $1 RETURNING id`;
   const closeSql =
     "UPDATE discord_bot.events SET status = 'closed' WHERE id = $1 RETURNING id";
 
@@ -150,7 +157,7 @@ describe("a task change racing another change", () => {
     const newAssignee = fakeId();
 
     const second = await db.race(
-      [editSql, [taskId, "Book the room", newAssignee, fakeId()]],
+      [editSql, [taskId, "Book the room", newAssignee]],
       (bot) =>
         markOwnTaskDone(bot, {
           guildId,
@@ -199,9 +206,8 @@ describe("a task change racing another change", () => {
   it("the event's close waits for a change in progress, then closes", async () => {
     const { guildId, eventId, taskId, assignee } = await eventWithTask();
 
-    const second = await db.race(
-      [editSql, [taskId, "New", assignee, fakeId()]],
-      (bot) => closeEvent(bot, { guildId, eventId }),
+    const second = await db.race([editSql, [taskId, "New", assignee]], (bot) =>
+      closeEvent(bot, { guildId, eventId }),
     );
 
     expect(second).toMatchObject({ ok: true, value: { id: eventId } });
@@ -236,7 +242,7 @@ describe("a delete racing an insert under it", () => {
 
     const second = await db.race(
       [
-        "SELECT discord_bot.soft_delete_event($1, $2)",
+        "UPDATE discord_bot.events SET deleted_at = now() WHERE id = $1 AND guild_id = $2 AND deleted_at IS NULL RETURNING id",
         [eventId, guild.guildId],
       ],
       (bot) =>
@@ -258,8 +264,8 @@ describe("a delete racing an insert under it", () => {
 
     const second = await db.race(
       [
-        "SELECT discord_bot.apply_config_change($1, 2, $2, NULL, NULL, ARRAY[$3]::text[])",
-        [guild.guildId, fakeId(), guild.channelId],
+        "UPDATE discord_bot.managed_channels SET status = 'removed' WHERE guild_id = $1 AND channel_id = $2 RETURNING channel_id",
+        [guild.guildId, guild.channelId],
       ],
       (bot) =>
         createEvent(bot, {
