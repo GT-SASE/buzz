@@ -459,9 +459,9 @@ describe("a task and its event, from the bot alone", () => {
         closeEvent(db.db, { guildId: guild.guildId, eventId }),
       ]);
       expect(closed.ok).toBe(true);
-      expect(
-        edit.ok || (!edit.ok && edit.error.category === "parent_unavailable"),
-      ).toBe(true);
+      expect(edit.ok || edit.error.category === "parent_unavailable").toBe(
+        true,
+      );
     }
   });
 
@@ -475,8 +475,7 @@ describe("a task and its event, from the bot alone", () => {
       ]);
       expect(deleted.ok).toBe(true);
       expect(
-        created.ok ||
-          (!created.ok && created.error.category === "parent_unavailable"),
+        created.ok || created.error.category === "parent_unavailable",
       ).toBe(true);
       const { rows } = await db.observer.query<{ n: number }>(
         "SELECT count(*)::int AS n FROM discord_bot.tasks WHERE event_id = $1 AND deleted_at IS NULL",

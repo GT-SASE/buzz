@@ -227,8 +227,8 @@ export async function updateRecorded<R extends SelectedFields>(
       });
     }
   }
-  if (history.length > 0) {
-    await tx.insert(rowVersions).values(history).onConflictDoNothing();
+  for (const version of history) {
+    await tx.insert(rowVersions).values(version).onConflictDoNothing();
   }
 
   return after.map((result: Record<string, unknown>) =>
