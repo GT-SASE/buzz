@@ -129,13 +129,13 @@ describe.skipIf(!process.env.DATABASE_URL)("site banner", () => {
       linkLabel: "",
       linkHref: "",
     });
-    await officer(officerId).page.create({
+    const real = await officer(officerId).page.create({
       slug: `${prefix}-real`,
       title: "A real page",
       description: "",
       body: "Hello",
-      published: true,
     });
+    await officer(officerId).page.publish({ id: real.id });
 
     const listed = await officer(officerId).page.list();
     expect(listed.map((page) => page.slug)).toContain(`${prefix}-real`);
@@ -157,7 +157,6 @@ describe.skipIf(!process.env.DATABASE_URL)("site banner", () => {
         title: "Sneaky",
         description: "",
         body: "",
-        published: true,
       }),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
   });

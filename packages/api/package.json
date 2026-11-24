@@ -10,6 +10,7 @@
     "./trpc": "./src/trpc.ts",
     "./terms": "./src/terms.ts",
     "./page-slug": "./src/page-slug.ts",
+    "./page-redirect": "./src/page-redirect.ts",
     "./event-length": "./src/event-length.ts"
   },
   "scripts": {
