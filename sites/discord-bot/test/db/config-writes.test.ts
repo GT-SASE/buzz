@@ -10,6 +10,7 @@ import { botClient } from "./bot-writes.ts";
 import {
   HOOK_TIMEOUT_MS,
   INSUFFICIENT_PRIVILEGE,
+  NO_TRIGGERS,
   OTHER_ROLE,
   createMigratedDb,
   errorCodeOf,
@@ -342,19 +343,22 @@ describe("applyConfigChange", () => {
     expect((await configOf(guildId))?.version).toBe(1);
   });
 
-  it("is backed by the database, which refuses an unknown time zone from any writer", async () => {
-    const guildId = await setUpGuild();
-    expect(
-      await errorCodeOf(
-        queryAs(
-          db,
-          "bot_app",
-          `UPDATE discord_bot.guild_config SET timezone = 'Mars/Phobos' WHERE guild_id = $1`,
-          [guildId],
+  it.skipIf(NO_TRIGGERS)(
+    "is backed by the database, which refuses an unknown time zone from any writer",
+    async () => {
+      const guildId = await setUpGuild();
+      expect(
+        await errorCodeOf(
+          queryAs(
+            db,
+            "bot_app",
+            `UPDATE discord_bot.guild_config SET timezone = 'Mars/Phobos' WHERE guild_id = $1`,
+            [guildId],
+          ),
         ),
-      ),
-    ).toBe(INVALID_PARAMETER);
-  });
+      ).toBe(INVALID_PARAMETER);
+    },
+  );
 
   it("rolls everything back if the audit row cannot be written", async () => {
     const guildId = await setUpGuild();

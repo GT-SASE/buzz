@@ -1,18 +1,18 @@
+import { and, asc, desc, eq, gte, ilike, isNull, lte, sql } from "drizzle-orm";
 import { DISCORD_LIMITS } from "../discord/safe-text.ts";
 import type { DateOnly } from "../lib/dates.ts";
 import { isSnowflake } from "../lib/snowflake.ts";
-import { and, asc, eq, isNull, sql as dsql } from "drizzle-orm";
 import type { DbClient } from "./client.ts";
+import { updateRecorded } from "./history.ts";
 import {
   capped,
   changedRow,
   firstRow,
   nullAsNotFound,
-  query,
-  sql,
+  read,
   transact,
-  write,
 } from "./internal.ts";
+import { makeSteps, requireLiveChannel } from "./rules.ts";
 import { events, tasks } from "./schema.ts";
 import { refused, type DbResult } from "./errors.ts";
 import type { CappedList, EventChoice, EventRow } from "./types.ts";
@@ -27,11 +27,28 @@ import {
 } from "./validate.ts";
 
 /** The columns of an `EventRow`. */
-export const EVENT_COLUMNS = sql`id, guild_id, channel_id, name, event_date, thread_id,
-  overview_message_id, status, thread_status, created_by, deleted_at, created_at`;
+export const EVENT_ROW = {
+  id: events.id,
+  guild_id: events.guildId,
+  channel_id: events.channelId,
+  name: events.name,
+  event_date: events.eventDate,
+  thread_id: events.threadId,
+  overview_message_id: events.overviewMessageId,
+  status: events.status,
+  thread_status: events.threadStatus,
+  created_by: events.createdBy,
+  deleted_at: events.deletedAt,
+  created_at: events.createdAt,
+};
 
 /** The columns of an `EventChoice`. */
-export const EVENT_CHOICE_COLUMNS = sql`id, name, event_date, status`;
+export const EVENT_CHOICE = {
+  id: events.id,
+  name: events.name,
+  event_date: events.eventDate,
+  status: events.status,
+};
 
 const MAX_EVENTS = 100;
 
@@ -43,6 +60,14 @@ export interface EventKey {
 function isEventKey({ guildId, eventId }: EventKey): boolean {
   return isSnowflake(guildId) && isUuid(eventId);
 }
+
+/** An event that is live, in this guild, and has this ID. */
+const liveEvent = (key: EventKey) =>
+  and(
+    eq(events.id, key.eventId),
+    eq(events.guildId, key.guildId),
+    isNull(events.deletedAt),
+  );
 
 export interface NewEvent {
   guildId: string;
@@ -64,12 +89,17 @@ export async function createEvent(
     return refused();
   }
   return changedRow(
-    await query<EventRow>(
-      db,
-      sql`insert into discord_bot.events (guild_id, channel_id, name, event_date, created_by)
-      values (${guildId}, ${channelId}, ${name}, ${eventDate}, ${actorId})
-      returning ${EVENT_COLUMNS}`,
-    ),
+    await transact(db, async (tx) => {
+      await requireLiveChannel(tx, guildId, channelId);
+      const created = await tx
+        .insert(events)
+        .values({ guildId, channelId, name, eventDate, createdBy: actorId })
+        .returning(EVENT_ROW);
+      for (const event of created) {
+        await makeSteps(tx, { id: event.id, guildId });
+      }
+      return created as EventRow[];
+    }),
   );
 }
 
@@ -90,14 +120,25 @@ export async function createLinkedEvent(
     return refused();
   }
   return changedRow(
-    await query<EventRow>(
-      db,
-      sql`insert into discord_bot.events
-        (guild_id, channel_id, name, event_date, created_by, thread_id, thread_status)
-      values (${guildId}, ${channelId}, ${name}, ${eventDate}, ${actorId}, ${threadId},
-        'active')
-      returning ${EVENT_COLUMNS}`,
-    ),
+    await transact(db, async (tx) => {
+      await requireLiveChannel(tx, guildId, channelId);
+      const created = await tx
+        .insert(events)
+        .values({
+          guildId,
+          channelId,
+          name,
+          eventDate,
+          createdBy: actorId,
+          threadId,
+          threadStatus: "active",
+        })
+        .returning(EVENT_ROW);
+      for (const event of created) {
+        await makeSteps(tx, { id: event.id, guildId });
+      }
+      return created as EventRow[];
+    }),
   );
 }
 
@@ -110,11 +151,14 @@ export async function getEvent(
     return refused();
   }
   return firstRow(
-    await query<EventRow>(
+    await read(
       db,
-      sql`select ${EVENT_COLUMNS} from discord_bot.events
-      where id = ${key.eventId} and guild_id = ${key.guildId} and deleted_at is null
-      limit 1`,
+      (orm) =>
+        orm
+          .select(EVENT_ROW)
+          .from(events)
+          .where(liveEvent(key))
+          .limit(1) as unknown as Promise<EventRow[]>,
     ),
   );
 }
@@ -127,12 +171,25 @@ export async function listEventsNamed(
   if (!isStoredText(name, MAX_EVENT_NAME_LENGTH) || !isDbDate(eventDate)) {
     return refused();
   }
-  return await query<EventRow>(
+  return read(
     db,
-    sql`select ${EVENT_COLUMNS} from discord_bot.events
-      where guild_id = ${guildId} and channel_id = ${channelId} and name = ${name}
-        and event_date = ${eventDate} and deleted_at is null
-      order by id limit ${DISCORD_LIMITS.autocompleteChoices}`,
+    (orm) =>
+      orm
+        .select(EVENT_ROW)
+        .from(events)
+        .where(
+          and(
+            eq(events.guildId, guildId),
+            eq(events.channelId, channelId),
+            eq(events.name, name),
+            eq(events.eventDate, eventDate),
+            isNull(events.deletedAt),
+          ),
+        )
+        .orderBy(asc(events.id))
+        .limit(DISCORD_LIMITS.autocompleteChoices) as unknown as Promise<
+        EventRow[]
+      >,
   );
 }
 
@@ -145,11 +202,15 @@ export async function listEvents(
   { guildId }: { guildId: string },
 ): Promise<DbResult<CappedList<EventRow>>> {
   return capped(
-    await query<EventRow>(
+    await read(
       db,
-      sql`select ${EVENT_COLUMNS} from discord_bot.events
-      where guild_id = ${guildId} and deleted_at is null
-      order by status, event_date desc, id limit ${MAX_EVENTS + 1}`,
+      (orm) =>
+        orm
+          .select(EVENT_ROW)
+          .from(events)
+          .where(and(eq(events.guildId, guildId), isNull(events.deletedAt)))
+          .orderBy(asc(events.status), desc(events.eventDate), asc(events.id))
+          .limit(MAX_EVENTS + 1) as unknown as Promise<EventRow[]>,
     ),
     MAX_EVENTS,
   );
@@ -167,12 +228,23 @@ export async function searchEvents(
   if (!isSearchTerm(term)) {
     return refused();
   }
-  return await query<EventChoice>(
+  return read(
     db,
-    sql`select ${EVENT_CHOICE_COLUMNS} from discord_bot.events
-      where guild_id = ${guildId} and deleted_at is null
-        and name ilike ${searchPattern(term)}
-      order by status, event_date desc, id limit ${DISCORD_LIMITS.autocompleteChoices}`,
+    (orm) =>
+      orm
+        .select(EVENT_CHOICE)
+        .from(events)
+        .where(
+          and(
+            eq(events.guildId, guildId),
+            isNull(events.deletedAt),
+            ilike(events.name, searchPattern(term)),
+          ),
+        )
+        .orderBy(asc(events.status), desc(events.eventDate), asc(events.id))
+        .limit(DISCORD_LIMITS.autocompleteChoices) as unknown as Promise<
+        EventChoice[]
+      >,
   );
 }
 
@@ -182,12 +254,46 @@ export async function searchEventsByIdPrefix(
   { guildId, prefix }: { guildId: string; prefix: string },
 ): Promise<DbResult<EventChoice[]>> {
   const { low, high } = idPrefixRange(prefix);
-  return await query<EventChoice>(
+  return read(
     db,
-    sql`select ${EVENT_CHOICE_COLUMNS} from discord_bot.events
-      where guild_id = ${guildId} and deleted_at is null
-        and id >= ${low} and id <= ${high}
-      order by id limit ${DISCORD_LIMITS.autocompleteChoices}`,
+    (orm) =>
+      orm
+        .select(EVENT_CHOICE)
+        .from(events)
+        .where(
+          and(
+            eq(events.guildId, guildId),
+            isNull(events.deletedAt),
+            gte(events.id, low),
+            lte(events.id, high),
+          ),
+        )
+        .orderBy(asc(events.id))
+        .limit(DISCORD_LIMITS.autocompleteChoices) as unknown as Promise<
+        EventChoice[]
+      >,
+  );
+}
+
+/** Changes the live event `key` names, if `also` holds, and returns it. */
+async function changeEvent(
+  db: DbClient,
+  key: EventKey,
+  set: Record<string, unknown>,
+  also: ReturnType<typeof and>,
+): Promise<DbResult<EventRow>> {
+  return changedRow(
+    await transact(
+      db,
+      async (tx) =>
+        (await updateRecorded(
+          tx,
+          events,
+          set,
+          and(liveEvent(key), also),
+          EVENT_ROW,
+        )) as unknown as EventRow[],
+    ),
   );
 }
 
@@ -199,14 +305,11 @@ export async function setEventThread(
   db: DbClient,
   key: EventKey & { threadId: string },
 ): Promise<DbResult<EventRow>> {
-  return changedRow(
-    await query<EventRow>(
-      db,
-      sql`update discord_bot.events set thread_id = ${key.threadId}, thread_status = 'active'
-      where id = ${key.eventId} and guild_id = ${key.guildId} and deleted_at is null
-        and thread_status <> 'active'
-      returning ${EVENT_COLUMNS}`,
-    ),
+  return changeEvent(
+    db,
+    key,
+    { threadId: key.threadId, threadStatus: "active" },
+    sql`${events.threadStatus} <> 'active'`,
   );
 }
 
@@ -219,15 +322,15 @@ export async function attachEventPost(
   db: DbClient,
   key: EventKey & { threadId: string; overviewMessageId: string },
 ): Promise<DbResult<EventRow>> {
-  return changedRow(
-    await query<EventRow>(
-      db,
-      sql`update discord_bot.events set thread_id = ${key.threadId},
-        overview_message_id = ${key.overviewMessageId}, thread_status = 'active'
-      where id = ${key.eventId} and guild_id = ${key.guildId} and deleted_at is null
-        and thread_status = 'pending'
-      returning ${EVENT_COLUMNS}`,
-    ),
+  return changeEvent(
+    db,
+    key,
+    {
+      threadId: key.threadId,
+      overviewMessageId: key.overviewMessageId,
+      threadStatus: "active",
+    },
+    eq(events.threadStatus, "pending"),
   );
 }
 
@@ -235,14 +338,11 @@ export async function markEventThreadMissing(
   db: DbClient,
   key: EventKey,
 ): Promise<DbResult<EventRow>> {
-  return changedRow(
-    await query<EventRow>(
-      db,
-      sql`update discord_bot.events set thread_status = 'missing'
-      where id = ${key.eventId} and guild_id = ${key.guildId} and deleted_at is null
-        and thread_status = 'active'
-      returning ${EVENT_COLUMNS}`,
-    ),
+  return changeEvent(
+    db,
+    key,
+    { threadStatus: "missing" },
+    eq(events.threadStatus, "active"),
   );
 }
 
@@ -250,14 +350,7 @@ export async function setEventOverviewMessage(
   db: DbClient,
   key: EventKey & { messageId: string },
 ): Promise<DbResult<EventRow>> {
-  return changedRow(
-    await query<EventRow>(
-      db,
-      sql`update discord_bot.events set overview_message_id = ${key.messageId}
-      where id = ${key.eventId} and guild_id = ${key.guildId} and deleted_at is null
-      returning ${EVENT_COLUMNS}`,
-    ),
-  );
+  return changeEvent(db, key, { overviewMessageId: key.messageId }, undefined);
 }
 
 /** Closes an active event. A second close fails as `not_found`. */
@@ -265,14 +358,11 @@ export async function closeEvent(
   db: DbClient,
   key: EventKey,
 ): Promise<DbResult<EventRow>> {
-  return changedRow(
-    await query<EventRow>(
-      db,
-      sql`update discord_bot.events set status = 'closed'
-      where id = ${key.eventId} and guild_id = ${key.guildId} and deleted_at is null
-        and status = 'active'
-      returning ${EVENT_COLUMNS}`,
-    ),
+  return changeEvent(
+    db,
+    key,
+    { status: "closed" },
+    eq(events.status, "active"),
   );
 }
 
@@ -285,22 +375,20 @@ export async function claimEventPostAttempt(
   db: DbClient,
   key: EventKey,
 ): Promise<DbResult<boolean>> {
-  return write(db, async (orm) => {
-    const claimed = await orm
-      .update(events)
-      .set({ postAttemptAt: dsql`now()` })
-      .where(
-        and(
-          eq(events.id, key.eventId),
-          eq(events.guildId, key.guildId),
-          isNull(events.deletedAt),
-          eq(events.threadStatus, "pending"),
-          isNull(events.postAttemptAt),
-        ),
-      )
-      .returning({ id: events.id });
-    return claimed.length > 0;
-  });
+  const claimed = await transact(db, (tx) =>
+    updateRecorded(
+      tx,
+      events,
+      { postAttemptAt: sql`now()` },
+      and(
+        liveEvent(key),
+        eq(events.threadStatus, "pending"),
+        isNull(events.postAttemptAt),
+      ),
+      { id: events.id },
+    ),
+  );
+  return claimed.ok ? { ok: true, value: claimed.value.length > 0 } : claimed;
 }
 
 /** Gives the reservation back. Only after Discord clearly refused to make the post. */
@@ -308,21 +396,18 @@ export async function releaseEventPostAttempt(
   db: DbClient,
   key: EventKey,
 ): Promise<DbResult<boolean>> {
-  return write(db, async (orm) => {
-    const released = await orm
-      .update(events)
-      .set({ postAttemptAt: null })
-      .where(
-        and(
-          eq(events.id, key.eventId),
-          eq(events.guildId, key.guildId),
-          isNull(events.deletedAt),
-          eq(events.threadStatus, "pending"),
-        ),
-      )
-      .returning({ id: events.id });
-    return released.length > 0;
-  });
+  const released = await transact(db, (tx) =>
+    updateRecorded(
+      tx,
+      events,
+      { postAttemptAt: null },
+      and(liveEvent(key), eq(events.threadStatus, "pending")),
+      { id: events.id },
+    ),
+  );
+  return released.ok
+    ? { ok: true, value: released.value.length > 0 }
+    : released;
 }
 
 /** Soft-deletes the event and its tasks. Returns how many tasks were deleted. */
@@ -348,26 +433,24 @@ export async function softDeleteEvent(
         .orderBy(asc(tasks.id))
         .for("no key update");
 
-      const deleted = await tx
-        .update(events)
-        .set({ deletedAt: dsql`now()` })
-        .where(
-          and(
-            eq(events.id, key.eventId),
-            eq(events.guildId, key.guildId),
-            isNull(events.deletedAt),
-          ),
-        )
-        .returning({ id: events.id });
+      const deleted = await updateRecorded(
+        tx,
+        events,
+        { deletedAt: sql`now()` },
+        liveEvent(key),
+        { id: events.id },
+      );
       if (deleted.length === 0) {
         return null;
       }
 
-      const deletedTasks = await tx
-        .update(tasks)
-        .set({ deletedAt: dsql`now()` })
-        .where(and(eq(tasks.eventId, key.eventId), isNull(tasks.deletedAt)))
-        .returning({ id: tasks.id });
+      const deletedTasks = await updateRecorded(
+        tx,
+        tasks,
+        { deletedAt: sql`now()` },
+        and(eq(tasks.eventId, key.eventId), isNull(tasks.deletedAt)),
+        { id: tasks.id },
+      );
       return deletedTasks.length;
     }),
   );

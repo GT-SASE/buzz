@@ -1,16 +1,9 @@
 import { hash } from "node:crypto";
-import { and, asc, eq, inArray, ne, sql as dsql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, ne, sql } from "drizzle-orm";
 import { isUsableTimeZone } from "../lib/dates.ts";
 import type { DbClient } from "./client.ts";
-import {
-  capped,
-  firstRow,
-  query,
-  raise,
-  sql,
-  transact,
-  write,
-} from "./internal.ts";
+import { updateRecorded } from "./history.ts";
+import { capped, firstRow, raise, read, transact } from "./internal.ts";
 import { failure, refused, type DbResult } from "./errors.ts";
 import {
   configAudit,
@@ -33,12 +26,25 @@ export async function getGuildConfig(
   { guildId }: { guildId: string },
 ): Promise<DbResult<GuildConfig | null>> {
   return firstRow(
-    await query<GuildConfig>(
+    await read(
       db,
-      sql`select guild_id, officer_role_id, admin_role_id, eboard_role_id,
-        events_committee_role_id, treasury_role_id, marketing_role_id, timezone,
-        reminders_enabled, version
-      from discord_bot.guild_config where guild_id = ${guildId} limit 1`,
+      (orm) =>
+        orm
+          .select({
+            guild_id: guildConfig.guildId,
+            officer_role_id: guildConfig.officerRoleId,
+            admin_role_id: guildConfig.adminRoleId,
+            eboard_role_id: guildConfig.eboardRoleId,
+            events_committee_role_id: guildConfig.eventsCommitteeRoleId,
+            treasury_role_id: guildConfig.treasuryRoleId,
+            marketing_role_id: guildConfig.marketingRoleId,
+            timezone: guildConfig.timezone,
+            reminders_enabled: guildConfig.remindersEnabled,
+            version: guildConfig.version,
+          })
+          .from(guildConfig)
+          .where(eq(guildConfig.guildId, guildId))
+          .limit(1) as unknown as Promise<GuildConfig[]>,
     ),
   );
 }
@@ -114,19 +120,21 @@ export async function applyRoleBindings(
         treasury_role_id: current.treasuryRoleId,
         marketing_role_id: current.marketingRoleId,
       };
-      [written] = await tx
-        .update(guildConfig)
-        .set({
+      [written] = (await updateRecorded(
+        tx,
+        guildConfig,
+        {
           officerRoleId,
           adminRoleId,
           eboardRoleId,
           eventsCommitteeRoleId,
           treasuryRoleId,
           marketingRoleId,
-          version: dsql`${guildConfig.version} + 1`,
-        })
-        .where(eq(guildConfig.guildId, guildId))
-        .returning({ version: guildConfig.version });
+          version: sql`${guildConfig.version} + 1`,
+        },
+        eq(guildConfig.guildId, guildId),
+        { version: guildConfig.version },
+      )) as { version: number }[];
     } else {
       if (expectedVersion !== 0) {
         raise("CF409", "config version is stale");
@@ -209,15 +217,24 @@ export async function saveSetupDraft(
     marketingRoleId: roles.marketingRoleId,
     fingerprint,
   };
-  const saved = await write(db, (orm) =>
-    orm
+  const saved = await transact(db, async (tx) => {
+    // A draft already there is changed with its history; two first drafts at once leave
+    // one row, and the second changes it.
+    const made = await tx
       .insert(setupDrafts)
       .values({ guildId, ...draft })
-      .onConflictDoUpdate({
-        target: setupDrafts.guildId,
-        set: { ...draft, createdAt: dsql`now()` },
-      }),
-  );
+      .onConflictDoNothing({ target: setupDrafts.guildId })
+      .returning({ guildId: setupDrafts.guildId });
+    if (made.length === 0) {
+      await updateRecorded(
+        tx,
+        setupDrafts,
+        { ...draft, createdAt: sql`now()` },
+        eq(setupDrafts.guildId, guildId),
+        { guildId: setupDrafts.guildId },
+      );
+    }
+  });
   return saved.ok ? { ok: true, value: fingerprint } : saved;
 }
 
@@ -236,16 +253,35 @@ export async function getSetupDraft(
   }: { guildId: string; actorId: string; fingerprint: string; now: Date },
 ): Promise<DbResult<SetupDraft | null>> {
   const draft = firstRow(
-    await query<SetupDraft>(
+    await read(
       db,
-      sql`select guild_id, actor_id, officer_role_id, admin_role_id, eboard_role_id,
-        events_committee_role_id, treasury_role_id, marketing_role_id, fingerprint,
-        created_at
-      from discord_bot.setup_drafts
-      where guild_id = ${guildId} and actor_id = ${actorId}
-        and fingerprint = ${fingerprint}
-        and created_at > ${new Date(now.getTime() - SETUP_DRAFT_TTL_MS).toISOString()}
-      limit 1`,
+      (orm) =>
+        orm
+          .select({
+            guild_id: setupDrafts.guildId,
+            actor_id: setupDrafts.actorId,
+            officer_role_id: setupDrafts.officerRoleId,
+            admin_role_id: setupDrafts.adminRoleId,
+            eboard_role_id: setupDrafts.eboardRoleId,
+            events_committee_role_id: setupDrafts.eventsCommitteeRoleId,
+            treasury_role_id: setupDrafts.treasuryRoleId,
+            marketing_role_id: setupDrafts.marketingRoleId,
+            fingerprint: setupDrafts.fingerprint,
+            created_at: setupDrafts.createdAt,
+          })
+          .from(setupDrafts)
+          .where(
+            and(
+              eq(setupDrafts.guildId, guildId),
+              eq(setupDrafts.actorId, actorId),
+              eq(setupDrafts.fingerprint, fingerprint),
+              gt(
+                setupDrafts.createdAt,
+                new Date(now.getTime() - SETUP_DRAFT_TTL_MS).toISOString(),
+              ),
+            ),
+          )
+          .limit(1) as unknown as Promise<SetupDraft[]>,
     ),
   );
   if (!draft.ok || draft.value === null) {
@@ -349,27 +385,36 @@ export async function applyConfigChange(
       .sort();
 
     if (added.length > 0) {
+      // New channels are inserted; one already there is made active again, with history.
       await tx
         .insert(managedChannels)
         .values(added.map((channelId) => ({ guildId, channelId })))
-        .onConflictDoUpdate({
-          target: [managedChannels.guildId, managedChannels.channelId],
-          set: { status: "active" },
-        });
+        .onConflictDoNothing();
+      await updateRecorded(
+        tx,
+        managedChannels,
+        { status: "active" },
+        and(
+          eq(managedChannels.guildId, guildId),
+          inArray(managedChannels.channelId, added),
+          ne(managedChannels.status, "active"),
+        ),
+        { channelId: managedChannels.channelId },
+      );
     }
 
     if (removed.length > 0) {
-      const changed = await tx
-        .update(managedChannels)
-        .set({ status: "removed" })
-        .where(
-          and(
-            eq(managedChannels.guildId, guildId),
-            inArray(managedChannels.channelId, removed),
-            ne(managedChannels.status, "removed"),
-          ),
-        )
-        .returning({ channelId: managedChannels.channelId });
+      const changed = await updateRecorded(
+        tx,
+        managedChannels,
+        { status: "removed" },
+        and(
+          eq(managedChannels.guildId, guildId),
+          inArray(managedChannels.channelId, removed),
+          ne(managedChannels.status, "removed"),
+        ),
+        { channelId: managedChannels.channelId },
+      );
       if (changed.length !== removed.length) {
         raise("22023", "channel to remove is not managed");
       }
@@ -377,19 +422,21 @@ export async function applyConfigChange(
 
     const newChannels = await activeChannels();
 
-    const [updated] = await tx
-      .update(guildConfig)
-      .set({
+    const [updated] = (await updateRecorded(
+      tx,
+      guildConfig,
+      {
         ...(remindersEnabled === null ? {} : { remindersEnabled }),
         ...(timezone === null ? {} : { timezone }),
-        version: dsql`${guildConfig.version} + 1`,
-      })
-      .where(eq(guildConfig.guildId, guildId))
-      .returning({
+        version: sql`${guildConfig.version} + 1`,
+      },
+      eq(guildConfig.guildId, guildId),
+      {
         version: guildConfig.version,
         remindersEnabled: guildConfig.remindersEnabled,
         timezone: guildConfig.timezone,
-      });
+      },
+    )) as { version: number; remindersEnabled: boolean; timezone: string }[];
     if (updated === undefined) {
       raise("CF409", "config version is stale");
     }
@@ -422,12 +469,23 @@ export async function listRecentConfigChanges(
   { guildId }: { guildId: string },
 ): Promise<DbResult<CappedList<ConfigChange>>> {
   return capped(
-    await query<ConfigChange>(
+    await read(
       db,
-      sql`select id, actor_id, action, old_values, new_values, version_after,
-        created_at
-      from discord_bot.config_audit where guild_id = ${guildId}
-      order by id desc limit ${RECENT_CHANGES + 1}`,
+      (orm) =>
+        orm
+          .select({
+            id: configAudit.id,
+            actor_id: configAudit.actorId,
+            action: configAudit.action,
+            old_values: configAudit.oldValues,
+            new_values: configAudit.newValues,
+            version_after: configAudit.versionAfter,
+            created_at: configAudit.createdAt,
+          })
+          .from(configAudit)
+          .where(eq(configAudit.guildId, guildId))
+          .orderBy(desc(configAudit.id))
+          .limit(RECENT_CHANGES + 1) as unknown as Promise<ConfigChange[]>,
     ),
     RECENT_CHANGES,
   );

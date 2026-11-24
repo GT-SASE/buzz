@@ -92,20 +92,19 @@ The bot receives Discord's HTTP interactions and opens no gateway connection. It
 
 Discord allows 3 seconds for the first reply. So the bot makes one database read, sends a private acknowledgement, and finishes the work with `waitUntil`.
 
-| Path             | Holds                                                        |
-| ---------------- | ------------------------------------------------------------ |
-| `api/`           | The two public endpoints. Every file here becomes a route.   |
-| `src/discord/`   | Signature checks, safe text, message builders, REST client   |
-| `src/handlers/`  | The router and each command                                  |
-| `src/tasks/`     | The `/task` subcommands                                      |
-| `src/events/`    | Event input checks, the overview and the event's steps       |
-| `src/reminders/` | The daily run, its plan and the health check                 |
-| `src/db/`        | All database access                                          |
-| `src/lib/`       | Settings, permissions and dates                              |
-| `db/drizzle/`    | The schema (Drizzle), and the triggers, role and grants      |
-| `db/migrations/` | dbmate's six files, kept until the old functions are dropped |
-| `scripts/`       | Migrations, command registration and the repo's checks       |
-| `docs/adr/`      | Records of the design decisions and their costs              |
+| Path             | Holds                                                      |
+| ---------------- | ---------------------------------------------------------- |
+| `api/`           | The two public endpoints. Every file here becomes a route. |
+| `src/discord/`   | Signature checks, safe text, message builders, REST client |
+| `src/handlers/`  | The router and each command                                |
+| `src/tasks/`     | The `/task` subcommands                                    |
+| `src/events/`    | Event input checks, the overview and the event's steps     |
+| `src/reminders/` | The daily run, its plan and the health check               |
+| `src/db/`        | All database access                                        |
+| `src/lib/`       | Settings, permissions and dates                            |
+| `db/drizzle/`    | The schema (Drizzle), and the triggers, role and grants    |
+| `scripts/`       | Migrations, command registration and the repo's checks     |
+| `docs/adr/`      | Records of the design decisions and their costs            |
 
 ## Commands
 
@@ -238,7 +237,8 @@ There is no local bot. Discord needs a public HTTPS URL, so tests stand in for i
 | `bun run test`                | Unit tests                                                                                                                                                                              | Nothing                                                                       |
 | `bun run test:db`             | Migrations, grants and access layer on PGlite, logged in as `bot_app`                                                                                                                   | Nothing                                                                       |
 | `bun run test:db:concurrency` | Races: double Done clicks, retried interactions, overlapping reminder runs, deletes against inserts, config saves and first setup, task quotas at their limit, task changes, lock order | `CONCURRENCY_DATABASE_URL` to a Postgres 17 superuser, and `BOT_APP_PASSWORD` |
-| `bun run db:migrate`          | Applies new files in `db/drizzle` with drizzle-kit's migrator, in order, after marking the baseline applied on a database dbmate built                                                  | `DATABASE_URL` for the database's owner role, never `bot_app`                 |
+| `bun run db:migrate`          | Applies new files in `db/drizzle` with drizzle-kit's migrator, in order, one run at a time                                                                                              | `DATABASE_URL` for the database's owner role, never `bot_app`                 |
+| `bun run test:db:no-triggers` | The same tests on a database with every trigger dropped, as a later change leaves it, to show the bot's own writes hold alone                                                           | Nothing                                                                       |
 | `bun run db:generate`         | Makes a migration from a change to `src/db/schema.ts`. Add `--custom` for one written by hand, such as a trigger or a grant                                                             | Nothing                                                                       |
 
 Tests use `bun:test`. Unit tests sit next to the code as `src/**/*.test.ts` and `scripts/*.test.ts`, the PGlite tests are in `test/db/`, the race tests in `test/db-concurrency/`, and shared helpers in `test/support/`. Every run preloads `test/support/setup.ts`, which pins the time zone, undoes stubs after each test, and checks every body sent to Discord for live mentions and masked links. To run one file, give a path starting with `./`, since a bare word only filters file names:
@@ -248,7 +248,7 @@ bun test --isolate ./src/lib/dates.test.ts
 bun test ./test/db/db-rules.test.ts
 ```
 
-`bun run test:db` runs the migration files on PGlite and the tests run the bot's own writes against it as `bot_app`, and build the database a dbmate production one is to show that the switch to Drizzle leaves the same schema and grants. The concurrency tests need real Postgres 17. CI's database workflow runs one as a service, makes an owner, a database and the `discord_bot` schema, runs `bun run db:migrate`, sets `bot_app`'s password, then runs those tests through `pg`, logged in as `bot_app`. Point `CONCURRENCY_DATABASE_URL` at that migrated database.
+`bun run test:db` runs the migration files on PGlite and the tests run the bot's own writes against it as `bot_app`; `test:db:no-triggers` runs them again with the triggers dropped, where a test of a trigger on a write made by hand is skipped. `test/db/migrations.test.ts` migrates a database that already holds history in two steps and checks it comes out as a fresh one. The concurrency tests need real Postgres 17. CI's database workflow runs one as a service, makes an owner, a database and the `discord_bot` schema, runs `bun run db:migrate` twice, and once more as two at the same moment, sets `bot_app`'s password, then runs those tests through `pg`, logged in as `bot_app`, on the migrated database and on a copy with no triggers. Point `CONCURRENCY_DATABASE_URL` at the migrated database.
 
 Gitleaks scans every commit on every ref, as CI does. You need a full clone.
 

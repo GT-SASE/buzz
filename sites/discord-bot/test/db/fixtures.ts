@@ -63,7 +63,18 @@ export async function insertEvent(
      RETURNING id`,
     [guild.guildId, guild.channelId, fakeId()],
   );
-  return (rows[0] as { id: string }).id;
+  const id = (rows[0] as { id: string }).id;
+  // A new event has a step of every kind. A trigger made them once, and the bot makes
+  // them itself now, so a row put in by hand gets them here, whichever has run.
+  await queryAs(
+    db,
+    "bot_app",
+    `INSERT INTO discord_bot.event_steps (event_id, guild_id, kind)
+     SELECT $1, $2, kind FROM unnest(enum_range(NULL::discord_bot.event_step_kind)) AS kind
+     ON CONFLICT DO NOTHING`,
+    [id, guild.guildId],
+  );
+  return id;
 }
 
 export async function insertTask(

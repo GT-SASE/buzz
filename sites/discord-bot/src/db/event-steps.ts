@@ -15,6 +15,7 @@ import type { DateOnly } from "../lib/dates.ts";
 import { STALE_CLAIM_MS } from "../reminders/plan.ts";
 import {
   and,
+  asc,
   count,
   eq,
   exists,
@@ -26,27 +27,29 @@ import {
   ne,
   notExists,
   or,
-  sql as dsql,
+  sql,
   type SQL,
 } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import type { BotTx, DbClient } from "./client.ts";
 import { failure, refused, type DbResult } from "./errors.ts";
 import {
   capped,
   nullAsNotFound,
-  query,
   raise,
-  sql,
+  read,
   transact,
   write,
 } from "./internal.ts";
-import { eventReminderDayOpen, fromAllowedEvent } from "./reminder-rules.ts";
+import { updateRecorded } from "./history.ts";
+import { allowedEvent, eventReminderDayOpen } from "./reminder-rules.ts";
 import {
   eventReminderLog,
   eventStepAssignees,
   eventSteps,
   events,
   guildConfig,
+  managedChannels,
 } from "./schema.ts";
 import {
   ASSIGNABLE_STEP_KINDS,
@@ -58,7 +61,6 @@ import {
   type EventReminderKind,
   type EventReminderStaleClaim,
   type EventStepKind,
-  type EventStep,
   type EventWorkflow,
   type HandoffStepKind,
   type StepAssignee,
@@ -73,32 +75,6 @@ export const MAX_ASSIGNEES_PER_STEP = 10;
 export const MAX_FOOD_PICKUP_ASSIGNEES = 15;
 
 const MAX_USER_STEPS = 100;
-
-/** An event's steps, as a JSON array. Use with the event as `e`. */
-const STEPS_OF_EVENT = sql`coalesce((
-  select json_agg(json_build_object('event_id', s.event_id, 'kind', s.kind,
-    'status', s.status, 'completed_at', s.completed_at,
-    'completed_by', s.completed_by, 'handoff_claimed_at', s.handoff_claimed_at,
-    'handoff_sent_at', s.handoff_sent_at, 'not_needed_at', s.not_needed_at,
-    'not_needed_by', s.not_needed_by))
-  from discord_bot.event_steps s where s.event_id = e.id and s.guild_id = e.guild_id
-), '[]'::json)`;
-
-/** The kind, status and done time of each of an event's steps, as a JSON array. */
-const STEP_STATUSES_OF_EVENT = sql`coalesce((
-  select json_agg(json_build_object('kind', s.kind, 'status', s.status,
-    'completed_at', s.completed_at, 'not_needed', s.not_needed_at is not null))
-  from discord_bot.event_steps s where s.event_id = e.id and s.guild_id = e.guild_id
-), '[]'::json)`;
-
-/** An event's live assignments, oldest first, as a JSON array. */
-const LIVE_ASSIGNEES_OF_EVENT = sql`coalesce((
-  select json_agg(json_build_object('id', a.id, 'event_id', a.event_id,
-    'kind', a.kind, 'user_id', a.user_id, 'assigned_by', a.assigned_by,
-    'created_at', a.created_at) order by a.created_at, a.id)
-  from discord_bot.event_step_assignees a
-  where a.event_id = e.id and a.guild_id = e.guild_id and a.removed_at is null
-), '[]'::json)`;
 
 const MAX_REMINDER_EVENTS = 500;
 const MAX_STALE_CLAIMS = 500;
@@ -129,29 +105,77 @@ async function listEventWorkflows(
   if (eventIds.length === 0) {
     return { ok: true, value: [] };
   }
-  const read = await query<{
-    id: string;
-    event_date: DateOnly;
-    pickup_time: string | null;
-    timezone: string;
-    steps: EventStep[];
-    assignees: StepAssignee[];
-  }>(
-    db,
-    sql`select e.id, e.event_date, e.pickup_time, g.timezone,
-      ${STEPS_OF_EVENT} as steps, ${LIVE_ASSIGNEES_OF_EVENT} as assignees
-    from discord_bot.events e
-    join discord_bot.guild_config g on g.guild_id = e.guild_id
-    where e.guild_id = ${guildId} and e.id = any(${[...eventIds]}::uuid[])
-      and e.deleted_at is null
-    order by e.id limit ${MAX_ID_LIST}`,
-  );
-  return read.ok
+  const loaded = await read(db, async (orm) => {
+    const found = await orm
+      .select({
+        id: events.id,
+        event_date: events.eventDate,
+        pickup_time: events.pickupTime,
+        timezone: guildConfig.timezone,
+      })
+      .from(events)
+      .innerJoin(guildConfig, eq(guildConfig.guildId, events.guildId))
+      .where(
+        and(
+          eq(events.guildId, guildId),
+          inArray(events.id, [...eventIds]),
+          isNull(events.deletedAt),
+        ),
+      )
+      .orderBy(asc(events.id))
+      .limit(MAX_ID_LIST);
+    const ids = found.map((event) => event.id);
+    if (ids.length === 0) {
+      return [];
+    }
+    const steps = await orm
+      .select({
+        event_id: eventSteps.eventId,
+        kind: eventSteps.kind,
+        status: eventSteps.status,
+        completed_at: eventSteps.completedAt,
+        completed_by: eventSteps.completedBy,
+        handoff_claimed_at: eventSteps.handoffClaimedAt,
+        handoff_sent_at: eventSteps.handoffSentAt,
+        not_needed_at: eventSteps.notNeededAt,
+        not_needed_by: eventSteps.notNeededBy,
+      })
+      .from(eventSteps)
+      .where(
+        and(eq(eventSteps.guildId, guildId), inArray(eventSteps.eventId, ids)),
+      );
+    const assignees = await orm
+      .select({
+        id: eventStepAssignees.id,
+        event_id: eventStepAssignees.eventId,
+        kind: eventStepAssignees.kind,
+        user_id: eventStepAssignees.userId,
+        assigned_by: eventStepAssignees.assignedBy,
+        created_at: eventStepAssignees.createdAt,
+      })
+      .from(eventStepAssignees)
+      .where(
+        and(
+          eq(eventStepAssignees.guildId, guildId),
+          inArray(eventStepAssignees.eventId, ids),
+          isNull(eventStepAssignees.removedAt),
+        ),
+      )
+      .orderBy(asc(eventStepAssignees.createdAt), asc(eventStepAssignees.id));
+    return found.map((event) => ({
+      ...event,
+      steps: steps.filter((step) => step.event_id === event.id),
+      assignees: assignees.filter(
+        (assignee) => assignee.event_id === event.id,
+      ) as StepAssignee[],
+    }));
+  });
+  return loaded.ok
     ? {
         ok: true,
-        value: read.value.map((row) => ({
+        value: loaded.value.map((row) => ({
           event_id: row.id,
-          event_date: row.event_date,
+          event_date: row.event_date as DateOnly,
           pickup_time: hoursAndMinutes(row.pickup_time),
           timezone: row.timezone,
           // Every event has one row per kind, which the baseline adds with the event.
@@ -161,7 +185,7 @@ async function listEventWorkflows(
           assignees: row.assignees,
         })),
       }
-    : read;
+    : loaded;
 }
 
 /** One live event's steps and live assignments, or null if there is no such event. */
@@ -258,17 +282,17 @@ export async function assignEventStep(
 
       // Someone put on Slides means it is needed after all.
       if (input.kind === "slides") {
-        const needed = await tx
-          .update(eventSteps)
-          .set({ notNeededAt: null, notNeededBy: null })
-          .where(
-            and(
-              eq(eventSteps.eventId, input.eventId),
-              eq(eventSteps.kind, "slides"),
-              isNotNull(eventSteps.notNeededAt),
-            ),
-          )
-          .returning({ eventId: eventSteps.eventId });
+        const needed = await updateRecorded(
+          tx,
+          eventSteps,
+          { notNeededAt: null, notNeededBy: null },
+          and(
+            eq(eventSteps.eventId, input.eventId),
+            eq(eventSteps.kind, "slides"),
+            isNotNull(eventSteps.notNeededAt),
+          ),
+          { eventId: eventSteps.eventId },
+        );
         if (needed.length > 0) {
           return "needed_again" as const;
         }
@@ -343,21 +367,21 @@ async function syncFoodPickupStep(
     );
   const pickupTime = event?.pickupTime ?? null;
   const ready = pickupTime !== null && people > 0;
-  const [step] = await tx
-    .update(eventSteps)
-    .set({
+  const [step] = (await updateRecorded(
+    tx,
+    eventSteps,
+    {
       status: ready ? "done" : "open",
       completedAt: ready
-        ? dsql`coalesce(${eventSteps.completedAt}, now())`
+        ? sql`coalesce(${eventSteps.completedAt}, now())`
         : null,
       completedBy: ready
-        ? dsql`coalesce(${eventSteps.completedBy}, ${actorId}::text)`
+        ? sql`coalesce(${eventSteps.completedBy}, ${actorId}::text)`
         : null,
-    })
-    .where(
-      and(eq(eventSteps.eventId, eventId), eq(eventSteps.kind, "food_pickup")),
-    )
-    .returning({ status: eventSteps.status });
+    },
+    and(eq(eventSteps.eventId, eventId), eq(eventSteps.kind, "food_pickup")),
+    { status: eventSteps.status },
+  )) as { status: TaskStatus }[];
   return step?.status;
 }
 
@@ -381,18 +405,18 @@ export async function unassignEventStep(
         return null;
       }
 
-      const removed = await tx
-        .update(eventStepAssignees)
-        .set({ removedAt: dsql`now()`, removedBy: input.actorId })
-        .where(
-          and(
-            eq(eventStepAssignees.eventId, input.eventId),
-            eq(eventStepAssignees.kind, input.kind),
-            eq(eventStepAssignees.userId, input.userId),
-            isNull(eventStepAssignees.removedAt),
-          ),
-        )
-        .returning({ id: eventStepAssignees.id });
+      const removed = await updateRecorded(
+        tx,
+        eventStepAssignees,
+        { removedAt: sql`now()`, removedBy: input.actorId },
+        and(
+          eq(eventStepAssignees.eventId, input.eventId),
+          eq(eventStepAssignees.kind, input.kind),
+          eq(eventStepAssignees.userId, input.userId),
+          isNull(eventStepAssignees.removedAt),
+        ),
+        { id: eventStepAssignees.id },
+      );
 
       if (removed.length > 0 && input.kind === "food_pickup") {
         await syncFoodPickupStep(tx, input.eventId, input.actorId);
@@ -446,21 +470,22 @@ export async function completeEventStep(
         raise("CF425", "engage post is not done");
       }
 
-      await tx
-        .update(eventSteps)
-        .set({
+      await updateRecorded(
+        tx,
+        eventSteps,
+        {
           status: "done",
-          completedAt: dsql`now()`,
+          completedAt: sql`now()`,
           completedBy: input.actorId,
           notNeededAt: null,
           notNeededBy: null,
-        })
-        .where(
-          and(
-            eq(eventSteps.eventId, input.eventId),
-            eq(eventSteps.kind, input.kind),
-          ),
-        );
+        },
+        and(
+          eq(eventSteps.eventId, input.eventId),
+          eq(eventSteps.kind, input.kind),
+        ),
+        { eventId: eventSteps.eventId },
+      );
       return true;
     }),
   );
@@ -499,32 +524,32 @@ export async function claimStepHandoff(
       raise("CF410", "event is closed");
     }
 
-    const claimed = await tx
-      .update(eventSteps)
-      .set({ handoffClaimedAt: dsql`now()` })
-      .where(
-        and(
-          eq(eventSteps.eventId, key.eventId),
-          eq(eventSteps.guildId, key.guildId),
-          eq(eventSteps.kind, key.kind),
-          eq(eventSteps.status, "done"),
-          isNull(eventSteps.handoffClaimedAt),
-          exists(
-            tx
-              .select({ id: events.id })
-              .from(events)
-              .where(
-                and(
-                  eq(events.id, key.eventId),
-                  eq(events.guildId, key.guildId),
-                  isNull(events.deletedAt),
-                  eq(events.status, "active"),
-                ),
+    const claimed = await updateRecorded(
+      tx,
+      eventSteps,
+      { handoffClaimedAt: sql`now()` },
+      and(
+        eq(eventSteps.eventId, key.eventId),
+        eq(eventSteps.guildId, key.guildId),
+        eq(eventSteps.kind, key.kind),
+        eq(eventSteps.status, "done"),
+        isNull(eventSteps.handoffClaimedAt),
+        exists(
+          tx
+            .select({ id: events.id })
+            .from(events)
+            .where(
+              and(
+                eq(events.id, key.eventId),
+                eq(events.guildId, key.guildId),
+                isNull(events.deletedAt),
+                eq(events.status, "active"),
               ),
-          ),
+            ),
         ),
-      )
-      .returning({ eventId: eventSteps.eventId });
+      ),
+      { eventId: eventSteps.eventId },
+    );
     return claimed.length > 0;
   });
 }
@@ -534,20 +559,20 @@ export async function markStepHandoffSent(
   db: DbClient,
   key: HandoffKey,
 ): Promise<DbResult<boolean>> {
-  return write(db, async (orm) => {
-    const marked = await orm
-      .update(eventSteps)
-      .set({ handoffSentAt: dsql`now()` })
-      .where(
-        and(
-          eq(eventSteps.eventId, key.eventId),
-          eq(eventSteps.guildId, key.guildId),
-          eq(eventSteps.kind, key.kind),
-          isNotNull(eventSteps.handoffClaimedAt),
-          isNull(eventSteps.handoffSentAt),
-        ),
-      )
-      .returning({ eventId: eventSteps.eventId });
+  return transact(db, async (tx) => {
+    const marked = await updateRecorded(
+      tx,
+      eventSteps,
+      { handoffSentAt: sql`now()` },
+      and(
+        eq(eventSteps.eventId, key.eventId),
+        eq(eventSteps.guildId, key.guildId),
+        eq(eventSteps.kind, key.kind),
+        isNotNull(eventSteps.handoffClaimedAt),
+        isNull(eventSteps.handoffSentAt),
+      ),
+      { eventId: eventSteps.eventId },
+    );
     return marked.length > 0;
   });
 }
@@ -574,24 +599,25 @@ export async function reopenEventStep(
         return false;
       }
 
-      await tx
-        .update(eventSteps)
-        .set({
+      await updateRecorded(
+        tx,
+        eventSteps,
+        {
           status: "open",
           completedAt: null,
           completedBy: null,
           handoffClaimedAt: null,
           handoffSentAt: null,
-        })
-        .where(
-          and(
-            eq(eventSteps.eventId, input.eventId),
-            input.kind === "engage_post"
-              ? inArray(eventSteps.kind, ["engage_post", "engage_picture"])
-              : eq(eventSteps.kind, input.kind),
-            eq(eventSteps.status, "done"),
-          ),
-        );
+        },
+        and(
+          eq(eventSteps.eventId, input.eventId),
+          input.kind === "engage_post"
+            ? inArray(eventSteps.kind, ["engage_post", "engage_picture"])
+            : eq(eventSteps.kind, input.kind),
+          eq(eventSteps.status, "done"),
+        ),
+        { eventId: eventSteps.eventId },
+      );
       return true;
     }),
   );
@@ -618,18 +644,19 @@ export async function setSlidesNotNeeded(
         return false;
       }
 
-      await tx
-        .update(eventSteps)
-        .set({
-          notNeededAt: input.notNeeded ? dsql`now()` : null,
+      await updateRecorded(
+        tx,
+        eventSteps,
+        {
+          notNeededAt: input.notNeeded ? sql`now()` : null,
           notNeededBy: input.notNeeded ? input.actorId : null,
-        })
-        .where(
-          and(
-            eq(eventSteps.eventId, input.eventId),
-            eq(eventSteps.kind, "slides"),
-          ),
-        );
+        },
+        and(
+          eq(eventSteps.eventId, input.eventId),
+          eq(eventSteps.kind, "slides"),
+        ),
+        { eventId: eventSteps.eventId },
+      );
       return true;
     }),
   );
@@ -656,10 +683,13 @@ export async function setEventPickupTime(
         return null;
       }
 
-      await tx
-        .update(events)
-        .set({ pickupTime: input.pickupTime })
-        .where(eq(events.id, input.eventId));
+      await updateRecorded(
+        tx,
+        events,
+        { pickupTime: input.pickupTime },
+        eq(events.id, input.eventId),
+        { id: events.id },
+      );
 
       return (
         (await syncFoodPickupStep(tx, input.eventId, input.actorId)) === "done"
@@ -692,32 +722,73 @@ export async function listOpenStepsForUser(
     return refused();
   }
   const list = capped(
-    await query<{
-      assignment_id: string;
-      kind: AssignableStepKind;
-      event_id: string;
-      event_name: string;
-      event_date: DateOnly;
-      pickup_time: string | null;
-      step_status: TaskStatus;
-    }>(
+    await read(
       db,
-      sql`select a.id as assignment_id, a.kind, e.id as event_id,
-        e.name as event_name, e.event_date, e.pickup_time, s.status as step_status
-      from discord_bot.event_step_assignees a
-      join discord_bot.events e on e.id = a.event_id and e.guild_id = a.guild_id
-      join discord_bot.event_steps s
-        on s.event_id = e.id and s.guild_id = e.guild_id and s.kind = a.kind
-      where a.guild_id = ${guildId} and a.user_id = ${userId} and a.removed_at is null
-        and e.status = 'active' and e.deleted_at is null
-        and (
-          (a.kind = 'food_pickup' and e.event_date >= ${today})
-          or (a.kind <> 'food_pickup' and s.status = 'open'
-            and s.not_needed_at is null)
-        )
-      order by e.event_date < ${today}, abs(e.event_date - ${today}::date), a.kind,
-        e.id, a.id
-      limit ${MAX_USER_STEPS + 1}`,
+      (orm) =>
+        orm
+          .select({
+            assignment_id: eventStepAssignees.id,
+            kind: eventStepAssignees.kind,
+            event_id: events.id,
+            event_name: events.name,
+            event_date: events.eventDate,
+            pickup_time: events.pickupTime,
+            step_status: eventSteps.status,
+          })
+          .from(eventStepAssignees)
+          .innerJoin(
+            events,
+            and(
+              eq(events.id, eventStepAssignees.eventId),
+              eq(events.guildId, eventStepAssignees.guildId),
+            ),
+          )
+          .innerJoin(
+            eventSteps,
+            and(
+              eq(eventSteps.eventId, events.id),
+              eq(eventSteps.guildId, events.guildId),
+              eq(eventSteps.kind, eventStepAssignees.kind),
+            ),
+          )
+          .where(
+            and(
+              eq(eventStepAssignees.guildId, guildId),
+              eq(eventStepAssignees.userId, userId),
+              isNull(eventStepAssignees.removedAt),
+              eq(events.status, "active"),
+              isNull(events.deletedAt),
+              or(
+                and(
+                  eq(eventStepAssignees.kind, "food_pickup"),
+                  gte(events.eventDate, today),
+                ),
+                and(
+                  ne(eventStepAssignees.kind, "food_pickup"),
+                  eq(eventSteps.status, "open"),
+                  isNull(eventSteps.notNeededAt),
+                ),
+              ),
+            ),
+          )
+          .orderBy(
+            asc(sql`${events.eventDate} < ${today}::date`),
+            asc(sql`abs(${events.eventDate} - ${today}::date)`),
+            asc(eventStepAssignees.kind),
+            asc(events.id),
+            asc(eventStepAssignees.id),
+          )
+          .limit(MAX_USER_STEPS + 1) as unknown as Promise<
+          {
+            assignment_id: string;
+            kind: AssignableStepKind;
+            event_id: string;
+            event_name: string;
+            event_date: DateOnly;
+            pickup_time: string | null;
+            step_status: TaskStatus;
+          }[]
+        >,
     ),
     MAX_USER_STEPS,
   );
@@ -761,64 +832,158 @@ export async function listEventReminderCandidates(
   if (!isDbDate(fromDate)) {
     return refused();
   }
-  const read = capped(
-    await query<
-      Omit<EventReminderCandidate, "log"> & {
-        log: (Omit<EventReminderCandidate["log"][number], "claimed_at"> & {
-          claimed_at: string;
-        })[];
-      }
-    >(
-      db,
-      sql`select e.id, e.guild_id, e.name, e.event_date, e.thread_id, e.thread_status,
-        e.created_by, e.pickup_time, g.timezone,
-        g.officer_role_id as events_director_role_id, g.marketing_role_id,
-        g.events_committee_role_id, ${STEP_STATUSES_OF_EVENT} as steps,
-        coalesce((
-          select json_agg(json_build_object('kind', a.kind, 'user_id', a.user_id)
-            order by a.created_at, a.id)
-          from discord_bot.event_step_assignees a
-          where a.event_id = e.id and a.guild_id = e.guild_id and a.removed_at is null
-        ), '[]'::json) as assignees,
-        coalesce((
-          select json_agg(json_build_object('kind', l.kind,
-            'reminder_date', l.reminder_date, 'state', l.state,
-            'claimed_at', l.claimed_at))
-          from discord_bot.event_reminder_log l
-          where l.event_id = e.id and l.reminder_date >= ${fromDate}
-        ), '[]'::json) as log
-      from discord_bot.events e
-      join discord_bot.managed_channels c
-        on c.guild_id = e.guild_id and c.channel_id = e.channel_id
-      join discord_bot.guild_config g on g.guild_id = e.guild_id
-      where e.status = 'active' and e.deleted_at is null
-        and (e.event_date >= ${fromDate} or exists (
-          select 1 from discord_bot.event_steps post
-          where post.event_id = e.id and post.kind = 'engage_post' and post.status = 'done'
-            and post.completed_at >= ${fromDate}::date - 9
-            and not exists (
-              select 1 from discord_bot.event_steps picture
-              where picture.event_id = e.id and picture.kind = 'engage_picture'
-                and picture.status = 'done')))
-        and c.status = 'active' and g.reminders_enabled
-      order by e.event_date, e.id limit ${MAX_REMINDER_EVENTS + 1}`,
-    ),
-    MAX_REMINDER_EVENTS,
-  );
-  if (!read.ok) {
-    return read;
+  const found = await read(db, async (orm) => {
+    const post = alias(eventSteps, "post");
+    const picture = alias(eventSteps, "picture");
+    const page = await orm
+      .select({
+        id: events.id,
+        guild_id: events.guildId,
+        name: events.name,
+        event_date: events.eventDate,
+        thread_id: events.threadId,
+        thread_status: events.threadStatus,
+        created_by: events.createdBy,
+        pickup_time: events.pickupTime,
+        timezone: guildConfig.timezone,
+        events_director_role_id: guildConfig.officerRoleId,
+        marketing_role_id: guildConfig.marketingRoleId,
+        events_committee_role_id: guildConfig.eventsCommitteeRoleId,
+      })
+      .from(events)
+      .innerJoin(
+        managedChannels,
+        and(
+          eq(managedChannels.guildId, events.guildId),
+          eq(managedChannels.channelId, events.channelId),
+        ),
+      )
+      .innerJoin(guildConfig, eq(guildConfig.guildId, events.guildId))
+      .where(
+        and(
+          eq(events.status, "active"),
+          isNull(events.deletedAt),
+          or(
+            gte(events.eventDate, fromDate),
+            exists(
+              orm
+                .select({ one: sql`1` })
+                .from(post)
+                .where(
+                  and(
+                    eq(post.eventId, events.id),
+                    eq(post.kind, "engage_post"),
+                    eq(post.status, "done"),
+                    gte(
+                      post.completedAt,
+                      sql`(${fromDate}::date - 9)::timestamptz`,
+                    ),
+                    notExists(
+                      orm
+                        .select({ one: sql`1` })
+                        .from(picture)
+                        .where(
+                          and(
+                            eq(picture.eventId, events.id),
+                            eq(picture.kind, "engage_picture"),
+                            eq(picture.status, "done"),
+                          ),
+                        ),
+                    ),
+                  ),
+                ),
+            ),
+          ),
+          eq(managedChannels.status, "active"),
+          eq(guildConfig.remindersEnabled, true),
+        ),
+      )
+      .orderBy(asc(events.eventDate), asc(events.id))
+      .limit(MAX_REMINDER_EVENTS + 1);
+    const ids = page.map((event) => event.id);
+    if (ids.length === 0) {
+      return [];
+    }
+    const steps = await orm
+      .select({
+        event_id: eventSteps.eventId,
+        kind: eventSteps.kind,
+        status: eventSteps.status,
+        completed_at: eventSteps.completedAt,
+        not_needed_at: eventSteps.notNeededAt,
+      })
+      .from(eventSteps)
+      .where(inArray(eventSteps.eventId, ids));
+    const assignees = await orm
+      .select({
+        event_id: eventStepAssignees.eventId,
+        kind: eventStepAssignees.kind,
+        user_id: eventStepAssignees.userId,
+      })
+      .from(eventStepAssignees)
+      .where(
+        and(
+          inArray(eventStepAssignees.eventId, ids),
+          isNull(eventStepAssignees.removedAt),
+        ),
+      )
+      .orderBy(asc(eventStepAssignees.createdAt), asc(eventStepAssignees.id));
+    const logs = await orm
+      .select({
+        event_id: eventReminderLog.eventId,
+        kind: eventReminderLog.kind,
+        reminder_date: eventReminderLog.reminderDate,
+        state: eventReminderLog.state,
+        claimed_at: eventReminderLog.claimedAt,
+      })
+      .from(eventReminderLog)
+      .where(
+        and(
+          inArray(eventReminderLog.eventId, ids),
+          gte(eventReminderLog.reminderDate, fromDate),
+        ),
+      );
+    return page.map((event) => ({
+      ...event,
+      steps: steps
+        .filter((step) => step.event_id === event.id)
+        .map((step) => ({
+          kind: step.kind,
+          status: step.status,
+          completed_at: step.completed_at,
+          not_needed: step.not_needed_at !== null,
+        })),
+      assignees: assignees
+        .filter((assignee) => assignee.event_id === event.id)
+        .map(({ kind, user_id }) => ({
+          kind: kind as AssignableStepKind,
+          user_id,
+        })),
+      log: logs
+        .filter((log) => log.event_id === event.id)
+        .map((log) => ({
+          kind: log.kind,
+          reminder_date: log.reminder_date as DateOnly,
+          state: log.state,
+          claimed_at: new Date(log.claimed_at),
+        })),
+    }));
+  });
+  if (!found.ok) {
+    return found;
+  }
+  const capture = capped(found, MAX_REMINDER_EVENTS);
+  if (!capture.ok) {
+    return capture;
   }
   return {
     ok: true,
     value: {
-      ...read.value,
-      rows: read.value.rows.map((event) => ({
+      ...capture.value,
+      rows: capture.value.rows.map((event): EventReminderCandidate => ({
         ...event,
+        event_date: event.event_date as DateOnly,
         pickup_time: hoursAndMinutes(event.pickup_time),
-        log: event.log.map((log) => ({
-          ...log,
-          claimed_at: new Date(log.claimed_at),
-        })),
       })),
     },
   };
@@ -830,13 +995,34 @@ export async function listStaleEventReminderClaims(
   { claimedBefore }: { claimedBefore: Date },
 ): Promise<DbResult<CappedList<EventReminderStaleClaim>>> {
   return capped(
-    await query<EventReminderStaleClaim>(
+    await read(
       db,
-      sql`select event_id, kind, reminder_date, claim_token, attempts, claimed_at
-      from discord_bot.event_reminder_log
-      where state = 'claimed' and claimed_at < ${claimedBefore.toISOString()}
-      order by claimed_at, event_id, kind, reminder_date
-      limit ${MAX_STALE_CLAIMS + 1}`,
+      (orm) =>
+        orm
+          .select({
+            event_id: eventReminderLog.eventId,
+            kind: eventReminderLog.kind,
+            reminder_date: eventReminderLog.reminderDate,
+            claim_token: eventReminderLog.claimToken,
+            attempts: eventReminderLog.attempts,
+            claimed_at: eventReminderLog.claimedAt,
+          })
+          .from(eventReminderLog)
+          .where(
+            and(
+              eq(eventReminderLog.state, "claimed"),
+              lt(eventReminderLog.claimedAt, claimedBefore.toISOString()),
+            ),
+          )
+          .orderBy(
+            asc(eventReminderLog.claimedAt),
+            asc(eventReminderLog.eventId),
+            asc(eventReminderLog.kind),
+            asc(eventReminderLog.reminderDate),
+          )
+          .limit(MAX_STALE_CLAIMS + 1) as unknown as Promise<
+          EventReminderStaleClaim[]
+        >,
     ),
     MAX_STALE_CLAIMS,
   );
@@ -868,13 +1054,36 @@ export async function claimEventReminder(
   return write(db, async (orm) => {
     // One statement: the row is inserted only for an event the reminder is allowed for,
     // and a row already there, whoever holds it, is left as it is.
+    const allowed = allowedEvent(
+      orm,
+      key.eventId,
+      key.kind,
+      key.reminderDate,
+    ).as("allowed");
     const [claimed] = await orm
       .insert(eventReminderLog)
       .select(
-        dsql`select ${events.id}, ${key.kind}::discord_bot.event_reminder_kind,
-          ${key.reminderDate}::date, 'claimed'::discord_bot.reminder_state,
-          gen_random_uuid(), 1, now(), null::timestamptz, null::discord_bot.discord_id
-          ${fromAllowedEvent(key.eventId, key.kind, key.reminderDate)}`,
+        orm
+          .select({
+            eventId: allowed.id,
+            kind: sql<EventReminderKind>`${key.kind}::discord_bot.event_reminder_kind`.as(
+              "kind",
+            ),
+            reminderDate: sql<string>`${key.reminderDate}::date`.as(
+              "reminder_date",
+            ),
+            state: sql<"claimed">`'claimed'::discord_bot.reminder_state`.as(
+              "state",
+            ),
+            claimToken: sql<string>`gen_random_uuid()`.as("claim_token"),
+            attempts: sql<number>`1`.as("attempts"),
+            claimedAt: sql<string>`now()`.as("claimed_at"),
+            sentAt: sql<string | null>`null::timestamptz`.as("sent_at"),
+            messageId: sql<string | null>`null::discord_bot.discord_id`.as(
+              "message_id",
+            ),
+          })
+          .from(allowed),
       )
       .onConflictDoNothing({
         target: [
@@ -900,9 +1109,9 @@ export async function reclaimEventReminder(
     const [reclaimed] = await orm
       .update(eventReminderLog)
       .set({
-        claimToken: dsql`gen_random_uuid()`,
-        claimedAt: dsql`now()`,
-        attempts: dsql`${eventReminderLog.attempts} + 1`,
+        claimToken: sql`gen_random_uuid()`,
+        claimedAt: sql`now()`,
+        attempts: sql`${eventReminderLog.attempts} + 1`,
       })
       .where(
         and(
@@ -913,14 +1122,15 @@ export async function reclaimEventReminder(
           eq(eventReminderLog.claimToken, key.claimToken),
           lt(
             eventReminderLog.claimedAt,
-            dsql`now() - make_interval(secs => ${STALE_CLAIM_MS / 1000}::int)`,
+            sql`now() - make_interval(secs => ${STALE_CLAIM_MS / 1000}::int)`,
           ),
           exists(
-            dsql`(select 1 ${fromAllowedEvent(
-              dsql`${eventReminderLog.eventId}`,
+            allowedEvent(
+              orm,
+              eventReminderLog.eventId,
               key.kind,
               key.reminderDate,
-            )})`,
+            ),
           ),
         ),
       )
@@ -940,7 +1150,7 @@ export async function markEventReminderSent(
   return write(db, async (orm) => {
     const marked = await orm
       .update(eventReminderLog)
-      .set({ state: "sent", sentAt: dsql`now()`, messageId: key.messageId })
+      .set({ state: "sent", sentAt: sql`now()`, messageId: key.messageId })
       .where(heldEventClaim(key))
       .returning({ eventId: eventReminderLog.eventId });
     return marked.length > 0;
@@ -956,7 +1166,7 @@ function heldEventClaim(key: EventReminderKey & { claimToken: string }): SQL {
       eq(eventReminderLog.reminderDate, key.reminderDate),
       eq(eventReminderLog.state, "claimed"),
       eq(eventReminderLog.claimToken, key.claimToken),
-    ) ?? dsql`true`
+    ) ?? sql`true`
   );
 }
 
@@ -1033,7 +1243,7 @@ export async function closeStaleEventClaim(
                   or(
                     gte(events.eventDate, key.beforeDate),
                     and(
-                      dsql`${key.reminderDate}::date >= ${key.beforeDate}::date`,
+                      sql`${key.reminderDate}::date >= ${key.beforeDate}::date`,
                       eventReminderDayOpen(
                         key.kind,
                         key.reminderDate,

@@ -1,22 +1,38 @@
-import { and, eq, sql as dsql } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
 import type { DbClient } from "./client.ts";
-import { EVENT_COLUMNS } from "./events.ts";
-import { capped, firstRow, query, sql, transact } from "./internal.ts";
+import { EVENT_ROW } from "./events.ts";
+import { updateRecorded } from "./history.ts";
+import { capped, firstRow, read, transact } from "./internal.ts";
 import type { DbResult } from "./errors.ts";
-import { jobRuns, managedChannels } from "./schema.ts";
+import { events, jobRuns, managedChannels } from "./schema.ts";
 import type { CappedList, EventRow, ManagedChannel } from "./types.ts";
 
 const MAX_CHANNELS = 500;
+
+const CHANNEL_ROW = {
+  guild_id: managedChannels.guildId,
+  channel_id: managedChannels.channelId,
+  status: managedChannels.status,
+};
 
 export async function getManagedChannel(
   db: DbClient,
   { guildId, channelId }: { guildId: string; channelId: string },
 ): Promise<DbResult<ManagedChannel | null>> {
   return firstRow(
-    await query<ManagedChannel>(
+    await read(
       db,
-      sql`select guild_id, channel_id, status from discord_bot.managed_channels
-      where guild_id = ${guildId} and channel_id = ${channelId} limit 1`,
+      (orm) =>
+        orm
+          .select(CHANNEL_ROW)
+          .from(managedChannels)
+          .where(
+            and(
+              eq(managedChannels.guildId, guildId),
+              eq(managedChannels.channelId, channelId),
+            ),
+          )
+          .limit(1) as unknown as Promise<ManagedChannel[]>,
     ),
   );
 }
@@ -26,11 +42,15 @@ export async function listManagedChannels(
   { guildId }: { guildId: string },
 ): Promise<DbResult<CappedList<ManagedChannel>>> {
   return capped(
-    await query<ManagedChannel>(
+    await read(
       db,
-      sql`select guild_id, channel_id, status from discord_bot.managed_channels
-      where guild_id = ${guildId}
-      order by channel_id limit ${MAX_CHANNELS + 1}`,
+      (orm) =>
+        orm
+          .select(CHANNEL_ROW)
+          .from(managedChannels)
+          .where(eq(managedChannels.guildId, guildId))
+          .orderBy(asc(managedChannels.channelId))
+          .limit(MAX_CHANNELS + 1) as unknown as Promise<ManagedChannel[]>,
     ),
     MAX_CHANNELS,
   );
@@ -41,11 +61,15 @@ export async function listActiveManagedChannels(
   db: DbClient,
 ): Promise<DbResult<CappedList<ManagedChannel>>> {
   return capped(
-    await query<ManagedChannel>(
+    await read(
       db,
-      sql`select guild_id, channel_id, status from discord_bot.managed_channels
-      where status = 'active'
-      order by guild_id, channel_id limit ${MAX_CHANNELS + 1}`,
+      (orm) =>
+        orm
+          .select(CHANNEL_ROW)
+          .from(managedChannels)
+          .where(eq(managedChannels.status, "active"))
+          .orderBy(asc(managedChannels.guildId), asc(managedChannels.channelId))
+          .limit(MAX_CHANNELS + 1) as unknown as Promise<ManagedChannel[]>,
     ),
     MAX_CHANNELS,
   );
@@ -64,12 +88,22 @@ export async function listRecentEventsInChannel(
   }: { guildId: string; channelId: string; limit: number },
 ): Promise<DbResult<CappedList<EventRow>>> {
   return capped(
-    await query<EventRow>(
+    await read(
       db,
-      sql`select ${EVENT_COLUMNS} from discord_bot.events
-      where guild_id = ${guildId} and channel_id = ${channelId}
-        and thread_status = 'active' and deleted_at is null
-      order by updated_at desc, id limit ${limit + 1}`,
+      (orm) =>
+        orm
+          .select(EVENT_ROW)
+          .from(events)
+          .where(
+            and(
+              eq(events.guildId, guildId),
+              eq(events.channelId, channelId),
+              eq(events.threadStatus, "active"),
+              isNull(events.deletedAt),
+            ),
+          )
+          .orderBy(desc(events.updatedAt), asc(events.id))
+          .limit(limit + 1) as unknown as Promise<EventRow[]>,
     ),
     limit,
   );
@@ -81,24 +115,24 @@ export async function markChannelUnavailable(
   { guildId, channelId }: { guildId: string; channelId: string },
 ): Promise<DbResult<boolean>> {
   return transact(db, async (tx) => {
-    const changedRows = await tx
-      .update(managedChannels)
-      .set({ status: "unavailable" })
-      .where(
-        and(
-          eq(managedChannels.guildId, guildId),
-          eq(managedChannels.channelId, channelId),
-          eq(managedChannels.status, "active"),
-        ),
-      )
-      .returning({ channelId: managedChannels.channelId });
+    const changedRows = await updateRecorded(
+      tx,
+      managedChannels,
+      { status: "unavailable" },
+      and(
+        eq(managedChannels.guildId, guildId),
+        eq(managedChannels.channelId, channelId),
+        eq(managedChannels.status, "active"),
+      ),
+      { channelId: managedChannels.channelId },
+    );
     const changed = changedRows.length > 0;
 
     // The health check reads the latest of these, so the finding is kept either way.
     await tx.insert(jobRuns).values({
       jobName: "mark_channel_unavailable",
       status: "succeeded",
-      finishedAt: dsql`now()`,
+      finishedAt: sql`now()`,
       results: { guild_id: guildId, channel_id: channelId, changed },
     });
     return changed;

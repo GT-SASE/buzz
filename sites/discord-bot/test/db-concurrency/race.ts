@@ -7,7 +7,7 @@ import {
   pgConnection,
   type Connection,
 } from "../db/harness.ts";
-import { pgOrm, pgSql } from "../support/sql-client.ts";
+import { pgOrm } from "../support/sql-client.ts";
 import {
   botUrlForDatabase,
   concurrencyContext,
@@ -134,7 +134,7 @@ export function raceDatabase(): RaceDatabase {
     observer = client;
     cleanups.unshift(() => client.end());
     const pool = new pg.Pool({ connectionString: botUrl });
-    bot = createDbClient(pgSql(pool), pgOrm(pool));
+    bot = createDbClient(pgOrm(pool));
     cleanups.unshift(() => pool.end());
   }, HOOK_TIMEOUT_MS);
 

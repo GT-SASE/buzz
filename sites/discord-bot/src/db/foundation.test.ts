@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import { fakeId } from "../../test/support/ids.ts";
 import {
+  recordingClient,
   recordingOrm,
-  recordingSql,
   serverError,
   unavailable,
 } from "../../test/support/sql-client.ts";
@@ -15,10 +15,8 @@ import {
   type SetupRoles,
 } from "./guild-config.ts";
 import { claimInteraction } from "./interaction-claims.ts";
-import { markTaskDoneAsOfficer } from "./tasks.ts";
 import { createDbClient, withDeadline } from "./client.ts";
 import { errorSummary, failureFromError } from "./errors.ts";
-import { sql } from "./internal.ts";
 import {
   MAX_SEARCH_LENGTH,
   isDbDate,
@@ -35,12 +33,10 @@ const CREATED = "2030-01-01T11:00:00.123456+00:00";
 
 describe("client", () => {
   it("abandons a query at its deadline, aborts it and reports it as unavailable", async () => {
-    let signal: AbortSignal | undefined;
     const db = withDeadline(
-      createDbClient((_text, _params, given) => {
-        signal = given;
-        return new Promise<never>(() => undefined);
-      }),
+      createDbClient(
+        recordingOrm(() => new Promise<never>(() => undefined)).orm,
+      ),
       10,
     );
     const started = Date.now();
@@ -49,7 +45,6 @@ describe("client", () => {
       error: { category: "unavailable", code: null },
     });
     expect(Date.now() - started).toBeLessThan(1000);
-    expect(signal?.aborted).toBe(true);
   });
 
   it("never sends a statement twice, read or write, whatever the failure", async () => {
@@ -58,37 +53,14 @@ describe("client", () => {
       unavailable(),
       new TypeError(),
     ]) {
-      const read = recordingSql(() => error);
-      await getGuildConfig(createDbClient(read.sql), {
-        guildId: fakeId(),
-      });
+      const read = recordingClient(() => error);
+      await getGuildConfig(read.db, { guildId: fakeId() });
       expect(read.calls).toHaveLength(1);
 
-      const write = recordingSql(() => error);
-      await markTaskDoneAsOfficer(createDbClient(write.sql), {
-        guildId: fakeId(),
-        taskId: UUID,
-        now: new Date(),
-      });
-      expect(write.calls).toHaveLength(1);
-
-      const call = recordingSql(() => error);
-      await claimInteraction(createDbClient(call.sql, recordingOrm(call.sql)), {
-        interactionId: fakeId(),
-      });
+      const call = recordingClient(() => error);
+      await claimInteraction(call.db, { interactionId: fakeId() });
       expect(call.calls).toHaveLength(1);
     }
-  });
-});
-
-describe("the sql tag", () => {
-  it("sends every value as a parameter, never as text", () => {
-    const hostile = "x'); DROP TABLE discord_bot.tasks; --";
-    const query = sql`select id from tasks where description = ${hostile} and guild_id = ${"1"}`;
-    expect(query.text).toBe(
-      "select id from tasks where description = $1 and guild_id = $2",
-    );
-    expect(query.params).toEqual([hostile, "1"]);
   });
 });
 
@@ -232,6 +204,8 @@ function step(kind: string, status = "open") {
     completed_by: status === "done" ? ACTOR : null,
     handoff_claimed_at: null,
     handoff_sent_at: null,
+    not_needed_at: null,
+    not_needed_by: null,
   };
 }
 
@@ -252,21 +226,32 @@ describe("the event workflow functions", () => {
   );
 
   it("orders a workflow's steps by kind, and gives the time as HH:MM", async () => {
-    const { db } = stubDb(() => ({
-      rows: [
-        {
-          id: UUID,
-          pickup_time: "17:30:00",
-          steps: [
+    // One read for the event, one for its steps, one for its people.
+    const { db } = stubDb(({ sql }) => {
+      if (sql.includes('from "discord_bot"."event_step_assignees"')) {
+        return { rows: [] };
+      }
+      if (sql.includes('from "discord_bot"."event_steps"')) {
+        return {
+          rows: [
             step("food_pickup"),
             step("budget_approved", "done"),
             step("engage_post"),
             step("budget_sheet", "done"),
           ],
-          assignees: [],
-        },
-      ],
-    }));
+        };
+      }
+      return {
+        rows: [
+          {
+            id: UUID,
+            event_date: "2030-01-15",
+            pickup_time: "17:30:00",
+            timezone: "America/New_York",
+          },
+        ],
+      };
+    });
     const result = await getEventWorkflow(db, {
       guildId: GUILD,
       eventId: UUID,

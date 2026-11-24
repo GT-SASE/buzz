@@ -1,0 +1,1980 @@
+{
+  "id": "90d00591-35e5-4ff6-a4db-759fa9a0bd13",
+  "prevId": "5ad44bc6-dda8-402f-8cf8-614f5619039c",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "discord_bot.config_audit": {
+      "name": "config_audit",
+      "schema": "discord_bot",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "config_audit_id_seq",
+            "schema": "discord_bot",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "guild_id": {
+          "name": "guild_id",
+          "type": "discord_bot.discord_id",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "actor_id": {
+          "name": "actor_id",
+          "type": "discord_bot.discord_id",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "action": {
+          "name": "action",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "old_values": {
+          "name": "old_values",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "new_values": {
+          "name": "new_values",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "version_after": {
+          "name": "version_after",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "config_audit_guild_idx": {
+          "name": "config_audit_guild_idx",
+          "columns": [
+            {
+              "expression": "guild_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "first"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "config_audit_guild_id_fkey": {
+          "name": "config_audit_guild_id_fkey",
+          "tableFrom": "config_audit",
+          "tableTo": "guild_config",
+          "schemaTo": "discord_bot",
+          "columnsFrom": ["guild_id"],
+          "columnsTo": ["guild_id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "config_audit_pkey": {
+          "name": "config_audit_pkey",
+          "columns": ["id"]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "config_audit_action_known": {
+          "name": "config_audit_action_known",
+          "value": "\"discord_bot\".\"config_audit\".\"action\" = ANY (ARRAY['role_bindings'::text, 'settings'::text])"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "discord_bot.event_reminder_log": {
+      "name": "event_reminder_log",
+      "schema": "discord_bot",
+      "columns": {
+        "event_id": {
+          "name": "event_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "event_reminder_kind",
+          "typeSchema": "discord_bot",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reminder_date": {
+          "name": "reminder_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "state": {
+          "name": "state",
+          "type": "reminder_state",
+          "typeSchema": "discord_bot",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'claimed'"
+        },
+        "claim_token": {
+          "name": "claim_token",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "attempts": {
+          "name": "attempts",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "claimed_at": {
+          "name": "claimed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "sent_at": {
+          "name": "sent_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "message_id": {
+          "name": "message_id",
+          "type": "discord_bot.discord_id",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "event_reminder_log_open_claims_idx": {
+          "name": "event_reminder_log_open_claims_idx",
+          "columns": [
+            {
+              "expression": "claimed_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"discord_bot\".\"event_reminder_log\".\"state\" = 'claimed'::discord_bot.reminder_state",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "event_reminder_log_event_id_fkey": {
+          "name": "event_reminder_log_event_id_fkey",
+          "tableFrom": "event_reminder_log",
+          "tableTo": "events",
+          "schemaTo": "discord_bot",
+          "columnsFrom": ["event_id"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "event_reminder_log_pkey": {
+          "name": "event_reminder_log_pkey",
+          "columns": ["event_id", "kind", "reminder_date"]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "event_reminder_log_attempts_positive": {
+          "name": "event_reminder_log_attempts_positive",
+          "value": "\"discord_bot\".\"event_reminder_log\".\"attempts\" >= 1"
+        },
+        "event_reminder_log_date_range": {
+          "name": "event_reminder_log_date_range",
+          "value": "\"discord_bot\".\"event_reminder_log\".\"reminder_date\" >= '2000-01-01'::date AND \"discord_bot\".\"event_reminder_log\".\"reminder_date\" <= '9999-12-31'::date"
+        },
+        "event_reminder_log_message_only_when_sent": {
+          "name": "event_reminder_log_message_only_when_sent",
+          "value": "\"discord_bot\".\"event_reminder_log\".\"message_id\" IS NULL OR \"discord_bot\".\"event_reminder_log\".\"state\" = 'sent'::discord_bot.reminder_state"
+        },
+        "event_reminder_log_sent_at_matches_state": {
+          "name": "event_reminder_log_sent_at_matches_state",
+          "value": "(\"discord_bot\".\"event_reminder_log\".\"sent_at\" IS NOT NULL) = (\"discord_bot\".\"event_reminder_log\".\"state\" = 'sent'::discord_bot.reminder_state)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "discord_bot.event_step_assignees": {
+      "name": "event_step_assignees",
+      "schema": "discord_bot",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "event_id": {
+          "name": "event_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "guild_id": {
+          "name": "guild_id",
+          "type": "discord_bot.discord_id",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "event_step_kind",
+          "typeSchema": "discord_bot",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "discord_bot.discord_id",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "assigned_by": {
+          "name": "assigned_by",
+          "type": "discord_bot.discord_id",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "removed_at": {
+          "name": "removed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "removed_by": {
+          "name": "removed_by",
+          "type": "discord_bot.discord_id",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "event_step_assignees_by_user_idx": {
+          "name": "event_step_assignees_by_user_idx",
+          "columns": [
+            {
+              "expression": "guild_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"discord_bot\".\"event_step_assignees\".\"removed_at\" IS NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "event_step_assignees_live_uq": {
+          "name": "event_step_assignees_live_uq",
+          "columns": [
+            {
+              "expression": "event_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "kind",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"discord_bot\".\"event_step_assignees\".\"removed_at\" IS NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "event_step_assignees_event_id_guild_id_fkey": {
+          "name": "event_step_assignees_event_id_guild_id_fkey",
+          "tableFrom": "event_step_assignees",
+          "tableTo": "events",
+          "schemaTo": "discord_bot",
+          "columnsFrom": ["event_id", "guild_id"],
+          "columnsTo": ["id", "guild_id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "event_step_assignees_pkey": {
+          "name": "event_step_assignees_pkey",
+          "columns": ["id"]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "event_step_assignees_kind_assignable": {
+          "name": "event_step_assignees_kind_assignable",
+          "value": "\"discord_bot\".\"event_step_assignees\".\"kind\" <> ALL (ARRAY['budget_approved', 'engage_picture']::discord_bot.event_step_kind[])"
+        },
+        "event_step_assignees_removed_together": {
+          "name": "event_step_assignees_removed_together",
+          "value": "(\"discord_bot\".\"event_step_assignees\".\"removed_at\" IS NULL) = (\"discord_bot\".\"event_step_assignees\".\"removed_by\" IS NULL)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "discord_bot.event_steps": {
+      "name": "event_steps",
+      "schema": "discord_bot",
+      "columns": {
+        "event_id": {
+          "name": "event_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "guild_id": {
+          "name": "guild_id",
+          "type": "discord_bot.discord_id",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "event_step_kind",
+          "typeSchema": "discord_bot",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "task_status",
+          "typeSchema": "discord_bot",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'open'"
+        },
+        "completed_at": {
+          "name": "completed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "completed_by": {
+          "name": "completed_by",
+          "type": "discord_bot.discord_id",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "handoff_claimed_at": {
+          "name": "handoff_claimed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "handoff_sent_at": {
+          "name": "handoff_sent_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "not_needed_at": {
+          "name": "not_needed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "not_needed_by": {
+          "name": "not_needed_by",
+          "type": "discord_bot.discord_id",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "event_steps_event_id_guild_id_fkey": {
+          "name": "event_steps_event_id_guild_id_fkey",
+          "tableFrom": "event_steps",
+          "tableTo": "events",
+          "schemaTo": "discord_bot",
+          "columnsFrom": ["event_id", "guild_id"],
+          "columnsTo": ["id", "guild_id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "event_steps_pkey": {
+          "name": "event_steps_pkey",
+          "columns": ["event_id", "kind"]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "event_steps_completed_by_matches_status": {
+          "name": "event_steps_completed_by_matches_status",
+          "value": "(\"discord_bot\".\"event_steps\".\"completed_by\" IS NOT NULL) = (\"discord_bot\".\"event_steps\".\"status\" = 'done'::discord_bot.task_status)"
+        },
+        "event_steps_completed_matches_status": {
+          "name": "event_steps_completed_matches_status",
+          "value": "(\"discord_bot\".\"event_steps\".\"completed_at\" IS NOT NULL) = (\"discord_bot\".\"event_steps\".\"status\" = 'done'::discord_bot.task_status)"
+        },
+        "event_steps_handoff_only_when_done": {
+          "name": "event_steps_handoff_only_when_done",
+          "value": "\"discord_bot\".\"event_steps\".\"handoff_claimed_at\" IS NULL OR (\"discord_bot\".\"event_steps\".\"status\" = 'done'::discord_bot.task_status AND \"discord_bot\".\"event_steps\".\"kind\" <> 'food_pickup'::discord_bot.event_step_kind)"
+        },
+        "event_steps_handoff_sent_after_claim": {
+          "name": "event_steps_handoff_sent_after_claim",
+          "value": "\"discord_bot\".\"event_steps\".\"handoff_sent_at\" IS NULL OR \"discord_bot\".\"event_steps\".\"handoff_claimed_at\" IS NOT NULL"
+        },
+        "event_steps_not_needed_together": {
+          "name": "event_steps_not_needed_together",
+          "value": "(\"discord_bot\".\"event_steps\".\"not_needed_at\" IS NULL) = (\"discord_bot\".\"event_steps\".\"not_needed_by\" IS NULL)"
+        },
+        "event_steps_not_needed_only_open_slides": {
+          "name": "event_steps_not_needed_only_open_slides",
+          "value": "\"discord_bot\".\"event_steps\".\"not_needed_at\" IS NULL OR (\"discord_bot\".\"event_steps\".\"kind\" = 'slides'::discord_bot.event_step_kind AND \"discord_bot\".\"event_steps\".\"status\" = 'open'::discord_bot.task_status)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "discord_bot.events": {
+      "name": "events",
+      "schema": "discord_bot",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "guild_id": {
+          "name": "guild_id",
+          "type": "discord_bot.discord_id",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "channel_id": {
+          "name": "channel_id",
+          "type": "discord_bot.discord_id",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "event_date": {
+          "name": "event_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "thread_id": {
+          "name": "thread_id",
+          "type": "discord_bot.discord_id",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "overview_message_id": {
+          "name": "overview_message_id",
+          "type": "discord_bot.discord_id",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "event_status",
+          "typeSchema": "discord_bot",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'active'"
+        },
+        "thread_status": {
+          "name": "thread_status",
+          "type": "thread_status",
+          "typeSchema": "discord_bot",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "discord_bot.discord_id",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "post_attempt_at": {
+          "name": "post_attempt_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pickup_time": {
+          "name": "pickup_time",
+          "type": "time",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "events_channel_idx": {
+          "name": "events_channel_idx",
+          "columns": [
+            {
+              "expression": "guild_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "channel_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "events_by_thread_idx": {
+          "name": "events_by_thread_idx",
+          "columns": [
+            {
+              "expression": "guild_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"discord_bot\".\"events\".\"thread_id\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "events_open_by_date_idx": {
+          "name": "events_open_by_date_idx",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "event_date",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"discord_bot\".\"events\".\"deleted_at\" IS NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "events_live_by_date_idx": {
+          "name": "events_live_by_date_idx",
+          "columns": [
+            {
+              "expression": "guild_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "event_date",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"discord_bot\".\"events\".\"deleted_at\" IS NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "events_live_thread_uq": {
+          "name": "events_live_thread_uq",
+          "columns": [
+            {
+              "expression": "thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"discord_bot\".\"events\".\"deleted_at\" IS NULL AND \"discord_bot\".\"events\".\"thread_id\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "events_one_pending_create_uq": {
+          "name": "events_one_pending_create_uq",
+          "columns": [
+            {
+              "expression": "guild_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "channel_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_by",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "name",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "event_date",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"discord_bot\".\"events\".\"deleted_at\" IS NULL AND \"discord_bot\".\"events\".\"thread_status\" = 'pending'::discord_bot.thread_status",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "events_guild_id_channel_id_fkey": {
+          "name": "events_guild_id_channel_id_fkey",
+          "tableFrom": "events",
+          "tableTo": "managed_channels",
+          "schemaTo": "discord_bot",
+          "columnsFrom": ["guild_id", "channel_id"],
+          "columnsTo": ["guild_id", "channel_id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "events_pkey": {
+          "name": "events_pkey",
+          "columns": ["id"]
+        }
+      },
+      "uniqueConstraints": {
+        "events_id_guild_unique": {
+          "name": "events_id_guild_unique",
+          "nullsNotDistinct": false,
+          "columns": ["id", "guild_id"]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "events_event_date_range": {
+          "name": "events_event_date_range",
+          "value": "\"discord_bot\".\"events\".\"event_date\" >= '2000-01-01'::date AND \"discord_bot\".\"events\".\"event_date\" <= '9999-12-31'::date"
+        },
+        "events_name_length": {
+          "name": "events_name_length",
+          "value": "char_length(\"discord_bot\".\"events\".\"name\") >= 1"
+        },
+        "events_thread_matches_status": {
+          "name": "events_thread_matches_status",
+          "value": "(\"discord_bot\".\"events\".\"thread_id\" IS NULL) = (\"discord_bot\".\"events\".\"thread_status\" = 'pending'::discord_bot.thread_status)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "discord_bot.guild_config": {
+      "name": "guild_config",
+      "schema": "discord_bot",
+      "columns": {
+        "guild_id": {
+          "name": "guild_id",
+          "type": "discord_bot.discord_id",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "officer_role_id": {
+          "name": "officer_role_id",
+          "type": "discord_bot.discord_id",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "admin_role_id": {
+          "name": "admin_role_id",
+          "type": "discord_bot.discord_id",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "timezone": {
+          "name": "timezone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'America/New_York'"
+        },
+        "reminders_enabled": {
+          "name": "reminders_enabled",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "eboard_role_id": {
+          "name": "eboard_role_id",
+          "type": "discord_bot.discord_id",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "events_committee_role_id": {
+          "name": "events_committee_role_id",
+          "type": "discord_bot.discord_id",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "treasury_role_id": {
+          "name": "treasury_role_id",
+          "type": "discord_bot.discord_id",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "marketing_role_id": {
+          "name": "marketing_role_id",
+          "type": "discord_bot.discord_id",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "guild_config_pkey": {
+          "name": "guild_config_pkey",
+          "columns": ["guild_id"]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "guild_config_admin_not_everyone": {
+          "name": "guild_config_admin_not_everyone",
+          "value": "(\"discord_bot\".\"guild_config\".\"admin_role_id\")::text <> (\"discord_bot\".\"guild_config\".\"guild_id\")::text"
+        },
+        "guild_config_eboard_not_everyone": {
+          "name": "guild_config_eboard_not_everyone",
+          "value": "(\"discord_bot\".\"guild_config\".\"eboard_role_id\")::text <> (\"discord_bot\".\"guild_config\".\"guild_id\")::text"
+        },
+        "guild_config_events_committee_not_everyone": {
+          "name": "guild_config_events_committee_not_everyone",
+          "value": "(\"discord_bot\".\"guild_config\".\"events_committee_role_id\")::text <> (\"discord_bot\".\"guild_config\".\"guild_id\")::text"
+        },
+        "guild_config_marketing_not_everyone": {
+          "name": "guild_config_marketing_not_everyone",
+          "value": "(\"discord_bot\".\"guild_config\".\"marketing_role_id\")::text <> (\"discord_bot\".\"guild_config\".\"guild_id\")::text"
+        },
+        "guild_config_officer_not_everyone": {
+          "name": "guild_config_officer_not_everyone",
+          "value": "(\"discord_bot\".\"guild_config\".\"officer_role_id\")::text <> (\"discord_bot\".\"guild_config\".\"guild_id\")::text"
+        },
+        "guild_config_treasury_not_everyone": {
+          "name": "guild_config_treasury_not_everyone",
+          "value": "(\"discord_bot\".\"guild_config\".\"treasury_role_id\")::text <> (\"discord_bot\".\"guild_config\".\"guild_id\")::text"
+        },
+        "guild_config_version_positive": {
+          "name": "guild_config_version_positive",
+          "value": "\"discord_bot\".\"guild_config\".\"version\" >= 1"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "discord_bot.interaction_claims": {
+      "name": "interaction_claims",
+      "schema": "discord_bot",
+      "columns": {
+        "interaction_id": {
+          "name": "interaction_id",
+          "type": "discord_bot.discord_id",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "claimed_at": {
+          "name": "claimed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "interaction_claims_pkey": {
+          "name": "interaction_claims_pkey",
+          "columns": ["interaction_id"]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {
+        "interaction_claims_read": {
+          "name": "interaction_claims_read",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": ["bot_app"],
+          "using": "true"
+        },
+        "interaction_claims_insert": {
+          "name": "interaction_claims_insert",
+          "as": "PERMISSIVE",
+          "for": "INSERT",
+          "to": ["bot_app"],
+          "withCheck": "true"
+        },
+        "interaction_claims_expire": {
+          "name": "interaction_claims_expire",
+          "as": "PERMISSIVE",
+          "for": "DELETE",
+          "to": ["bot_app"],
+          "using": "\"discord_bot\".\"interaction_claims\".\"claimed_at\" < now() - interval '1 day'"
+        }
+      },
+      "checkConstraints": {},
+      "isRLSEnabled": true
+    },
+    "discord_bot.job_runs": {
+      "name": "job_runs",
+      "schema": "discord_bot",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "job_name": {
+          "name": "job_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "job_run_status",
+          "typeSchema": "discord_bot",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'running'"
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "heartbeat_at": {
+          "name": "heartbeat_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "finished_at": {
+          "name": "finished_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "results": {
+          "name": "results",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        },
+        "error": {
+          "name": "error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "job_runs_latest_idx": {
+          "name": "job_runs_latest_idx",
+          "columns": [
+            {
+              "expression": "job_name",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "started_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "first"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "job_runs_one_running_idx": {
+          "name": "job_runs_one_running_idx",
+          "columns": [
+            {
+              "expression": "job_name",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"discord_bot\".\"job_runs\".\"status\" = 'running'::discord_bot.job_run_status",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "job_runs_pkey": {
+          "name": "job_runs_pkey",
+          "columns": ["id"]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "job_runs_error_size": {
+          "name": "job_runs_error_size",
+          "value": "char_length(\"discord_bot\".\"job_runs\".\"error\") <= 4000"
+        },
+        "job_runs_finished_matches_status": {
+          "name": "job_runs_finished_matches_status",
+          "value": "(\"discord_bot\".\"job_runs\".\"finished_at\" IS NULL) = (\"discord_bot\".\"job_runs\".\"status\" = 'running'::discord_bot.job_run_status)"
+        },
+        "job_runs_job_name_length": {
+          "name": "job_runs_job_name_length",
+          "value": "char_length(\"discord_bot\".\"job_runs\".\"job_name\") >= 1 AND char_length(\"discord_bot\".\"job_runs\".\"job_name\") <= 64"
+        },
+        "job_runs_results_size": {
+          "name": "job_runs_results_size",
+          "value": "char_length((\"discord_bot\".\"job_runs\".\"results\")::text) <= 16000"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "discord_bot.managed_channels": {
+      "name": "managed_channels",
+      "schema": "discord_bot",
+      "columns": {
+        "guild_id": {
+          "name": "guild_id",
+          "type": "discord_bot.discord_id",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "channel_id": {
+          "name": "channel_id",
+          "type": "discord_bot.discord_id",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "managed_channel_status",
+          "typeSchema": "discord_bot",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'active'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "managed_channels_guild_id_fkey": {
+          "name": "managed_channels_guild_id_fkey",
+          "tableFrom": "managed_channels",
+          "tableTo": "guild_config",
+          "schemaTo": "discord_bot",
+          "columnsFrom": ["guild_id"],
+          "columnsTo": ["guild_id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "managed_channels_pkey": {
+          "name": "managed_channels_pkey",
+          "columns": ["guild_id", "channel_id"]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "discord_bot.reminder_log": {
+      "name": "reminder_log",
+      "schema": "discord_bot",
+      "columns": {
+        "task_id": {
+          "name": "task_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "reminder_kind",
+          "typeSchema": "discord_bot",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "due_date": {
+          "name": "due_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "state": {
+          "name": "state",
+          "type": "reminder_state",
+          "typeSchema": "discord_bot",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'claimed'"
+        },
+        "claim_token": {
+          "name": "claim_token",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "attempts": {
+          "name": "attempts",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "claimed_at": {
+          "name": "claimed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "sent_at": {
+          "name": "sent_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "message_id": {
+          "name": "message_id",
+          "type": "discord_bot.discord_id",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "refused_attempts": {
+          "name": "refused_attempts",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        }
+      },
+      "indexes": {
+        "reminder_log_open_claims_idx": {
+          "name": "reminder_log_open_claims_idx",
+          "columns": [
+            {
+              "expression": "claimed_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"discord_bot\".\"reminder_log\".\"state\" = 'claimed'::discord_bot.reminder_state",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "reminder_log_task_id_fkey": {
+          "name": "reminder_log_task_id_fkey",
+          "tableFrom": "reminder_log",
+          "tableTo": "tasks",
+          "schemaTo": "discord_bot",
+          "columnsFrom": ["task_id"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "reminder_log_pkey": {
+          "name": "reminder_log_pkey",
+          "columns": ["task_id", "kind", "due_date"]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "reminder_log_attempts_positive": {
+          "name": "reminder_log_attempts_positive",
+          "value": "\"discord_bot\".\"reminder_log\".\"attempts\" >= 1"
+        },
+        "reminder_log_due_date_range": {
+          "name": "reminder_log_due_date_range",
+          "value": "\"discord_bot\".\"reminder_log\".\"due_date\" >= '2000-01-01'::date AND \"discord_bot\".\"reminder_log\".\"due_date\" <= '9999-12-31'::date"
+        },
+        "reminder_log_message_only_when_sent": {
+          "name": "reminder_log_message_only_when_sent",
+          "value": "\"discord_bot\".\"reminder_log\".\"message_id\" IS NULL OR \"discord_bot\".\"reminder_log\".\"state\" = 'sent'::discord_bot.reminder_state"
+        },
+        "reminder_log_refused_attempts_range": {
+          "name": "reminder_log_refused_attempts_range",
+          "value": "\"discord_bot\".\"reminder_log\".\"refused_attempts\" >= 0 AND \"discord_bot\".\"reminder_log\".\"refused_attempts\" <= \"discord_bot\".\"reminder_log\".\"attempts\""
+        },
+        "reminder_log_sent_at_matches_state": {
+          "name": "reminder_log_sent_at_matches_state",
+          "value": "(\"discord_bot\".\"reminder_log\".\"sent_at\" IS NOT NULL) = (\"discord_bot\".\"reminder_log\".\"state\" = 'sent'::discord_bot.reminder_state)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "discord_bot.row_versions": {
+      "name": "row_versions",
+      "schema": "discord_bot",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "row_versions_id_seq",
+            "schema": "discord_bot",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "source_table": {
+          "name": "source_table",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "operation": {
+          "name": "operation",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "row_id": {
+          "name": "row_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "old_row": {
+          "name": "old_row",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "changed_at": {
+          "name": "changed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "xid": {
+          "name": "xid",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "pg_current_xact_id()::text"
+        }
+      },
+      "indexes": {
+        "row_versions_once_per_change_uq": {
+          "name": "row_versions_once_per_change_uq",
+          "columns": [
+            {
+              "expression": "xid",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "source_table",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "row_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "md5(\"old_row\"::text)",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "row_versions_lookup_idx": {
+          "name": "row_versions_lookup_idx",
+          "columns": [
+            {
+              "expression": "source_table",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "row_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "first"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "row_versions_pkey": {
+          "name": "row_versions_pkey",
+          "columns": ["id"]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "row_versions_operation_known": {
+          "name": "row_versions_operation_known",
+          "value": "\"discord_bot\".\"row_versions\".\"operation\" = ANY (ARRAY['UPDATE'::text, 'DELETE'::text])"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "discord_bot.setup_drafts": {
+      "name": "setup_drafts",
+      "schema": "discord_bot",
+      "columns": {
+        "guild_id": {
+          "name": "guild_id",
+          "type": "discord_bot.discord_id",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "actor_id": {
+          "name": "actor_id",
+          "type": "discord_bot.discord_id",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "officer_role_id": {
+          "name": "officer_role_id",
+          "type": "discord_bot.discord_id",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "admin_role_id": {
+          "name": "admin_role_id",
+          "type": "discord_bot.discord_id",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "eboard_role_id": {
+          "name": "eboard_role_id",
+          "type": "discord_bot.discord_id",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "events_committee_role_id": {
+          "name": "events_committee_role_id",
+          "type": "discord_bot.discord_id",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "treasury_role_id": {
+          "name": "treasury_role_id",
+          "type": "discord_bot.discord_id",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "marketing_role_id": {
+          "name": "marketing_role_id",
+          "type": "discord_bot.discord_id",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fingerprint": {
+          "name": "fingerprint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "setup_drafts_pkey": {
+          "name": "setup_drafts_pkey",
+          "columns": ["guild_id"]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "setup_drafts_admin_not_everyone": {
+          "name": "setup_drafts_admin_not_everyone",
+          "value": "(\"discord_bot\".\"setup_drafts\".\"admin_role_id\")::text <> (\"discord_bot\".\"setup_drafts\".\"guild_id\")::text"
+        },
+        "setup_drafts_eboard_not_everyone": {
+          "name": "setup_drafts_eboard_not_everyone",
+          "value": "(\"discord_bot\".\"setup_drafts\".\"eboard_role_id\")::text <> (\"discord_bot\".\"setup_drafts\".\"guild_id\")::text"
+        },
+        "setup_drafts_events_committee_not_everyone": {
+          "name": "setup_drafts_events_committee_not_everyone",
+          "value": "(\"discord_bot\".\"setup_drafts\".\"events_committee_role_id\")::text <> (\"discord_bot\".\"setup_drafts\".\"guild_id\")::text"
+        },
+        "setup_drafts_fingerprint_shape": {
+          "name": "setup_drafts_fingerprint_shape",
+          "value": "\"discord_bot\".\"setup_drafts\".\"fingerprint\" ~ '^[A-Za-z0-9_-]{8,64}$'::text"
+        },
+        "setup_drafts_marketing_not_everyone": {
+          "name": "setup_drafts_marketing_not_everyone",
+          "value": "(\"discord_bot\".\"setup_drafts\".\"marketing_role_id\")::text <> (\"discord_bot\".\"setup_drafts\".\"guild_id\")::text"
+        },
+        "setup_drafts_officer_not_everyone": {
+          "name": "setup_drafts_officer_not_everyone",
+          "value": "(\"discord_bot\".\"setup_drafts\".\"officer_role_id\")::text <> (\"discord_bot\".\"setup_drafts\".\"guild_id\")::text"
+        },
+        "setup_drafts_treasury_not_everyone": {
+          "name": "setup_drafts_treasury_not_everyone",
+          "value": "(\"discord_bot\".\"setup_drafts\".\"treasury_role_id\")::text <> (\"discord_bot\".\"setup_drafts\".\"guild_id\")::text"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "discord_bot.task_reassignments": {
+      "name": "task_reassignments",
+      "schema": "discord_bot",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "task_reassignments_id_seq",
+            "schema": "discord_bot",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "guild_id": {
+          "name": "guild_id",
+          "type": "discord_bot.discord_id",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "actor_id": {
+          "name": "actor_id",
+          "type": "discord_bot.discord_id",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "task_id": {
+          "name": "task_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "task_reassignments_by_actor_idx": {
+          "name": "task_reassignments_by_actor_idx",
+          "columns": [
+            {
+              "expression": "guild_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "actor_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "task_reassignments_guild_id_fkey": {
+          "name": "task_reassignments_guild_id_fkey",
+          "tableFrom": "task_reassignments",
+          "tableTo": "guild_config",
+          "schemaTo": "discord_bot",
+          "columnsFrom": ["guild_id"],
+          "columnsTo": ["guild_id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "task_reassignments_task_id_fkey": {
+          "name": "task_reassignments_task_id_fkey",
+          "tableFrom": "task_reassignments",
+          "tableTo": "tasks",
+          "schemaTo": "discord_bot",
+          "columnsFrom": ["task_id"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "task_reassignments_pkey": {
+          "name": "task_reassignments_pkey",
+          "columns": ["id"]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "discord_bot.tasks": {
+      "name": "tasks",
+      "schema": "discord_bot",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "event_id": {
+          "name": "event_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "guild_id": {
+          "name": "guild_id",
+          "type": "discord_bot.discord_id",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "assignee_id": {
+          "name": "assignee_id",
+          "type": "discord_bot.discord_id",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "due_date": {
+          "name": "due_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "task_status",
+          "typeSchema": "discord_bot",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'open'"
+        },
+        "completed_at": {
+          "name": "completed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "discord_bot.discord_id",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "tasks_by_creator_idx": {
+          "name": "tasks_by_creator_idx",
+          "columns": [
+            {
+              "expression": "guild_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_by",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "tasks_event_idx": {
+          "name": "tasks_event_idx",
+          "columns": [
+            {
+              "expression": "event_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "tasks_open_by_assignee_idx": {
+          "name": "tasks_open_by_assignee_idx",
+          "columns": [
+            {
+              "expression": "guild_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "assignee_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "due_date",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"discord_bot\".\"tasks\".\"status\" = 'open'::discord_bot.task_status AND \"discord_bot\".\"tasks\".\"deleted_at\" IS NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "tasks_open_by_due_date_idx": {
+          "name": "tasks_open_by_due_date_idx",
+          "columns": [
+            {
+              "expression": "due_date",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "guild_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"discord_bot\".\"tasks\".\"status\" = 'open'::discord_bot.task_status AND \"discord_bot\".\"tasks\".\"deleted_at\" IS NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "tasks_event_id_guild_id_fkey": {
+          "name": "tasks_event_id_guild_id_fkey",
+          "tableFrom": "tasks",
+          "tableTo": "events",
+          "schemaTo": "discord_bot",
+          "columnsFrom": ["event_id", "guild_id"],
+          "columnsTo": ["id", "guild_id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "tasks_pkey": {
+          "name": "tasks_pkey",
+          "columns": ["id"]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "tasks_completed_matches_status": {
+          "name": "tasks_completed_matches_status",
+          "value": "(\"discord_bot\".\"tasks\".\"completed_at\" IS NOT NULL) = (\"discord_bot\".\"tasks\".\"status\" = 'done'::discord_bot.task_status)"
+        },
+        "tasks_description_length": {
+          "name": "tasks_description_length",
+          "value": "char_length(\"discord_bot\".\"tasks\".\"description\") >= 1"
+        },
+        "tasks_due_date_range": {
+          "name": "tasks_due_date_range",
+          "value": "\"discord_bot\".\"tasks\".\"due_date\" >= '2000-01-01'::date AND \"discord_bot\".\"tasks\".\"due_date\" <= '9999-12-31'::date"
+        }
+      },
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {
+    "discord_bot.event_reminder_kind": {
+      "name": "event_reminder_kind",
+      "schema": "discord_bot",
+      "values": [
+        "daily_steps",
+        "pickup_before",
+        "pickup_day",
+        "steps_unassigned",
+        "budget_due",
+        "engage_due",
+        "budget_overdue",
+        "engage_overdue",
+        "engage_picture_late",
+        "marketing_week",
+        "slides_unassigned",
+        "pickup_unset",
+        "marketing_saturday",
+        "slides_due",
+        "slides_tomorrow",
+        "event_today"
+      ]
+    },
+    "discord_bot.event_status": {
+      "name": "event_status",
+      "schema": "discord_bot",
+      "values": ["active", "closed"]
+    },
+    "discord_bot.event_step_kind": {
+      "name": "event_step_kind",
+      "schema": "discord_bot",
+      "values": [
+        "budget_sheet",
+        "engage_post",
+        "engage_picture",
+        "budget_approved",
+        "slides",
+        "food_pickup"
+      ]
+    },
+    "discord_bot.job_run_status": {
+      "name": "job_run_status",
+      "schema": "discord_bot",
+      "values": ["running", "succeeded", "failed"]
+    },
+    "discord_bot.managed_channel_status": {
+      "name": "managed_channel_status",
+      "schema": "discord_bot",
+      "values": ["active", "unavailable", "removed"]
+    },
+    "discord_bot.reminder_kind": {
+      "name": "reminder_kind",
+      "schema": "discord_bot",
+      "values": ["three_days", "one_day", "due_day", "overdue"]
+    },
+    "discord_bot.reminder_state": {
+      "name": "reminder_state",
+      "schema": "discord_bot",
+      "values": ["claimed", "sent", "skipped"]
+    },
+    "discord_bot.task_status": {
+      "name": "task_status",
+      "schema": "discord_bot",
+      "values": ["open", "done"]
+    },
+    "discord_bot.thread_status": {
+      "name": "thread_status",
+      "schema": "discord_bot",
+      "values": ["pending", "active", "missing"]
+    }
+  },
+  "schemas": {
+    "discord_bot": "discord_bot"
+  },
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {
+    "public.pg_timezone_names": {
+      "columns": {
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "name": "pg_timezone_names",
+      "schema": "public",
+      "isExisting": true,
+      "materialized": false
+    }
+  },
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

@@ -30,7 +30,9 @@ import {
 import { saveSetupDraft } from "../../src/db/guild-config.ts";
 import { editTask } from "../../src/db/tasks.ts";
 import type { EventReminderKind } from "../../src/db/types.ts";
-import { pgliteSql } from "../support/sql-client.ts";
+import { pgliteOrm } from "../support/sql-client.ts";
+import { evaluate } from "../../src/db/internal.ts";
+import { sql } from "drizzle-orm";
 import { botClient, must } from "./bot-writes.ts";
 import { insertFinishedJobRun } from "../support/job-runs-fixture.ts";
 import {
@@ -45,6 +47,7 @@ import {
   HOOK_TIMEOUT_MS,
   INSUFFICIENT_PRIVILEGE,
   MIGRATION_OWNER,
+  NO_TRIGGERS,
   OTHER_ROLE,
   createMigratedDb,
   errorCodeOf,
@@ -74,7 +77,9 @@ const ALL_TABLES = [
   "tasks",
 ].sort();
 /** Written by the bot and never read back, so bot_app has no SELECT on it. */
-const NO_READ_TABLES = ["row_versions", "task_reassignments"];
+const NO_READ_TABLES = ["row_versions"];
+/** Read by the bot to count, with nothing seeded here. */
+const COUNTED_TABLES = ["task_reassignments"];
 /** The migration tool's record of applied migrations. */
 const LEDGER_TABLES = ["drizzle_migrations"];
 /** The only table the bot deletes from: claims are worth keeping for a day. */
@@ -215,27 +220,25 @@ describe("grants", () => {
     },
   );
 
-  it.each(["event_steps", "row_versions"])(
-    "bot_app cannot insert into %s, which only a trigger writes",
-    async (table) => {
-      await refused(BOT_APP, `INSERT INTO discord_bot.${table} DEFAULT VALUES`);
-    },
-  );
-
   it.each(
-    [...ALL_TABLES, ...NO_READ_TABLES, ...LEDGER_TABLES].filter(
-      (table) => !DELETABLE_TABLES.includes(table),
-    ),
+    [
+      ...ALL_TABLES,
+      ...COUNTED_TABLES,
+      ...NO_READ_TABLES,
+      ...LEDGER_TABLES,
+    ].filter((table) => !DELETABLE_TABLES.includes(table)),
   )("bot_app cannot DELETE from %s", async (table) => {
     await refused(BOT_APP, `DELETE FROM discord_bot.${table}`);
   });
 
-  it.each([...ALL_TABLES, ...NO_READ_TABLES, ...LEDGER_TABLES])(
-    "bot_app cannot TRUNCATE %s",
-    async (table) => {
-      await refused(BOT_APP, `TRUNCATE discord_bot.${table}`);
-    },
-  );
+  it.each([
+    ...ALL_TABLES,
+    ...COUNTED_TABLES,
+    ...NO_READ_TABLES,
+    ...LEDGER_TABLES,
+  ])("bot_app cannot TRUNCATE %s", async (table) => {
+    await refused(BOT_APP, `TRUNCATE discord_bot.${table}`);
+  });
 
   it("bot_app may delete from the tables DELETABLE_TABLES names, and nothing else", async () => {
     const { rows } = await db.query<{ table_name: string }>(
@@ -300,7 +303,7 @@ describe("grants", () => {
   });
 });
 
-describe("row history", () => {
+describe.skipIf(NO_TRIGGERS)("row history", () => {
   const versionsOf = async (rowId: string) => {
     const { rows } = await db.query<{
       source_table: string;
@@ -348,21 +351,33 @@ describe("row history", () => {
   });
 
   it.each([BOT_APP, OTHER_ROLE])(
-    "%s has no privilege on the row history and cannot touch it",
+    "%s cannot read, change or remove the row history, and only the bot adds to it",
     async (role) => {
       const { rows } = await db.query(
         `SELECT
            has_table_privilege($1, 'discord_bot.row_versions', 'SELECT') AS table_select,
+           has_table_privilege($1, 'discord_bot.row_versions', 'INSERT') AS table_insert,
            has_function_privilege($1, 'discord_bot.record_row_version()', 'EXECUTE') AS fn_execute`,
         [role],
       );
-      expect(rows).toEqual([{ table_select: false, fn_execute: false }]);
+      expect(rows).toEqual([
+        {
+          table_select: false,
+          table_insert: role === BOT_APP,
+          fn_execute: false,
+        },
+      ]);
       for (const sql of [
         `SELECT * FROM discord_bot.row_versions`,
-        `INSERT INTO discord_bot.row_versions (source_table, row_id, old_row) VALUES ('x', 'x', '{}')`,
+        `UPDATE discord_bot.row_versions SET old_row = '{}'`,
         `DELETE FROM discord_bot.row_versions`,
         `TRUNCATE discord_bot.row_versions`,
         `DROP TRIGGER tasks_record_update ON discord_bot.tasks`,
+        ...(role === BOT_APP
+          ? []
+          : [
+              `INSERT INTO discord_bot.row_versions (source_table, operation, row_id, old_row) VALUES ('x', 'UPDATE', 'x', '{}')`,
+            ]),
       ]) {
         await refused(role, sql);
       }
@@ -370,7 +385,7 @@ describe("row history", () => {
   );
 });
 
-describe("deleted and closed rows", () => {
+describe.skipIf(NO_TRIGGERS)("deleted and closed rows", () => {
   const column = async (table: string, name: string, id: string) => {
     const { rows } = await db.query<Record<string, unknown>>(
       `SELECT ${name} FROM discord_bot.${table} WHERE id = $1`,
@@ -1010,15 +1025,12 @@ describe("claimInteraction", () => {
 
 describe("queryAs", () => {
   it("keeps its role while the bot's runner shares the connection", async () => {
-    const run = pgliteSql(db);
-    const signal = new AbortController().signal;
-
     const [asOther, asBot] = await Promise.all([
       queryAs<{ who: string }>(db, OTHER_ROLE, "SELECT current_user AS who"),
-      run("SELECT current_user AS who", [], signal),
+      evaluate(pgliteOrm(db), sql<string>`current_user`),
     ]);
 
     expect(asOther).toEqual([{ who: OTHER_ROLE }]);
-    expect(asBot).toEqual([{ who: BOT_APP }]);
+    expect(asBot).toBe(BOT_APP);
   });
 });

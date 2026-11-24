@@ -19,7 +19,7 @@ import {
   insertTask,
 } from "../db/fixtures.ts";
 import { softDeleteEvent } from "../../src/db/events.ts";
-import { errorCodeOf, fakeId, present } from "../db/harness.ts";
+import { NO_TRIGGERS, errorCodeOf, fakeId, present } from "../db/harness.ts";
 import { botUrlForDatabase, concurrencyContext } from "./global-setup.ts";
 import { raceDatabase, settled } from "./race.ts";
 
@@ -220,160 +220,170 @@ describe("two config saves at once", () => {
  * at the same moment to get past a count. Two writes for the last place must take turns,
  * and only one may get it.
  */
-describe("two writes for the last place under a quota", () => {
-  const insertBySql = `INSERT INTO discord_bot.tasks (event_id, guild_id, assignee_id, description, due_date, created_by)
+// With the triggers present, one connection holds the quota's locks through the trigger
+// while the bot's write waits. The bot's own writes against each other, which hold with
+// or without triggers, are in bot-writes.test.ts.
+describe.skipIf(NO_TRIGGERS)(
+  "two writes for the last place under a quota",
+  () => {
+    const insertBySql = `INSERT INTO discord_bot.tasks (event_id, guild_id, assignee_id, description, due_date, created_by)
                        VALUES ($1, $2, $3, 'Book the room', '${FIXTURE_DUE_DATE}', $4) RETURNING id`;
-  // An edit with the task's own text and date and a new person, which counts as a
-  // reassignment by the actor: the reassignment written, then the task changed.
-  const reassignSql = `INSERT INTO discord_bot.task_reassignments (guild_id, actor_id, task_id)
+    // An edit with the task's own text and date and a new person, which counts as a
+    // reassignment by the actor: the reassignment written, then the task changed.
+    const reassignSql = `INSERT INTO discord_bot.task_reassignments (guild_id, actor_id, task_id)
     SELECT guild_id, $2, id FROM discord_bot.tasks WHERE id = $1`;
-  const reassignedSql =
-    "UPDATE discord_bot.tasks SET assignee_id = $2 WHERE id = $1";
-  const actorLimit = {
-    ok: false,
-    error: { category: "actor_task_limit", code: "CF430" },
-  } as const;
-
-  async function countOf(sql: string, params: unknown[]): Promise<number> {
-    const { rows } = await db.observer.query<{ n: number }>(sql, params);
-    return rows[0]?.n ?? -1;
-  }
-
-  /** New tasks and reassignments by one officer, the two things the daily quota counts. */
-  function officerActions(guildId: string, officer: string): Promise<number> {
-    return countOf(
-      `SELECT (SELECT count(*) FROM discord_bot.tasks WHERE guild_id = $1 AND created_by = $2)::int
-            + (SELECT count(*) FROM discord_bot.task_reassignments WHERE guild_id = $1 AND actor_id = $2)::int AS n`,
-      [guildId, officer],
-    );
-  }
-
-  /** 49 tasks by one officer in the event, one short of their daily quota. */
-  async function nearQuota(guildId: string, eventId: string, officer: string) {
-    const created: string[] = [];
-    for (let index = 0; index < 49; index += 1) {
-      const { rows } = await db.observer.query<{ id: string }>(insertBySql, [
-        eventId,
-        guildId,
-        fakeId(),
-        officer,
-      ]);
-      created.push(present(rows[0]?.id));
-    }
-    return created;
-  }
-
-  const newTask = (guildId: string, eventId: string, actorId: string) => ({
-    guildId,
-    eventId,
-    assigneeId: fakeId(),
-    actorId,
-    description: "Book the room",
-    dueDate: FIXTURE_DUE_DATE as DateOnly,
-  });
-
-  it("an officer's last new task of the day goes to one of two, in different events", async () => {
-    const guild = await insertGuild(db.connection);
-    const eventId = await insertEvent(db.connection, guild);
-    // A second event, so the event's own lock does not make the two take turns and only
-    // the officer's lock can.
-    const otherEvent = await insertEvent(db.connection, guild);
-    const officer = fakeId();
-    await nearQuota(guild.guildId, eventId, officer);
-
-    const second = await db.race(
-      [insertBySql, [eventId, guild.guildId, fakeId(), officer]],
-      (bot) => createTask(bot, newTask(guild.guildId, otherEvent, officer)),
-    );
-
-    expect(second).toEqual(actorLimit);
-    expect(await officerActions(guild.guildId, officer)).toBe(50);
-  });
-
-  it("an event's last free place goes to one of two tasks", async () => {
-    const guild = await insertGuild(db.connection);
-    const eventId = await insertEvent(db.connection, guild);
-    // Each by a different officer, so only the event's limit is reached.
-    for (let index = 0; index < 99; index += 1) {
-      await insertTask(db.connection, guild, eventId);
-    }
-
-    const second = await db.race(
-      [insertBySql, [eventId, guild.guildId, fakeId(), fakeId()]],
-      (bot) => createTask(bot, newTask(guild.guildId, eventId, fakeId())),
-    );
-
-    expect(second).toEqual({
+    const reassignedSql =
+      "UPDATE discord_bot.tasks SET assignee_id = $2 WHERE id = $1";
+    const actorLimit = {
       ok: false,
-      error: { category: "event_task_limit", code: "CF429" },
-    });
-    expect(
-      await countOf(
-        "SELECT count(*)::int AS n FROM discord_bot.tasks WHERE event_id = $1 AND deleted_at IS NULL",
-        [eventId],
-      ),
-    ).toBe(100);
-  });
+      error: { category: "actor_task_limit", code: "CF430" },
+    } as const;
 
-  it("an officer's last reassignment of the day goes to one of two", async () => {
-    const guild = await insertGuild(db.connection);
-    const eventId = await insertEvent(db.connection, guild);
-    const officer = fakeId();
-    const created = await nearQuota(guild.guildId, eventId, officer);
-    // Two different tasks, so the task's own row lock does not make the two take turns
-    // and only the officer's lock can.
-    const [first, other] = [present(created[0]), present(created[1])];
-    const read = await getTask(db.db, {
-      guildId: guild.guildId,
-      taskId: other,
-    });
-    if (!read.ok || read.value === null) {
-      throw new Error("expected the task to be readable");
+    async function countOf(sql: string, params: unknown[]): Promise<number> {
+      const { rows } = await db.observer.query<{ n: number }>(sql, params);
+      return rows[0]?.n ?? -1;
     }
-    const task = read.value;
 
-    const second = await db.race(
-      [
-        [reassignSql, [first, officer]],
-        [reassignedSql, [first, fakeId()]],
-      ],
-      (bot) =>
-        editTask(bot, {
-          guildId: guild.guildId,
-          taskId: other,
-          expectedUpdatedAt: task.updated_at,
-          description: task.description,
-          dueDate: task.due_date,
-          assigneeId: fakeId(),
-          actorId: officer,
-        }),
-    );
+    /** New tasks and reassignments by one officer, the two things the daily quota counts. */
+    function officerActions(guildId: string, officer: string): Promise<number> {
+      return countOf(
+        `SELECT (SELECT count(*) FROM discord_bot.tasks WHERE guild_id = $1 AND created_by = $2)::int
+            + (SELECT count(*) FROM discord_bot.task_reassignments WHERE guild_id = $1 AND actor_id = $2)::int AS n`,
+        [guildId, officer],
+      );
+    }
 
-    expect(second).toEqual(actorLimit);
-    expect(await officerActions(guild.guildId, officer)).toBe(50);
-  });
+    /** 49 tasks by one officer in the event, one short of their daily quota. */
+    async function nearQuota(
+      guildId: string,
+      eventId: string,
+      officer: string,
+    ) {
+      const created: string[] = [];
+      for (let index = 0; index < 49; index += 1) {
+        const { rows } = await db.observer.query<{ id: string }>(insertBySql, [
+          eventId,
+          guildId,
+          fakeId(),
+          officer,
+        ]);
+        created.push(present(rows[0]?.id));
+      }
+      return created;
+    }
 
-  it("a write at a higher isolation level is refused, as its count could miss the other's", async () => {
-    const guild = await insertGuild(db.connection);
-    const eventId = await insertEvent(db.connection, guild);
-    const taskId = await insertTask(db.connection, guild, eventId);
-
-    await db.t1.query("BEGIN ISOLATION LEVEL REPEATABLE READ");
-    const insert = db.t1.query(insertBySql, [
+    const newTask = (guildId: string, eventId: string, actorId: string) => ({
+      guildId,
       eventId,
-      guild.guildId,
-      fakeId(),
-      fakeId(),
-    ]);
-    expect(await errorCodeOf(insert)).toBe(FEATURE_NOT_SUPPORTED);
-    await db.t1.query("ROLLBACK");
+      assigneeId: fakeId(),
+      actorId,
+      description: "Book the room",
+      dueDate: FIXTURE_DUE_DATE as DateOnly,
+    });
 
-    await db.t1.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
-    const reassign = db.t1.query(reassignSql, [taskId, fakeId()]);
-    expect(await errorCodeOf(reassign)).toBe(FEATURE_NOT_SUPPORTED);
-    await db.t1.query("ROLLBACK");
-  });
-});
+    it("an officer's last new task of the day goes to one of two, in different events", async () => {
+      const guild = await insertGuild(db.connection);
+      const eventId = await insertEvent(db.connection, guild);
+      // A second event, so the event's own lock does not make the two take turns and only
+      // the officer's lock can.
+      const otherEvent = await insertEvent(db.connection, guild);
+      const officer = fakeId();
+      await nearQuota(guild.guildId, eventId, officer);
+
+      const second = await db.race(
+        [insertBySql, [eventId, guild.guildId, fakeId(), officer]],
+        (bot) => createTask(bot, newTask(guild.guildId, otherEvent, officer)),
+      );
+
+      expect(second).toEqual(actorLimit);
+      expect(await officerActions(guild.guildId, officer)).toBe(50);
+    });
+
+    it("an event's last free place goes to one of two tasks", async () => {
+      const guild = await insertGuild(db.connection);
+      const eventId = await insertEvent(db.connection, guild);
+      // Each by a different officer, so only the event's limit is reached.
+      for (let index = 0; index < 99; index += 1) {
+        await insertTask(db.connection, guild, eventId);
+      }
+
+      const second = await db.race(
+        [insertBySql, [eventId, guild.guildId, fakeId(), fakeId()]],
+        (bot) => createTask(bot, newTask(guild.guildId, eventId, fakeId())),
+      );
+
+      expect(second).toEqual({
+        ok: false,
+        error: { category: "event_task_limit", code: "CF429" },
+      });
+      expect(
+        await countOf(
+          "SELECT count(*)::int AS n FROM discord_bot.tasks WHERE event_id = $1 AND deleted_at IS NULL",
+          [eventId],
+        ),
+      ).toBe(100);
+    });
+
+    it("an officer's last reassignment of the day goes to one of two", async () => {
+      const guild = await insertGuild(db.connection);
+      const eventId = await insertEvent(db.connection, guild);
+      const officer = fakeId();
+      const created = await nearQuota(guild.guildId, eventId, officer);
+      // Two different tasks, so the task's own row lock does not make the two take turns
+      // and only the officer's lock can.
+      const [first, other] = [present(created[0]), present(created[1])];
+      const read = await getTask(db.db, {
+        guildId: guild.guildId,
+        taskId: other,
+      });
+      if (!read.ok || read.value === null) {
+        throw new Error("expected the task to be readable");
+      }
+      const task = read.value;
+
+      const second = await db.race(
+        [
+          [reassignSql, [first, officer]],
+          [reassignedSql, [first, fakeId()]],
+        ],
+        (bot) =>
+          editTask(bot, {
+            guildId: guild.guildId,
+            taskId: other,
+            expectedUpdatedAt: task.updated_at,
+            description: task.description,
+            dueDate: task.due_date,
+            assigneeId: fakeId(),
+            actorId: officer,
+          }),
+      );
+
+      expect(second).toEqual(actorLimit);
+      expect(await officerActions(guild.guildId, officer)).toBe(50);
+    });
+
+    it("a write at a higher isolation level is refused, as its count could miss the other's", async () => {
+      const guild = await insertGuild(db.connection);
+      const eventId = await insertEvent(db.connection, guild);
+      const taskId = await insertTask(db.connection, guild, eventId);
+
+      await db.t1.query("BEGIN ISOLATION LEVEL REPEATABLE READ");
+      const insert = db.t1.query(insertBySql, [
+        eventId,
+        guild.guildId,
+        fakeId(),
+        fakeId(),
+      ]);
+      expect(await errorCodeOf(insert)).toBe(FEATURE_NOT_SUPPORTED);
+      await db.t1.query("ROLLBACK");
+
+      await db.t1.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
+      const reassign = db.t1.query(reassignSql, [taskId, fakeId()]);
+      expect(await errorCodeOf(reassign)).toBe(FEATURE_NOT_SUPPORTED);
+      await db.t1.query("ROLLBACK");
+    });
+  },
+);
 
 /**
  * Lock order between a task update and its event's soft delete. A wrong order shows up

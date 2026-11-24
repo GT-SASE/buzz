@@ -1,86 +1,18 @@
 /**
- * Building and running statements, and the transactions writes run in. Lint keeps this
+ * Running statements through Drizzle, and the transactions writes run in. Lint keeps this
  * file inside src/db/, so code elsewhere holds a client and calls the functions there,
- * but writes no SQL.
+ * but builds no statements.
  */
 
-import type { BotDb, BotTx, DbClient, Row } from "./client.ts";
+import { sql, type SQL } from "drizzle-orm";
+import type { BotDb, BotTx, DbClient } from "./client.ts";
 import { failure, failureFromError, type DbResult } from "./errors.ts";
 import type { CappedList } from "./types.ts";
 
-/** A statement with its values as `$n` parameters. Only the `sql` tag makes one. */
-class Query {
-  readonly text: string;
-  readonly params: readonly unknown[];
-
-  constructor(strings: TemplateStringsArray, values: readonly unknown[]) {
-    let text = strings[0] ?? "";
-    const params: unknown[] = [];
-    values.forEach((value, index) => {
-      if (value instanceof Query) {
-        if (value.params.length > 0) {
-          throw new TypeError(
-            "A fragment written into a statement takes no values",
-          );
-        }
-        text += value.text;
-      } else {
-        params.push(value);
-        text += `$${String(params.length)}`;
-      }
-      text += strings[index + 1] ?? "";
-    });
-    this.text = text;
-    this.params = params;
-  }
-}
-
 /**
- * sql`select ... where id = ${id}`: every value becomes a parameter, never text. A value
- * that is itself a sql`...` fragment with no values, such as a list of columns, is
- * written in place.
- */
-export function sql(
-  strings: TemplateStringsArray,
-  ...values: unknown[]
-): Query {
-  return new Query(strings, values);
-}
-
-/**
- * Runs one statement. One still running at the client's deadline is abandoned and fails
- * as `unavailable`: the request is aborted, though the database may still finish it, up
- * to the role's statement_timeout. Nothing is ever sent twice.
- */
-export async function query<T = Row>(
-  db: DbClient,
-  statement: Query,
-): Promise<DbResult<T[]>> {
-  const controller = new AbortController();
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const deadline = new Promise<DbResult<T[]>>((resolve) => {
-    timer = setTimeout(() => {
-      controller.abort();
-      resolve(failure("unavailable"));
-    }, db.deadlineMs);
-  });
-  const outcome = db
-    .run(statement.text, statement.params, controller.signal)
-    .then(
-      (rows): DbResult<T[]> => ({ ok: true, value: rows as T[] }),
-      failureFromError,
-    );
-  try {
-    return await Promise.race([outcome, deadline]);
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-/**
- * What the database's own checks raise, raised from TypeScript. It carries a SQLSTATE and
- * a severity as a server error does, so `failureFromError` reads it the same way, and
- * throwing it inside a transaction rolls the transaction back.
+ * What the bot's own checks raise, as a database error would: a SQLSTATE and a severity,
+ * so `failureFromError` reads it the same way. Throwing it inside a transaction rolls the
+ * transaction back.
  */
 class RaisedError extends Error {
   readonly severity = "ERROR";
@@ -92,13 +24,13 @@ class RaisedError extends Error {
   }
 }
 
-/** Fails the transaction it is thrown in, as RAISE EXCEPTION did, with a SQLSTATE. */
+/** Fails the transaction it is thrown in, with a SQLSTATE. */
 export function raise(code: string, message: string): never {
   throw new RaisedError(code, message);
 }
 
 /**
- * Runs `work`, abandoning it at the client's deadline as `query` does. One abandoned
+ * Runs `work`, abandoning it at the client's deadline as a lost request is: the request
  * may still finish on the server, up to the role's statement and idle-in-transaction
  * timeouts, which roll a transaction back. Nothing is ever sent twice.
  *
@@ -130,22 +62,35 @@ async function withinDeadline<T>(
   }
 }
 
-/** One write statement built with Drizzle, which needs no transaction around it. */
-export function write<T>(
+/**
+ * A single value computed by the server, such as a lock taken or a setting read, as a
+ * select of one expression from a one-row source.
+ */
+export async function evaluate<T>(
+  db: BotDb,
+  expression: SQL<T>,
+): Promise<T | undefined> {
+  const [row] = await db
+    .select({ value: expression })
+    .from(sql`(values (1)) as one(x)`);
+  return row?.value;
+}
+
+/** One read, or one write statement that needs no lock or transaction around it. */
+export function read<T>(
   db: DbClient,
   work: (orm: BotDb) => Promise<T>,
 ): Promise<DbResult<T>> {
-  return withinDeadline(db, (signal) =>
-    db.open === undefined
-      ? work(db.orm)
-      : db.open(work, { signal, deadlineMs: db.deadlineMs }),
-  );
+  return withinDeadline(db, () => work(db.orm));
 }
 
+/** One write statement built with Drizzle, which needs no transaction around it. */
+export const write = read;
+
 /**
- * A write in a transaction, as a database function used to be: it takes its row locks, checks
- * what it read and writes, all or nothing. Throw `raise(...)` to refuse. The quota
- * triggers need the default isolation, read committed, so none is set here.
+ * A write in a transaction: it takes its row locks, checks what it read and writes, all
+ * or nothing. Throw `raise(...)` to refuse. The quota checks need the default isolation,
+ * read committed, so none is set here.
  */
 export function transact<T>(
   db: DbClient,
@@ -159,11 +104,6 @@ export function transact<T>(
           deadlineMs: db.deadlineMs,
         }),
   );
-}
-
-/** The rows of a raw statement run through Drizzle, whichever driver ran it. */
-export function rowsOf<T = Row>(result: unknown): T[] {
-  return (result as { rows: T[] }).rows;
 }
 
 /** The first row, or null. For a read by key. */

@@ -15,6 +15,20 @@
       "when": 1795494532501,
       "tag": "0001_triggers_and_grants",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1795552316243,
+      "tag": "0002_history_and_row_security",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1795552357788,
+      "tag": "0003_bot_app_grants",
+      "breakpoints": true
     }
   ]
 }

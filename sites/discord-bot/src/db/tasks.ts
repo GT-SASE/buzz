@@ -7,22 +7,22 @@
  * deleted along with its event therefore stays deleted.
  */
 
+import { and, asc, eq, gte, ilike, isNull, lte, type SQL } from "drizzle-orm";
 import { DISCORD_LIMITS } from "../discord/safe-text.ts";
 import type { DateOnly } from "../lib/dates.ts";
 import { isSnowflake } from "../lib/snowflake.ts";
-import { and, eq, isNull } from "drizzle-orm";
 import type { DbClient } from "./client.ts";
+import { updateRecorded } from "./history.ts";
 import {
   capped,
   changedRow,
   firstRow,
   nullAsNotFound,
-  query,
-  sql,
+  read,
   transact,
 } from "./internal.ts";
-import { isoTimestamp } from "./parsers.ts";
-import { taskReassignments, tasks } from "./schema.ts";
+import { admitReassignment, admitTask } from "./rules.ts";
+import { events, taskReassignments, tasks } from "./schema.ts";
 import { refused, type DbResult } from "./errors.ts";
 import type {
   CappedList,
@@ -44,19 +44,40 @@ import {
 const MAX_TASKS = 100;
 
 /** The columns of a `TaskRow`. */
-const TASK_COLUMNS = sql`id, event_id, guild_id, assignee_id, description, due_date,
-  status, completed_at, created_by, deleted_at, updated_at`;
+const TASK_ROW = {
+  id: tasks.id,
+  event_id: tasks.eventId,
+  guild_id: tasks.guildId,
+  assignee_id: tasks.assigneeId,
+  description: tasks.description,
+  due_date: tasks.dueDate,
+  status: tasks.status,
+  completed_at: tasks.completedAt,
+  created_by: tasks.createdBy,
+  deleted_at: tasks.deletedAt,
+  updated_at: tasks.updatedAt,
+};
 
-/** Tasks as `t` with their events as `e`, which are in the same guild by the foreign key. */
-const TASKS_AND_EVENTS = sql`discord_bot.tasks t join discord_bot.events e
-  on e.id = t.event_id and e.guild_id = t.guild_id`;
+const TASK_CHOICE = {
+  id: tasks.id,
+  description: tasks.description,
+  due_date: tasks.dueDate,
+};
+const LIVE_TASK_CHOICE = { ...TASK_CHOICE, status: tasks.status };
 
 /** The task is live and its event is live and open. */
-const ON_OPEN_EVENT = sql`t.deleted_at is null and e.status = 'active'
-  and e.deleted_at is null`;
+const onOpenEvent = (): SQL | undefined =>
+  and(
+    isNull(tasks.deletedAt),
+    eq(events.status, "active"),
+    isNull(events.deletedAt),
+  );
 
-const TASK_CHOICE = sql`t.id, t.description, t.due_date`;
-const LIVE_TASK_CHOICE = sql`t.id, t.description, t.due_date, t.status`;
+/** Tasks with their events, which are in the same guild by the foreign key. */
+const taskEvent = and(
+  eq(events.id, tasks.eventId),
+  eq(events.guildId, tasks.guildId),
+);
 
 export interface TaskKey {
   guildId: string;
@@ -102,14 +123,20 @@ export async function createTask(
     return refused();
   }
   return changedRow(
-    await query<TaskRow>(
-      db,
-      sql`insert into discord_bot.tasks
-        (event_id, guild_id, assignee_id, description, due_date, created_by)
-      values (${eventId}, ${guildId}, ${assigneeId}, ${description}, ${dueDate},
-        ${actorId})
-      returning ${TASK_COLUMNS}`,
-    ),
+    await transact(db, async (tx) => {
+      await admitTask(tx, { eventId, guildId, actorId });
+      return (await tx
+        .insert(tasks)
+        .values({
+          eventId,
+          guildId,
+          assigneeId,
+          description,
+          dueDate,
+          createdBy: actorId,
+        })
+        .returning(TASK_ROW)) as TaskRow[];
+    }),
   );
 }
 
@@ -122,11 +149,20 @@ export async function getTask(
     return refused();
   }
   return firstRow(
-    await query<TaskRow>(
+    await read(
       db,
-      sql`select ${TASK_COLUMNS} from discord_bot.tasks
-      where id = ${key.taskId} and guild_id = ${key.guildId} and deleted_at is null
-      limit 1`,
+      (orm) =>
+        orm
+          .select(TASK_ROW)
+          .from(tasks)
+          .where(
+            and(
+              eq(tasks.id, key.taskId),
+              eq(tasks.guildId, key.guildId),
+              isNull(tasks.deletedAt),
+            ),
+          )
+          .limit(1) as unknown as Promise<TaskRow[]>,
     ),
   );
 }
@@ -140,13 +176,29 @@ export async function listOpenTasksForAssignee(
   { guildId, assigneeId }: { guildId: string; assigneeId: string },
 ): Promise<DbResult<CappedList<OpenTask>>> {
   return capped(
-    await query<OpenTask>(
+    await read(
       db,
-      sql`select t.id, t.event_id, t.description, t.due_date, e.name as event_name
-      from ${TASKS_AND_EVENTS}
-      where t.guild_id = ${guildId} and t.assignee_id = ${assigneeId}
-        and t.status = 'open' and ${ON_OPEN_EVENT}
-      order by t.due_date, t.id limit ${MAX_TASKS + 1}`,
+      (orm) =>
+        orm
+          .select({
+            id: tasks.id,
+            event_id: tasks.eventId,
+            description: tasks.description,
+            due_date: tasks.dueDate,
+            event_name: events.name,
+          })
+          .from(tasks)
+          .innerJoin(events, taskEvent)
+          .where(
+            and(
+              eq(tasks.guildId, guildId),
+              eq(tasks.assigneeId, assigneeId),
+              eq(tasks.status, "open"),
+              onOpenEvent(),
+            ),
+          )
+          .orderBy(asc(tasks.dueDate), asc(tasks.id))
+          .limit(MAX_TASKS + 1) as unknown as Promise<OpenTask[]>,
     ),
     MAX_TASKS,
   );
@@ -164,13 +216,22 @@ export async function countOpenTasksInChannel(
   { guildId, channelId }: { guildId: string; channelId: string },
 ): Promise<DbResult<OpenTaskCount>> {
   const list = capped(
-    await query(
-      db,
-      sql`select t.id from ${TASKS_AND_EVENTS}
-      where t.guild_id = ${guildId} and t.status = 'open' and t.deleted_at is null
-        and e.channel_id = ${channelId} and e.deleted_at is null
-        and e.status = 'active'
-      limit ${MAX_TASKS + 1}`,
+    await read(db, (orm) =>
+      orm
+        .select({ id: tasks.id })
+        .from(tasks)
+        .innerJoin(events, taskEvent)
+        .where(
+          and(
+            eq(tasks.guildId, guildId),
+            eq(tasks.status, "open"),
+            isNull(tasks.deletedAt),
+            eq(events.channelId, channelId),
+            isNull(events.deletedAt),
+            eq(events.status, "active"),
+          ),
+        )
+        .limit(MAX_TASKS + 1),
     ),
     MAX_TASKS,
   );
@@ -194,13 +255,43 @@ export async function listEventTasks(
   { guildId, eventId }: { guildId: string; eventId: string },
 ): Promise<DbResult<CappedList<TaskRow>>> {
   return capped(
-    await query<TaskRow>(
+    await read(
       db,
-      sql`select ${TASK_COLUMNS} from discord_bot.tasks
-      where guild_id = ${guildId} and event_id = ${eventId} and deleted_at is null
-      order by status, due_date, id limit ${MAX_TASKS + 1}`,
+      (orm) =>
+        orm
+          .select(TASK_ROW)
+          .from(tasks)
+          .where(
+            and(
+              eq(tasks.guildId, guildId),
+              eq(tasks.eventId, eventId),
+              isNull(tasks.deletedAt),
+            ),
+          )
+          .orderBy(asc(tasks.status), asc(tasks.dueDate), asc(tasks.id))
+          .limit(MAX_TASKS + 1) as unknown as Promise<TaskRow[]>,
     ),
     MAX_TASKS,
+  );
+}
+
+/** A choice list over tasks on open events, narrowed by `also` and put in `order`. */
+function choices<T>(
+  db: DbClient,
+  columns: typeof TASK_CHOICE | typeof LIVE_TASK_CHOICE,
+  also: (SQL | undefined)[],
+  order: SQL[],
+): Promise<DbResult<T[]>> {
+  return read(
+    db,
+    (orm) =>
+      orm
+        .select(columns)
+        .from(tasks)
+        .innerJoin(events, taskEvent)
+        .where(and(...also, onOpenEvent()))
+        .orderBy(...order)
+        .limit(DISCORD_LIMITS.autocompleteChoices) as unknown as Promise<T[]>,
   );
 }
 
@@ -212,12 +303,15 @@ export async function searchOpenTasks(
   if (!isSearchTerm(term)) {
     return refused();
   }
-  return await query<TaskChoice>(
+  return choices<TaskChoice>(
     db,
-    sql`select ${TASK_CHOICE} from ${TASKS_AND_EVENTS}
-      where t.guild_id = ${guildId} and t.status = 'open'
-        and t.description ilike ${searchPattern(term)} and ${ON_OPEN_EVENT}
-      order by t.due_date, t.id limit ${DISCORD_LIMITS.autocompleteChoices}`,
+    TASK_CHOICE,
+    [
+      eq(tasks.guildId, guildId),
+      eq(tasks.status, "open"),
+      ilike(tasks.description, searchPattern(term)),
+    ],
+    [asc(tasks.dueDate), asc(tasks.id)],
   );
 }
 
@@ -232,12 +326,11 @@ export async function searchLiveTasks(
   if (!isSearchTerm(term)) {
     return refused();
   }
-  return await query<LiveTaskChoice>(
+  return choices<LiveTaskChoice>(
     db,
-    sql`select ${LIVE_TASK_CHOICE} from ${TASKS_AND_EVENTS}
-      where t.guild_id = ${guildId}
-        and t.description ilike ${searchPattern(term)} and ${ON_OPEN_EVENT}
-      order by t.status, t.due_date, t.id limit ${DISCORD_LIMITS.autocompleteChoices}`,
+    LIVE_TASK_CHOICE,
+    [eq(tasks.guildId, guildId), ilike(tasks.description, searchPattern(term))],
+    [asc(tasks.status), asc(tasks.dueDate), asc(tasks.id)],
   );
 }
 
@@ -247,11 +340,11 @@ export async function searchLiveTasksByIdPrefix(
   { guildId, prefix }: { guildId: string; prefix: string },
 ): Promise<DbResult<LiveTaskChoice[]>> {
   const { low, high } = idPrefixRange(prefix);
-  return await query<LiveTaskChoice>(
+  return choices<LiveTaskChoice>(
     db,
-    sql`select ${LIVE_TASK_CHOICE} from ${TASKS_AND_EVENTS}
-      where t.guild_id = ${guildId} and t.id >= ${low} and t.id <= ${high} and ${ON_OPEN_EVENT}
-      order by t.id limit ${DISCORD_LIMITS.autocompleteChoices}`,
+    LIVE_TASK_CHOICE,
+    [eq(tasks.guildId, guildId), gte(tasks.id, low), lte(tasks.id, high)],
+    [asc(tasks.id)],
   );
 }
 
@@ -267,12 +360,16 @@ export async function searchOwnOpenTasks(
   if (!isSearchTerm(term)) {
     return refused();
   }
-  return await query<TaskChoice>(
+  return choices<TaskChoice>(
     db,
-    sql`select ${TASK_CHOICE} from ${TASKS_AND_EVENTS}
-      where t.guild_id = ${guildId} and t.assignee_id = ${assigneeId}
-        and t.status = 'open' and t.description ilike ${searchPattern(term)} and ${ON_OPEN_EVENT}
-      order by t.due_date, t.id limit ${DISCORD_LIMITS.autocompleteChoices}`,
+    TASK_CHOICE,
+    [
+      eq(tasks.guildId, guildId),
+      eq(tasks.assigneeId, assigneeId),
+      eq(tasks.status, "open"),
+      ilike(tasks.description, searchPattern(term)),
+    ],
+    [asc(tasks.dueDate), asc(tasks.id)],
   );
 }
 
@@ -282,12 +379,16 @@ export async function searchOpenTasksByIdPrefix(
   { guildId, prefix }: { guildId: string; prefix: string },
 ): Promise<DbResult<TaskChoice[]>> {
   const { low, high } = idPrefixRange(prefix);
-  return await query<TaskChoice>(
+  return choices<TaskChoice>(
     db,
-    sql`select ${TASK_CHOICE} from ${TASKS_AND_EVENTS}
-      where t.guild_id = ${guildId} and t.status = 'open'
-        and t.id >= ${low} and t.id <= ${high} and ${ON_OPEN_EVENT}
-      order by t.id limit ${DISCORD_LIMITS.autocompleteChoices}`,
+    TASK_CHOICE,
+    [
+      eq(tasks.guildId, guildId),
+      eq(tasks.status, "open"),
+      gte(tasks.id, low),
+      lte(tasks.id, high),
+    ],
+    [asc(tasks.id)],
   );
 }
 
@@ -301,12 +402,38 @@ export async function searchOwnOpenTasksByIdPrefix(
   }: { guildId: string; assigneeId: string; prefix: string },
 ): Promise<DbResult<TaskChoice[]>> {
   const { low, high } = idPrefixRange(prefix);
-  return await query<TaskChoice>(
+  return choices<TaskChoice>(
     db,
-    sql`select ${TASK_CHOICE} from ${TASKS_AND_EVENTS}
-      where t.guild_id = ${guildId} and t.assignee_id = ${assigneeId}
-        and t.status = 'open' and t.id >= ${low} and t.id <= ${high} and ${ON_OPEN_EVENT}
-      order by t.id limit ${DISCORD_LIMITS.autocompleteChoices}`,
+    TASK_CHOICE,
+    [
+      eq(tasks.guildId, guildId),
+      eq(tasks.assigneeId, assigneeId),
+      eq(tasks.status, "open"),
+      gte(tasks.id, low),
+      lte(tasks.id, high),
+    ],
+    [asc(tasks.id)],
+  );
+}
+
+/** Changes the one task `where` names, and returns it. */
+async function changeTask(
+  db: DbClient,
+  set: Record<string, unknown>,
+  where: SQL | undefined,
+): Promise<DbResult<TaskRow>> {
+  return changedRow(
+    await transact(
+      db,
+      async (tx) =>
+        (await updateRecorded(
+          tx,
+          tasks,
+          set,
+          where,
+          TASK_ROW,
+        )) as unknown as TaskRow[],
+    ),
   );
 }
 
@@ -318,13 +445,15 @@ export async function markOwnTaskDone(
   db: DbClient,
   key: TaskKey & { assigneeId: string; now: Date },
 ): Promise<DbResult<TaskRow>> {
-  return changedRow(
-    await query<TaskRow>(
-      db,
-      sql`update discord_bot.tasks set status = 'done', completed_at = ${key.now.toISOString()}
-      where id = ${key.taskId} and guild_id = ${key.guildId}
-        and assignee_id = ${key.assigneeId} and status = 'open' and deleted_at is null
-      returning ${TASK_COLUMNS}`,
+  return changeTask(
+    db,
+    { status: "done", completedAt: key.now.toISOString() },
+    and(
+      eq(tasks.id, key.taskId),
+      eq(tasks.guildId, key.guildId),
+      eq(tasks.assigneeId, key.assigneeId),
+      eq(tasks.status, "open"),
+      isNull(tasks.deletedAt),
     ),
   );
 }
@@ -334,13 +463,14 @@ export async function markTaskDoneAsOfficer(
   db: DbClient,
   key: TaskKey & { now: Date },
 ): Promise<DbResult<TaskRow>> {
-  return changedRow(
-    await query<TaskRow>(
-      db,
-      sql`update discord_bot.tasks set status = 'done', completed_at = ${key.now.toISOString()}
-      where id = ${key.taskId} and guild_id = ${key.guildId} and status = 'open'
-        and deleted_at is null
-      returning ${TASK_COLUMNS}`,
+  return changeTask(
+    db,
+    { status: "done", completedAt: key.now.toISOString() },
+    and(
+      eq(tasks.id, key.taskId),
+      eq(tasks.guildId, key.guildId),
+      eq(tasks.status, "open"),
+      isNull(tasks.deletedAt),
     ),
   );
 }
@@ -354,13 +484,14 @@ export async function reopenTask(
   db: DbClient,
   key: TaskKey,
 ): Promise<DbResult<TaskRow>> {
-  return changedRow(
-    await query<TaskRow>(
-      db,
-      sql`update discord_bot.tasks set status = 'open', completed_at = null
-      where id = ${key.taskId} and guild_id = ${key.guildId} and status = 'done'
-        and deleted_at is null
-      returning ${TASK_COLUMNS}`,
+  return changeTask(
+    db,
+    { status: "open", completedAt: null },
+    and(
+      eq(tasks.id, key.taskId),
+      eq(tasks.guildId, key.guildId),
+      eq(tasks.status, "done"),
+      isNull(tasks.deletedAt),
     ),
   );
 }
@@ -407,9 +538,13 @@ export async function editTask(
         return null;
       }
 
-      // The quota trigger counts this row, under the officer's lock, and refuses it at
-      // the limit, which fails the whole edit.
+      // The officer is locked and counted first, and the change refused at the limit,
+      // which fails the whole edit.
       if (current.assigneeId !== key.assigneeId) {
+        await admitReassignment(tx, {
+          guildId: key.guildId,
+          actorId: key.actorId,
+        });
         await tx.insert(taskReassignments).values({
           guildId: key.guildId,
           actorId: key.actorId,
@@ -417,33 +552,18 @@ export async function editTask(
         });
       }
 
-      const [edited] = await tx
-        .update(tasks)
-        .set({
+      const [edited] = (await updateRecorded(
+        tx,
+        tasks,
+        {
           description: key.description,
           dueDate: key.dueDate,
           assigneeId: key.assigneeId,
-        })
-        .where(eq(tasks.id, key.taskId))
-        .returning();
-      if (edited === undefined) {
-        return null;
-      }
-      return {
-        id: edited.id,
-        event_id: edited.eventId,
-        guild_id: edited.guildId,
-        assignee_id: edited.assigneeId,
-        description: edited.description,
-        due_date: edited.dueDate as DateOnly,
-        status: edited.status,
-        completed_at:
-          edited.completedAt === null ? null : isoTimestamp(edited.completedAt),
-        created_by: edited.createdBy,
-        deleted_at:
-          edited.deletedAt === null ? null : isoTimestamp(edited.deletedAt),
-        updated_at: isoTimestamp(edited.updatedAt),
-      };
+        },
+        eq(tasks.id, key.taskId),
+        TASK_ROW,
+      )) as unknown as TaskRow[];
+      return edited ?? null;
     }),
   );
 }
@@ -456,13 +576,14 @@ export async function softDeleteTaskIfUnchanged(
   db: DbClient,
   key: TaskEditKey & { now: Date },
 ): Promise<DbResult<TaskRow>> {
-  return changedRow(
-    await query<TaskRow>(
-      db,
-      sql`update discord_bot.tasks set deleted_at = ${key.now.toISOString()}
-      where id = ${key.taskId} and guild_id = ${key.guildId}
-        and updated_at = ${key.expectedUpdatedAt} and deleted_at is null
-      returning ${TASK_COLUMNS}`,
+  return changeTask(
+    db,
+    { deletedAt: key.now.toISOString() },
+    and(
+      eq(tasks.id, key.taskId),
+      eq(tasks.guildId, key.guildId),
+      eq(tasks.updatedAt, key.expectedUpdatedAt),
+      isNull(tasks.deletedAt),
     ),
   );
 }
@@ -472,12 +593,13 @@ export async function softDeleteTask(
   db: DbClient,
   key: TaskKey & { now: Date },
 ): Promise<DbResult<TaskRow>> {
-  return changedRow(
-    await query<TaskRow>(
-      db,
-      sql`update discord_bot.tasks set deleted_at = ${key.now.toISOString()}
-      where id = ${key.taskId} and guild_id = ${key.guildId} and deleted_at is null
-      returning ${TASK_COLUMNS}`,
+  return changeTask(
+    db,
+    { deletedAt: key.now.toISOString() },
+    and(
+      eq(tasks.id, key.taskId),
+      eq(tasks.guildId, key.guildId),
+      isNull(tasks.deletedAt),
     ),
   );
 }

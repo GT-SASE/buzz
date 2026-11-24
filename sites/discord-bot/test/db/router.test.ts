@@ -61,11 +61,7 @@ import {
   MIGRATION_OWNER,
   queryAs,
 } from "./harness.ts";
-import {
-  pgliteOrm,
-  pgliteSql,
-  testDatabaseUrl,
-} from "../support/sql-client.ts";
+import { pgliteOrm, testDatabaseUrl } from "../support/sql-client.ts";
 import { asFetch, stubEnv } from "../support/stubs.ts";
 
 // Only the interactions endpoint below uses these two.
@@ -83,7 +79,7 @@ const liveDatabase = (): PGlite => {
   return live.database;
 };
 void mock.module("../../src/db/neon.ts", () => ({
-  neonRunner: () => pgliteSql(liveDatabase),
+  neonHttp: () => pgliteOrm(liveDatabase),
   neonOpen: () => (work: (orm: unknown) => Promise<unknown>) =>
     work(pgliteOrm(liveDatabase)),
 }));

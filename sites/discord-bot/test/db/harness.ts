@@ -49,58 +49,6 @@ export const MIGRATIONS_DIR = join(
   "drizzle",
 );
 
-/** What dbmate built until Drizzle took over, kept to build the database a production one is. */
-const LEGACY_MIGRATIONS_DIR = join(
-  import.meta.dirname,
-  "..",
-  "..",
-  "db",
-  "migrations",
-);
-
-/** Each migration's version and its `-- migrate:up` part, in the order dbmate runs them. */
-function migrationsUp(): { version: string; sql: string }[] {
-  return readdirSync(LEGACY_MIGRATIONS_DIR)
-    .filter((name) => name.endsWith(".sql"))
-    .sort()
-    .map((name) => {
-      const text = readFileSync(join(LEGACY_MIGRATIONS_DIR, name), "utf8");
-      const version = /^([0-9]+)_/.exec(name)?.[1];
-      const sql =
-        /^-- migrate:up[^\n]*\n([\s\S]*?)(?:^-- migrate:down|$(?![\s\S]))/m.exec(
-          text,
-        )?.[1];
-      if (version === undefined || sql === undefined) {
-        throw new Error(`${name} is not a dbmate migration`);
-      }
-      return { version, sql };
-    });
-}
-
-/**
- * Applies every dbmate migration, each in its own transaction, and records it in dbmate's
- * ledger, as `dbmate up` does: the database as it was in production before Drizzle.
- */
-async function applyLegacyMigrations(db: Connection): Promise<void> {
-  await db.exec(
-    "CREATE TABLE IF NOT EXISTS discord_bot.schema_migrations (version varchar(128) PRIMARY KEY)",
-  );
-  for (const { version, sql } of migrationsUp()) {
-    await db.exec("BEGIN");
-    try {
-      await db.exec(sql);
-      await db.query(
-        "INSERT INTO discord_bot.schema_migrations (version) VALUES ($1)",
-        [version],
-      );
-      await db.exec("COMMIT");
-    } catch (error) {
-      await db.exec("ROLLBACK");
-      throw error;
-    }
-  }
-}
-
 /**
  * For beforeAll and similar hooks that build a database. Tests get 30 seconds from
  * the test:db scripts; a hook that migrates or copies a database may need longer.
@@ -142,11 +90,14 @@ const SERVER_SETUP = `
 `;
 
 /** Applies every migration as the owner, as `bun run db:migrate` does on Neon. */
-async function migrateAsOwner(db: PGlite): Promise<void> {
+async function migrateAsOwner(
+  db: PGlite,
+  folder: string = MIGRATIONS_DIR,
+): Promise<void> {
   await db.exec(`SET ROLE ${MIGRATION_OWNER}`);
   try {
     await migrate(drizzle(db), {
-      migrationsFolder: MIGRATIONS_DIR,
+      migrationsFolder: folder,
       migrationsSchema: "discord_bot",
       migrationsTable: "drizzle_migrations",
     });
@@ -155,25 +106,57 @@ async function migrateAsOwner(db: PGlite): Promise<void> {
   }
 }
 
+/** Applies the Drizzle migrations to a database, as the owner, as `db:migrate` does. */
+export const migrateWithDrizzle = migrateAsOwner;
+
 /**
- * A server as production was before Drizzle: every dbmate file applied as the owner and
- * recorded in `discord_bot.schema_migrations`, and no Drizzle ledger.
+ * True when the database has none of its triggers. A test of what a trigger does to a
+ * write made by hand has nothing to show then, and is skipped; the bot's own writes are
+ * tested either way.
  */
-export async function createLegacyDb(): Promise<PGlite> {
+export const NO_TRIGGERS = process.env.BOT_TEST_NO_TRIGGERS === "1";
+
+/** What stands in for the trigger that made a new event's steps, for rows put in by hand. */
+export const SEED_STEPS = `
+  CREATE FUNCTION discord_bot.test_seed_steps() RETURNS trigger LANGUAGE plpgsql AS $$
+  BEGIN
+    INSERT INTO discord_bot.event_steps (event_id, guild_id, kind)
+    SELECT NEW.id, NEW.guild_id, kind FROM unnest(enum_range(NULL::discord_bot.event_step_kind)) AS kind
+    ON CONFLICT DO NOTHING;
+    RETURN NULL;
+  END $$;
+  CREATE TRIGGER test_seed_steps AFTER INSERT ON discord_bot.events
+    FOR EACH ROW EXECUTE FUNCTION discord_bot.test_seed_steps();
+`;
+
+/**
+ * Drops every trigger and trigger function of the bot's tables, as a later migration
+ * will, to show the bot's own writes hold without them. With `BOT_TEST_NO_TRIGGERS=1`
+ * every test database is built this way.
+ */
+export async function dropTriggers(db: Connection): Promise<void> {
+  await db.exec(`
+    DO $$
+    DECLARE item record;
+    BEGIN
+      FOR item IN
+        SELECT g.tgname, c.relname FROM pg_trigger g
+        JOIN pg_class c ON c.oid = g.tgrelid
+        WHERE c.relnamespace = 'discord_bot'::regnamespace AND NOT g.tgisinternal
+      LOOP
+        EXECUTE format('DROP TRIGGER %I ON discord_bot.%I', item.tgname, item.relname);
+      END LOOP;
+    END $$;
+  `);
+}
+
+/** A server as a Neon project starts: an owner, an empty `discord_bot` schema, nothing else. */
+export async function newServer(): Promise<PGlite> {
   const db = new PGlite();
   await db.waitReady;
   await db.exec(SERVER_SETUP);
-  await db.exec(`SET ROLE ${MIGRATION_OWNER}`);
-  try {
-    await applyLegacyMigrations(db);
-  } finally {
-    await db.exec("RESET ROLE");
-  }
   return db;
 }
-
-/** Applies the Drizzle migrations to a database, as the owner, as `db:migrate` does. */
-export const migrateWithDrizzle = migrateAsOwner;
 
 /** A fresh server with every migration applied, built from nothing. */
 async function buildMigratedDb(
@@ -191,6 +174,12 @@ async function buildMigratedDb(
     }
   }
   await migrateAsOwner(db);
+  if (process.env.BOT_TEST_NO_TRIGGERS === "1") {
+    await dropTriggers(db);
+    // Tests put events in by hand, which used to get their steps from a trigger. The bot
+    // makes steps itself now; this stands in for rows no bot code wrote.
+    await db.exec(SEED_STEPS);
+  }
   return db;
 }
 
@@ -222,6 +211,7 @@ function dumpPath(): string {
     }
   }
   hash.update(readFileSync(join(MIGRATIONS_DIR, "meta", "_journal.json")));
+  hash.update(process.env.BOT_TEST_NO_TRIGGERS ?? "");
   return join(DUMP_DIR, `${hash.digest("hex").slice(0, 20)}.tar`);
 }
 

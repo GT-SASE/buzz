@@ -2,21 +2,31 @@ import type { DateOnly } from "../lib/dates.ts";
 import { STALE_CLAIM_MS } from "../reminders/plan.ts";
 import {
   and,
+  asc,
   eq,
   exists,
+  gt,
+  inArray,
   isNull,
   lt,
   ne,
   notExists,
+  lte,
   or,
-  sql as dsql,
+  sql,
   type SQL,
 } from "drizzle-orm";
 import type { BotTx, DbClient } from "./client.ts";
 import { refused, type DbResult } from "./errors.ts";
-import { capped, query, raise, sql, transact, write } from "./internal.ts";
-import { fromRemindableTask } from "./reminder-rules.ts";
-import { events, managedChannels, reminderLog, tasks } from "./schema.ts";
+import { capped, raise, read, transact, write } from "./internal.ts";
+import { remindableTask } from "./reminder-rules.ts";
+import {
+  events,
+  guildConfig,
+  managedChannels,
+  reminderLog,
+  tasks,
+} from "./schema.ts";
 import type {
   CappedList,
   EventStatus,
@@ -115,28 +125,83 @@ export async function listReminderCandidates(
   const rows: ReminderCandidate[] = [];
   let position = FIRST_POSITION;
   for (let page = 0; page < MAX_PAGES; page += 1) {
-    const response = await query<CandidateRow>(
-      db,
-      sql`select t.id, t.event_id, t.guild_id, t.assignee_id, t.description,
-        t.due_date, t.status, t.updated_at, e.name as event_name, e.thread_id,
-        e.status as event_status, e.thread_status, g.timezone,
-        coalesce((
-          select json_agg(json_build_object('kind', l.kind, 'due_date', l.due_date,
-            'state', l.state, 'claimed_at', l.claimed_at))
-          from discord_bot.reminder_log l where l.task_id = t.id
-        ), '[]'::json) as log
-      from discord_bot.tasks t
-      join discord_bot.events e on e.id = t.event_id and e.guild_id = t.guild_id
-      join discord_bot.managed_channels c
-        on c.guild_id = e.guild_id and c.channel_id = e.channel_id
-      join discord_bot.guild_config g on g.guild_id = e.guild_id
-      where t.status = 'open' and t.deleted_at is null
-        and t.due_date <= ${lastDueDate}
-        and e.status = 'active' and e.deleted_at is null
-        and c.status = 'active' and g.reminders_enabled
-        and (t.due_date, t.id) > (${position.dueDate}::date, ${position.id}::uuid)
-      order by t.due_date, t.id limit ${PAGE_SIZE}`,
-    );
+    const response = await read(db, async (orm) => {
+      const page = await orm
+        .select({
+          id: tasks.id,
+          event_id: tasks.eventId,
+          guild_id: tasks.guildId,
+          assignee_id: tasks.assigneeId,
+          description: tasks.description,
+          due_date: tasks.dueDate,
+          status: tasks.status,
+          updated_at: tasks.updatedAt,
+          event_name: events.name,
+          thread_id: events.threadId,
+          event_status: events.status,
+          thread_status: events.threadStatus,
+          timezone: guildConfig.timezone,
+        })
+        .from(tasks)
+        .innerJoin(
+          events,
+          and(eq(events.id, tasks.eventId), eq(events.guildId, tasks.guildId)),
+        )
+        .innerJoin(
+          managedChannels,
+          and(
+            eq(managedChannels.guildId, events.guildId),
+            eq(managedChannels.channelId, events.channelId),
+          ),
+        )
+        .innerJoin(guildConfig, eq(guildConfig.guildId, events.guildId))
+        .where(
+          and(
+            eq(tasks.status, "open"),
+            isNull(tasks.deletedAt),
+            lte(tasks.dueDate, lastDueDate),
+            eq(events.status, "active"),
+            isNull(events.deletedAt),
+            eq(managedChannels.status, "active"),
+            eq(guildConfig.remindersEnabled, true),
+            or(
+              gt(tasks.dueDate, position.dueDate),
+              and(
+                eq(tasks.dueDate, position.dueDate),
+                gt(tasks.id, position.id),
+              ),
+            ),
+          ),
+        )
+        .orderBy(asc(tasks.dueDate), asc(tasks.id))
+        .limit(PAGE_SIZE);
+      // Each task carries its whole log, whatever the due date.
+      const logs =
+        page.length === 0
+          ? []
+          : await orm
+              .select({
+                task_id: reminderLog.taskId,
+                kind: reminderLog.kind,
+                due_date: reminderLog.dueDate,
+                state: reminderLog.state,
+                claimed_at: reminderLog.claimedAt,
+              })
+              .from(reminderLog)
+              .where(
+                inArray(
+                  reminderLog.taskId,
+                  page.map((task) => task.id),
+                ),
+              );
+      return page.map((task): CandidateRow => ({
+        ...task,
+        due_date: task.due_date as DateOnly,
+        log: logs
+          .filter((log) => log.task_id === task.id)
+          .map((log) => ({ ...log, due_date: log.due_date as DateOnly })),
+      }));
+    });
     if (!response.ok) {
       return response;
     }
@@ -156,14 +221,33 @@ export async function listStaleClaims(
   { claimedBefore }: { claimedBefore: Date },
 ): Promise<DbResult<CappedList<StaleClaim>>> {
   return capped(
-    await query<StaleClaim>(
+    await read(
       db,
-      sql`select task_id, kind, due_date, claim_token, attempts, refused_attempts,
-        claimed_at
-      from discord_bot.reminder_log
-      where state = 'claimed' and claimed_at < ${claimedBefore.toISOString()}
-      order by claimed_at, task_id, kind, due_date
-      limit ${MAX_STALE_CLAIMS + 1}`,
+      (orm) =>
+        orm
+          .select({
+            task_id: reminderLog.taskId,
+            kind: reminderLog.kind,
+            due_date: reminderLog.dueDate,
+            claim_token: reminderLog.claimToken,
+            attempts: reminderLog.attempts,
+            refused_attempts: reminderLog.refusedAttempts,
+            claimed_at: reminderLog.claimedAt,
+          })
+          .from(reminderLog)
+          .where(
+            and(
+              eq(reminderLog.state, "claimed"),
+              lt(reminderLog.claimedAt, claimedBefore.toISOString()),
+            ),
+          )
+          .orderBy(
+            asc(reminderLog.claimedAt),
+            asc(reminderLog.taskId),
+            asc(reminderLog.kind),
+            asc(reminderLog.dueDate),
+          )
+          .limit(MAX_STALE_CLAIMS + 1) as unknown as Promise<StaleClaim[]>,
     ),
     MAX_STALE_CLAIMS,
   );
@@ -197,13 +281,30 @@ export async function claimReminder(
   }
   return transact(db, async (tx) => {
     await refuseIfTaskChanged(tx, key);
+    const allowed = remindableTask(tx, key.taskId, key.dueDate).as("allowed");
     const [claimed] = await tx
       .insert(reminderLog)
       .select(
-        dsql`select ${tasks.id}, ${key.kind}::discord_bot.reminder_kind, ${tasks.dueDate},
-          'claimed'::discord_bot.reminder_state, gen_random_uuid(), 1, now(),
-          null::timestamptz, null::discord_bot.discord_id, 0
-          ${fromRemindableTask(key.taskId, key.dueDate)}`,
+        tx
+          .select({
+            taskId: allowed.id,
+            kind: sql<ReminderKind>`${key.kind}::discord_bot.reminder_kind`.as(
+              "kind",
+            ),
+            dueDate: allowed.dueDate,
+            state: sql<"claimed">`'claimed'::discord_bot.reminder_state`.as(
+              "state",
+            ),
+            claimToken: sql<string>`gen_random_uuid()`.as("claim_token"),
+            attempts: sql<number>`1`.as("attempts"),
+            claimedAt: sql<string>`now()`.as("claimed_at"),
+            sentAt: sql<string | null>`null::timestamptz`.as("sent_at"),
+            messageId: sql<string | null>`null::discord_bot.discord_id`.as(
+              "message_id",
+            ),
+            refusedAttempts: sql<number>`0`.as("refused_attempts"),
+          })
+          .from(allowed),
       )
       .onConflictDoNothing({
         target: [reminderLog.taskId, reminderLog.kind, reminderLog.dueDate],
@@ -258,20 +359,18 @@ export async function reclaimReminder(
     const [reclaimed] = await tx
       .update(reminderLog)
       .set({
-        claimToken: dsql`gen_random_uuid()`,
-        claimedAt: dsql`now()`,
-        attempts: dsql`${reminderLog.attempts} + 1`,
+        claimToken: sql`gen_random_uuid()`,
+        claimedAt: sql`now()`,
+        attempts: sql`${reminderLog.attempts} + 1`,
       })
       .where(
         and(
           heldClaim(key),
           lt(
             reminderLog.claimedAt,
-            dsql`now() - make_interval(secs => ${STALE_CLAIM_MS / 1000}::int)`,
+            sql`now() - make_interval(secs => ${STALE_CLAIM_MS / 1000}::int)`,
           ),
-          exists(
-            dsql`(select 1 ${fromRemindableTask(dsql`${reminderLog.taskId}`, key.dueDate)})`,
-          ),
+          exists(remindableTask(tx, reminderLog.taskId, key.dueDate)),
         ),
       )
       .returning({ claimToken: reminderLog.claimToken });
@@ -288,7 +387,7 @@ function heldClaim(key: ReminderKey & { claimToken: string }): SQL {
       eq(reminderLog.dueDate, key.dueDate),
       eq(reminderLog.state, "claimed"),
       eq(reminderLog.claimToken, key.claimToken),
-    ) ?? dsql`true`
+    ) ?? sql`true`
   );
 }
 
@@ -403,7 +502,7 @@ export async function markReminderSent(
   return write(db, async (orm) => {
     const marked = await orm
       .update(reminderLog)
-      .set({ state: "sent", sentAt: dsql`now()`, messageId: key.messageId })
+      .set({ state: "sent", sentAt: sql`now()`, messageId: key.messageId })
       .where(heldClaim(key))
       .returning({ taskId: reminderLog.taskId });
     return marked.length > 0;
@@ -443,7 +542,7 @@ export async function recordReminderRefused(
   return write(db, async (orm) => {
     const recorded = await orm
       .update(reminderLog)
-      .set({ refusedAttempts: dsql`${reminderLog.refusedAttempts} + 1` })
+      .set({ refusedAttempts: sql`${reminderLog.refusedAttempts} + 1` })
       .where(
         and(
           heldClaim(key),
