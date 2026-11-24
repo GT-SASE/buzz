@@ -91,7 +91,7 @@ export async function getPublishedPage(slug: string) {
 }
 
 // Throws on any database error, including a missing table before migration
-// 0018: unstable_cache does not store a throw, so "no redirects yet" is never
+// 0019: unstable_cache does not store a throw, so "no redirects yet" is never
 // remembered past the migration.
 const loadRedirect = unstable_cache(
   (slug: string) => pageRedirectTarget(db, slug),
