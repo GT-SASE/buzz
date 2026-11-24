@@ -14,6 +14,7 @@ import {
   closeEvent,
   createEvent,
   setEventOverviewMessage,
+  softDeleteEvent,
 } from "../../src/db/events.ts";
 import {
   assignEventStep,
@@ -204,6 +205,23 @@ describe("one history row for each change, whoever writes it", () => {
     const history = await historyOf("setup_drafts", guild.guildId);
     expect(history).toHaveLength(1);
     expect(history[0]?.old_row).toEqual(before);
+  });
+
+  it("several rows at once: one history row each, with the trigger or without", async () => {
+    const guild = await insertGuild(db);
+    const eventId = await insertEvent(db, guild);
+    const taskIds = [
+      await insertTask(db, guild, eventId),
+      await insertTask(db, guild, eventId),
+      await insertTask(db, guild, eventId),
+    ];
+    expect(
+      must(await softDeleteEvent(bot(), { guildId: guild.guildId, eventId })),
+    ).toBe(3);
+    for (const taskId of taskIds) {
+      expect(await historyOf("tasks", taskId)).toHaveLength(1);
+    }
+    expect(await historyOf("events", eventId)).toHaveLength(1);
   });
 
   it("keeps nothing for a write that changes nothing, and leaves updated_at alone", async () => {

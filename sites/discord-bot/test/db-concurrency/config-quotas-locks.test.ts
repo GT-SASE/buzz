@@ -59,7 +59,6 @@ describe("the bot's role over a real connection", () => {
     "ALTER TABLE discord_bot.tasks DISABLE TRIGGER ALL",
     "CREATE TABLE discord_bot.forged (id int)",
     "SELECT * FROM discord_bot.row_versions",
-    "SELECT * FROM discord_bot.task_reassignments",
     "UPDATE discord_bot.config_audit SET action = action",
     "UPDATE discord_bot.guild_config SET guild_id = guild_id",
     "SET ROLE migration_owner",

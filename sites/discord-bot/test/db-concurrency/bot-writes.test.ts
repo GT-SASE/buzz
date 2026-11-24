@@ -21,6 +21,7 @@ import {
   finishJobRun,
   type JobName,
 } from "../../src/db/job-runs.ts";
+import { closeEvent, softDeleteEvent } from "../../src/db/events.ts";
 import { createTask, editTask, getTask } from "../../src/db/tasks.ts";
 import { must } from "../db/bot-writes.ts";
 import type { TaskRow } from "../../src/db/types.ts";
@@ -425,5 +426,63 @@ describe("two writes for the last place under a quota, from the bot alone", () =
     expect(failed(results)[0]).toMatchObject({
       error: { category: "actor_task_limit", code: "CF430" },
     });
+  });
+});
+
+/** A change to a task or an event against the close or delete of the event over it. */
+describe("a task and its event, from the bot alone", () => {
+  const ROUNDS = 10;
+  const task = (guildId: string, eventId: string) => ({
+    guildId,
+    eventId,
+    assigneeId: fakeId(),
+    actorId: fakeId(),
+    description: "Book the room",
+    dueDate: "2030-01-10" as DateOnly,
+  });
+
+  it("an edit and the event's close do not deadlock, and an edit after the close is refused", async () => {
+    for (let round = 0; round < ROUNDS; round += 1) {
+      const guild = await insertGuild(db.connection);
+      const eventId = await insertEvent(db.connection, guild);
+      const made = must(await createTask(db.db, task(guild.guildId, eventId)));
+      const [edit, closed] = await Promise.all([
+        editTask(db.db, {
+          guildId: guild.guildId,
+          taskId: made.id,
+          expectedUpdatedAt: made.updated_at,
+          description: "Edited",
+          dueDate: made.due_date,
+          assigneeId: made.assignee_id,
+          actorId: fakeId(),
+        }),
+        closeEvent(db.db, { guildId: guild.guildId, eventId }),
+      ]);
+      expect(closed.ok).toBe(true);
+      expect(
+        edit.ok || (!edit.ok && edit.error.category === "parent_unavailable"),
+      ).toBe(true);
+    }
+  });
+
+  it("a new task and the event's soft delete do not deadlock, and no task is left live under the deleted event", async () => {
+    for (let round = 0; round < ROUNDS; round += 1) {
+      const guild = await insertGuild(db.connection);
+      const eventId = await insertEvent(db.connection, guild);
+      const [created, deleted] = await Promise.all([
+        createTask(db.db, task(guild.guildId, eventId)),
+        softDeleteEvent(db.db, { guildId: guild.guildId, eventId }),
+      ]);
+      expect(deleted.ok).toBe(true);
+      expect(
+        created.ok ||
+          (!created.ok && created.error.category === "parent_unavailable"),
+      ).toBe(true);
+      const { rows } = await db.observer.query<{ n: number }>(
+        "SELECT count(*)::int AS n FROM discord_bot.tasks WHERE event_id = $1 AND deleted_at IS NULL",
+        [eventId],
+      );
+      expect(rows[0]?.n).toBe(0);
+    }
   });
 });
