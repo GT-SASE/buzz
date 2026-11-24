@@ -53,7 +53,8 @@ const w = useReminderWorld();
 // The cron endpoint's own client runs on the same database.
 void mock.module("../../src/db/neon.ts", () => ({
   neonRunner: () => pgliteSql(w.database, (call) => w.sqlGate(call)),
-  neonOrm: () => pgliteOrm(w.database, (call) => w.sqlGate(call)),
+  neonOpen: () => (work: (orm: unknown) => Promise<unknown>) =>
+    work(pgliteOrm(w.database, (call) => w.sqlGate(call))),
 }));
 
 async function eventWithThread(

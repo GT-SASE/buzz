@@ -127,7 +127,9 @@ export function write<T>(
   db: DbClient,
   work: (orm: BotDb) => Promise<T>,
 ): Promise<DbResult<T>> {
-  return withinDeadline(db, () => work(db.orm));
+  return withinDeadline(db, () =>
+    db.open === undefined ? work(db.orm) : db.open(work),
+  );
 }
 
 /**
@@ -139,7 +141,11 @@ export function transact<T>(
   db: DbClient,
   work: (tx: BotTx) => Promise<T>,
 ): Promise<DbResult<T>> {
-  return withinDeadline(db, () => db.orm.transaction(work));
+  return withinDeadline(db, () =>
+    db.open === undefined
+      ? db.orm.transaction(work)
+      : db.open((orm) => orm.transaction(work)),
+  );
 }
 
 /** The rows of a raw statement run through Drizzle, whichever driver ran it. */

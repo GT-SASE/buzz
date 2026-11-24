@@ -80,6 +80,19 @@ export async function adoptDbmateDatabase(
     await client.query(
       "SELECT pg_advisory_xact_lock(hashtextextended('discord_bot_migrate', 0))",
     );
+    // A run that waited on the lock finds the other's row and has nothing to do.
+    const again = await client.query(
+      `SELECT to_regclass('${MIGRATIONS_SCHEMA}.${MIGRATIONS_TABLE}')::text AS ledger`,
+    );
+    if ((again.rows[0] as { ledger: string | null }).ledger !== null) {
+      const filled = await client.query(
+        `SELECT count(*)::int AS count FROM ${LEDGER}`,
+      );
+      if ((filled.rows[0] as { count: number }).count > 0) {
+        await client.query("COMMIT");
+        return "already_ledgered";
+      }
+    }
     const versions = await client.query(
       `SELECT version FROM ${MIGRATIONS_SCHEMA}.schema_migrations ORDER BY version`,
     );

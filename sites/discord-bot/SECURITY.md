@@ -41,7 +41,7 @@ What the database still enforces, whichever login writes, because it is a trigge
 - A new event gets its steps. A guild's time zone has to be one the server knows.
 - Every Discord ID is checked by the `discord_id` domain, and the `CHECK` constraints keep rows in step with their status.
 
-The grants are by column wherever a write changes only some. `events` and `tasks` keep the table-wide `INSERT` and `UPDATE` they had before. The only `DELETE` is on `interaction_claims`, whose rows are worth a day. `task_reassignments` can be inserted into and not read, and `row_versions` not at all.
+The grants are by column wherever a write changes only some. `events` and `tasks` keep the table-wide `INSERT` and `UPDATE` they had before. The only `DELETE` is on `interaction_claims`, because the daily cron must remove claims older than a day (an interaction token lasts 15 minutes) and a table with no history to lose is the one place that is safe. `task_reassignments` can be inserted into and not read, and `row_versions` not at all.
 
 What only the code guarantees, and a hostile login could skip: the config version check, the audit row of a config change, the hand-off and reminder claim tokens, the assignee limit of a step, and the order in which steps may be done. These were enforced for a hostile login too when functions held the writes. The table above shows what that costs, and [After a `DATABASE_URL` leak](#after-a-database_url-leak) says what to check.
 

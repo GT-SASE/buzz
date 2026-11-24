@@ -27,18 +27,25 @@ export function neonRunner(connectionString: string): Runner {
 
 /**
  * The connection for writes. A transaction needs one connection for all of its
- * statements, which HTTP cannot give, so these go over a WebSocket (Node 22 and later
- * have one built in) from a small pool. Idle connections are let go after a few seconds,
- * so a function that goes quiet holds none open, and a connection that Neon drops while
- * idle is only noted, as the next statement takes a fresh one.
+ * statements, which HTTP cannot give, so each write opens a pool of one over a WebSocket
+ * (Node 22 and later have one built in), runs, and ends the pool in `finally`. Nothing
+ * is held across requests, as Neon advises for serverless. The price is a handshake per
+ * write; a statement that needs no lock still takes one round trip once connected.
  */
-export function neonOrm(connectionString: string): BotDb {
-  const pool = new Pool({
-    connectionString,
-    max: 4,
-    idleTimeoutMillis: 5000,
-    connectionTimeoutMillis: 3000,
-  });
-  pool.on("error", () => undefined);
-  return drizzle({ client: pool, schema });
+export function neonOpen(
+  connectionString: string,
+): <T>(work: (orm: BotDb) => Promise<T>) => Promise<T> {
+  return async (work) => {
+    const pool = new Pool({
+      connectionString,
+      max: 1,
+      connectionTimeoutMillis: 3000,
+    });
+    pool.on("error", () => undefined);
+    try {
+      return await work(drizzle({ client: pool, schema }));
+    } finally {
+      await pool.end().catch(() => undefined);
+    }
+  };
 }

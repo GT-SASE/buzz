@@ -84,7 +84,8 @@ const liveDatabase = (): PGlite => {
 };
 void mock.module("../../src/db/neon.ts", () => ({
   neonRunner: () => pgliteSql(liveDatabase),
-  neonOrm: () => pgliteOrm(liveDatabase),
+  neonOpen: () => (work: (orm: unknown) => Promise<unknown>) =>
+    work(pgliteOrm(liveDatabase)),
 }));
 
 const FIXED_REFUSAL = {

@@ -5,7 +5,7 @@
 
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 import { getDatabaseUrl } from "../lib/env.ts";
-import { neonOrm, neonRunner } from "./neon.ts";
+import { neonOpen, neonRunner } from "./neon.ts";
 import type * as schema from "./schema.ts";
 
 /** A row as the driver returns it, with the column types read as `TYPE_PARSERS` says. */
@@ -32,6 +32,8 @@ export type BotTx = Parameters<Parameters<BotDb["transaction"]>[0]>[0];
 export interface DbClient {
   readonly run: Runner;
   readonly orm: BotDb;
+  /** Runs a write on a connection opened for it and closed after. Without it, `orm`. */
+  readonly open?: <T>(work: (orm: BotDb) => Promise<T>) => Promise<T>;
   readonly deadlineMs: number;
 }
 
@@ -63,8 +65,11 @@ const NO_WRITE_CONNECTION = new Proxy(
 export function createDbClient(
   run: Runner,
   orm: BotDb = NO_WRITE_CONNECTION,
+  open?: DbClient["open"],
 ): DbClient {
-  return { run, orm, deadlineMs: DEFAULT_DEADLINE_MS };
+  return open === undefined
+    ? { run, orm, deadlineMs: DEFAULT_DEADLINE_MS }
+    : { run, orm, open, deadlineMs: DEFAULT_DEADLINE_MS };
 }
 
 /**
@@ -72,7 +77,9 @@ export function createDbClient(
  * abandoned and fails as `unavailable`.
  */
 export function withDeadline(db: DbClient, deadlineMs: number): DbClient {
-  return { run: db.run, orm: db.orm, deadlineMs };
+  return db.open === undefined
+    ? { run: db.run, orm: db.orm, deadlineMs }
+    : { run: db.run, orm: db.orm, open: db.open, deadlineMs };
 }
 
 let client: DbClient | undefined;
@@ -80,7 +87,7 @@ let client: DbClient | undefined;
 /** One client for the life of the function instance, for handlers and the cron. */
 export function getDb(): DbClient {
   const url = getDatabaseUrl();
-  client ??= createDbClient(neonRunner(url), neonOrm(url));
+  client ??= createDbClient(neonRunner(url), undefined, neonOpen(url));
   return client;
 }
 

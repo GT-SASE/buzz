@@ -37,7 +37,7 @@ await mock.module("@vercel/functions", () => ({ waitUntil }));
 // The database the endpoint builds from its settings reads nothing, and saves a draft.
 await mock.module("../db/neon.ts", () => ({
   neonRunner: () => recordingSql().sql,
-  neonOrm: () => stubOrm(),
+  neonOpen: () => (work: (orm: unknown) => Promise<unknown>) => work(stubOrm()),
 }));
 
 const { publicKey, privateKey } = generateKeyPairSync("ed25519");

@@ -96,14 +96,10 @@
         "config_audit_guild_id_fkey": {
           "name": "config_audit_guild_id_fkey",
           "tableFrom": "config_audit",
-          "columnsFrom": [
-            "guild_id"
-          ],
+          "columnsFrom": ["guild_id"],
           "tableTo": "guild_config",
           "schemaTo": "discord_bot",
-          "columnsTo": [
-            "guild_id"
-          ],
+          "columnsTo": ["guild_id"],
           "onUpdate": "no action",
           "onDelete": "no action"
         }
@@ -111,9 +107,7 @@
       "compositePrimaryKeys": {
         "config_audit_pkey": {
           "name": "config_audit_pkey",
-          "columns": [
-            "id"
-          ]
+          "columns": ["id"]
         }
       },
       "uniqueConstraints": {},
@@ -213,14 +207,10 @@
         "event_reminder_log_event_id_fkey": {
           "name": "event_reminder_log_event_id_fkey",
           "tableFrom": "event_reminder_log",
-          "columnsFrom": [
-            "event_id"
-          ],
+          "columnsFrom": ["event_id"],
           "tableTo": "events",
           "schemaTo": "discord_bot",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "no action"
         }
@@ -228,11 +218,7 @@
       "compositePrimaryKeys": {
         "event_reminder_log_pkey": {
           "name": "event_reminder_log_pkey",
-          "columns": [
-            "event_id",
-            "kind",
-            "reminder_date"
-          ]
+          "columns": ["event_id", "kind", "reminder_date"]
         }
       },
       "uniqueConstraints": {},
@@ -375,16 +361,10 @@
         "event_step_assignees_event_id_guild_id_fkey": {
           "name": "event_step_assignees_event_id_guild_id_fkey",
           "tableFrom": "event_step_assignees",
-          "columnsFrom": [
-            "event_id",
-            "guild_id"
-          ],
+          "columnsFrom": ["event_id", "guild_id"],
           "tableTo": "events",
           "schemaTo": "discord_bot",
-          "columnsTo": [
-            "id",
-            "guild_id"
-          ],
+          "columnsTo": ["id", "guild_id"],
           "onUpdate": "no action",
           "onDelete": "no action"
         }
@@ -392,9 +372,7 @@
       "compositePrimaryKeys": {
         "event_step_assignees_pkey": {
           "name": "event_step_assignees_pkey",
-          "columns": [
-            "id"
-          ]
+          "columns": ["id"]
         }
       },
       "uniqueConstraints": {},
@@ -498,16 +476,10 @@
         "event_steps_event_id_guild_id_fkey": {
           "name": "event_steps_event_id_guild_id_fkey",
           "tableFrom": "event_steps",
-          "columnsFrom": [
-            "event_id",
-            "guild_id"
-          ],
+          "columnsFrom": ["event_id", "guild_id"],
           "tableTo": "events",
           "schemaTo": "discord_bot",
-          "columnsTo": [
-            "id",
-            "guild_id"
-          ],
+          "columnsTo": ["id", "guild_id"],
           "onUpdate": "no action",
           "onDelete": "no action"
         }
@@ -515,10 +487,7 @@
       "compositePrimaryKeys": {
         "event_steps_pkey": {
           "name": "event_steps_pkey",
-          "columns": [
-            "event_id",
-            "kind"
-          ]
+          "columns": ["event_id", "kind"]
         }
       },
       "uniqueConstraints": {},
@@ -802,16 +771,10 @@
         "events_guild_id_channel_id_fkey": {
           "name": "events_guild_id_channel_id_fkey",
           "tableFrom": "events",
-          "columnsFrom": [
-            "guild_id",
-            "channel_id"
-          ],
+          "columnsFrom": ["guild_id", "channel_id"],
           "tableTo": "managed_channels",
           "schemaTo": "discord_bot",
-          "columnsTo": [
-            "guild_id",
-            "channel_id"
-          ],
+          "columnsTo": ["guild_id", "channel_id"],
           "onUpdate": "no action",
           "onDelete": "no action"
         }
@@ -819,18 +782,13 @@
       "compositePrimaryKeys": {
         "events_pkey": {
           "name": "events_pkey",
-          "columns": [
-            "id"
-          ]
+          "columns": ["id"]
         }
       },
       "uniqueConstraints": {
         "events_id_guild_unique": {
           "name": "events_id_guild_unique",
-          "columns": [
-            "id",
-            "guild_id"
-          ],
+          "columns": ["id", "guild_id"],
           "nullsNotDistinct": false
         }
       },
@@ -938,9 +896,7 @@
       "compositePrimaryKeys": {
         "guild_config_pkey": {
           "name": "guild_config_pkey",
-          "columns": [
-            "guild_id"
-          ]
+          "columns": ["guild_id"]
         }
       },
       "uniqueConstraints": {},
@@ -1000,9 +956,7 @@
       "compositePrimaryKeys": {
         "interaction_claims_pkey": {
           "name": "interaction_claims_pkey",
-          "columns": [
-            "interaction_id"
-          ]
+          "columns": ["interaction_id"]
         }
       },
       "uniqueConstraints": {},
@@ -1112,9 +1066,7 @@
       "compositePrimaryKeys": {
         "job_runs_pkey": {
           "name": "job_runs_pkey",
-          "columns": [
-            "id"
-          ]
+          "columns": ["id"]
         }
       },
       "uniqueConstraints": {},
@@ -1183,14 +1135,10 @@
         "managed_channels_guild_id_fkey": {
           "name": "managed_channels_guild_id_fkey",
           "tableFrom": "managed_channels",
-          "columnsFrom": [
-            "guild_id"
-          ],
+          "columnsFrom": ["guild_id"],
           "tableTo": "guild_config",
           "schemaTo": "discord_bot",
-          "columnsTo": [
-            "guild_id"
-          ],
+          "columnsTo": ["guild_id"],
           "onUpdate": "no action",
           "onDelete": "no action"
         }
@@ -1198,10 +1146,7 @@
       "compositePrimaryKeys": {
         "managed_channels_pkey": {
           "name": "managed_channels_pkey",
-          "columns": [
-            "guild_id",
-            "channel_id"
-          ]
+          "columns": ["guild_id", "channel_id"]
         }
       },
       "uniqueConstraints": {},
@@ -1303,14 +1248,10 @@
         "reminder_log_task_id_fkey": {
           "name": "reminder_log_task_id_fkey",
           "tableFrom": "reminder_log",
-          "columnsFrom": [
-            "task_id"
-          ],
+          "columnsFrom": ["task_id"],
           "tableTo": "tasks",
           "schemaTo": "discord_bot",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "no action"
         }
@@ -1318,11 +1259,7 @@
       "compositePrimaryKeys": {
         "reminder_log_pkey": {
           "name": "reminder_log_pkey",
-          "columns": [
-            "task_id",
-            "kind",
-            "due_date"
-          ]
+          "columns": ["task_id", "kind", "due_date"]
         }
       },
       "uniqueConstraints": {},
@@ -1437,9 +1374,7 @@
       "compositePrimaryKeys": {
         "row_versions_pkey": {
           "name": "row_versions_pkey",
-          "columns": [
-            "id"
-          ]
+          "columns": ["id"]
         }
       },
       "uniqueConstraints": {},
@@ -1523,9 +1458,7 @@
       "compositePrimaryKeys": {
         "setup_drafts_pkey": {
           "name": "setup_drafts_pkey",
-          "columns": [
-            "guild_id"
-          ]
+          "columns": ["guild_id"]
         }
       },
       "uniqueConstraints": {},
@@ -1642,28 +1575,20 @@
         "task_reassignments_guild_id_fkey": {
           "name": "task_reassignments_guild_id_fkey",
           "tableFrom": "task_reassignments",
-          "columnsFrom": [
-            "guild_id"
-          ],
+          "columnsFrom": ["guild_id"],
           "tableTo": "guild_config",
           "schemaTo": "discord_bot",
-          "columnsTo": [
-            "guild_id"
-          ],
+          "columnsTo": ["guild_id"],
           "onUpdate": "no action",
           "onDelete": "no action"
         },
         "task_reassignments_task_id_fkey": {
           "name": "task_reassignments_task_id_fkey",
           "tableFrom": "task_reassignments",
-          "columnsFrom": [
-            "task_id"
-          ],
+          "columnsFrom": ["task_id"],
           "tableTo": "tasks",
           "schemaTo": "discord_bot",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "no action"
         }
@@ -1671,9 +1596,7 @@
       "compositePrimaryKeys": {
         "task_reassignments_pkey": {
           "name": "task_reassignments_pkey",
-          "columns": [
-            "id"
-          ]
+          "columns": ["id"]
         }
       },
       "uniqueConstraints": {},
@@ -1861,16 +1784,10 @@
         "tasks_event_id_guild_id_fkey": {
           "name": "tasks_event_id_guild_id_fkey",
           "tableFrom": "tasks",
-          "columnsFrom": [
-            "event_id",
-            "guild_id"
-          ],
+          "columnsFrom": ["event_id", "guild_id"],
           "tableTo": "events",
           "schemaTo": "discord_bot",
-          "columnsTo": [
-            "id",
-            "guild_id"
-          ],
+          "columnsTo": ["id", "guild_id"],
           "onUpdate": "no action",
           "onDelete": "no action"
         }
@@ -1878,9 +1795,7 @@
       "compositePrimaryKeys": {
         "tasks_pkey": {
           "name": "tasks_pkey",
-          "columns": [
-            "id"
-          ]
+          "columns": ["id"]
         }
       },
       "uniqueConstraints": {},
@@ -1928,10 +1843,7 @@
     "discord_bot.event_status": {
       "name": "event_status",
       "schema": "discord_bot",
-      "values": [
-        "active",
-        "closed"
-      ]
+      "values": ["active", "closed"]
     },
     "discord_bot.event_step_kind": {
       "name": "event_step_kind",
@@ -1948,56 +1860,32 @@
     "discord_bot.job_run_status": {
       "name": "job_run_status",
       "schema": "discord_bot",
-      "values": [
-        "running",
-        "succeeded",
-        "failed"
-      ]
+      "values": ["running", "succeeded", "failed"]
     },
     "discord_bot.managed_channel_status": {
       "name": "managed_channel_status",
       "schema": "discord_bot",
-      "values": [
-        "active",
-        "unavailable",
-        "removed"
-      ]
+      "values": ["active", "unavailable", "removed"]
     },
     "discord_bot.reminder_kind": {
       "name": "reminder_kind",
       "schema": "discord_bot",
-      "values": [
-        "three_days",
-        "one_day",
-        "due_day",
-        "overdue"
-      ]
+      "values": ["three_days", "one_day", "due_day", "overdue"]
     },
     "discord_bot.reminder_state": {
       "name": "reminder_state",
       "schema": "discord_bot",
-      "values": [
-        "claimed",
-        "sent",
-        "skipped"
-      ]
+      "values": ["claimed", "sent", "skipped"]
     },
     "discord_bot.task_status": {
       "name": "task_status",
       "schema": "discord_bot",
-      "values": [
-        "open",
-        "done"
-      ]
+      "values": ["open", "done"]
     },
     "discord_bot.thread_status": {
       "name": "thread_status",
       "schema": "discord_bot",
-      "values": [
-        "pending",
-        "active",
-        "missing"
-      ]
+      "values": ["pending", "active", "missing"]
     }
   },
   "schemas": {
