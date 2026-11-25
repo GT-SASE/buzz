@@ -16,6 +16,7 @@ import {
 } from "../../src/db/events.ts";
 import {
   assignEventStep,
+  claimStepHandoff,
   completeEventStep,
   unassignEventStep,
 } from "../../src/db/event-steps.ts";
@@ -25,7 +26,8 @@ import {
 } from "../../src/db/guild-config.ts";
 import { updateRecorded } from "../../src/db/history.ts";
 import { transact } from "../../src/db/internal.ts";
-import { createTask, markOwnTaskDone } from "../../src/db/tasks.ts";
+import { admitTask } from "../../src/db/rules.ts";
+import { createTask, editTask, markOwnTaskDone } from "../../src/db/tasks.ts";
 import { events, guildConfig, tasks } from "../../src/db/schema.ts";
 import type { DateOnly } from "../../src/lib/dates.ts";
 import { botClient, must } from "./bot-writes.ts";
@@ -408,6 +410,76 @@ describe("what the triggers refused, the bot's writes refuse", () => {
         ),
       ),
     ).toMatchObject(refusal("22023"));
+  });
+});
+
+describe("what the bot's calls refuse or count", () => {
+  it("refuses a step's hand-off on a closed event: CF410", async () => {
+    const guild = await insertGuild(db);
+    const eventId = await insertEvent(db, guild);
+    must(
+      await completeEventStep(bot(), {
+        eventId,
+        guildId: guild.guildId,
+        kind: "budget_sheet",
+        actorId: fakeId(),
+      }),
+    );
+    must(await closeEvent(bot(), { guildId: guild.guildId, eventId }));
+    expect(
+      await claimStepHandoff(bot(), {
+        eventId,
+        guildId: guild.guildId,
+        kind: "budget_sheet",
+      }),
+    ).toEqual({
+      ok: false,
+      error: { category: "parent_unavailable", code: "CF410" },
+    });
+  });
+
+  it("counts a task edit against the officer's limit only when the person changes", async () => {
+    const guild = await insertGuild(db);
+    const taskId = await insertTask(db, guild, await insertEvent(db, guild));
+    const actor = fakeId();
+    const edit = async (assignee?: string) => {
+      const { rows } = await db.query<{ assignee_id: string; v: string }>(
+        "SELECT assignee_id, updated_at::text AS v FROM discord_bot.tasks WHERE id = $1",
+        [taskId],
+      );
+      must(
+        await editTask(bot(), {
+          taskId,
+          guildId: guild.guildId,
+          expectedUpdatedAt: rows[0]?.v ?? "",
+          description: "Book the room",
+          dueDate: "2030-01-10" as DateOnly,
+          assigneeId: assignee ?? rows[0]?.assignee_id ?? "",
+          actorId: actor,
+        }),
+      );
+      const counted = await db.query<{ n: number }>(
+        "SELECT count(*)::int AS n FROM discord_bot.task_reassignments WHERE actor_id = $1",
+        [actor],
+      );
+      return counted.rows[0]?.n;
+    };
+
+    expect(await edit()).toBe(0);
+    expect(await edit(fakeId())).toBe(1);
+  });
+
+  it("will not count a quota above read committed: 0A000", async () => {
+    const guild = await insertGuild(db);
+    const eventId = await insertEvent(db, guild);
+    const outcome: unknown = await bot()
+      .orm.transaction(
+        (tx) =>
+          admitTask(tx, { eventId, guildId: guild.guildId, actorId: fakeId() }),
+        { isolationLevel: "repeatable read" },
+      )
+      .catch((error: unknown) => error);
+    expect(outcome).toMatchObject({ code: "0A000" });
   });
 });
 

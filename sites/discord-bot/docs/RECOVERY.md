@@ -20,20 +20,22 @@ The file holds member IDs and task text. Encrypt it, keep it private and out of 
 
 ## Undoing a change
 
-Run these as the tables' owner, in Neon's SQL editor or `psql`. Each should change 1 row. Discord isn't updated: an event's overview stays as it was until its next change. Find the full IDs first:
+Run these as the tables' owner, in Neon's SQL editor or `psql`. Each should change 1 row. Discord isn't updated: an event's overview stays as it was until its next change. The database has no triggers, so these keep no history of their own and leave `updated_at` as it was unless the statement sets it, which is why each sets `updated_at = now()`. Nothing stops a task being reopened under a closed event except the `EXISTS` below, so keep it. Find the full IDs first:
 
 ```sql
 SELECT id, name, event_date, status, deleted_at FROM discord_bot.events WHERE name ILIKE '%<part of the name>%';
 SELECT id, description, due_date, status, deleted_at FROM discord_bot.tasks WHERE event_id = '<event id>';
 ```
 
-**Reopen a closed event**, then **a task marked done** (a task under a closed event fails with `CF410`):
+**Reopen a closed event**, then **a task marked done** (only under an event that is live and active, as the bot would not touch it otherwise):
 
 ```sql
-UPDATE discord_bot.events SET status = 'active'
+UPDATE discord_bot.events SET status = 'active', updated_at = now()
 WHERE id = '<event id>' AND status = 'closed' AND deleted_at IS NULL;
-UPDATE discord_bot.tasks SET status = 'open', completed_at = NULL
-WHERE id = '<task id>' AND status = 'done';
+UPDATE discord_bot.tasks SET status = 'open', completed_at = NULL, updated_at = now()
+WHERE id = '<task id>' AND status = 'done'
+  AND EXISTS (SELECT 1 FROM discord_bot.events AS event
+              WHERE event.id = tasks.event_id AND event.status = 'active' AND event.deleted_at IS NULL);
 ```
 
 **Undelete an event and the tasks deleted with it.** If this fails with `23505` on `events_live_thread_uq`, another event now has its post: also set `thread_id = NULL, overview_message_id = NULL, thread_status = 'pending'`, then run `/event link` in a new post.
@@ -41,23 +43,24 @@ WHERE id = '<task id>' AND status = 'done';
 ```sql
 WITH gone AS (SELECT id, deleted_at FROM discord_bot.events WHERE id = '<event id>'),
 tasks AS (
-  UPDATE discord_bot.tasks AS task SET deleted_at = NULL FROM gone
+  UPDATE discord_bot.tasks AS task SET deleted_at = NULL, updated_at = now() FROM gone
   WHERE task.event_id = gone.id AND task.deleted_at = gone.deleted_at RETURNING 1
 )
-UPDATE discord_bot.events SET deleted_at = NULL
+UPDATE discord_bot.events SET deleted_at = NULL, updated_at = now()
 WHERE id = '<event id>' AND deleted_at IS NOT NULL;
 ```
 
 **Undelete one task** (only the owner can; check its event is live first), or **put back an earlier version** of one, listed newest first:
 
 ```sql
-UPDATE discord_bot.tasks SET deleted_at = NULL WHERE id = '<task id>' AND deleted_at IS NOT NULL;
+UPDATE discord_bot.tasks SET deleted_at = NULL, updated_at = now() WHERE id = '<task id>' AND deleted_at IS NOT NULL;
 SELECT id, changed_at, old_row FROM discord_bot.row_versions
 WHERE source_table = 'tasks' AND row_id = '<task id>' ORDER BY id DESC;
 UPDATE discord_bot.tasks AS task
 SET assignee_id = version.old_row ->> 'assignee_id',
     description = version.old_row ->> 'description',
-    due_date = (version.old_row ->> 'due_date')::date
+    due_date = (version.old_row ->> 'due_date')::date,
+    updated_at = now()
 FROM discord_bot.row_versions AS version
 WHERE version.id = <version id> AND version.source_table = 'tasks' AND task.id::text = version.row_id;
 ```

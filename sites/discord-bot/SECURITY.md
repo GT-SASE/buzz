@@ -35,7 +35,7 @@ The bot writes its tables itself, in TypeScript (`src/db`), inside transactions 
 
 The database has no triggers or functions of its own. A hostile `bot_app` login could skip these, which only the bot's code enforces:
 
-- the history of a change (it can add rows to `row_versions`, which it cannot change or remove, and until a later migration revokes it, read in four columns);
+- the history of a change (it can add rows to `row_versions`, which it cannot change or remove or read);
 - the task and reassignment quotas, and the checks on a deleted row, a closed event and a removed channel;
 - the config version check, the audit row of a config change, the hand-off and reminder claim tokens, the assignee limit of a step, and the order in which steps may be done.
 

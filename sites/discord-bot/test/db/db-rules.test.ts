@@ -310,15 +310,12 @@ describe("row history", () => {
         {
           table_select: false,
           table_insert: role === BOT_APP,
-          // The bot reads four columns until a later migration takes that back.
-          column_select: role === BOT_APP,
+          column_select: false,
         },
       ]);
       for (const sql of [
         `SELECT * FROM discord_bot.row_versions`,
-        ...(role === BOT_APP
-          ? [`SELECT id FROM discord_bot.row_versions`]
-          : [`SELECT old_row FROM discord_bot.row_versions`]),
+        `SELECT old_row FROM discord_bot.row_versions`,
         `UPDATE discord_bot.row_versions SET old_row = '{}'`,
         `DELETE FROM discord_bot.row_versions`,
         `TRUNCATE discord_bot.row_versions`,
