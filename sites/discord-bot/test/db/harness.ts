@@ -109,13 +109,6 @@ async function migrateAsOwner(
 /** Applies the Drizzle migrations to a database, as the owner, as `db:migrate` does. */
 export const migrateWithDrizzle = migrateAsOwner;
 
-/**
- * True when the database has none of its triggers. A test of what a trigger does to a
- * write made by hand has nothing to show then, and is skipped; the bot's own writes are
- * tested either way.
- */
-export const NO_TRIGGERS = process.env.BOT_TEST_NO_TRIGGERS === "1";
-
 /** What stands in for the trigger that made a new event's steps, for rows put in by hand. */
 export const SEED_STEPS = `
   CREATE FUNCTION discord_bot.test_seed_steps() RETURNS trigger LANGUAGE plpgsql AS $$
@@ -128,27 +121,6 @@ export const SEED_STEPS = `
   CREATE TRIGGER test_seed_steps AFTER INSERT ON discord_bot.events
     FOR EACH ROW EXECUTE FUNCTION discord_bot.test_seed_steps();
 `;
-
-/**
- * Drops every trigger and trigger function of the bot's tables, as a later migration
- * will, to show the bot's own writes hold without them. With `BOT_TEST_NO_TRIGGERS=1`
- * every test database is built this way.
- */
-export async function dropTriggers(db: Connection): Promise<void> {
-  await db.exec(`
-    DO $$
-    DECLARE item record;
-    BEGIN
-      FOR item IN
-        SELECT g.tgname, c.relname FROM pg_trigger g
-        JOIN pg_class c ON c.oid = g.tgrelid
-        WHERE c.relnamespace = 'discord_bot'::regnamespace AND NOT g.tgisinternal
-      LOOP
-        EXECUTE format('DROP TRIGGER %I ON discord_bot.%I', item.tgname, item.relname);
-      END LOOP;
-    END $$;
-  `);
-}
 
 /** A server as a Neon project starts: an owner, an empty `discord_bot` schema, nothing else. */
 export async function newServer(): Promise<PGlite> {
@@ -174,12 +146,9 @@ async function buildMigratedDb(
     }
   }
   await migrateAsOwner(db);
-  if (process.env.BOT_TEST_NO_TRIGGERS === "1") {
-    await dropTriggers(db);
-    // Tests put events in by hand, which used to get their steps from a trigger. The bot
-    // makes steps itself now; this stands in for rows no bot code wrote.
-    await db.exec(SEED_STEPS);
-  }
+  // Tests put events in by hand, which used to get their steps from a trigger. The bot
+  // makes steps itself; this stands in for rows no bot code wrote.
+  await db.exec(SEED_STEPS);
   return db;
 }
 
@@ -211,7 +180,6 @@ function dumpPath(): string {
     }
   }
   hash.update(readFileSync(join(MIGRATIONS_DIR, "meta", "_journal.json")));
-  hash.update(process.env.BOT_TEST_NO_TRIGGERS ?? "");
   return join(DUMP_DIR, `${hash.digest("hex").slice(0, 20)}.tar`);
 }
 

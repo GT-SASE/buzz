@@ -76,25 +76,7 @@ jobs:
           bun run db:migrate
           # A second run, and a second at the same time, change nothing.
           bun run db:migrate & bun run db:migrate & wait
-          PGPASSWORD="${OWNER_PASSWORD}" psql -v ON_ERROR_STOP=1 -U migration_owner -d bot -tA -c "SELECT count(*) FROM discord_bot.drizzle_migrations" | grep -qx 4
-      # The same database with every trigger dropped, as a later change will leave it,
-      # to show the bot's own writes hold without them.
-      - name: Make a copy with no triggers
-        run: |
-          psql -v ON_ERROR_STOP=1 -U postgres <<'SQL'
-          CREATE DATABASE bot_no_triggers TEMPLATE bot OWNER migration_owner;
-          \c bot_no_triggers
-          DO $$
-          DECLARE item record;
-          BEGIN
-            FOR item IN
-              SELECT g.tgname, c.relname FROM pg_trigger g JOIN pg_class c ON c.oid = g.tgrelid
-              WHERE c.relnamespace = 'discord_bot'::regnamespace AND NOT g.tgisinternal
-            LOOP
-              EXECUTE format('DROP TRIGGER %I ON discord_bot.%I', item.tgname, item.relname);
-            END LOOP;
-          END $$;
-          SQL
+          PGPASSWORD="${OWNER_PASSWORD}" psql -v ON_ERROR_STOP=1 -U migration_owner -d bot -tA -c "SELECT count(*) FROM discord_bot.drizzle_migrations" | grep -qx 5
       # The owner may do this only because it made bot_app, which gave it ADMIN on the
       # role, so this also checks that grant.
       - name: Set bot_app's password as the owner
@@ -103,11 +85,6 @@ jobs:
           ALTER ROLE bot_app PASSWORD :'bot_password';
           SQL
       - run: bun run test:db:concurrency
-      - name: The concurrency tests on the copy with no triggers
-        run: bun run test:db:concurrency
-        env:
-          BOT_TEST_NO_TRIGGERS: "1"
-          CONCURRENCY_DATABASE_URL: postgres://postgres@localhost:5432/bot_no_triggers
       - name: Show the server's log
         if: failure()
         run: docker logs "${{ job.services.postgres.id }}"

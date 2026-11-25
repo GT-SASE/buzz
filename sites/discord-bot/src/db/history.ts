@@ -4,16 +4,11 @@
  * row kept deleted, a closed event kept closed, and nothing changed under a closed or
  * deleted event. The rows are locked first, the old version is read under the lock, and
  * the history is written after the update, in the same transaction.
- *
- * While the triggers still exist, they write the history row inside the update and this
- * writes the same row after it unless the trigger's, from the same transaction, is
- * already there. The trigger's goes first, which is why this never goes before the update.
  */
 
 import {
   and,
   eq,
-  exists,
   getTableColumns,
   getTableName,
   inArray,
@@ -22,16 +17,10 @@ import {
   type SQL,
   type SQLWrapper,
 } from "drizzle-orm";
-import {
-  jsonb,
-  text,
-  type PgTable,
-  type SelectedFields,
-} from "drizzle-orm/pg-core";
+import type { PgTable, SelectedFields } from "drizzle-orm/pg-core";
 import type { BotTx } from "./client.ts";
 import { raise } from "./internal.ts";
 import {
-  botSchema,
   eventStepAssignees,
   eventSteps,
   events,
@@ -42,18 +31,6 @@ import {
   tasks,
   timezoneNames,
 } from "./schema.ts";
-
-/**
- * `row_versions` as an insert writes it: the columns that are given, the rest left to
- * their defaults (`id`, `changed_at`, and `xid`, which is this transaction). Not part of
- * the schema drizzle-kit reads; it is only the shape Drizzle needs for an insert-select.
- */
-const newVersion = botSchema.table("row_versions", {
-  sourceTable: text("source_table").notNull(),
-  operation: text("operation").notNull(),
-  rowId: text("row_id").notNull(),
-  oldRow: jsonb("old_row").notNull(),
-});
 
 export type TrackedTable =
   | typeof events
@@ -268,37 +245,7 @@ export async function updateRecorded<R extends SelectedFields>(
     }
   }
   if (history.length > 0) {
-    // One statement for the whole write. A version is skipped if this transaction already
-    // kept it, which is the trigger's. P18b drops the triggers and this check with them.
-    const versions = sql`jsonb_to_recordset(${JSON.stringify(
-      history.map(({ rowId, oldRow }) => ({ row_id: rowId, old_row: oldRow })),
-    )}::jsonb) as v(row_id text, old_row jsonb)`;
-    const thisTransaction = sql`pg_current_xact_id()::text`;
-    await tx.insert(newVersion).select(
-      tx
-        .select({
-          sourceTable: sql<string>`${name}::text`.as("source_table"),
-          operation: sql<string>`'UPDATE'::text`.as("operation"),
-          rowId: sql<string>`v.row_id`.as("row_id"),
-          oldRow: sql<unknown>`v.old_row`.as("old_row"),
-        })
-        .from(versions)
-        .where(
-          sql`not ${exists(
-            tx
-              .select({ one: sql`1` })
-              .from(rowVersions)
-              .where(
-                and(
-                  eq(rowVersions.xid, thisTransaction),
-                  eq(rowVersions.sourceTable, name),
-                  eq(rowVersions.rowId, sql`v.row_id`),
-                  eq(rowVersions.oldRow, sql`v.old_row`),
-                ),
-              ),
-          )}`,
-        ),
-    );
+    await tx.insert(rowVersions).values(history);
   }
 
   return after.map((result: Record<string, unknown>) =>

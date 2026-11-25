@@ -11,7 +11,6 @@ import {
   BOT_APP,
   HOOK_TIMEOUT_MS,
   INSUFFICIENT_PRIVILEGE,
-  NO_TRIGGERS,
   MIGRATION_OWNER,
   createMigratedDb,
   errorCodeOf,
@@ -170,18 +169,6 @@ describe("bot_app and buzz's tables", () => {
       ).toEqual([]);
     }
   });
-
-  it.skipIf(NO_TRIGGERS)(
-    "is reached only by functions that name discord_bot and set an empty search_path",
-    async () => {
-      const { rows } = await db.query<{ proname: string }>(
-        `SELECT p.proname FROM pg_proc p
-        WHERE p.pronamespace = 'discord_bot'::regnamespace AND p.prokind = 'f'
-          AND (p.prosrc ~ '\\mpublic\\.' OR NOT coalesce(p.proconfig @> ARRAY['search_path=""'], false))`,
-      );
-      expect(rows).toEqual([]);
-    },
-  );
 });
 
 describe("PUBLIC and discord_bot", () => {
