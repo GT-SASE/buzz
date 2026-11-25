@@ -244,8 +244,10 @@ export async function updateRecorded<R extends SelectedFields>(
       });
     }
   }
-  if (history.length > 0) {
-    await tx.insert(rowVersions).values(history);
+  // One row per statement: a multi-row insert that takes the `xid` default hangs on PGX,
+  // the local Postgres the tests run on.
+  for (const version of history) {
+    await tx.insert(rowVersions).values(version);
   }
 
   return after.map((result: Record<string, unknown>) =>
