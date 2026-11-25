@@ -53,7 +53,7 @@ export function PageHeader({ title, body }: { title: string; body?: string }) {
   return (
     <header
       data-tone="paper"
-      className="relative overflow-hidden px-5 pt-8 pb-10 sm:px-6 sm:pt-14 sm:pb-20"
+      className="relative overflow-hidden px-5 pt-6 pb-8 sm:px-6 sm:pt-10 sm:pb-12"
     >
       <div className="max-w-content relative mx-auto">
         <div className="rule-heavy grid gap-x-16 gap-y-6 pt-8 lg:grid-cols-[1.35fr_1fr] lg:items-end">
@@ -72,9 +72,9 @@ export function PageHeader({ title, body }: { title: string; body?: string }) {
 }
 
 const sectionPadding = {
-  sm: "py-10 sm:py-16 lg:py-20",
-  md: "py-12 sm:py-20 lg:py-28",
-  lg: "py-16 sm:py-28 lg:py-36",
+  sm: "py-8 sm:py-12 lg:py-14",
+  md: "py-10 sm:py-14 lg:py-20",
+  lg: "py-14 sm:py-20 lg:py-28",
 } as const;
 
 const sectionTones = {
@@ -117,7 +117,7 @@ export function Section({
   const hasHeader = [eyebrow, title, lead].some(Boolean);
 
   const header = hasHeader ? (
-    <div className="hang mb-10 sm:mb-14">
+    <div className="hang mb-8 sm:mb-10">
       {number && (
         <span
           aria-hidden="true"
@@ -178,7 +178,7 @@ export function Section({
           />
         )}
         {split ? (
-          <div className="lg:grid lg:grid-cols-[minmax(0,20rem)_1fr] lg:gap-16">
+          <div className="lg:grid lg:grid-cols-[minmax(0,24rem)_1fr] lg:gap-16">
             {header}
             <div>{children}</div>
           </div>

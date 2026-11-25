@@ -136,7 +136,7 @@ export default async function EventsPage() {
               .filter((event) => !event.reminder)
               .map((event) => event.id)}
           >
-            <div className="grid gap-x-10 gap-y-12 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid gap-x-8 gap-y-10 sm:grid-cols-2 lg:grid-cols-3">
               {upcoming.map((event) => (
                 <EventCard key={event.id} event={event}>
                   {!event.reminder && (
@@ -182,7 +182,7 @@ export default async function EventsPage() {
           </div>
         )}
 
-        <div className="border-hairline mt-14 border-t pt-6">
+        <div className="border-hairline mt-10 border-t pt-4">
           <TextLink href="/events#past">See the archive</TextLink>
         </div>
       </Section>
@@ -191,7 +191,7 @@ export default async function EventsPage() {
           the live archive is empty rather than dropping the anchor. */}
       <Section id="past" title="What we have run." tone="cream">
         {past.length > 0 ? (
-          <div className="space-y-14">
+          <div className="space-y-10">
             {groupByYear(past).map((group) => (
               <div key={group.year}>
                 <h3 className="font-display text-navy text-h3 font-bold">
