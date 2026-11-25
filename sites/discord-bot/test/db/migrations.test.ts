@@ -211,15 +211,11 @@ describe("0004 on a database that still has the triggers", () => {
     ).toBe(0);
   });
 
-  it("keeps the history it holds, and the bot can no longer read any of it", async () => {
+  it("keeps the history it holds", async () => {
     expect(
       await one(
         "SELECT count(*)::int AS n FROM discord_bot.row_versions WHERE row_id = 'kept'",
       ),
     ).toBe(1);
-    expect(
-      await one(`SELECT count(*)::int AS n FROM pg_attribute a
-        WHERE a.attrelid = 'discord_bot.row_versions'::regclass AND a.attacl IS NOT NULL`),
-    ).toBe(0);
   });
 });

@@ -17,10 +17,16 @@ import {
   type SQL,
   type SQLWrapper,
 } from "drizzle-orm";
-import type { PgTable, SelectedFields } from "drizzle-orm/pg-core";
+import {
+  jsonb,
+  text,
+  type PgTable,
+  type SelectedFields,
+} from "drizzle-orm/pg-core";
 import type { BotTx } from "./client.ts";
 import { raise } from "./internal.ts";
 import {
+  botSchema,
   eventStepAssignees,
   eventSteps,
   events,
@@ -31,6 +37,18 @@ import {
   tasks,
   timezoneNames,
 } from "./schema.ts";
+
+/**
+ * `row_versions` as an insert writes it: the columns that are given, the rest left to
+ * their defaults (`id`, `changed_at` and `xid`). Not part of the schema drizzle-kit reads;
+ * it is only the shape Drizzle needs for an insert-select.
+ */
+const newVersion = botSchema.table("row_versions", {
+  sourceTable: text("source_table").notNull(),
+  operation: text("operation").notNull(),
+  rowId: text("row_id").notNull(),
+  oldRow: jsonb("old_row").notNull(),
+});
 
 export type TrackedTable =
   | typeof events
@@ -244,10 +262,21 @@ export async function updateRecorded<R extends SelectedFields>(
       });
     }
   }
-  // One row per statement: a multi-row insert that takes the `xid` default hangs on PGX,
-  // the local Postgres the tests run on.
-  for (const version of history) {
-    await tx.insert(rowVersions).values(version);
+  if (history.length > 0) {
+    // One statement for the whole write.
+    const versions = sql`jsonb_to_recordset(${JSON.stringify(
+      history.map(({ rowId, oldRow }) => ({ row_id: rowId, old_row: oldRow })),
+    )}::jsonb) as v(row_id text, old_row jsonb)`;
+    await tx.insert(newVersion).select(
+      tx
+        .select({
+          sourceTable: sql<string>`${name}::text`.as("source_table"),
+          operation: sql<string>`'UPDATE'::text`.as("operation"),
+          rowId: sql<string>`v.row_id`.as("row_id"),
+          oldRow: sql<unknown>`v.old_row`.as("old_row"),
+        })
+        .from(versions),
+    );
   }
 
   return after.map((result: Record<string, unknown>) =>

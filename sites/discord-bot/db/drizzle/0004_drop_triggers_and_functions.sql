@@ -4,10 +4,6 @@
 -- Fail fast rather than queue behind live bot writes while holding a table lock.
 SET LOCAL lock_timeout = '3s';--> statement-breakpoint
 
--- The bot only reads row_versions to skip a version a trigger already kept; with no
--- triggers it has no reason to.
-REVOKE SELECT (xid, source_table, row_id, old_row) ON TABLE discord_bot.row_versions FROM bot_app;--> statement-breakpoint
-
 -- The 22 triggers.
 DROP TRIGGER IF EXISTS event_step_assignees_record_update ON discord_bot.event_step_assignees;--> statement-breakpoint
 DROP TRIGGER IF EXISTS event_steps_record_update ON discord_bot.event_steps;--> statement-breakpoint

@@ -84,7 +84,7 @@ Check the size on the project's usage page in the Neon console. `discord_bot.row
 
 **Migrations go first, then code.** A merge to `main` deploys by itself, because `vercel.json` turns on deployments for `main` only, and only when a commit touches `sites/discord-bot` or `bun.lock`. No workflow applies migrations, so nothing keeps the two in step except doing them in this order.
 
-**Dropping what the live code uses is two releases.** Ship the code that no longer needs a column, table or grant, migrate and deploy it, and drop the object in a later migration, run only after that code is live. One `bun run db:migrate` runs every pending file, so a migration that adds a grant and one that drops an object do not go in the same release.
+**Dropping what the live code uses is two releases.** Ship the code that no longer needs a column, table or grant, migrate and deploy it, and drop the object in a later migration, run only after that code is live. One `bun run db:migrate` runs every pending file, so a migration that adds a grant and one that drops an object do not go in the same release. Take a grant back the same way: the release after the code stops using it. `bot_app`'s column SELECT on `row_versions` (`xid`, `source_table`, `row_id`, `old_row`) is still granted, and a later migration revokes it.
 
 1. Check that the branch is up to date with `main`. In a throwaway checkout:
 
