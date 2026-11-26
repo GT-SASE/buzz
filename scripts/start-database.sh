@@ -7,12 +7,12 @@
 # - Docker Desktop for Windows - https://docs.docker.com/docker-for-windows/install/
 # - Podman Desktop - https://podman.io/getting-started/installation
 # 3. Open WSL - `wsl`
-# 4. Run this script - `./start-database.sh`
+# 4. Run this script - `./scripts/start-database.sh`
 
-# On Linux and macOS you can run this script directly - `./start-database.sh`
+# On Linux and macOS you can run this script directly - `./scripts/start-database.sh`
 
 # import env variables from the repo-root .env, which is the one copy of them
-ENV_FILE="$(dirname "$0")/.env"
+ENV_FILE="$(dirname "$0")/../.env"
 
 # Guarded: without this, a missing .env only prints a `source` error and the
 # script carries on with DATABASE_URL unset, deriving an empty port and a

@@ -155,4 +155,4 @@ jobs:
       - name: Refuse a .gitleaksignore file
         run: test ! -e .gitleaksignore
       - name: Scan every commit on every ref
-        run: .tools/gitleaks git . --config .gitleaks.toml --redact --ignore-gitleaks-allow --no-banner --log-opts="--all -m --text --no-color"
+        run: .tools/gitleaks git . --config config/gitleaks/gitleaks.toml --redact --ignore-gitleaks-allow --no-banner --log-opts="--all -m --text --no-color"

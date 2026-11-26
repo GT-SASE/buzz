@@ -46,7 +46,9 @@ sites/web/src/components/site/  editorial components built on ui
 sites/web/src/data/             content constants and cached loaders (chapter-events.ts, pages.ts)
 sites/web/src/trpc/             tRPC client/server glue for the app
 tests/                          all tests (bun test); tests/setup, tests/helpers, tests/mocks
-scripts/                        vercel-build.mjs, bundle-budget.mjs (per-route gzip budget, raise a line on purpose), axe-marketing.mjs (axe on built marketing routes), smoke.mjs, uptime.mjs, site-url.mjs, install-gitleaks.sh, bench-procedures.ts, fonts/
+scripts/                        vercel-build.mjs, bundle-budget.mjs (per-route gzip budget, raise a line on purpose), axe-marketing.mjs (axe on built marketing routes), smoke.mjs, uptime.mjs, site-url.mjs, install-gitleaks.sh, start-database.sh (local Postgres in Docker), bench-procedures.ts, fonts/
+config/gitleaks/                gitleaks.toml (secret-scan rules) and version (the pinned gitleaks release)
+.github/                        CI workflows, Dependabot, CODEOWNERS, SECURITY.md (reporting policy)
 ```
 
 ## Commands (run from repo root, Bun only)
@@ -61,7 +63,7 @@ Use `bun`, `bun run`, `bun x`. Never npm, pnpm, npx, bunx. Spell out `bun run te
 - `bun run db:generate | db:migrate | db:push | db:seed | db:seed:calendar | db:studio`
 - `bun run smoke` = `bun scripts/smoke.mjs` against the live site
 - Discord bot (`sites/discord-bot`, `bun run --cwd sites/discord-bot <script>`): `build` (Vercel Build Output in `.vercel/output`), `smoke` (loads the built functions from a temp folder, expects 401s), `test`, `test:db`, `test:db:concurrency` (needs `CONCURRENCY_DATABASE_URL` and `BOT_APP_PASSWORD`, see its README), `db:migrate` (drizzle-kit migrator into the `discord_bot` schema, which must exist first; `DATABASE_URL` of a disposable DB only), `commands:register <guild-id>...` (replaces those servers' slash commands; needs the Discord env vars, never run it in a test)
-- `bun run hooks:install` and `bun run gitleaks:install`: pre-push secret scan, rules in `.gitleaks.toml`
+- `bun run hooks:install` and `bun run gitleaks:install`: pre-push secret scan, rules in `config/gitleaks/gitleaks.toml`
 
 ## Tests
 
