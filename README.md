@@ -20,7 +20,7 @@ sites/discord-bot  @buzz/discord-bot  the events team Discord bot (Vercel functi
 Outside the workspaces:
 
 ```
-tests/            every root test suite (bun test), with setup/, helpers/, mocks/
+tests/            root test suites by area: api/ integration/ db/ web/ mcp/ repo/, plus shared setup/ helpers/ mocks/
 scripts/          build, smoke, uptime, gitleaks install, start-database.sh, fonts/
 config/gitleaks/  secret-scan rules and the pinned gitleaks version
 docs/             site-structure.md, plus archive/ for retired plans
@@ -110,7 +110,7 @@ Each part is broken down in [docs/site-structure.md](docs/site-structure.md).
 
 ## Version
 
-The site is stamped with `MAJOR.MINOR.PATCH`, shown in the footer and returned with the commit SHA by `/api/health`. `MAJOR.MINOR` comes from `version` in `sites/web/package.json`; `PATCH` is the number of merges into `main` since that line last changed, and rolls into `MINOR` at 100. The whole repo shares that version: the MCP server reports it and every workspace `package.json` carries the same `X.Y.0` (`tests/versions.test.ts` checks). Bump `MAJOR.MINOR` by hand in all of them for a release worth naming; patch moves on its own with every merge. Vercel clones shallow, so the build deepens the clone from the public repo to count, and a build with no git reports the `package.json` version as is.
+The site is stamped with `MAJOR.MINOR.PATCH`, shown in the footer and returned with the commit SHA by `/api/health`. `MAJOR.MINOR` comes from `version` in `sites/web/package.json`; `PATCH` is the number of merges into `main` since that line last changed, and rolls into `MINOR` at 100. The whole repo shares that version: the MCP server reports it and every workspace `package.json` carries the same `X.Y.0` (`tests/repo/versions.test.ts` checks). Bump `MAJOR.MINOR` by hand in all of them for a release worth naming; patch moves on its own with every merge. Vercel clones shallow, so the build deepens the clone from the public repo to count, and a build with no git reports the `package.json` version as is.
 
 | Version | Since | What changed |
 | --- | --- | --- |

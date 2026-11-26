@@ -2,7 +2,7 @@
 // A boundary's file loads on every page whether or not anything throws, and
 // the `Alert` and `Button` it used to render pull in tailwind-merge, cva, Slot
 // and lucide (~40 kB decoded). These are those components with their classes
-// resolved by hand. tests/public-bundle.test.ts keeps the heavy imports out.
+// resolved by hand. tests/web/public-bundle.test.ts keeps the heavy imports out.
 
 /** `Button` (default and outline variants), sized for a boundary panel. */
 export const errorButton =
