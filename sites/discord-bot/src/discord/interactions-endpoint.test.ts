@@ -1,6 +1,3 @@
-// Lives outside api/ because Vercel turns every file in that directory into a
-// function.
-
 import { generateKeyPairSync, sign } from "node:crypto";
 import {
   ApplicationCommandType,
@@ -18,7 +15,7 @@ import {
   mock,
   spyOn,
 } from "bun:test";
-import { POST } from "../../api/interactions.ts";
+import { POST } from "../http/interactions.ts";
 import { stubOrm, testDatabaseUrl } from "../../test/support/sql-client.ts";
 import { asFetch, stubEnv, type FetchLike } from "../../test/support/stubs.ts";
 import * as registry from "../handlers/registry.ts";
@@ -377,7 +374,7 @@ describe("work done after the reply", () => {
       );
     });
     spyOn(globalThis, "fetch").mockImplementation(asFetch(send));
-    stubEnv("DATABASE_URL", testDatabaseUrl());
+    stubEnv("DISCORD_BOT_DATABASE_URL", testDatabaseUrl());
     stubEnv("DISCORD_BOT_TOKEN", "unit-test-bot-token");
   });
 

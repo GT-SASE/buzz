@@ -153,7 +153,7 @@ export default tseslint.config(
     // Only the Discord client sends to Discord, so that every send runs the managed
     // channel check. Only src/db/ talks to the database.
     name: "discord-bot/one-send-path",
-    files: ["sites/discord-bot/{src,api}/**/*.ts"],
+    files: ["sites/discord-bot/src/**/*.ts"],
     ignores: ["sites/discord-bot/src/discord/client.ts", "**/*.test.ts"],
     rules: {
       "no-restricted-globals": [

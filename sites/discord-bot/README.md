@@ -2,7 +2,7 @@
 
 A Discord bot for the SASE at Georgia Tech events team. It stores events, tasks and deadlines, creates a forum post for each event, and reminds each person about their own tasks.
 
-This is the `sites/discord-bot` workspace of the buzz monorepo (`@buzz/discord-bot`), imported from GT-SASE/discordBot with its history. It shares buzz's lockfile, tooling and CI, and deploys as its own Vercel project. Run the commands below from the repository root with `bun run --cwd sites/discord-bot <script>`, or from this folder.
+This is the `sites/discord-bot` workspace of the buzz monorepo (`@buzz/discord-bot`), imported from GT-SASE/discordBot with its history. It shares buzz's lockfile, tooling and CI, and runs inside the buzz web app (`sites/web`): its two endpoints are Next route handlers there. Run the commands below from the repository root with `bun run --cwd sites/discord-bot <script>`, or from this folder.
 
 It runs on free tiers: TypeScript functions on Vercel Hobby and Postgres 17 on Neon. It has no always-on server and no website.
 
@@ -71,10 +71,10 @@ Admins configure the bot inside Discord: which forums it may post in, and whethe
 ```mermaid
 flowchart LR
   member[Club member] -->|slash command or click| discord[Discord]
-  discord -->|signed POST| interactions["/api/interactions"]
-  cron[Vercel Cron, morning and recovery runs] -->|GET with bearer secret| reminders["/api/cron/reminders"]
+  discord -->|signed POST| interactions["/api/discord/interactions"]
+  cron[Vercel Cron, morning and recovery runs] -->|GET with bearer secret| reminders["/api/cron/discord-reminders"]
 
-  subgraph vercel[Vercel functions]
+  subgraph vercel[buzz web app on Vercel]
     interactions --> verify[Verify signature and server]
     verify --> router[Router and permission check]
     router --> handlers[Handlers]
@@ -94,7 +94,7 @@ Discord allows 3 seconds for the first reply. So the bot makes one database read
 
 | Path             | Holds                                                      |
 | ---------------- | ---------------------------------------------------------- |
-| `api/`           | The two public endpoints. Every file here becomes a route. |
+| `src/http/`      | The two public endpoints, served as routes by `sites/web`  |
 | `src/discord/`   | Signature checks, safe text, message builders, REST client |
 | `src/handlers/`  | The router and each command                                |
 | `src/tasks/`     | The `/task` subcommands                                    |
@@ -195,7 +195,7 @@ No system is unhackable, and this one makes no such claim. The aim is to keep th
 These stay true with every control working:
 
 - **Discord admins.** A Discord Administrator can give themselves every tier. Anyone who can manage roles can grant a bound role below their own, and the bot is not told when that happens.
-- **Stolen secrets.** A leaked bot token or `DATABASE_URL` bypasses this code. Rotating stops further use, but what was done with it stays done: changed role bindings, managed forums and skipped reminders are not undone. Row history keeps the old bindings and forums, not the reminder log. Data read before then stays exposed. [SECURITY.md](SECURITY.md#2-check-for-misuse) lists the checks to make after a leak. Row history and Neon's restore recover events and tasks, which `bot_app` can still overwrite.
+- **Stolen secrets.** A leaked bot token or `DISCORD_BOT_DATABASE_URL` bypasses this code. Rotating stops further use, but what was done with it stays done: changed role bindings, managed forums and skipped reminders are not undone. Row history keeps the old bindings and forums, not the reminder log. Data read before then stays exposed. [SECURITY.md](SECURITY.md#2-check-for-misuse) lists the checks to make after a leak. Row history and Neon's restore recover events and tasks, which `bot_app` can still overwrite.
 - **Account takeover.** A takeover of the maintainer's GitHub, Vercel, Neon or Discord account defeats all of this. So does a platform incident.
 - **A trusted officer.** An officer, or a stolen officer account, can still ping people with persuasive plain text and a URL. It cannot be clicked, but it can be copied. Only a person can judge such text.
 - **What officers can read.** An officer can see events through the bot in forums they cannot open in Discord.
@@ -278,16 +278,13 @@ To add a command, write a file in `src/handlers/` that exports `handler`, add on
 
 [docs/SETUP.md](docs/SETUP.md) has every step, from the Neon project and the migrations to the Vercel project and its settings.
 
-`bun run build` (`scripts/build.ts`) bundles each function with `bun build`, every dependency inlined, and writes Vercel's Build Output API layout to `.vercel/output`: `config.json` with the crons, one `.func` folder per function on the Node.js runtime with a 60 second limit, and `public/` as the static files. Vercel then runs no file tracing and ships no `node_modules`, which is why the bot can be a workspace of a repository that installs with Bun's isolated linker. `bun run smoke` copies the built functions out of the repository and checks that an unsigned request and a cron call without the secret are both refused with 401.
+The bot has no Vercel project of its own. `sites/web` serves `src/http/interactions.ts` at `POST /api/discord/interactions` and `src/http/cron.ts` at `GET /api/cron/discord-reminders`, and the buzz project builds it: the routes re-export the handlers, and `next.config.ts` lists `@buzz/discord-bot` in `transpilePackages`. The bot's variables go in the buzz Vercel project. `DISCORD_BOT_DATABASE_URL` is `bot_app`'s string, because buzz's own `DATABASE_URL` is a different role.
 
-These settings in the repo are easy to break:
+These settings are easy to break:
 
-- Functions and crons are listed in `scripts/deployment.ts`, not in `vercel.json`. Keep `public/robots.txt`.
-- `vercel.json` sets the install command (from the repository root, so the root lockfile is used), the build command and the ignored build step.
-- Do not add tests or helpers under `api/`.
-- `git.deploymentEnabled` deploys `main` and nothing else. The rule is `**`, because `*` does not match a branch name containing a slash.
-- `.vercelignore` keeps local `.env` files out of a deployment made with the Vercel CLI.
-- The first cron schedule in `scripts/deployment.ts` must stay in step with `SLOT_START_HOUR_UTC`, which `cron-endpoint.test.ts` checks. The second cron only recovers a failed first run.
+- The interactions handler reads the raw body itself, because the signature covers the exact bytes. Nothing in front of it, such as middleware, may read the body.
+- The crons are in `sites/web/vercel.json`. The first discord-reminders schedule must stay in step with `SLOT_START_HOUR_UTC`, which `cron-endpoint.test.ts` checks. The second only recovers a failed first run. Both routes' `maxDuration` is checked against the code's time limit by the same test.
+- `CRON_SECRET` is shared with buzz's elections cron, because Vercel sends the project's one secret.
 
 ## Documentation
 

@@ -82,10 +82,10 @@ describe("mcp bot introspection", () => {
     expect(all).toContain("=== bot database");
   });
 
-  it("lists bot functions and crons from deployment.ts", async () => {
-    const out = await formatRoutes();
-    expect(out).toContain("/api/interactions  [bot function]");
-    expect(out).toContain("/api/cron/reminders  [bot cron]");
+  it("lists the bot routes with the app routes", () => {
+    const out = formatRoutes();
+    expect(out).toContain("/api/discord/interactions  [api]");
+    expect(out).toContain("/api/cron/discord-reminders  [api]");
     expect(out).toContain("/portal/admin/pages  [portal admin]");
   });
 

@@ -32,8 +32,12 @@ function readRequired(name: string): string {
   return value;
 }
 
+/**
+ * The bot's own role (`bot_app`). It is not `DATABASE_URL`: the web app that hosts the
+ * bot uses that name for its own role.
+ */
 export function getDatabaseUrl(): string {
-  return readRequired("DATABASE_URL");
+  return readRequired("DISCORD_BOT_DATABASE_URL");
 }
 
 export function getDiscordAppId(): string {

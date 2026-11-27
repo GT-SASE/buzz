@@ -9,11 +9,8 @@
  * Responses are fixed text and say nothing about what the run found.
  */
 
-import {
-  isCronAuthorized,
-  isCronSecretUsable,
-} from "../../src/lib/cron-auth.ts";
-import { runDailyJobs } from "../../src/reminders/daily.ts";
+import { isCronAuthorized, isCronSecretUsable } from "../lib/cron-auth.ts";
+import { runDailyJobs } from "../reminders/daily.ts";
 
 const NO_STORE = { "cache-control": "no-store" };
 

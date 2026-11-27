@@ -139,9 +139,6 @@ jobs:
           bun run --cwd sites/web start -p 3000 > next-start.log 2>&1 &
           tries=0; until curl -sf -o /dev/null http://localhost:3000/; do tries=$((tries + 1)); [ $tries -ge 60 ] && { cat next-start.log; exit 1; }; sleep 1; done
           bun scripts/axe-marketing.mjs
-      # Builds the bot's functions, then loads them from a folder outside the repo.
-      - run: bun run --cwd sites/discord-bot build
-      - run: bun run --cwd sites/discord-bot smoke
 
   secret-history:
     runs-on: ubuntu-latest

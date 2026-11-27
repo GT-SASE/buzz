@@ -7,13 +7,13 @@ Run these on the private test server from [SETUP.md](SETUP.md), before the club'
 You need a second Discord account with no bot role (the member), and Vercel's Logs open, because Hobby keeps them for one hour. In a terminal, set these, pasting `bot_app`'s connection string and then the cron secret. `read -rs` keeps them off the screen and out of your shell history. The cron is run by hand with the `curl` line.
 
 ```sh
-URL=https://<name>.vercel.app
+URL=https://buzzsase.vercel.app
 read -rs BOT_URL
 read -rs CRON
 ```
 
 ```sh
-curl -i -H "Authorization: Bearer $CRON" "$URL/api/cron/reminders"
+curl -i -H "Authorization: Bearer $CRON" "$URL/api/cron/discord-reminders"
 ```
 
 A run that succeeds closes that day's slot, and later runs in it answer `ok` and do nothing, so a run by hand counts only if it adds a row. A reminder claimed less than 2 minutes ago is left alone, so wait 2 minutes between runs. As the owner, in Neon's SQL editor, the first query reads the rows. The second opens the slot again: use it only while the club's server is not on.
@@ -83,7 +83,7 @@ WHERE status = 'succeeded' AND started_at > now() - interval '1 day';
     - Do: before the morning run, set a wrong `DISCORD_BOT_TOKEN` in Vercel and redeploy. After it, and before the recovery run, put the right one back and redeploy. [RUNBOOK.md](RUNBOOK.md#when-it-runs) gives both times.
     - Expect: a `failed` reminders row from the morning run, a `succeeded` one from the recovery run, and the reminder sent with its ping.
 19. **Neon cold start.**
-    - Do: leave the bot idle until Neon's console shows the compute as suspended, then run `DATABASE_URL="$BOT_URL" bun scripts/neon-cold-start.ts`. Let it suspend again and run `/config`.
+    - Do: leave the bot idle until Neon's console shows the compute as suspended, then run `DISCORD_BOT_DATABASE_URL="$BOT_URL" bun scripts/neon-cold-start.ts`. Let it suspend again and run `/config`.
     - Expect: `One read took <n> ms, under the 2200 ms deadline.`, and `/config` answers without "did not respond". Write down the time.
 
 Clear the terminal's values with `unset BOT_URL CRON` when you finish.
@@ -91,12 +91,12 @@ Clear the terminal's values with `unset BOT_URL CRON` when you finish.
 ## Settings to confirm
 
 - [ ] GitHub, Discord, Vercel and Neon each use a passkey or security key, with recovery codes saved.
-- [ ] Vercel's settings are in Production only, and `DISCORD_BOT_TOKEN`, `DATABASE_URL` and `CRON_SECRET` are of type Secret.
-- [ ] `DATABASE_URL` is `bot_app`'s string. The owner's string is in no Vercel project and no GitHub secret.
+- [ ] Vercel's settings are in Production only, and `DISCORD_BOT_TOKEN`, `DISCORD_BOT_DATABASE_URL` and `CRON_SECRET` are of type Secret.
+- [ ] `DISCORD_BOT_DATABASE_URL` is `bot_app`'s string. The owner's string is in no Vercel project and no GitHub secret.
 - [ ] Deployment Protection is Standard Protection, no Protection Bypass for Automation exists, and Discord's endpoint is the production domain.
-- [ ] Only `main` deploys: a pushed branch makes no deployment.
-- [ ] Settings > Cron Jobs lists `/api/cron/reminders` twice, the firewall rules are active, and usage notifications are on.
-- [ ] The build log shows Bun installing from the repository's `bun.lock` with no changes to it, then `bun run build` writing `.vercel/output`.
+- [ ] The bot's settings exist in Production only, so a preview deployment of buzz refuses every interaction.
+- [ ] Settings > Cron Jobs lists `/api/cron/discord-reminders` twice, the firewall rules are active, and usage notifications are on.
+- [ ] The build log shows Bun installing from the repository's `bun.lock` with no changes to it, and `/api/discord/interactions` and `/api/cron/discord-reminders` among the dynamic routes.
 - [ ] In Neon, only the owner and `bot_app` can log in, and the Data API and Neon Auth are off. `psql "$BOT_URL&sslrootcert=system" -c 'TRUNCATE discord_bot.job_runs;'`, with `psql` 16 or later, says `permission denied`.
 - [ ] The Discord app has Public Bot off, User Install off and Install Link set to None.
 - [ ] Few people hold Administrator, Manage Roles or the five bound roles.

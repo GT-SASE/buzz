@@ -1,6 +1,6 @@
 # Setup
 
-The steps to set the bot up from nothing, on the club's own new Discord, Neon and Vercel accounts. You make one Discord app, one Neon project and one Vercel project, which deploys `main`. You first point it at a private test server, run the smoke checks there, then add the club's server.
+The steps to set the bot up from nothing, on the club's own new Discord and Neon accounts. You make one Discord app and one Neon project, and the bot runs in buzz's Vercel project, which deploys `main`. You first point it at a private test server, run the smoke checks there, then add the club's server.
 
 Dashboards move. Where a step says **check this in the dashboard**, the label or place was not confirmed, so look for it and note any difference here.
 
@@ -107,62 +107,56 @@ unset OWNER_URL BOT_URL
 
 **Failure looks like:** `password authentication failed`. Check the password and its encoding.
 
-## 5. Create the Vercel project
+## 5. Add the bot to the buzz Vercel project
 
-1. Choose **Add New** > **Project** and import the GitHub repository, giving Vercel access to this repository only.
-2. Choose a name. It becomes the public URL `<name>.vercel.app`.
-3. Set **Root Directory** to `sites/discord-bot`, and leave "Include files outside of the Root Directory" on, because the install runs at the repository root. Leave the framework as Other and the install, build and ignored-build settings empty. `vercel.json` sets them, and deploys `main` only.
-4. Deploy. With no settings yet, every request fails. That is fine.
-5. Check that Settings > Environments > Production > Branch Tracking says `main`.
-
-**Failure looks like:** a deployment blocked for its commit author. The author must be the Vercel account's owner.
+The bot has no project of its own. The buzz web app serves its two endpoints from `main`: `POST /api/discord/interactions` and `GET /api/cron/discord-reminders`. Their two crons are in `sites/web/vercel.json`. The examples below use `https://buzzsase.vercel.app`.
 
 ### Generate the cron secret
 
+Skip this if the project already has a `CRON_SECRET`. The elections cron uses it too, and Vercel sends only one.
+
 ```sh
-openssl rand -hex 32 | tr -d '\n' | pbcopy
+openssl rand -hex 32 | tr -d '
+' | pbcopy
 ```
 
 This copies 64 characters with no newline on a Mac. On Linux, leave off `| pbcopy` and copy only the 64 characters.
 
 ### Add the settings
 
-Under Settings > Environment Variables, add each with **Production** as the only environment:
+Under the buzz project's Settings > Environment Variables, add each with **Production** as the only environment:
 
-| Name                 | Type   | Value                                      |
-| -------------------- | ------ | ------------------------------------------ |
-| `DISCORD_APP_ID`     | Config | The Application ID                         |
-| `DISCORD_PUBLIC_KEY` | Config | The Public Key                             |
-| `DISCORD_BOT_TOKEN`  | Secret | The bot token                              |
-| `ALLOWED_GUILD_IDS`  | Config | The test server's ID                       |
-| `DATABASE_URL`       | Secret | `bot_app`'s connection string, from step 4 |
-| `CRON_SECRET`        | Secret | The value you just generated               |
+| Name                       | Type   | Value                                      |
+| -------------------------- | ------ | ------------------------------------------ |
+| `DISCORD_APP_ID`           | Config | The Application ID                         |
+| `DISCORD_PUBLIC_KEY`       | Config | The Public Key                             |
+| `DISCORD_BOT_TOKEN`        | Secret | The bot token                              |
+| `ALLOWED_GUILD_IDS`        | Config | The test server's ID                       |
+| `DISCORD_BOT_DATABASE_URL` | Secret | `bot_app`'s connection string, from step 4 |
+| `CRON_SECRET`              | Secret | The value you just generated, if new       |
 
-Never put the owner's connection string in Vercel.
+Never put the owner's connection string in Vercel. buzz's own `DATABASE_URL` is a different role and stays as it is.
 
-### Turn on Deployment Protection
-
-Under Settings > Deployment Protection, turn on Vercel Authentication with **Standard Protection**. Do not choose All Deployments, which blocks Discord too, and do not create a Protection Bypass for Automation or shareable links.
+Leave Deployment Protection on Standard Protection. All Deployments would block Discord too, and a Protection Bypass for Automation or a shareable link would let anyone past it.
 
 ### Redeploy and test
 
 Redeploy from the Deployments page, because a deployment only picks up settings made before it.
 
-**Expect:** the deployment reaches Ready, and Settings > Cron Jobs lists `/api/cron/reminders` twice.
+**Expect:** the deployment reaches Ready, and Settings > Cron Jobs lists `/api/cron/discord-reminders` twice, beside `/api/cron/elections`.
 
 ```sh
-curl -i https://<name>.vercel.app/robots.txt
-curl -i -X POST https://<name>.vercel.app/api/interactions
-curl -i https://<name>.vercel.app/api/cron/reminders
+curl -i -X POST https://buzzsase.vercel.app/api/discord/interactions
+curl -i https://buzzsase.vercel.app/api/cron/discord-reminders
 ```
 
-**Expect:** 200, then 401 `invalid request signature`, then 401 `unauthorized`. Logs show no `Cron secret is unset or too short`.
+**Expect:** 401 `invalid request signature`, then 401 `unauthorized`. Logs show no `Cron secret is unset or too short`.
 
 **Failure looks like:** a Vercel login page. Use the production domain, not a deployment's own URL.
 
 ## 6. Connect Discord
 
-On the app's General Information page, set Interactions Endpoint URL to `https://<name>.vercel.app/api/interactions` and save.
+On the app's General Information page, set Interactions Endpoint URL to `https://buzzsase.vercel.app/api/discord/interactions` and save.
 
 **Expect:** it saves.
 
@@ -219,11 +213,10 @@ Then run `/config` and choose `test-events` in **Add a managed forum**.
 
 Under Firewall > Configure, add these rules, each first with action **Log**. Watch the traffic for 10 minutes, including a `/ping`, then set the final action and publish. Check the operator names in the dashboard.
 
-| Rule                 | If                                                                      | Then                            |
-| -------------------- | ----------------------------------------------------------------------- | ------------------------------- |
-| Only known paths     | Path is not `/api/interactions`, `/api/cron/reminders` or `/robots.txt` | Deny                            |
-| Signed requests only | Path is `/api/interactions` and header `x-signature-ed25519` is missing | Deny                            |
-| Rate limit by IP     | Path is `/api/interactions`                                             | Rate limit, 100 per 60 s, by IP |
+| Rule                 | If                                                                                | Then                            |
+| -------------------- | --------------------------------------------------------------------------------- | ------------------------------- |
+| Signed requests only | Path is `/api/discord/interactions` and header `x-signature-ed25519` is missing | Deny                            |
+| Rate limit by IP     | Path is `/api/discord/interactions`                                               | Rate limit, 100 per 60 s, by IP |
 
 Under Settings > My Notifications, keep "Usage increased" and "Usage limit reached" on.
 

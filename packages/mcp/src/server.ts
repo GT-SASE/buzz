@@ -107,7 +107,7 @@ export function createServer(serverVersion = "0.0.0"): McpServer {
     "buzz_routes",
     {
       description:
-        "Lists Next.js app routes (pages and route handlers) tagged marketing, portal member, portal admin or api, plus the Discord bot's Vercel functions and crons from sites/discord-bot/scripts/deployment.ts.",
+        "Lists Next.js app routes (pages and route handlers) tagged marketing, portal member, portal admin or api. The Discord bot's interactions and cron endpoints are route handlers there too.",
     },
     guarded(() => formatRoutes()),
   );

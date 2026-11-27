@@ -3,7 +3,7 @@
  * waking from suspend answers inside that client's deadline. Prints only the time and
  * whether the read fit: never the connection string or any row.
  *
- * Reads DATABASE_URL from the environment or .env.
+ * Reads DISCORD_BOT_DATABASE_URL from the environment or .env.
  *
  * Usage:
  *   bun --env-file=.env scripts/neon-cold-start.ts

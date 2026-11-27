@@ -43,7 +43,7 @@ What the database enforces whichever login writes: every `CHECK`, key and unique
 
 The grants are by column wherever a write changes only some. `events` and `tasks` keep the table-wide `INSERT` and `UPDATE` they had before. The only `DELETE` is on `interaction_claims`, because the daily cron must remove claims older than a day (an interaction token lasts 15 minutes). Row-level security limits it to exactly those rows: a `DELETE` by `bot_app` of a newer claim removes nothing. The table's owner is not subject to the policy. `row_versions` can be inserted into and not read, changed or removed.
 
-The table above shows what that costs, and [After a `DATABASE_URL` leak](#after-a-database_url-leak) says what to check.
+The table above shows what that costs, and [After a `DISCORD_BOT_DATABASE_URL` leak](#after-a-discord_bot_database_url-leak) says what to check.
 
 Some of this also depends on settings in the services' dashboards, which the repository cannot enforce. [docs/SETUP.md](docs/SETUP.md) lists them.
 
@@ -52,7 +52,7 @@ Some of this also depends on settings in the services' dashboards, which the rep
 These remain even with every control above in place. [README.md](README.md) lists more.
 
 - A Discord Administrator, or anyone who can manage roles, can give themselves access to the bot.
-- A leaked bot token or `DATABASE_URL` bypasses this code, and rotating it does not undo what was done with it. With the writes in TypeScript, the login can also change config, claims and steps without the checks that code makes, within the grants above. Row history covers events, tasks, event steps and their people, settings, managed forums and setup drafts. It does not cover the reminder log, job runs or reassignment counts, but a Neon branch restored to before the leak holds them, so it can show what they were. [Check for misuse](#2-check-for-misuse) covers the rest.
+- A leaked bot token or `DISCORD_BOT_DATABASE_URL` bypasses this code, and rotating it does not undo what was done with it. With the writes in TypeScript, the login can also change config, claims and steps without the checks that code makes, within the grants above. Row history covers events, tasks, event steps and their people, settings, managed forums and setup drafts. It does not cover the reminder log, job runs or reassignment counts, but a Neon branch restored to before the leak holds them, so it can show what they were. [Check for misuse](#2-check-for-misuse) covers the rest.
 - Officer edits, completions and deletes record no actor. See [What can be attributed](#what-can-be-attributed).
 - Autocomplete must answer in the HTTP response, so it cannot be deferred, and it is not claimed. Someone holding a captured signed autocomplete request can replay it inside the 5-minute window and read up to 25 current task or event choices that its sender could see. Getting one needs a compromised host or proxy. `/mytasks` and `/event delete` defer for this reason, so replaying those returns no content. Claiming autocomplete would cost a write per keystroke, so this is accepted.
 - A takeover of the maintainer's GitHub, Vercel, Neon or Discord account defeats these controls, so two-factor authentication is required on all four.
@@ -80,7 +80,7 @@ The scan looks for known secret formats. It does not check file types or commit 
 | Secret                                | Action                                                                                                                                                                                                                                                                                                                    |
 | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `DISCORD_BOT_TOKEN`                   | Reset the token in the Discord Developer Portal, under the application's Bot page. Then follow [After a bot token leak](#after-a-bot-token-leak)                                                                                                                                                                          |
-| `DATABASE_URL` (`bot_app`'s password) | Generate a new password, for example with `openssl rand -hex 32`. As the owner, in Neon's SQL editor or `psql`, run `ALTER ROLE bot_app PASSWORD '<new password>';`. Put the new password into `DATABASE_URL` in Vercel and redeploy. The old password stops working at once, so the bot fails until the redeploy is live |
+| `DISCORD_BOT_DATABASE_URL` (`bot_app`'s password) | Generate a new password, for example with `openssl rand -hex 32`. As the owner, in Neon's SQL editor or `psql`, run `ALTER ROLE bot_app PASSWORD '<new password>';`. Put the new password into `DISCORD_BOT_DATABASE_URL` in Vercel and redeploy. The old password stops working at once, so the bot fails until the redeploy is live |
 | `CRON_SECRET`                         | Generate a new value with `openssl rand -hex 32` and update it in Vercel                                                                                                                                                                                                                                                  |
 | The owner role's password             | Reset it for that role in the Neon console. Check this in the dashboard. It belongs in a password manager only, never in Vercel                                                                                                                                                                                           |
 
@@ -100,7 +100,7 @@ SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE usename = 'bot_app'
 - Compare data against row history. Restore from history or with Neon's point-in-time restore if needed, as [docs/RECOVERY.md](docs/RECOVERY.md) describes. History covers `events`, `tasks`, `event_steps`, `event_step_assignees`, `guild_config`, `managed_channels` and `setup_drafts`.
 - If member data may have been exposed, tell the affected people and the organisation's leadership.
 
-#### After a `DATABASE_URL` leak
+#### After a `DISCORD_BOT_DATABASE_URL` leak
 
 Rotate `bot_app`'s password as above. The login cannot delete rows other than interaction claims more than a day old, read `discord_bot.row_versions`, touch buzz's tables in `public`, undelete a row or reopen a closed event, but it can change events, tasks, settings and reminder state directly in the tables, in the columns it has grants on, with none of the checks the bot's code makes. Compare `guild_config` and `managed_channels` with `discord_bot.row_versions` and `config_audit` from before the leak, and look for a `guild_config.version` that is ahead of its latest `config_audit.version_after`, which means a change that wrote no audit row, fix anything wrong with `/setup` or `/config`, and check that the next `reminders` row in `job_runs` succeeds. Do not trust `actor_id` or `created_by` for that window.
 
@@ -123,7 +123,7 @@ This matters most after a stolen officer account, when you need to know which ac
 | Editing a task's text or date           | Nothing. Row history shows the old values and the time, with no actor                                                                              |
 | Marking a task done, or deleting a task | Nothing. Row history shows the change and the time, with no actor                                                                                  |
 
-These columns are as reliable as the database login: after a `DATABASE_URL` leak, none of them is proof for that window. A post can be edited or deleted by anyone with that right in Discord. Logs hold failures only, and Hobby keeps them for one hour.
+These columns are as reliable as the database login: after a `DISCORD_BOT_DATABASE_URL` leak, none of them is proof for that window. A post can be edited or deleted by anyone with that right in Discord. Logs hold failures only, and Hobby keeps them for one hour.
 
 ### 3. Clean up
 

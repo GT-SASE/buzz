@@ -102,7 +102,9 @@ describe("buzz mcp server over stdio", () => {
       expect(
         await text("buzz_db_schema", { table: "page", database: "buzz" }),
       ).toContain("buzz_page");
-      expect(await text("buzz_routes")).toContain("[bot cron]");
+      expect(await text("buzz_routes")).toContain(
+        "/api/cron/discord-reminders  [api]",
+      );
       expect(await text("buzz_bot_commands", { filter: "event" })).toContain(
         "/event",
       );

@@ -129,6 +129,7 @@
         "@buzz/api": "workspace:*",
         "@buzz/auth": "workspace:*",
         "@buzz/db": "workspace:*",
+        "@buzz/discord-bot": "workspace:*",
         "@radix-ui/react-label": "^2.1.17",
         "@radix-ui/react-select": "^2.4.1",
         "@radix-ui/react-separator": "^1.2.0",

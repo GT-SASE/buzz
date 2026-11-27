@@ -13,26 +13,23 @@ import { waitUntil } from "@vercel/functions";
 import {
   isPingInteraction,
   parseAllowedGuildInteraction,
-} from "../src/discord/interactions.ts";
-import { pong, serializeDirectResponse } from "../src/discord/outbound.ts";
-import type { OutboundBody } from "../src/discord/outbound.ts";
+} from "../discord/interactions.ts";
+import { pong, serializeDirectResponse } from "../discord/outbound.ts";
+import type { OutboundBody } from "../discord/outbound.ts";
 import {
   hasWellFormedSignatureHeaders,
   verifiedInteractionFrom,
   verifySignedRequest,
-} from "../src/discord/verify.ts";
-import { liveDependencies } from "../src/handlers/dependencies.ts";
-import { ROUTER } from "../src/handlers/registry.ts";
+} from "../discord/verify.ts";
+import { liveDependencies } from "../handlers/dependencies.ts";
+import { ROUTER } from "../handlers/registry.ts";
 import {
   ConfigError,
   getAllowedGuildIds,
   getDiscordAppId,
   getDiscordPublicKey,
-} from "../src/lib/env.ts";
-import {
-  isDeclaredLengthWithin,
-  readBodyWithin,
-} from "../src/lib/read-body.ts";
+} from "../lib/env.ts";
+import { isDeclaredLengthWithin, readBodyWithin } from "../lib/read-body.ts";
 
 const MAX_BODY_BYTES = 64 * 1024;
 

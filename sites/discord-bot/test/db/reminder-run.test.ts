@@ -4,7 +4,7 @@
  */
 
 import { beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
-import * as endpoint from "../../api/cron/reminders.ts";
+import * as endpoint from "../../src/http/cron.ts";
 import type { DateOnly } from "../../src/lib/dates.ts";
 import { claimReminder, reclaimReminder } from "../../src/db/reminders.ts";
 import type { ReminderKind } from "../../src/db/types.ts";
@@ -1127,7 +1127,7 @@ describe("the cron endpoint", () => {
   async function guildWithTaskDue() {
     const guild = await w.guildInZone();
     threadId = present((await eventsDueIn(guild, [2]))[0]).threadId;
-    stubEnv("DATABASE_URL", testDatabaseUrl());
+    stubEnv("DISCORD_BOT_DATABASE_URL", testDatabaseUrl());
     stubEnv("CRON_SECRET", SECRET);
     stubEnv("DISCORD_BOT_TOKEN", "unit-test-token");
     stubEnv("DISCORD_APP_ID", fakeId());
