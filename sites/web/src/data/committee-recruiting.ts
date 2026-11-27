@@ -6,6 +6,7 @@ import { unstable_cache } from "next/cache";
 import { currentCommitteeCycle, semesterLabel } from "@buzz/api";
 import { committeeCycles, db } from "@buzz/db";
 import { committees } from "~/data/committees";
+import { logLoadError } from "~/lib/log-error";
 
 export const COMMITTEE_RECRUITING_TAG = "committee-recruiting";
 
@@ -68,13 +69,7 @@ export async function getCommitteeRecruiting(now = new Date()) {
   try {
     rows = await loadRecentCycles();
   } catch (error) {
-    console.error(
-      JSON.stringify({
-        level: "error",
-        event: "committee.recruiting",
-        message: error instanceof Error ? error.message : String(error),
-      }),
-    );
+    logLoadError("committee.recruiting", error);
     return null;
   }
   const cycle = currentCommitteeCycle(
