@@ -88,7 +88,7 @@ function rowJson(table: PgTable): SQL<JsonRow> {
 }
 
 /** The text a history row names its row by: the key columns, joined with `:`. */
-export function rowIdOf(tableName: string, row: JsonRow): string {
+function rowIdOf(tableName: string, row: JsonRow): string {
   const keys = KEY_COLUMNS[tableName];
   if (keys === undefined) {
     throw new TypeError(`${tableName} keeps no history`);
@@ -127,7 +127,7 @@ export async function requireOpenEvent(
 }
 
 /** Fails as the trigger did unless the guild's time zone is one the server knows. */
-export async function requireKnownTimezone(
+async function requireKnownTimezone(
   tx: BotTx,
   timezone: string,
 ): Promise<void> {

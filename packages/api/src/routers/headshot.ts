@@ -10,7 +10,7 @@ import { adminProcedure, createTRPCRouter, protectedProcedure } from "../trpc";
 import { boardPhotos, users, type db as Db } from "@buzz/db";
 
 /** The seats of the latest published election; none before migration 0017 has run. */
-export async function currentSeats(db: typeof Db): Promise<BoardSeat[]> {
+async function currentSeats(db: typeof Db): Promise<BoardSeat[]> {
   try {
     return (await boardFromResults(db)) ?? [];
   } catch (error) {

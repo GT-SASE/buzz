@@ -11,7 +11,7 @@ import { events, pointsLedger } from "@buzz/db";
  * A check-in belongs to the window of its event, not of the ledger row, so a
  * removal logged next semester still nets against the grant it undoes.
  */
-export const ATTENDANCE_SOURCES = [
+const ATTENDANCE_SOURCES = [
   "check_in",
   "manual_check_in",
   "check_in_removed",

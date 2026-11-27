@@ -167,7 +167,7 @@ async function describe(): Promise<string> {
 let cached: Promise<string> | undefined;
 
 /** The whole bot database, described once per process. A failure is not cached. */
-export function botDatabaseText(): Promise<string> {
+function botDatabaseText(): Promise<string> {
   cached ??= describe().catch((e: unknown) => {
     cached = undefined;
     throw e;

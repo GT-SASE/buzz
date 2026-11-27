@@ -5,7 +5,7 @@
 // resolved by hand. tests/web/public-bundle.test.ts keeps the heavy imports out.
 
 /** `Button` (default and outline variants), sized for a boundary panel. */
-export const errorButton =
+const errorButton =
   "inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-semibold whitespace-nowrap transition-all outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:w-auto";
 
 export const errorButtonPrimary = `${errorButton} bg-gold-bright text-navy hover:bg-gold`;

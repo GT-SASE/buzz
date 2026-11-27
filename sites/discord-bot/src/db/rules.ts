@@ -20,9 +20,9 @@ import {
 } from "./schema.ts";
 
 /** The most live tasks one event holds. */
-export const MAX_TASKS_PER_EVENT = 100;
+const MAX_TASKS_PER_EVENT = 100;
 /** The most tasks plus reassignments one officer makes in a day. */
-export const MAX_ACTIONS_PER_DAY = 50;
+const MAX_ACTIONS_PER_DAY = 50;
 
 /** The quotas count rows other writers may be adding, which only read committed sees. */
 async function requireReadCommitted(tx: BotTx): Promise<void> {

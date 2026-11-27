@@ -10,7 +10,7 @@ import { Skeleton } from "~/components/ui/skeleton";
 import { api } from "~/trpc/react";
 
 /** `""` means unset; anything else is a year the router range-checks. */
-export function parseYear(text: string) {
+function parseYear(text: string) {
   const trimmed = text.trim();
   return trimmed === "" ? null : Number(trimmed);
 }

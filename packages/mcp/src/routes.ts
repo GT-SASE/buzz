@@ -8,7 +8,7 @@ export type Route = { url: string; tag: string; file: string };
 
 const appDir = repoPath("sites/web/src/app");
 
-export function tagFor(url: string): string {
+function tagFor(url: string): string {
   if (url === "/api" || url.startsWith("/api/")) return "api";
   if (url === "/portal/admin" || url.startsWith("/portal/admin/"))
     return "portal admin";

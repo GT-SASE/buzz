@@ -22,7 +22,7 @@ import { TRPCError } from "@trpc/server";
 export const WINDOW_MS = 30_000;
 
 /** Windows a code is accepted in, counting the one it was issued for. */
-export const WINDOWS_ACCEPTED = 2;
+const WINDOWS_ACCEPTED = 2;
 
 /** Same alphabet as the stored key, so one scanner regex covers both. */
 const ALPHABET = "23456789ABCDEFGHJKMNPQRSTVWXYZ";
