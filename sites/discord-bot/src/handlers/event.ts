@@ -85,7 +85,9 @@ import { getEventWorkflow } from "../db/event-steps.ts";
 import { MAX_EVENT_NAME_LENGTH } from "../db/validate.ts";
 import { listEventTasks } from "../db/tasks.ts";
 import {
+  chooseEvent,
   chosenEventId,
+  NO_EVENT,
   REFUSED_TEXT,
   shortId,
   versionFingerprint,
@@ -150,7 +152,6 @@ const REWORD_HELP = safe`The event is saved without a post. Use /event delete to
 const NOT_A_POST = safe`Run this inside a post in a forum this bot manages. Nothing was changed.`;
 const NOT_CONFIRMED = safe`Discord could not confirm what this channel is, so nothing was changed. Please try again in a moment.`;
 const ALREADY_LINKED = safe`This post already belongs to an event, so nothing was changed.`;
-const NO_EVENT_HERE = safe`Run this in an event's post, or choose the event in the event option.`;
 const BAD_POST_NAME = safe`This post's title has no letters or numbers to name an event with. Rename the post, then try again.`;
 const LINK_IN_NAME = safe`An event's name can't hold a server invite or a masked link, because the bot shows it in pings and reminders. Choose a name without one. Nothing was created.`;
 const LINK_IN_POST_NAME = safe`This post's title holds a server invite or a masked link, so it can't name an event. Rename the post, then try again. Nothing was changed.`;
@@ -949,58 +950,6 @@ async function finishLink(ctx: FinishContext): Promise<MessageInput> {
   return settleOverview(ctx, valueOf(row), thread, { adopted, recovered });
 }
 
-type ChosenEvent =
-  | { readonly kind: "event"; readonly event: EventRow }
-  | { readonly kind: "none" }
-  | { readonly kind: "refused" };
-
-/**
- * The event a command is about: the one it names, or else the post it was run in. A
- * named value is never trusted. It is a row reference, loaded with the signed guild.
- * Having named nothing, somewhere that is no event's post, is only a wrong place to ask.
- */
-async function loadChosenEvent(
-  ctx: FinishContext,
-  action: EventScopedAction,
-): Promise<ChosenEvent> {
-  const { actor, db, payload, verified } = ctx;
-  const option = commandOptionValue(
-    payload,
-    "event",
-    ApplicationCommandOptionType.String,
-  );
-  if (
-    typeof option !== "string" &&
-    !isThreadChannelType(verified.channelType)
-  ) {
-    return { kind: "none" };
-  }
-  const named =
-    typeof option === "string"
-      ? await chosenEventId(ctx, option, { orClosed: true })
-      : undefined;
-  if (typeof option === "string" && named === undefined) {
-    return { kind: "refused" };
-  }
-  const read =
-    named !== undefined
-      ? await getEvent(db, { guildId: actor.guildId, eventId: named })
-      : await findEventByThread(db, {
-          guildId: actor.guildId,
-          threadId: verified.channelId,
-        });
-  if (!read.ok && read.error.category === "invalid_input") {
-    return { kind: "refused" };
-  }
-  const event = valueOf(read);
-  if (event === null) {
-    return named !== undefined ? { kind: "refused" } : { kind: "none" };
-  }
-  return authorize<EventScopedAction>(action, actor, ctx.config, event).allowed
-    ? { kind: "event", event }
-    : { kind: "refused" };
-}
-
 /**
  * The gate only checks the tier, so that one read comes before the acknowledgement. The
  * row is loaded and authorized here, on the longer deadline, with the same refusal.
@@ -1010,12 +959,13 @@ function onChosenEvent(
   step: (ctx: FinishContext, event: EventRow) => Promise<MessageInput>,
 ): (ctx: FinishContext) => Promise<MessageInput> {
   return async (ctx) => {
-    const chosen = await loadChosenEvent(ctx, action);
+    const chosen = await chooseEvent(ctx, action, { orClosed: true });
     switch (chosen.kind) {
       case "refused":
+      case "typed":
         return message(REFUSED_TEXT);
       case "none":
-        return message(NO_EVENT_HERE);
+        return message(NO_EVENT);
       case "event":
         return step(ctx, chosen.event);
     }
