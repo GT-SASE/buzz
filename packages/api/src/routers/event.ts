@@ -1,15 +1,7 @@
+import { randomInt } from "node:crypto";
+
 import { TRPCError } from "@trpc/server";
-import {
-  and,
-  asc,
-  count,
-  desc,
-  eq,
-  gte,
-  inArray,
-  isNull,
-  lte,
-} from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, inArray, isNull } from "drizzle-orm";
 import { z } from "zod";
 
 import { asDate, asInt, totalsColumns } from "../aggregates";
@@ -21,6 +13,7 @@ import {
 import { recordAudit, recordPoints } from "../audit";
 import { sendCalendarInvite } from "../calendar-invite";
 import {
+  ALPHABET,
   checkInCodeFor,
   checkInCodeIsCurrent,
   windowEnd,
@@ -49,11 +42,14 @@ import { adminProcedure, createTRPCRouter, protectedProcedure } from "../trpc";
 import {
   lockEvent,
   promoteWaitlist,
+  rsvpCount,
   seatStates,
   tolerateMissingWaitlist,
   waitlistFor,
+  waitlistPlace,
   type Promoted,
   type SeatState,
+  type Transaction,
 } from "../waitlist";
 import {
   EVENT_CADENCES,
@@ -80,28 +76,13 @@ const CHECK_IN_GRACE_MS = 2 * 60 * 60 * 1000;
 
 const TWO_YEARS_MS = 2 * 365.25 * 24 * 60 * 60 * 1000;
 
-/**
- * Crockford-style base32: no I, L, O, U, 0 or 1. Members read these codes off a
- * projector and type them on a phone, so every ambiguous glyph is a support
- * ticket.
- */
-const CODE_ALPHABET = "23456789ABCDEFGHJKMNPQRSTVWXYZ";
 const CODE_LENGTH = 8;
 
 function newCheckInCode() {
-  const alphabetLen = CODE_ALPHABET.length;
-  const rejectAbove = 256 - (256 % alphabetLen);
   let code = "";
-  while (code.length < CODE_LENGTH) {
-    const bytes = new Uint8Array(CODE_LENGTH - code.length);
-    crypto.getRandomValues(bytes);
-    for (const byte of bytes) {
-      // Rejection sampling: `byte % length` alone biases the shorter alphabet.
-      if (byte >= rejectAbove) continue;
-      code += CODE_ALPHABET[byte % alphabetLen];
-      if (code.length >= CODE_LENGTH) break;
-    }
-  }
+  // `randomInt` is uniform; `random % length` would favour the first glyphs.
+  while (code.length < CODE_LENGTH)
+    code += ALPHABET[randomInt(ALPHABET.length)];
   return code;
 }
 
@@ -178,7 +159,57 @@ function rsvpRecipients(db: typeof Db, eventId: string) {
       .where(eq(eventRsvps.eventId, eventId));
 }
 
-type Transaction = Parameters<Parameters<typeof Db.transaction>[0]>[0];
+/** What a member has attended that still counts, newest first. */
+function attendedEvents(db: typeof Db, userId: string) {
+  return db
+    .select({
+      id: events.id,
+      title: events.title,
+      location: events.location,
+      startsAt: events.startsAt,
+      pointsEarned: eventCheckIns.pointsEarned,
+      method: eventCheckIns.method,
+      checkedInAt: eventCheckIns.checkedInAt,
+    })
+    .from(eventCheckIns)
+    .innerJoin(events, eq(events.id, eventCheckIns.eventId))
+    .where(and(eq(eventCheckIns.userId, userId), isNull(events.archivedAt)))
+    .orderBy(desc(eventCheckIns.checkedInAt))
+    .limit(100);
+}
+
+function memberTotals(db: typeof Db, userId: string) {
+  return db
+    .select(totalsColumns)
+    .from(eventCheckIns)
+    .innerJoin(events, eq(events.id, eventCheckIns.eventId))
+    .where(and(eq(eventCheckIns.userId, userId), isNull(events.archivedAt)));
+}
+
+/** Events still open to the member, marked with whether they went or RSVPed. */
+function upcomingEvents(db: typeof Db, userId: string, cutoff: Date) {
+  return db
+    .select({
+      ...publicEventColumns,
+      attendedAt: eventCheckIns.checkedInAt,
+      rsvpedAt: eventRsvps.createdAt,
+    })
+    .from(events)
+    .leftJoin(
+      eventCheckIns,
+      and(
+        eq(eventCheckIns.eventId, events.id),
+        eq(eventCheckIns.userId, userId),
+      ),
+    )
+    .leftJoin(
+      eventRsvps,
+      and(eq(eventRsvps.eventId, events.id), eq(eventRsvps.userId, userId)),
+    )
+    .where(and(isNull(events.archivedAt), gte(events.startsAt, cutoff)))
+    .orderBy(asc(events.startsAt))
+    .limit(20);
+}
 
 const eventInput = z.object({
   title: z.string().trim().min(1).max(200),
@@ -186,7 +217,6 @@ const eventInput = z.object({
   location: z.string().trim().max(200).optional(),
   startsAt: z.coerce.date().refine((date) => {
     const t = date.getTime();
-    if (Number.isNaN(t)) return false;
     const now = Date.now();
     return t >= now - TWO_YEARS_MS && t <= now + TWO_YEARS_MS;
   }, "Event start must be within two years of today."),
@@ -348,13 +378,7 @@ export const eventRouter = createTRPCRouter({
             }),
           );
         }
-        const [first] = created;
-        if (!first) {
-          throw new TRPCError({
-            code: "INTERNAL_SERVER_ERROR",
-            message: "Could not create that event.",
-          });
-        }
+        const first = created[0]!;
 
         if (repeat) {
           const seriesId = crypto.randomUUID();
@@ -488,12 +512,7 @@ export const eventRouter = createTRPCRouter({
               ...set,
               ...(nextCapacity === null
                 ? {}
-                : {
-                    currentCheckIns:
-                      typeof attendance?.total === "number"
-                        ? attendance.total
-                        : Number(attendance?.total ?? 0),
-                  }),
+                : { currentCheckIns: asInt(attendance?.total) }),
             })
             .where(eq(events.id, current.id))
             .returning();
@@ -552,11 +571,8 @@ export const eventRouter = createTRPCRouter({
         return results;
       });
 
-      if (!updated) {
-        notFound("Event");
-      }
-      const mine = updated.find((result) => result.row.id === id);
-      if (!mine) notFound("Event");
+      const mine = updated?.find((result) => result.row.id === id);
+      if (!updated || !mine) notFound("Event");
 
       // Members who RSVPed have the old time or place on their calendar.
       // Past events and archived ones are left alone: nobody is planning
@@ -649,10 +665,7 @@ export const eventRouter = createTRPCRouter({
             opensAt: new Date(row.startsAt.getTime() - CHECK_IN_GRACE_MS),
           };
         }),
-        total:
-          typeof totals?.total === "number"
-            ? totals.total
-            : Number(totals?.total ?? 0),
+        total: asInt(totals?.total),
       };
     }),
 
@@ -728,10 +741,7 @@ export const eventRouter = createTRPCRouter({
         series: series.get(input.id) ?? null,
         waitlist,
         roster,
-        rosterTotal:
-          typeof rosterCount?.total === "number"
-            ? rosterCount.total
-            : Number(rosterCount?.total ?? 0),
+        rosterTotal: asInt(rosterCount?.total),
         isPast,
         notYetOpen,
         opensAt,
@@ -941,14 +951,7 @@ export const eventRouter = createTRPCRouter({
             return { id: updated.id };
           });
         } catch (error) {
-          if (error instanceof TRPCError) throw error;
-          if (!isUniqueViolation(error) || attempt === 4) {
-            if (isUniqueViolation(error)) {
-              throw new TRPCError({
-                code: "INTERNAL_SERVER_ERROR",
-                message: "Could not revoke that code.",
-              });
-            }
+          if (error instanceof TRPCError || !isUniqueViolation(error)) {
             throw error;
           }
         }
@@ -1318,13 +1321,7 @@ export const eventRouter = createTRPCRouter({
       // Totals are read after the write commits, never inside it. Running this
       // aggregate inside the transaction meant every other scanner waited on
       // one member's arithmetic.
-      const [totals] = await ctx.db
-        .select(totalsColumns)
-        .from(eventCheckIns)
-        .innerJoin(events, eq(events.id, eventCheckIns.eventId))
-        .where(
-          and(eq(eventCheckIns.userId, userId), isNull(events.archivedAt)),
-        );
+      const [totals] = await memberTotals(ctx.db, userId);
 
       return {
         eventTitle,
@@ -1336,40 +1333,12 @@ export const eventRouter = createTRPCRouter({
 
   /** Everything this person has been to that still counts (archived events left out). One join, points already snapshotted. */
   myEvents: protectedProcedure.query(async ({ ctx }) => {
-    return ctx.db
-      .select({
-        id: events.id,
-        title: events.title,
-        location: events.location,
-        startsAt: events.startsAt,
-        pointsEarned: eventCheckIns.pointsEarned,
-        method: eventCheckIns.method,
-        checkedInAt: eventCheckIns.checkedInAt,
-      })
-      .from(eventCheckIns)
-      .innerJoin(events, eq(events.id, eventCheckIns.eventId))
-      .where(
-        and(
-          eq(eventCheckIns.userId, ctx.session.user.id),
-          isNull(events.archivedAt),
-        ),
-      )
-      .orderBy(desc(eventCheckIns.checkedInAt))
-      .limit(100);
+    return attendedEvents(ctx.db, ctx.session.user.id);
   }),
 
   /** One aggregate row, one index scan. Nothing sums in JavaScript. */
   myStats: protectedProcedure.query(async ({ ctx }) => {
-    const [totals] = await ctx.db
-      .select(totalsColumns)
-      .from(eventCheckIns)
-      .innerJoin(events, eq(events.id, eventCheckIns.eventId))
-      .where(
-        and(
-          eq(eventCheckIns.userId, ctx.session.user.id),
-          isNull(events.archivedAt),
-        ),
-      );
+    const [totals] = await memberTotals(ctx.db, ctx.session.user.id);
 
     return {
       totalEvents: asInt(totals?.totalEvents),
@@ -1411,54 +1380,39 @@ export const eventRouter = createTRPCRouter({
           );
         if (going) return { event, status: "going" as const, added: false };
 
-        if (event.maxCheckIns !== null) {
-          const [taken] = await tx
-            .select({ total: count() })
-            .from(eventRsvps)
-            .where(eq(eventRsvps.eventId, event.id));
-          if (Number(taken?.total ?? 0) >= event.maxCheckIns) {
-            // No waitlist table yet (a preview ahead of its migration) means
-            // no waitlist: the member is seated as before.
-            const position = await tolerateMissingWaitlist(
-              tx,
-              null,
-              async (sp) => {
-                await sp
-                  .insert(eventWaitlist)
-                  .values({ eventId: event.id, userId })
-                  .onConflictDoNothing();
-                const [mine] = await sp
-                  .select({ joinedAt: eventWaitlist.createdAt })
-                  .from(eventWaitlist)
-                  .where(
-                    and(
-                      eq(eventWaitlist.eventId, event.id),
-                      eq(eventWaitlist.userId, userId),
-                    ),
-                  );
-                const [ahead] = await sp
-                  .select({ total: count() })
-                  .from(eventWaitlist)
-                  .where(
-                    and(
-                      eq(eventWaitlist.eventId, event.id),
-                      lte(
-                        eventWaitlist.createdAt,
-                        mine?.joinedAt ?? new Date(),
-                      ),
-                    ),
-                  );
-                return Math.max(Number(ahead?.total ?? 1), 1);
-              },
-            );
-            if (position !== null) {
-              return {
-                event,
-                status: "waitlisted" as const,
-                added: false,
-                position,
-              };
-            }
+        if (
+          event.maxCheckIns !== null &&
+          (await rsvpCount(tx, event.id)) >= event.maxCheckIns
+        ) {
+          // No waitlist table yet (a preview ahead of its migration) means no
+          // waitlist: the member is seated as before.
+          const position = await tolerateMissingWaitlist(
+            tx,
+            null,
+            async (sp) => {
+              await sp
+                .insert(eventWaitlist)
+                .values({ eventId: event.id, userId })
+                .onConflictDoNothing();
+              const [mine] = await sp
+                .select({ joinedAt: eventWaitlist.createdAt })
+                .from(eventWaitlist)
+                .where(
+                  and(
+                    eq(eventWaitlist.eventId, event.id),
+                    eq(eventWaitlist.userId, userId),
+                  ),
+                );
+              return waitlistPlace(sp, event.id, mine?.joinedAt ?? new Date());
+            },
+          );
+          if (position !== null) {
+            return {
+              event,
+              status: "waitlisted" as const,
+              added: false,
+              position,
+            };
           }
         }
 
@@ -1619,30 +1573,7 @@ export const eventRouter = createTRPCRouter({
     const now = Date.now();
     const cutoff = new Date(now - CHECK_IN_WINDOW_MS);
 
-    const rows = await ctx.db
-      .select({
-        ...publicEventColumns,
-        attendedAt: eventCheckIns.checkedInAt,
-        rsvpedAt: eventRsvps.createdAt,
-      })
-      .from(events)
-      .leftJoin(
-        eventCheckIns,
-        and(
-          eq(eventCheckIns.eventId, events.id),
-          eq(eventCheckIns.userId, ctx.session.user.id),
-        ),
-      )
-      .leftJoin(
-        eventRsvps,
-        and(
-          eq(eventRsvps.eventId, events.id),
-          eq(eventRsvps.userId, ctx.session.user.id),
-        ),
-      )
-      .where(and(isNull(events.archivedAt), gte(events.startsAt, cutoff)))
-      .orderBy(asc(events.startsAt))
-      .limit(20);
+    const rows = await upcomingEvents(ctx.db, ctx.session.user.id, cutoff);
     const seats = await seatStates(
       ctx.db,
       ctx.session.user.id,
@@ -1698,28 +1629,8 @@ export const eventRouter = createTRPCRouter({
     const cutoff = new Date(Date.now() - CHECK_IN_WINDOW_MS);
 
     const [attended, totals, thisSemester, upcoming] = await Promise.all([
-      ctx.db
-        .select({
-          id: events.id,
-          title: events.title,
-          location: events.location,
-          startsAt: events.startsAt,
-          pointsEarned: eventCheckIns.pointsEarned,
-          method: eventCheckIns.method,
-          checkedInAt: eventCheckIns.checkedInAt,
-        })
-        .from(eventCheckIns)
-        .innerJoin(events, eq(events.id, eventCheckIns.eventId))
-        .where(and(eq(eventCheckIns.userId, userId), isNull(events.archivedAt)))
-        .orderBy(desc(eventCheckIns.checkedInAt))
-        .limit(100),
-      ctx.db
-        .select(totalsColumns)
-        .from(eventCheckIns)
-        .innerJoin(events, eq(events.id, eventCheckIns.eventId))
-        .where(
-          and(eq(eventCheckIns.userId, userId), isNull(events.archivedAt)),
-        ),
+      attendedEvents(ctx.db, userId),
+      memberTotals(ctx.db, userId),
       // Same ledger definition as the leaderboard, so the card and the board
       // always agree on this semester.
       ctx.db
@@ -1732,27 +1643,7 @@ export const eventRouter = createTRPCRouter({
             attendanceFilter(semesterWindow(new Date())),
           ),
         ),
-      ctx.db
-        .select({
-          ...publicEventColumns,
-          attendedAt: eventCheckIns.checkedInAt,
-          rsvpedAt: eventRsvps.createdAt,
-        })
-        .from(events)
-        .leftJoin(
-          eventCheckIns,
-          and(
-            eq(eventCheckIns.eventId, events.id),
-            eq(eventCheckIns.userId, userId),
-          ),
-        )
-        .leftJoin(
-          eventRsvps,
-          and(eq(eventRsvps.eventId, events.id), eq(eventRsvps.userId, userId)),
-        )
-        .where(and(isNull(events.archivedAt), gte(events.startsAt, cutoff)))
-        .orderBy(asc(events.startsAt))
-        .limit(20),
+      upcomingEvents(ctx.db, userId, cutoff),
     ]);
 
     const [row] = totals;

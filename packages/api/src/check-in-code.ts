@@ -24,8 +24,12 @@ export const WINDOW_MS = 30_000;
 /** Windows a code is accepted in, counting the one it was issued for. */
 const WINDOWS_ACCEPTED = 2;
 
-/** Same alphabet as the stored key, so one scanner regex covers both. */
-const ALPHABET = "23456789ABCDEFGHJKMNPQRSTVWXYZ";
+/**
+ * Crockford-style base32: no I, L, O, U, 0 or 1. Members read these codes off a
+ * projector and type them on a phone, so every ambiguous glyph is a support
+ * ticket. The stored key uses it too, so one scanner regex covers both.
+ */
+export const ALPHABET = "23456789ABCDEFGHJKMNPQRSTVWXYZ";
 export const MAC_LENGTH = 8;
 
 function secret() {
