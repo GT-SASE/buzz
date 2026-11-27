@@ -15,7 +15,7 @@ import {
  * on the server and passes them in. Every public page prefetches this route
  * (the Join buttons point here), and this file is its client JS: importing
  * `Button`, `Card` or the site barrel here put tailwind-merge, Slot and lucide
- * (~59 kB decoded) into every public page's prefetch. tests/public-bundle.test.ts
+ * (~59 kB decoded) into every public page's prefetch. tests/web/public-bundle.test.ts
  * keeps them out.
  */
 type Slots = { dino: React.ReactNode; eyebrow: React.ReactNode };

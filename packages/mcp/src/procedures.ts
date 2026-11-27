@@ -54,7 +54,7 @@ function topLevelConsts(sf: ts.SourceFile) {
 }
 
 /** Procedure builders defined in trpc.ts: chains rooted at `t.procedure`. */
-export function procedureBuilders(): string[] {
+function procedureBuilders(): string[] {
   const sf = parse(path.join(apiSrc, "trpc.ts"));
   const builders = new Set<string>();
   for (const { name, init } of topLevelConsts(sf)) {

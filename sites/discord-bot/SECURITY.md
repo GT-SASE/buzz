@@ -67,7 +67,7 @@ The hook reduces the chance of a leak but does not rule one out. It is a local c
 - a clone where `bun run hooks:install` was never run, or a checkout that does not contain `.githooks/`
 - commits made through the GitHub web interface or API
 
-The CI scan is the backstop for these. It runs the same gitleaks scan over every commit on every ref, with `.gitleaks.toml`: gitleaks' default rules plus rules for Discord bot tokens, Discord webhook URLs and passwords in Postgres connection strings. GitHub secret scanning and push protection also cover the public repository.
+The CI scan is the backstop for these. It runs the same gitleaks scan over every commit on every ref, with `config/gitleaks/gitleaks.toml`: gitleaks' default rules plus rules for Discord bot tokens, Discord webhook URLs and passwords in Postgres connection strings. GitHub secret scanning and push protection also cover the public repository.
 
 The scan looks for known secret formats. It does not check file types or commit identities, so keep `.env` files and database dumps out of the repository, and set `git config user.email` to your GitHub noreply address. It does not cover names or Discord IDs: nothing detects a real member name or ID, so those still depend on review. It cannot recognise a secret in an unknown format either.
 
@@ -136,9 +136,9 @@ Do this only after rotating.
 - Confirm that history is clean:
 
 ```sh
-.tools/gitleaks git . --config .gitleaks.toml --redact --ignore-gitleaks-allow --no-banner --log-opts="--all -m --text --no-color"
+.tools/gitleaks git . --config config/gitleaks/gitleaks.toml --redact --ignore-gitleaks-allow --no-banner --log-opts="--all -m --text --no-color"
 ```
 
 ### 4. Learn from it
 
-Record what leaked, how and when, without repeating the value. If the scanner missed it, add a rule to `.gitleaks.toml` and check that it fires on a sample built at runtime, never a real value.
+Record what leaked, how and when, without repeating the value. If the scanner missed it, add a rule to `config/gitleaks/gitleaks.toml` and check that it fires on a sample built at runtime, never a real value.

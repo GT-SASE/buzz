@@ -146,9 +146,7 @@ function chosenLines(chosen: Chosen<BindableRole>): SafeText {
  * Position is left out: whether one of them really can grant the role depends on who
  * holds what, which the bot cannot see, so this only says who may be able to.
  */
-export function rolesThatMayGrant(
-  roles: readonly GuildRole[],
-): readonly GuildRole[] {
+function rolesThatMayGrant(roles: readonly GuildRole[]): readonly GuildRole[] {
   return roles
     .filter(
       (role) =>

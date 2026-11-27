@@ -1,0 +1,145 @@
+import { cleanup, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import type { ReactNode } from "react";
+import { afterEach, describe, expect, it, mock } from "bun:test";
+
+const period = { current: "semester" as "30d" | "90d" | "semester" | "all" };
+
+mock.module("next/link", () => ({
+  default: ({
+    href,
+    children,
+    ...props
+  }: {
+    href: string;
+    children: ReactNode;
+  }) => (
+    <a href={href} {...props}>
+      {children}
+    </a>
+  ),
+}));
+
+mock.module("~/trpc/react", () => ({
+  api: {
+    chapter: {
+      attendance: {
+        useQuery: (input: { period: typeof period.current }) => {
+          period.current = input.period;
+          return {
+            isPending: false,
+            error: null,
+            data: {
+              period: input.period,
+              since: new Date("2025-08-01T04:00:00.000Z"),
+              until: new Date("2026-04-01T15:00:00.000Z"),
+              events: 2,
+              checkIns: 69,
+              uniqueMembers: 40,
+              averageAttendance: 34.5,
+              series: [
+                {
+                  id: "event-12",
+                  title: "March GBM",
+                  startsAt: new Date("2026-03-12T22:30:00.000Z"),
+                  checkIns: 41,
+                },
+                {
+                  id: "event-8",
+                  title: "Spring Kickoff",
+                  startsAt: new Date("2026-01-16T23:00:00.000Z"),
+                  checkIns: 28,
+                },
+              ],
+            },
+          };
+        },
+      },
+      turnout: {
+        useQuery: () => ({
+          isPending: false,
+          error: null,
+          data: {
+            events: [
+              {
+                id: "event-8",
+                title: "Spring Kickoff",
+                startsAt: new Date("2026-01-16T23:00:00.000Z"),
+                checkIns: 28,
+                firstTimers: 20,
+                returning: 8,
+              },
+              {
+                id: "event-12",
+                title: "March GBM",
+                startsAt: new Date("2026-03-12T22:30:00.000Z"),
+                checkIns: 41,
+                firstTimers: 9,
+                returning: 32,
+              },
+            ],
+            upcoming: [
+              {
+                id: "event-14",
+                title: "April GBM",
+                startsAt: new Date("2026-04-09T22:30:00.000Z"),
+                rsvps: 17,
+              },
+            ],
+          },
+        }),
+      },
+    },
+  },
+}));
+
+import { Attendance } from "../../sites/web/src/app/portal/(member)/admin/attendance";
+
+afterEach(() => {
+  cleanup();
+  period.current = "semester";
+});
+
+describe("Attendance", () => {
+  it("lists each event with a link to its officer page", () => {
+    render(<Attendance />);
+
+    expect(
+      screen.getByRole("heading", { name: "Attendance over time" }),
+    ).toBeTruthy();
+    expect(document.body.textContent).toContain(
+      "69 check-ins from 40 members across 2 events, about 34.5 per event.",
+    );
+
+    const kickoff = screen.getByRole("link", { name: /Spring Kickoff/i });
+    expect(kickoff.getAttribute("href")).toBe("/portal/admin/events/event-8");
+  });
+
+  it("shows first-timers and returning members per event, and upcoming RSVPs", () => {
+    render(<Attendance />);
+
+    expect(
+      screen.getByRole("heading", { name: "Check-ins per event" }),
+    ).toBeTruthy();
+    const row = screen.getByRole("row", { name: /March GBM/ });
+    expect(row.textContent).toContain("32");
+    expect(row.textContent).toContain("9");
+    expect(
+      screen.getByRole("link", { name: /April GBM/ }).textContent,
+    ).toContain("17");
+  });
+
+  it("asks for a different window when an officer picks a period", async () => {
+    const user = userEvent.setup();
+    render(<Attendance />);
+
+    expect(
+      screen
+        .getByRole("radio", { name: "School year" })
+        .getAttribute("aria-checked"),
+    ).toBe("true");
+
+    await user.click(screen.getByRole("radio", { name: "Last 30 days" }));
+    expect(period.current).toBe("30d");
+  });
+});

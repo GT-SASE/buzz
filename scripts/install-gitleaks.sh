@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 #
-# Installs the gitleaks release pinned in .gitleaks-version into .tools/gitleaks.
+# Installs the gitleaks release pinned in config/gitleaks/version into .tools/gitleaks.
 #
 # The archive is checked against a SHA-256 pinned in this file, taken from the
 # checksums file published with the release. Nothing is installed unless the
-# hash matches. To upgrade, change .gitleaks-version and all four checksums
+# hash matches. To upgrade, change config/gitleaks/version and all four checksums
 # together, using the new release's official checksums file.
 
 set -euo pipefail
@@ -18,11 +18,11 @@ die() {
   exit 1
 }
 
-GITLEAKS_VERSION="$(cat "${repo_root}/.gitleaks-version")" \
-  || die "cannot read .gitleaks-version"
+GITLEAKS_VERSION="$(cat "${repo_root}/config/gitleaks/version")" \
+  || die "cannot read config/gitleaks/version"
 readonly GITLEAKS_VERSION
 [[ "${GITLEAKS_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] \
-  || die "invalid version in .gitleaks-version"
+  || die "invalid version in config/gitleaks/version"
 
 os="$(uname -s)"
 arch="$(uname -m)"

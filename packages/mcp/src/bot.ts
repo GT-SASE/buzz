@@ -14,7 +14,7 @@ async function importBot<T>(file: string): Promise<T> {
 }
 
 /** The bot's Vercel functions and crons, from scripts/deployment.ts. */
-export async function botDeployment(): Promise<{
+async function botDeployment(): Promise<{
   functions: BotFunction[];
   crons: BotCron[];
 }> {
@@ -95,7 +95,7 @@ function describeOption(o: Option, depth: number): string[] {
   ];
 }
 
-export function describeCommands(commands: Command[], filter?: string): string {
+function describeCommands(commands: Command[], filter?: string): string {
   const f = filter?.trim().toLowerCase();
   const blocks = commands
     .filter((c) => !f || c.name.toLowerCase().includes(f))

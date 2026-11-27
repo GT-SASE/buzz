@@ -90,7 +90,7 @@ export async function version(): Promise<string> {
   }
   if (mismatched.length > 0) {
     lines.push(
-      `MISMATCH: ${mismatched.join(", ")} differ from the site version; tests/versions.test.ts fails.`,
+      `MISMATCH: ${mismatched.join(", ")} differ from the site version; tests/repo/versions.test.ts fails.`,
     );
   }
   try {

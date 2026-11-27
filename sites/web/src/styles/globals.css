@@ -16,7 +16,7 @@
   --navy: #003057;
   --navy-deep: #002240;
   /* Decoration only: rules, pips, bars, rings. 2.6:1 on white, so text on a
-     light ground uses --gold-ink (tests/gold-text.test.ts enforces it). */
+     light ground uses --gold-ink (tests/web/gold-text.test.ts enforces it). */
   --gold: #b3a369;
   --gold-bright: #eaaa00;
 
@@ -28,7 +28,6 @@
   --paper: #ffffff;
   --cream: #eef1f4;
   --sand: #dfe4ea;
-  --parchment: #f6f8fa;
 
   --ink: #0f1f30;
   --ink-muted: #4a5866;
@@ -90,7 +89,6 @@
   --color-paper: var(--paper);
   --color-cream: var(--cream);
   --color-sand: var(--sand);
-  --color-parchment: var(--parchment);
   --color-ink: var(--ink);
   --color-ink-muted: var(--ink-muted);
   --color-gold-ink: var(--gold-ink);

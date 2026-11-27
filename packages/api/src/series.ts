@@ -61,7 +61,7 @@ function asUtc(local: LocalTime) {
 }
 
 /** The instant at which Atlanta's clock reads `local`. */
-export function fromLocal(local: LocalTime): Date {
+function fromLocal(local: LocalTime): Date {
   const wanted = asUtc(local);
   let guess = wanted;
   // Two passes settle the offset even when the guess lands across a change.
@@ -86,7 +86,7 @@ export function addLocalDays(date: Date, days: number): Date {
   });
 }
 
-export function cadenceDays(cadence: EventCadence) {
+function cadenceDays(cadence: EventCadence) {
   return cadence === "weekly" ? 7 : 14;
 }
 

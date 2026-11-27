@@ -6,10 +6,10 @@
 import campusTabling from "../../public/photos/campus-tabling.jpg";
 import chinatownTrip from "../../public/photos/chinatown-trip.jpg";
 import conventionDelegation from "../../public/photos/convention-delegation.jpeg";
-import conventionLetters from "../../public/photos/convention-letters.jpg";
 import generalBody from "../../public/photos/general-body.jpg";
 import hawksNight from "../../public/photos/hawks-night.jpg";
 import origamiSocial from "../../public/photos/origami-social.jpg";
+import seattleDelegation from "../../public/photos/seattle-delegation.jpg";
 
 export const homePhotos = {
   conventionDelegation: {
@@ -24,8 +24,8 @@ export const homePhotos = {
 
 export const galleryPhotos = [
   {
-    src: conventionLetters,
-    alt: "Seven SASE GT members with conference badges standing behind giant SASE letters.",
+    src: seattleDelegation,
+    alt: "Around twenty-five SASE GT members in business attire and conference badges posing on a wide concrete staircase under a skylight, on the chapter's October 2026 trip to Seattle.",
   },
   {
     src: campusTabling,

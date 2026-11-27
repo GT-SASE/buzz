@@ -12,9 +12,27 @@ them, which is why `sites/web/next.config.ts` lists them under `transpilePackage
 packages/db     @buzz/db     drizzle schema, the client, drizzle-kit config
 packages/auth   @buzz/auth   NextAuth config and the auth() helper
 packages/api    @buzz/api    tRPC context, procedures, routers
+packages/mcp    @buzz/mcp    the MCP server for coding agents (see Agent tooling)
 sites/web       @buzz/web    the Next.js app
 sites/discord-bot  @buzz/discord-bot  the events team Discord bot (Vercel functions, its own `discord_bot` schema in the same Postgres)
 ```
+
+Outside the workspaces:
+
+```
+tests/            root test suites by area: api/ integration/ db/ web/ mcp/ repo/, plus shared setup/ helpers/ mocks/
+scripts/          build, smoke, uptime, gitleaks install, start-database.sh, fonts/
+config/gitleaks/  secret-scan rules and the pinned gitleaks version
+docs/             site-structure.md, plus archive/ for retired plans
+.github/          CI workflows, Dependabot, CODEOWNERS, SECURITY.md
+.githooks/        the pre-push secret scan
+```
+
+The files left at the root are the ones a tool only looks for there: `package.json`,
+`bun.lock`, `bunfig.toml`, `turbo.json`, the two `tsconfig` files,
+`eslint.config.ts` and `prettier.config.ts` (editors find them by walking up), `.mcp.json`,
+`AGENTS.md`/`CLAUDE.md`, `.env.example` (beside the `.env` every tool reads), and the
+git and licence files.
 
 Inside `sites/web/src`:
 
@@ -39,7 +57,7 @@ and CI, enable the Vercel Remote Cache: `bun x turbo login` then `bun x turbo li
 (team `sasegt`); CI uses the `TURBO_TOKEN` secret and `TURBO_TEAM` variable. Schema changes go through Drizzle Kit (`bun run db:generate` →
 commit SQL → `bun run db:migrate`).
 
-`sites/discord-bot` is a separate Vercel project and has its own README. It bundles its functions with `bun build` into Vercel Build Output, so it deploys with no `node_modules` tracing even though the repo installs with the isolated linker. Its tests run through `bun run check`; `bun run hooks:install` and `bun run gitleaks:install` set up the pre-push secret scan (`.githooks`, `.gitleaks.toml`) for the whole repo.
+`sites/discord-bot` is a separate Vercel project and has its own README. It bundles its functions with `bun build` into Vercel Build Output, so it deploys with no `node_modules` tracing even though the repo installs with the isolated linker. Its tests run through `bun run check`; `bun run hooks:install` and `bun run gitleaks:install` set up the pre-push secret scan (`.githooks`, `config/gitleaks/gitleaks.toml`) for the whole repo.
 
 Deploying the site on Vercel: set **Root Directory** to `sites/web`. Vercel installs from
 the repo root, so the workspace packages resolve normally. `sites/web/vercel.json`
@@ -48,10 +66,14 @@ runtime.
 
 ## TypeScript
 
-Everything type-checks under **TypeScript 7**. The workspace root additionally
-pins `typescript` to 6.x, because `typescript-eslint` reads the compiler API
-directly and its peer range stops at `<6.1.0`; `typescript-7` is the alias that
-`tsc` actually runs. `postcss.config.js` is the one file still in JavaScript —
+Everything type-checks under **TypeScript 7**, targeting **ES2025**, root
+included. `typescript` 6.x stays installed only as a parser library:
+`typescript-eslint` reads its compiler API, and its peer range stops at `<6.1.0`;
+the MCP server parses router files with it. TypeScript 7 has no stable JS API
+yet (only `typescript/unstable/*`), so neither can move until it does. Where both
+are installed the `tsc` bin resolves to 6.x, so those `typecheck:tsc` scripts
+call `node_modules/typescript-7/bin/tsc` by path.
+`postcss.config.js` is the one file still in JavaScript —
 Next 16.3 only resolves `postcss.config.{js,mjs,json}`.
 
 `bun run typecheck` runs [tsrs](https://github.com/oxc-project/tsrs), the Rust port
@@ -92,7 +114,7 @@ Each part is broken down in [docs/site-structure.md](docs/site-structure.md).
 
 ## Version
 
-The site is stamped with `MAJOR.MINOR.PATCH`, shown in the footer and returned with the commit SHA by `/api/health`. `MAJOR.MINOR` comes from `version` in `sites/web/package.json`; `PATCH` is the number of merges into `main` since that line last changed, and rolls into `MINOR` at 100. The whole repo shares that version: the MCP server reports it and every workspace `package.json` carries the same `X.Y.0` (`tests/versions.test.ts` checks). Bump `MAJOR.MINOR` by hand in all of them for a release worth naming; patch moves on its own with every merge. Vercel clones shallow, so the build deepens the clone from the public repo to count, and a build with no git reports the `package.json` version as is.
+The site is stamped with `MAJOR.MINOR.PATCH`, shown in the footer and returned with the commit SHA by `/api/health`. `MAJOR.MINOR` comes from `version` in `sites/web/package.json`; `PATCH` is the number of merges into `main` since that line last changed, and rolls into `MINOR` at 100. The whole repo shares that version: the MCP server reports it and every workspace `package.json` carries the same `X.Y.0` (`tests/repo/versions.test.ts` checks). Bump `MAJOR.MINOR` by hand in all of them for a release worth naming; patch moves on its own with every merge. Vercel clones shallow, so the build deepens the clone from the public repo to count, and a build with no git reports the `package.json` version as is.
 
 | Version | Since | What changed |
 | --- | --- | --- |
@@ -127,7 +149,7 @@ Everything below is what turns the **portal** on.
      development included, so sign-in does nothing until these are set.
    - `AUTH_REDIRECT_PROXY_URL` — `https://buzzsase.vercel.app/api/auth`. Pins
      Google's callback to the one registered URI.
-2. Start Postgres — `./start-database.sh` runs one in Docker. It reads the file
+2. Start Postgres — `./scripts/start-database.sh` runs one in Docker. It reads the file
    from step 1, so that order matters.
 3. `bun run db:migrate` to apply the committed SQL under `packages/db/drizzle`.
    Use `bun run db:push` only for throwaway local experiments — production and CI
@@ -146,7 +168,7 @@ is fine against a scratch database and not fine against the one serving members
 — so the app's database is deliberately unreachable from the suite. With
 `TEST_DATABASE_URL` unset, those suites skip and the rest still run.
 
-Point it at a throwaway Postgres, which is what `./start-database.sh` gives you:
+Point it at a throwaway Postgres, which is what `./scripts/start-database.sh` gives you:
 
 ```
 TEST_DATABASE_URL=postgres://postgres:password@localhost:5432/buzz

@@ -45,8 +45,10 @@ sites/web/src/components/ui/    vendored Watermelon UI (do not hand-fix; `bun ru
 sites/web/src/components/site/  editorial components built on ui
 sites/web/src/data/             content constants and cached loaders (chapter-events.ts, pages.ts)
 sites/web/src/trpc/             tRPC client/server glue for the app
-tests/                          all tests (bun test); tests/setup, tests/helpers, tests/mocks
-scripts/                        vercel-build.mjs, bundle-budget.mjs (per-route gzip budget, raise a line on purpose), axe-marketing.mjs (axe on built marketing routes), smoke.mjs, uptime.mjs, site-url.mjs, install-gitleaks.sh, bench-procedures.ts, fonts/
+tests/                          all root tests (bun test), by area: api/ (routers, api helpers, auth), integration/ (needs Postgres: *.integration.test.ts, the load test), db/ (migration SQL, connection URLs), web/ (site code and every .tsx suite), mcp/, repo/ (repo-wide rules); shared setup/, helpers/, mocks/
+scripts/                        vercel-build.mjs, bundle-budget.mjs (per-route gzip budget, raise a line on purpose), axe-marketing.mjs (axe on built marketing routes), smoke.mjs, uptime.mjs, site-url.mjs, install-gitleaks.sh, start-database.sh (local Postgres in Docker), bench-procedures.ts, fonts/
+config/gitleaks/                gitleaks.toml (secret-scan rules) and version (the pinned gitleaks release)
+.github/                        CI workflows, Dependabot, CODEOWNERS, SECURITY.md (reporting policy)
 ```
 
 ## Commands (run from repo root, Bun only)
@@ -61,18 +63,18 @@ Use `bun`, `bun run`, `bun x`. Never npm, pnpm, npx, bunx. Spell out `bun run te
 - `bun run db:generate | db:migrate | db:push | db:seed | db:seed:calendar | db:studio`
 - `bun run smoke` = `bun scripts/smoke.mjs` against the live site
 - Discord bot (`sites/discord-bot`, `bun run --cwd sites/discord-bot <script>`): `build` (Vercel Build Output in `.vercel/output`), `smoke` (loads the built functions from a temp folder, expects 401s), `test`, `test:db`, `test:db:concurrency` (needs `CONCURRENCY_DATABASE_URL` and `BOT_APP_PASSWORD`, see its README), `db:migrate` (drizzle-kit migrator into the `discord_bot` schema, which must exist first; `DATABASE_URL` of a disposable DB only), `commands:register <guild-id>...` (replaces those servers' slash commands; needs the Discord env vars, never run it in a test)
-- `bun run hooks:install` and `bun run gitleaks:install`: pre-push secret scan, rules in `.gitleaks.toml`
+- `bun run hooks:install` and `bun run gitleaks:install`: pre-push secret scan, rules in `config/gitleaks/gitleaks.toml`
 
 ## Tests
 
 - The bot's tests are excluded from root `test:node` because they need their own preload (`sites/discord-bot/test/support/setup.ts`); they run as the turbo tasks `test` and `test:db` from that folder.
-- bun test. Mock modules with `mock.module(...)` (see `tests/page-router.test.ts`: mock `packages/auth`, then `await import` the router).
-- Rate limits live in Postgres and take the caller's `ctx.db`, so a router test's fake `db` is wrapped in `withMemoryLimiter(db)` (`tests/helpers/rate-limit.ts`) and clears counts with its `resetRateLimits()`. The real SQL is `tests/rate-limit.integration.test.ts`.
+- bun test. Mock modules with `mock.module(...)` (see `tests/api/page-router.test.ts`: mock `packages/auth`, then `await import` the router).
+- Rate limits live in Postgres and take the caller's `ctx.db`, so a router test's fake `db` is wrapped in `withMemoryLimiter(db)` (`tests/helpers/rate-limit.ts`) and clears counts with its `resetRateLimits()`. The real SQL is `tests/integration/rate-limit.integration.test.ts`.
 - Router tests use a fake `db`; `*.integration.test.ts` use a real Postgres through `TEST_DATABASE_URL` only and wrap the suite in `describe.skipIf(!process.env.DATABASE_URL)`.
 - `tests/setup/env.ts` (bunfig preload) copies `TEST_DATABASE_URL` into `DATABASE_URL` and deletes it when unset, so unset means DB suites skip.
 - `.tsx` tests need the happy-dom preload; they only run in `test:dom`.
 - The bot's database tests start from one migrated PGlite data directory. `migratedDump()` in `test/db/harness.ts` builds it once (about 10 s on a busy machine) and keeps it in `sites/discord-bot/node_modules/.cache/pglite-migrated`, named by a hash of the harness, the migrations and the PGlite version; every other test file loads it. `createMigratedDb()` restores it unless a `beforeMigrations` step needs a database built from nothing. Call it from a `beforeAll` with `HOOK_TIMEOUT_MS`, as `handler-db.ts` does: built inside a test, the boot counted against that test's timeout and failed the first test of the file under load. `test:db` runs with bun's default 5 s test timeout.
-- `tests/check-in.load.test.ts` writes its throughput JSON only when `BENCH_JSON` names a file; `scripts/bench-procedures.ts` takes the same variable.
+- `tests/integration/check-in.load.test.ts` writes its throughput JSON only when `BENCH_JSON` names a file; `scripts/bench-procedures.ts` takes the same variable.
 
 ## Turbo
 
@@ -82,10 +84,10 @@ Remote cache (Vercel, team `sasegt`) is optional and off by default. Locally: `b
 
 ## Dependencies
 
-- `bunfig.toml` uses the isolated linker, so a package imported by a root file (tests, `eslint.config.ts`, `prettier.config.ts`) must be declared in the root `package.json`, and one only a workspace imports must not be. `bun why <pkg>` lists who needs it. Root keeps `drizzle-orm`, `react`, `react-dom` and `@modelcontextprotocol/sdk` because tests import them (`tests/rsvp.test.tsx` renders on the server with `react-dom/server`); `nodemailer`, `@types/react*` and `typescript-7` reach root code through the workspaces and are not repeated there.
-- TypeScript is split on purpose. Root and `packages/mcp` run TypeScript 6.0.x: typescript-eslint reads the compiler API and its peer range stops below 6.1.0, and the MCP server imports `typescript` at runtime (`packages/mcp/src/procedures.ts`). Every other workspace runs TypeScript 7 `tsc` through the `typescript-7` alias; `sites/web` declares `typescript` `^7` itself because Next looks it up by that name. `tsrs` is the Rust port of TypeScript 7.1 beta: kept as the fast local check (`bun run typecheck`, about 3.5 s for the root program against 41 s for tsc) and run in CI with `continue-on-error`, so only `typecheck:tsc` gates a merge. Dependabot ignores `typescript`, `typescript-7` and `tsrs`; move them by hand, together.
+- `bunfig.toml` uses the isolated linker, so a package imported by a root file (tests, `eslint.config.ts`, `prettier.config.ts`) must be declared in the root `package.json`, and one only a workspace imports must not be. `bun why <pkg>` lists who needs it. Root keeps `drizzle-orm`, `react`, `react-dom` and `@modelcontextprotocol/sdk` because tests import them (`tests/web/rsvp.test.tsx` renders on the server with `react-dom/server`); `nodemailer` and `@types/react*` reach root code through the workspaces and are not repeated there; `typescript-7` is declared at the root because `typecheck:tsc:self` runs its bin.
+- Every workspace and the root type-check with TypeScript 7 (`target`/`lib` ES2025 in `tsconfig.base.json` and the bot's tsconfig). TypeScript 6.0.x is installed only as a library: typescript-eslint reads the compiler API and its peer range stops below 6.1.0, and the MCP server imports `typescript` at runtime to parse routers (`packages/mcp/src/procedures.ts`); TypeScript 7 exposes no stable JS API. Where both are installed (root, `packages/mcp`) the `tsc` bin is 6.x, so their `typecheck:tsc` scripts run `bun node_modules/typescript-7/bin/tsc`; elsewhere `tsc` comes from the `typescript-7` alias, and `sites/web` declares `typescript` `^7` itself because Next looks it up by that name. `tsrs` is the Rust port of TypeScript 7.1 beta: kept as the fast local check (`bun run typecheck`, about 3.5 s for the root program against 41 s for tsc) and run in CI with `continue-on-error`, so only `typecheck:tsc` gates a merge. Dependabot ignores `typescript`, `typescript-7` and `tsrs`; move them by hand, together.
 - `next-auth` stays on `5.0.0-beta.32`, pinned exactly in every workspace and ignored by Dependabot: there is no stable v5 (npm `latest` is still 4.24.x, `beta` is 5.0.0-beta.32), so a range would drift between betas and `latest` would be a downgrade to v4.
-- `nodemailer` 10 ships its own types, so there is no `@types/nodemailer`. Only `packages/api` declares it; `tests/rsvp.integration.test.ts` mocks it by name without a root entry.
+- `nodemailer` 10 ships its own types, so there is no `@types/nodemailer`. Only `packages/api` declares it; `tests/integration/rsvp.integration.test.ts` mocks it by name without a root entry.
 - `postgres` (postgres.js) is a devDependency of `@buzz/db` for the two seed scripts only. The app and the migrations use `pg`.
 
 ## Safety
@@ -105,20 +107,20 @@ Remote cache (Vercel, team `sasegt`) is optional and off by default. Locally: `b
 
 ## Content Security Policy
 
-`sites/web/csp.ts` builds the policy, `next.config.ts` serves it, `tests/csp.test.ts` pins it. One policy covers every route, because a browser fixes it when the document loads and App Router links keep that document: a per-route exception only works for the first page a visitor opens (we tried it; clicking from `/about` to `/status` blocked the uptime fetch). Requests may go to this origin and `raw.githubusercontent.com` (the `/status` uptime JSON) only; Vercel Analytics and Speed Insights use `/_vercel/*`. Images keep `https:` because officers embed images by URL in CMS Markdown (`markdown.tsx`), published and in the editor preview; narrow it to this origin once page-builder uploads land. A new third-party host is a deliberate edit to `csp.ts`. Scripts keep `'unsafe-inline'` on purpose. A nonce exists only on pages rendered per request. Measured on Next 16.4.6 with the documented `proxy.ts` plus `await connection()` in the root layout: with `force-static` dropped from `(marketing)/layout.tsx`, every marketing page, `/status` and `/portal/signin` became dynamic and lost the CDN-cached prerender; with it kept they stay static but ship 55 script tags without a nonce, and the browser blocks all of them. SRI does not rescue it, because `/` carries 39 inline scripts whose text differs per page. Do not retry without a new idea, for example a nonce on `/portal` only, whose member pages are already dynamic.
+`sites/web/csp.ts` builds the policy, `next.config.ts` serves it, `tests/web/csp.test.ts` pins it. One policy covers every route, because a browser fixes it when the document loads and App Router links keep that document: a per-route exception only works for the first page a visitor opens (we tried it; clicking from `/about` to `/status` blocked the uptime fetch). Requests may go to this origin and `raw.githubusercontent.com` (the `/status` uptime JSON) only; Vercel Analytics and Speed Insights use `/_vercel/*`. Images keep `https:` because officers embed images by URL in CMS Markdown (`markdown.tsx`), published and in the editor preview; narrow it to this origin once page-builder uploads land. A new third-party host is a deliberate edit to `csp.ts`. Scripts keep `'unsafe-inline'` on purpose. A nonce exists only on pages rendered per request. Measured on Next 16.4.6 with the documented `proxy.ts` plus `await connection()` in the root layout: with `force-static` dropped from `(marketing)/layout.tsx`, every marketing page, `/status` and `/portal/signin` became dynamic and lost the CDN-cached prerender; with it kept they stay static but ship 55 script tags without a nonce, and the browser blocks all of them. SRI does not rescue it, because `/` carries 39 inline scripts whose text differs per page. Do not retry without a new idea, for example a nonce on `/portal` only, whose member pages are already dynamic.
 
 Production migrates during the Vercel production build (`scripts/vercel-build.mjs`); previews skip migrations because they share the production DB.
 
 ## Versioning
 
-One version for the whole repo, shown as `vX.Y.Z` in the footer, the MCP server version and every workspace `package.json`. The site's MAJOR.MINOR is `version` in `sites/web/package.json`; PATCH is first-parent commits since that line last changed and rolls into MINOR at 100. For a feature release worth naming, edit the `version` of every workspace package.json (root, `packages/*`, `sites/*`) to the same new `X.Y.0` (`tests/versions.test.ts` enforces it) and add a row to the README version table. Never change `sites/web/package.json`'s version line otherwise: that resets the footer patch. Use `buzz_version`, which lists each workspace and flags mismatches.
+One version for the whole repo, shown as `vX.Y.Z` in the footer, the MCP server version and every workspace `package.json`. The site's MAJOR.MINOR is `version` in `sites/web/package.json`; PATCH is first-parent commits since that line last changed and rolls into MINOR at 100. For a feature release worth naming, edit the `version` of every workspace package.json (root, `packages/*`, `sites/*`) to the same new `X.Y.0` (`tests/repo/versions.test.ts` enforces it) and add a row to the README version table. Never change `sites/web/package.json`'s version line otherwise: that resets the footer patch. Use `buzz_version`, which lists each workspace and flags mismatches.
 
 ## How-to
 
 Add a tRPC procedure
 1. In `packages/api/src/routers/<name>.ts` add a key to the router: `adminProcedure` for officers, `protectedProcedure` for signed-in members, `superAdminProcedure` for role changes. Validate with `.input(z.object(...))`, then `.query` or `.mutation`.
 2. New router file: export it with `createTRPCRouter` and add it to `appRouter` in `packages/api/src/root.ts`.
-3. Test it in `tests/<name>-router.test.ts` (fake db) and, for SQL behavior, an `*.integration.test.ts`.
+3. Test it in `tests/api/<name>-router.test.ts` (fake db) and, for SQL behavior, `tests/integration/<name>.integration.test.ts`.
 
 Add a table + migration
 1. Define it in `packages/db/src/schema.ts` with `createTable("name", ...)` and index/constraint names through `idx("...")` (prefix `buzz_`).

@@ -45,7 +45,7 @@ export const NOT_READY =
   "Approve at least one candidate before opening voting.";
 
 /** Who the audit log names for a flip no officer clicked. */
-export const CRON_ACTOR = "system:cron";
+const CRON_ACTOR = "system:cron";
 
 export const ELECTION_PHASES = [
   "nominating",
@@ -465,7 +465,7 @@ export async function yearTally(db: Database, year: string) {
   return { perCandidate, perPosition };
 }
 
-export const tallyHeader = [
+const tallyHeader = [
   "Election",
   "School year",
   "Position",

@@ -17,7 +17,7 @@ const MIGRATIONS_FOLDER = join(import.meta.dirname, "drizzle");
 const LOCK = sql`hashtextextended('discord_bot_migrate', 0)`;
 const ONE_ROW = sql`(values (1)) as one(x)`;
 
-export async function migrateBotDatabase(client: pg.Client): Promise<void> {
+async function migrateBotDatabase(client: pg.Client): Promise<void> {
   const db = drizzle(client);
   await db.select({ locked: sql`pg_advisory_lock(${LOCK})` }).from(ONE_ROW);
   try {
