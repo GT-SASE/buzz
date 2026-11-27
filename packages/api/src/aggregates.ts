@@ -1,4 +1,4 @@
-import { count, max, min, sum } from "drizzle-orm";
+import { count, min, sum } from "drizzle-orm";
 
 import { eventCheckIns } from "@buzz/db";
 
@@ -16,8 +16,6 @@ export const checkInCount = count(eventCheckIns.id);
 export const pointsSum = sum(eventCheckIns.pointsEarned);
 
 export const memberSince = min(eventCheckIns.checkedInAt);
-
-export const lastCheckInAt = max(eventCheckIns.checkedInAt);
 
 /** Normalize driver Date / string / numeric aggregates for the UI. */
 export function asDate(value: Date | string | null | undefined) {

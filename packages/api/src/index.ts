@@ -6,7 +6,6 @@ export {
   parseResumeUpload,
   resumeDownloadHeaders,
   RESUME_MAX_BYTES,
-  RESUME_MIME,
 } from "./resume";
 export {
   takeToken,
@@ -15,12 +14,7 @@ export {
 } from "./rate-limit";
 export { isUndefinedTable } from "./pg-errors";
 export { currentCommitteeCycle } from "./committee-cycle";
-export {
-  schoolYear,
-  schoolYearOfSemester,
-  semester,
-  semesterLabel,
-} from "./terms";
+export { schoolYear, semester, semesterLabel } from "./terms";
 export {
   isValidPageSlug,
   pageSlugProblem,
@@ -28,9 +22,9 @@ export {
   RESERVED_PAGE_SLUGS,
   slugFromTitle,
 } from "./page-slug";
-export { runScheduledFlips, type ScheduledRun } from "./election-flow";
+export { runScheduledFlips } from "./election-flow";
 export { isCronAuthorized, isCronSecretUsable } from "./cron-auth";
-export { boardFromResults, type BoardSeat } from "./board";
+export { boardFromResults } from "./board";
 export {
   HEADSHOT_MAX_STORED_BYTES,
   HEADSHOT_MAX_UPLOAD_BYTES,
