@@ -6,7 +6,7 @@ import sharp, { type Sharp } from "sharp";
 
 import { sniffHeadshotType } from "@buzz/api";
 
-export type ProcessedImage = {
+type ProcessedImage = {
   /** The re-encoded WebP, orientation applied, metadata (GPS and all) dropped. */
   webp: Buffer;
   etag: string;
@@ -14,7 +14,7 @@ export type ProcessedImage = {
   height: number;
 };
 
-export type ImageError = { error: string };
+type ImageError = { error: string };
 
 type Options = {
   maxUploadBytes: number;
