@@ -5,6 +5,7 @@ import { toast } from "sonner";
 
 import { ConfirmDialog } from "~/app/portal/_components/confirm-dialog";
 import { Action } from "~/app/portal/_components/controls";
+import { statusLabel } from "~/app/portal/_lib/committee-status";
 import { formatDate } from "~/app/portal/_lib/format";
 import { noticeToast } from "~/app/portal/_lib/notice";
 import { Badge } from "~/components/ui/badge";
@@ -28,14 +29,6 @@ const statuses = [
   "declined",
   "withdrawn",
 ] as const;
-
-const statusLabel: Record<Row["status"], string> = {
-  submitted: "Submitted",
-  interviewing: "Interviewing",
-  accepted: "Accepted",
-  declined: "Declined",
-  withdrawn: "Withdrawn",
-};
 
 function Answer({ label, value }: { label: string; value: string | null }) {
   if (!value) return null;
