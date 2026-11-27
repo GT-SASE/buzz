@@ -1,7 +1,6 @@
 import { auth } from "@buzz/auth";
 import type { Metadata } from "next";
 import Link from "next/link";
-import { notFound } from "next/navigation";
 import { cache } from "react";
 
 import { orNotFound } from "~/app/portal/_lib/missing";
@@ -28,7 +27,6 @@ export async function generateMetadata({
   params: Promise<{ id: string }>;
 }): Promise<Metadata> {
   const { id } = await params;
-  if (!id) return { title: "Member" };
 
   try {
     const { member } = await memberForPage(id);
@@ -44,7 +42,6 @@ export default async function AdminMemberPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  if (!id) notFound();
   const [{ member }, session] = await Promise.all([
     orNotFound(memberForPage(id)),
     auth(),
