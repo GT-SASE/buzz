@@ -9,13 +9,10 @@ import {
 } from "@buzz/api";
 import { auth } from "@buzz/auth";
 import { db, isOfficerRole, resumes, users } from "@buzz/db";
+import { jsonError } from "~/app/api/_lib/http";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-function jsonError(error: string, status: number) {
-  return Response.json({ error }, { status });
-}
 
 export async function GET(
   _req: NextRequest,

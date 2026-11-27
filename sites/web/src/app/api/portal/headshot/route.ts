@@ -12,27 +12,10 @@ import { auth } from "@buzz/auth";
 import { boardPhotos, db } from "@buzz/db";
 import { BOARD_TAG } from "~/data/board";
 import { processHeadshot } from "~/lib/headshot";
+import { jsonError, sameOriginRejection } from "~/app/api/_lib/http";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-function sameOriginRejection(req: NextRequest): Response | null {
-  const secFetchSite = req.headers.get("sec-fetch-site");
-  if (secFetchSite === "same-origin" || secFetchSite === "none") return null;
-
-  const origin = req.headers.get("origin");
-  if (!origin) {
-    if (!secFetchSite) return null;
-    return Response.json({ error: "Origin required" }, { status: 403 });
-  }
-  if (origin !== req.nextUrl.origin) {
-    return Response.json({ error: "Forbidden origin" }, { status: 403 });
-  }
-  return null;
-}
-
-const jsonError = (error: string, status: number) =>
-  Response.json({ error }, { status });
 
 /** A new photo or a takedown changes the public board, so drop its cache. */
 function refreshBoard() {

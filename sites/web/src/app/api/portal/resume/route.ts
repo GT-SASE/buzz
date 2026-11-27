@@ -11,32 +11,10 @@ import {
 } from "@buzz/api";
 import { auth } from "@buzz/auth";
 import { db, resumes } from "@buzz/db";
+import { jsonError, sameOriginRejection } from "~/app/api/_lib/http";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-function sameOriginRejection(req: NextRequest): Response | null {
-  if (req.method === "GET" || req.method === "HEAD") return null;
-
-  const secFetchSite = req.headers.get("sec-fetch-site");
-  if (secFetchSite === "same-origin" || secFetchSite === "none") return null;
-
-  const origin = req.headers.get("origin");
-  if (!origin) {
-    if (!secFetchSite) return null;
-    return Response.json({ error: "Origin required" }, { status: 403 });
-  }
-
-  if (origin !== req.nextUrl.origin) {
-    return Response.json({ error: "Forbidden origin" }, { status: 403 });
-  }
-
-  return null;
-}
-
-function jsonError(error: string, status: number) {
-  return Response.json({ error }, { status });
-}
 
 export async function GET() {
   const session = await auth();

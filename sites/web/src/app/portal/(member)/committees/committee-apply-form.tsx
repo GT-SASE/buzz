@@ -18,19 +18,11 @@ import {
   type PublicCommitteeId,
 } from "~/data/committees";
 import { ConfirmDialog } from "~/app/portal/_components/confirm-dialog";
+import { statusLabel } from "~/app/portal/_lib/committee-status";
 import { formatDate, formatDeadline } from "~/app/portal/_lib/format";
 import { api, type RouterOutputs } from "~/trpc/react";
 
 type Mine = RouterOutputs["committee"]["mine"];
-type Application = NonNullable<Mine["application"]>;
-
-const statusLabel: Record<Application["status"], string> = {
-  submitted: "Submitted",
-  interviewing: "Interviewing",
-  accepted: "Accepted",
-  declined: "Declined",
-  withdrawn: "Withdrawn",
-};
 
 export function CommitteeApplyForm() {
   const mine = api.committee.mine.useQuery();

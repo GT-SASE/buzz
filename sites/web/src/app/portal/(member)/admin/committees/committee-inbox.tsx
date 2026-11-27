@@ -5,6 +5,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { Action } from "~/app/portal/_components/controls";
+import { statusLabel } from "~/app/portal/_lib/committee-status";
 import { downloadCsv, toCsv } from "~/app/portal/_lib/csv";
 import { formatDate } from "~/app/portal/_lib/format";
 import { Badge } from "~/components/ui/badge";
@@ -22,14 +23,6 @@ import { cn } from "~/lib/utils";
 import { api, type RouterOutputs } from "~/trpc/react";
 
 type Row = RouterOutputs["committee"]["list"][number];
-
-const statusLabel: Record<Row["status"], string> = {
-  submitted: "Submitted",
-  interviewing: "Interviewing",
-  accepted: "Accepted",
-  declined: "Declined",
-  withdrawn: "Withdrawn",
-};
 
 function committeePhrase(row: {
   wantsEvents: boolean;

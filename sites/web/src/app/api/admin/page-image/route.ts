@@ -10,27 +10,10 @@ import {
 import { auth } from "@buzz/auth";
 import { db, isOfficerRole, pageImages } from "@buzz/db";
 import { processPageImage } from "~/lib/page-image";
+import { jsonError, sameOriginRejection } from "~/app/api/_lib/http";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-function sameOriginRejection(req: NextRequest): Response | null {
-  const secFetchSite = req.headers.get("sec-fetch-site");
-  if (secFetchSite === "same-origin" || secFetchSite === "none") return null;
-
-  const origin = req.headers.get("origin");
-  if (!origin) {
-    if (!secFetchSite) return null;
-    return Response.json({ error: "Origin required" }, { status: 403 });
-  }
-  if (origin !== req.nextUrl.origin) {
-    return Response.json({ error: "Forbidden origin" }, { status: 403 });
-  }
-  return null;
-}
-
-const jsonError = (error: string, status: number) =>
-  Response.json({ error }, { status });
 
 /** An officer uploads an image for a page; the reply is the URL to put in Markdown. */
 export async function POST(req: NextRequest) {

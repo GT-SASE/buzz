@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
 import { cache } from "react";
 
 import { orNotFound } from "~/app/portal/_lib/missing";
@@ -33,7 +32,6 @@ export default async function PresentPage({
 }) {
   const { id } = await params;
   await requireOfficer(`/portal/admin/events/${id}/present`);
-  if (!id) notFound();
   await orNotFound(eventForPage(id));
 
   return (
