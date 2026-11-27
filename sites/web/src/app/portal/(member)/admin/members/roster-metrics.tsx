@@ -1,47 +1,18 @@
 "use client";
 
-import { Eyebrow } from "~/components/site";
+import {
+  Figure,
+  figureGrid,
+  FigureSkeletons,
+} from "~/app/portal/_components/figures";
 import { Skeleton } from "~/components/ui/skeleton";
 import { tierFloors, tiers } from "~/data/portal";
 import { api, type RouterOutputs } from "~/trpc/react";
 
 type Metrics = RouterOutputs["member"]["metrics"];
 
-const figureGrid = "grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4";
-
 function share(part: number, whole: number) {
   return whole === 0 ? 0 : Math.round((part / whole) * 100);
-}
-
-function Figure({
-  label,
-  value,
-  note,
-}: {
-  label: string;
-  value: string;
-  note: React.ReactNode;
-}) {
-  return (
-    <div className="border-hairline bg-paper/80 hover:border-gold-ink/30 flex flex-col rounded-xl border p-4 shadow-xs transition-colors sm:p-5">
-      <Eyebrow
-        as="dt"
-        tone="muted"
-        rule={false}
-        className="text-ink-muted text-xs font-semibold tracking-wider uppercase"
-      >
-        {label}
-      </Eyebrow>
-      <dd className="mt-4">
-        <span className="font-display text-navy block text-2xl font-bold tracking-tight tabular-nums sm:text-4xl">
-          {value}
-        </span>
-        <span className="text-ink-muted text-body-sm mt-1.5 block tabular-nums">
-          {note}
-        </span>
-      </dd>
-    </div>
-  );
 }
 
 function TierBars({ data }: { data: Metrics }) {
@@ -157,18 +128,7 @@ function MetricsSkeleton() {
     <>
       <p className="sr-only">Loading roster figures.</p>
       <div aria-hidden="true">
-        <div className={figureGrid}>
-          {[0, 1, 2, 3].map((figure) => (
-            <div
-              key={figure}
-              className="border-hairline bg-paper/50 rounded-xl border p-5"
-            >
-              <Skeleton className="h-3.5 w-24" />
-              <Skeleton className="mt-4 h-9 w-20" />
-              <Skeleton className="mt-2.5 h-3.5 w-32" />
-            </div>
-          ))}
-        </div>
+        <FigureSkeletons />
         <div className="border-hairline bg-paper/50 mt-8 rounded-xl border p-6">
           <Skeleton className="h-4 w-40" />
           <div className="mt-6 grid gap-4">
