@@ -16,11 +16,33 @@ import {
 import { z } from "zod";
 
 import { asInt } from "../aggregates";
-import { periodSince } from "../periods";
+import { periodSince, type Period } from "../periods";
 import { adminProcedure, createTRPCRouter } from "../trpc";
 import { eventCheckIns, eventRsvps, events, users } from "@buzz/db";
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * Live past events in a window. Campus listings (0 points, check-in never
+ * opened, nobody came) stay out.
+ */
+function countablePastEvents(period: Period, now: Date) {
+  const since = periodSince(period, now);
+  const inWindow = since
+    ? and(lt(events.startsAt, now), gte(events.startsAt, since))
+    : lt(events.startsAt, now);
+  const anyCheckIn = sql.identifier("any_check_in");
+  const countable = or(
+    eq(events.checkInEnabled, true),
+    gt(events.pointsValue, 0),
+    // Uncapped events never bump currentCheckIns, so look at the rows.
+    sql`exists (select 1 from ${eventCheckIns} as ${anyCheckIn} where ${anyCheckIn}.${sql.identifier(eventCheckIns.eventId.name)} = ${events.id})`,
+  );
+  return {
+    since,
+    where: and(inWindow, countable, isNull(events.archivedAt)),
+  };
+}
 
 export const chapterRouter = createTRPCRouter({
   /** Chapter-wide numbers for the officer dashboard. Every figure via Drizzle. */
@@ -98,7 +120,7 @@ export const chapterRouter = createTRPCRouter({
       },
       events: {
         total: asInt(liveTotals?.events),
-        past: asInt(pastCount),
+        past: pastCount,
         upcoming: asInt(liveTotals?.upcomingEvents),
         averageAttendance,
       },
@@ -119,18 +141,7 @@ export const chapterRouter = createTRPCRouter({
     )
     .query(async ({ ctx, input }) => {
       const now = new Date();
-      const since = periodSince(input.period, now);
-      const inWindow = since
-        ? and(lt(events.startsAt, now), gte(events.startsAt, since))
-        : lt(events.startsAt, now);
-      const anyCheckIn = sql.identifier("any_check_in");
-      const countable = or(
-        eq(events.checkInEnabled, true),
-        gt(events.pointsValue, 0),
-        // Uncapped events never bump currentCheckIns, so look at the rows.
-        sql`exists (select 1 from ${eventCheckIns} as ${anyCheckIn} where ${anyCheckIn}.${sql.identifier(eventCheckIns.eventId.name)} = ${events.id})`,
-      );
-      const where = and(inWindow, countable, isNull(events.archivedAt));
+      const { since, where } = countablePastEvents(input.period, now);
 
       const [[totals], recent] = await Promise.all([
         ctx.db
@@ -194,17 +205,7 @@ export const chapterRouter = createTRPCRouter({
     )
     .query(async ({ ctx, input }) => {
       const now = new Date();
-      const since = periodSince(input.period, now);
-      const inWindow = since
-        ? and(lt(events.startsAt, now), gte(events.startsAt, since))
-        : lt(events.startsAt, now);
-      const anyCheckIn = sql.identifier("any_check_in");
-      const countable = or(
-        eq(events.checkInEnabled, true),
-        gt(events.pointsValue, 0),
-        // Uncapped events never bump currentCheckIns, so look at the rows.
-        sql`exists (select 1 from ${eventCheckIns} as ${anyCheckIn} where ${anyCheckIn}.${sql.identifier(eventCheckIns.eventId.name)} = ${events.id})`,
-      );
+      const { where } = countablePastEvents(input.period, now);
       // A check-in is a first-timer's when the member has no live check-in
       // strictly before it, i.e. it is not later than their earliest live one
       // (an archived event counts for nothing, so it cannot make someone
@@ -235,7 +236,7 @@ export const chapterRouter = createTRPCRouter({
           .from(events)
           .leftJoin(eventCheckIns, eq(eventCheckIns.eventId, events.id))
           .leftJoin(firstLive, eq(firstLive.userId, eventCheckIns.userId))
-          .where(and(inWindow, countable, isNull(events.archivedAt)))
+          .where(where)
           .groupBy(events.id)
           .orderBy(desc(events.startsAt))
           .limit(SERIES_LIMIT),
