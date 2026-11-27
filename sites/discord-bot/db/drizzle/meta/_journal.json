@@ -36,6 +36,13 @@
       "when": 1795564908495,
       "tag": "0004_drop_triggers_and_functions",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1795573408767,
+      "tag": "0005_revoke_row_versions_read",
+      "breakpoints": true
     }
   ]
 }
