@@ -105,20 +105,29 @@ export default async function JoinPage() {
 
       <section className="px-5 sm:px-6">
         <div className="max-w-content bg-dino-pale dino-hop-host mx-auto flex flex-col gap-6 rounded-xl p-6 sm:flex-row sm:items-center sm:justify-between sm:gap-10 sm:px-12 sm:pt-12 sm:pb-0">
-          <div className="flex flex-col items-stretch gap-4 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-8 sm:gap-y-4">
-            <Button
-              href={joinHref}
-              className="dino-trigger w-full justify-center sm:w-auto"
-            >
-              Become a member
-            </Button>
-            <Button
-              href="/events"
-              variant="outline"
-              className="w-full justify-center sm:w-auto"
-            >
-              Find the next meeting
-            </Button>
+          <div className="sm:pb-12">
+            <p className="font-display text-navy text-h2 max-w-[18ch] font-bold text-balance">
+              Free, open, and one meeting away.
+            </p>
+            <p className="text-ink-muted text-body mt-3 max-w-md">
+              No application and no dues. Sign in to the member portal, then
+              show up to any general body meeting.
+            </p>
+            <div className="mt-6 flex flex-col items-stretch gap-4 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-8 sm:gap-y-4">
+              <Button
+                href={joinHref}
+                className="dino-trigger w-full justify-center sm:w-auto"
+              >
+                Become a member
+              </Button>
+              <Button
+                href="/events"
+                variant="outline"
+                className="w-full justify-center sm:w-auto"
+              >
+                Find the next meeting
+              </Button>
+            </div>
           </div>
           <SaseDino
             flip
@@ -128,7 +137,7 @@ export default async function JoinPage() {
       </section>
 
       <Section title="Three steps, none of them hard.">
-        <ol role="list" className="grid gap-x-12 gap-y-14 md:grid-cols-3">
+        <ol role="list" className="grid gap-x-10 gap-y-10 md:grid-cols-3">
           {steps.map((step, i) => (
             <li key={step.title}>
               <Card className="h-full">
@@ -138,7 +147,7 @@ export default async function JoinPage() {
                 >
                   0{i + 1}
                 </span>
-                <h3 className="font-display text-navy text-h3 mt-8 font-bold">
+                <h3 className="font-display text-navy text-h3 mt-4 font-bold">
                   {step.title}
                 </h3>
                 <p className="text-ink-muted text-body-sm mt-4 leading-relaxed">
@@ -215,9 +224,9 @@ export default async function JoinPage() {
               {meetingRows.map((row) => (
                 <div
                   key={row.term}
-                  className="border-hairline flex flex-wrap gap-x-8 gap-y-1 border-t py-3"
+                  className="border-hairline grid grid-cols-[5.5rem_1fr] gap-x-6 border-t py-3"
                 >
-                  <dt className="text-eyebrow tracking-masthead text-ink-muted w-24 shrink-0 pt-1 font-semibold uppercase">
+                  <dt className="text-eyebrow tracking-masthead text-ink-muted pt-1 font-semibold uppercase">
                     {row.term}
                   </dt>
                   <dd className="text-ink text-body-sm">{row.detail}</dd>
