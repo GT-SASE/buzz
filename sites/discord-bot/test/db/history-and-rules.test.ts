@@ -2,9 +2,7 @@
  * What the database's triggers did around a write, now done by the bot's own writes: the
  * old row kept in `row_versions`, `updated_at` moved on a change and only then, a deleted
  * row kept deleted, a closed event kept closed, and nothing added or changed under a
- * closed or deleted parent. These run on a database that still has the triggers, where
- * each history row must come out once, and on one that has none
- * (`BOT_TEST_NO_TRIGGERS=1`), where the bot's row is the only one.
+ * closed or deleted parent. The database has no triggers, so each of these is the bot's.
  */
 
 import type { PGlite } from "@electric-sql/pglite";
@@ -18,6 +16,7 @@ import {
 } from "../../src/db/events.ts";
 import {
   assignEventStep,
+  claimStepHandoff,
   completeEventStep,
   unassignEventStep,
 } from "../../src/db/event-steps.ts";
@@ -27,18 +26,13 @@ import {
 } from "../../src/db/guild-config.ts";
 import { updateRecorded } from "../../src/db/history.ts";
 import { transact } from "../../src/db/internal.ts";
-import { createTask, markOwnTaskDone } from "../../src/db/tasks.ts";
+import { admitTask } from "../../src/db/rules.ts";
+import { createTask, editTask, markOwnTaskDone } from "../../src/db/tasks.ts";
 import { events, guildConfig, tasks } from "../../src/db/schema.ts";
 import type { DateOnly } from "../../src/lib/dates.ts";
 import { botClient, must } from "./bot-writes.ts";
 import { insertEvent, insertGuild, insertTask } from "./fixtures.ts";
-import {
-  HOOK_TIMEOUT_MS,
-  NO_TRIGGERS,
-  createMigratedDb,
-  dropTriggers,
-  fakeId,
-} from "./harness.ts";
+import { HOOK_TIMEOUT_MS, createMigratedDb, fakeId } from "./harness.ts";
 
 let db: PGlite;
 beforeAll(async () => {
@@ -224,36 +218,26 @@ describe("one history row for each change, whoever writes it", () => {
     expect(await historyOf("events", eventId)).toHaveLength(1);
   });
 
-  // While the triggers exist the bot skips what they kept; a row that goes A, B, A, X in one
-  // transaction must still leave all three old versions and raise nothing.
-  it.skipIf(NO_TRIGGERS)(
-    "a row changed A to B, B to A and A to X in one transaction keeps three old versions",
-    async () => {
-      const guild = await insertGuild(db);
-      const taskId = await insertTask(db, guild, await insertEvent(db, guild));
-      const result = await transact(bot(), async (tx) => {
-        for (const description of ["B", "A", "X"]) {
-          await updateRecorded(
-            tx,
-            tasks,
-            { description },
-            eq(tasks.id, taskId),
-            {
-              id: tasks.id,
-            },
-          );
-        }
-      });
-      expect(result.ok).toBe(true);
-      const history = await historyOf("tasks", taskId);
-      expect(history).toHaveLength(3);
-      expect(history.map((row) => row.old_row.description)).toEqual([
-        expect.not.stringMatching(/^(A|B|X)$/),
-        "B",
-        "A",
-      ]);
-    },
-  );
+  // A row that goes A, B, A, X in one transaction leaves all three old versions.
+  it("a row changed A to B, B to A and A to X in one transaction keeps three old versions", async () => {
+    const guild = await insertGuild(db);
+    const taskId = await insertTask(db, guild, await insertEvent(db, guild));
+    const result = await transact(bot(), async (tx) => {
+      for (const description of ["B", "A", "X"]) {
+        await updateRecorded(tx, tasks, { description }, eq(tasks.id, taskId), {
+          id: tasks.id,
+        });
+      }
+    });
+    expect(result.ok).toBe(true);
+    const history = await historyOf("tasks", taskId);
+    expect(history).toHaveLength(3);
+    expect(history.map((row) => row.old_row.description)).toEqual([
+      expect.not.stringMatching(/^(A|B|X)$/),
+      "B",
+      "A",
+    ]);
+  });
 
   it("keeps nothing for a write that changes nothing, and leaves updated_at alone", async () => {
     const guild = await insertGuild(db);
@@ -289,43 +273,6 @@ describe("one history row for each change, whoever writes it", () => {
     expect((await rowOf("events", "id = $1", [eventId]))?.updated_at).not.toBe(
       before?.updated_at,
     );
-  });
-});
-
-describe.skipIf(NO_TRIGGERS)("with the trigger present", () => {
-  it("writes the same history row the bot writes without it", async () => {
-    const guild = await insertGuild(db);
-    const first = await insertEvent(db, guild);
-    must(await closeEvent(bot(), { guildId: guild.guildId, eventId: first }));
-    const fromTrigger = (await historyOf("events", first))[0];
-
-    const other = await createMigratedDb();
-    try {
-      await dropTriggers(other);
-      const g = await insertGuild(other);
-      const e = await insertEvent(other, g);
-      must(
-        await closeEvent(botClient(other), { guildId: g.guildId, eventId: e }),
-      );
-      const { rows } = await other.query<History>(
-        `SELECT source_table, operation, row_id, old_row, xid FROM discord_bot.row_versions
-         WHERE source_table = 'events' AND row_id = $1`,
-        [e],
-      );
-      const fromBot = rows[0];
-      expect(fromBot).toBeDefined();
-      expect(Object.keys(fromBot ?? {}).sort()).toEqual(
-        Object.keys(fromTrigger ?? {}).sort(),
-      );
-      expect(fromBot?.operation).toBe(fromTrigger?.operation);
-      expect(Object.keys(fromBot?.old_row ?? {}).sort()).toEqual(
-        Object.keys(fromTrigger?.old_row ?? {}).sort(),
-      );
-      expect(typeof fromBot?.xid).toBe(typeof fromTrigger?.xid);
-      expect(fromBot?.xid).not.toBeNull();
-    } finally {
-      await other.close();
-    }
   });
 });
 
@@ -466,13 +413,81 @@ describe("what the triggers refused, the bot's writes refuse", () => {
   });
 });
 
+describe("what the bot's calls refuse or count", () => {
+  it("refuses a step's hand-off on a closed event: CF410", async () => {
+    const guild = await insertGuild(db);
+    const eventId = await insertEvent(db, guild);
+    must(
+      await completeEventStep(bot(), {
+        eventId,
+        guildId: guild.guildId,
+        kind: "budget_sheet",
+        actorId: fakeId(),
+      }),
+    );
+    must(await closeEvent(bot(), { guildId: guild.guildId, eventId }));
+    expect(
+      await claimStepHandoff(bot(), {
+        eventId,
+        guildId: guild.guildId,
+        kind: "budget_sheet",
+      }),
+    ).toEqual({
+      ok: false,
+      error: { category: "parent_unavailable", code: "CF410" },
+    });
+  });
+
+  it("counts a task edit against the officer's limit only when the person changes", async () => {
+    const guild = await insertGuild(db);
+    const taskId = await insertTask(db, guild, await insertEvent(db, guild));
+    const actor = fakeId();
+    const edit = async (assignee?: string) => {
+      const { rows } = await db.query<{ assignee_id: string; v: string }>(
+        "SELECT assignee_id, updated_at::text AS v FROM discord_bot.tasks WHERE id = $1",
+        [taskId],
+      );
+      must(
+        await editTask(bot(), {
+          taskId,
+          guildId: guild.guildId,
+          expectedUpdatedAt: rows[0]?.v ?? "",
+          description: "Book the room",
+          dueDate: "2030-01-10" as DateOnly,
+          assigneeId: assignee ?? rows[0]?.assignee_id ?? "",
+          actorId: actor,
+        }),
+      );
+      const counted = await db.query<{ n: number }>(
+        "SELECT count(*)::int AS n FROM discord_bot.task_reassignments WHERE actor_id = $1",
+        [actor],
+      );
+      return counted.rows[0]?.n;
+    };
+
+    expect(await edit()).toBe(0);
+    expect(await edit(fakeId())).toBe(1);
+  });
+
+  it("will not count a quota above read committed: 0A000", async () => {
+    const guild = await insertGuild(db);
+    const eventId = await insertEvent(db, guild);
+    const outcome: unknown = await bot()
+      .orm.transaction(
+        (tx) =>
+          admitTask(tx, { eventId, guildId: guild.guildId, actorId: fakeId() }),
+        { isolationLevel: "repeatable read" },
+      )
+      .catch((error: unknown) => error);
+    expect(outcome).toMatchObject({ code: "0A000" });
+  });
+});
+
 describe("a new event gets a step of every kind from the bot", () => {
   it("makes six, with no trigger to do it", async () => {
-    if (NO_TRIGGERS) {
-      await db.exec(
-        "DROP TRIGGER IF EXISTS test_seed_steps ON discord_bot.events",
-      );
-    }
+    await db.exec(
+      "DROP TRIGGER IF EXISTS test_seed_steps ON discord_bot.events",
+    );
     const guild = await insertGuild(db);
     const event = must(
       await createEvent(bot(), {

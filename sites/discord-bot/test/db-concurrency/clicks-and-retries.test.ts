@@ -3,11 +3,7 @@ import {
   claimStepHandoff,
   completeEventStep,
 } from "../../src/db/event-steps.ts";
-import {
-  closeEvent,
-  createEvent,
-  softDeleteEvent,
-} from "../../src/db/events.ts";
+import { createEvent } from "../../src/db/events.ts";
 import { claimInteraction } from "../../src/db/interaction-claims.ts";
 import {
   createTask,
@@ -17,7 +13,7 @@ import {
 } from "../../src/db/tasks.ts";
 import type { DateOnly } from "../../src/lib/dates.ts";
 import { insertEvent, insertGuild, insertTask } from "../db/fixtures.ts";
-import { NO_TRIGGERS, fakeId } from "../db/harness.ts";
+import { fakeId } from "../db/harness.ts";
 import { must } from "../db/bot-writes.ts";
 import { raceDatabase } from "./race.ts";
 
@@ -202,49 +198,9 @@ describe("a task change racing another change", () => {
     );
     expect(rows).toEqual([{ description: "Book the room" }]);
   });
-
-  // The triggers' lock on the event is what holds the close here; without them the
-  // bot's own writes are raced against each other in bot-writes.test.ts.
-  it.skipIf(NO_TRIGGERS)(
-    "the event's close waits for a change in progress, then closes",
-    async () => {
-      const { guildId, eventId, taskId, assignee } = await eventWithTask();
-
-      const second = await db.race(
-        [editSql, [taskId, "New", assignee]],
-        (bot) => closeEvent(bot, { guildId, eventId }),
-      );
-
-      expect(second).toMatchObject({ ok: true, value: { id: eventId } });
-    },
-  );
 });
 
 describe("a delete racing an insert under it", () => {
-  it.skipIf(NO_TRIGGERS)(
-    "an event's soft delete waits for a task being inserted, then deletes it too",
-    async () => {
-      const guild = await insertGuild(db.connection);
-      const eventId = await insertEvent(db.connection, guild);
-
-      const second = await db.race(
-        [
-          `INSERT INTO discord_bot.tasks (event_id, guild_id, assignee_id, description, due_date, created_by)
-         VALUES ($1, $2, $3, 'Book the room', '2030-01-10', $3)`,
-          [eventId, guild.guildId, fakeId()],
-        ],
-        (bot) => softDeleteEvent(bot, { guildId: guild.guildId, eventId }),
-      );
-
-      expect(second).toEqual({ ok: true, value: 1 });
-      const { rows } = await db.observer.query(
-        "SELECT count(*)::int AS n FROM discord_bot.tasks WHERE event_id = $1 AND deleted_at IS NULL",
-        [eventId],
-      );
-      expect(rows).toEqual([{ n: 0 }]);
-    },
-  );
-
   it("a task insert waits for its event's soft delete, then is refused", async () => {
     const guild = await insertGuild(db.connection);
     const eventId = await insertEvent(db.connection, guild);

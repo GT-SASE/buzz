@@ -907,12 +907,7 @@ describe("the event workflow functions", () => {
     ).toEqual({ ok: true, value: false });
   });
 
-  it("does not let bot_app call the internal functions, or another role the writers", async () => {
-    expect(
-      await errorCodeOf(
-        queryAs(db, "bot_app", `SELECT discord_bot.create_event_steps()`),
-      ),
-    ).toBe(INSUFFICIENT_PRIVILEGE);
+  it("does not let another role write the steps or the log", async () => {
     const eventId = await insertEvent(db, guild);
     for (const sql of [
       `UPDATE discord_bot.event_steps SET status = 'open' WHERE event_id = '${eventId}'`,

@@ -4,9 +4,9 @@
  * in this folder queries with, so a column renamed here fails to compile everywhere it
  * is used.
  *
- * What Drizzle cannot say lives in a hand-written migration, `0001_*.sql`: the domain is
- * made at the top of the generated baseline, and the triggers, their functions, the
- * `bot_app` role and every grant are in the custom file. Every constraint, index and key
+ * What Drizzle cannot say lives in hand-written migrations: the domain is made at the top
+ * of the generated baseline, and the `bot_app` role and every grant are in the custom
+ * files. The triggers that once enforced the bot's rules were dropped by `0004`. Every constraint, index and key
  * here is named, to match the database that dbmate made before Drizzle took over.
  *
  * Column order is the order in the database, which is the order dbmate's files made it:
@@ -141,9 +141,9 @@ export const timezoneNames = pgView("pg_timezone_names", {
 
 /**
  * The old version of every changed row of the seven tables that keep one. Written by the
- * bot with each update. `xid` is the transaction that made the change: while the old
- * triggers still run, the bot skips a version the trigger already kept in the same
- * transaction, which the index lets it find. Rows from before it was added have none.
+ * bot with each update. `xid` is the transaction that made the change; it was how the bot
+ * told a version a trigger had already kept, and nothing reads it now. Rows from before it
+ * was added have none.
  */
 export const rowVersions = botSchema.table(
   "row_versions",

@@ -84,7 +84,7 @@ Check the size on the project's usage page in the Neon console. `discord_bot.row
 
 **Migrations go first, then code.** A merge to `main` deploys by itself, because `vercel.json` turns on deployments for `main` only, and only when a commit touches `sites/discord-bot` or `bun.lock`. No workflow applies migrations, so nothing keeps the two in step except doing them in this order.
 
-**Dropping what the live code uses is two releases.** Ship the code that no longer needs a trigger or a function, migrate and deploy it, and drop the object in a later migration, run only after that code is live. One `bun run db:migrate` runs every pending file, so a migration that adds a grant and one that drops a trigger do not go in the same release.
+**Dropping what the live code uses is two releases.** Ship the code that no longer needs a column, table or grant, migrate and deploy it, and drop the object in a later migration, run only after that code is live. One `bun run db:migrate` runs every pending file, so a migration that adds a grant and one that drops an object do not go in the same release. Take a grant back the same way: the release after the code stops using it.
 
 1. Check that the branch is up to date with `main`. In a throwaway checkout:
 
@@ -121,7 +121,7 @@ Check the size on the project's usage page in the Neon console. `discord_bot.row
    DATABASE_URL="$OWNER_URL" bun run db:migrate
    ```
 
-   It prints which of the three cases it was, and a second run prints `Ledger present: newer files run.` and changes nothing.
+   Run it at a quiet time. A migration that changes a table takes a lock on it and gives up after three seconds (`55P03`, or `40P01` for a deadlock) rather than make the bot's writes wait: run it again. It prints which of the three cases it was, and a second run prints `Ledger present: newer files run.` and changes nothing.
 
 5. Merge to `main`, run the smoke checks that touch the change on the test server, and check the next `reminders` and `health_check` rows.
 
@@ -155,7 +155,7 @@ sed -e 's/\bpublic\./discord_bot./g' -e 's/\bhistory\./discord_bot./g' bot-data.
   | psql -v ON_ERROR_STOP=1 --single-transaction "$NEW_URL"
 ```
 
-`session_replication_role = replica` stops the schema's guard triggers from rejecting old rows, such as a task on a closed event. Neon's owner role may set it. If it is refused, stop and ask the owner what to do: do not drop the guards. The old `history.row_versions` lands in `discord_bot.row_versions`, and the dump's `setval` lines move the ID sequences.
+`session_replication_role = replica` stops foreign keys from being checked while the rows load, so a child row may come before its parent. The schema has no triggers. Neon's owner role may set it. If it is refused, stop and ask the owner what to do. The old `history.row_versions` lands in `discord_bot.row_versions`, and the dump's `setval` lines move the ID sequences.
 
 Check each count against the same table in the old database:
 
