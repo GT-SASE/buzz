@@ -171,12 +171,7 @@ async function shuffleBallots(tx: Tx, electionId: string) {
   // Fisher-Yates over the platform's random numbers, so no order survives from the read.
   for (let i = moved.length - 1; i > 0; i -= 1) {
     const j = randomInt(i + 1);
-    const first = moved[i];
-    const second = moved[j];
-    if (first !== undefined && second !== undefined) {
-      moved[i] = second;
-      moved[j] = first;
-    }
+    [moved[i], moved[j]] = [moved[j]!, moved[i]!];
   }
   // New ids come from the column's default. Rows go in one batch at a time, in order.
   const BATCH = 1000;

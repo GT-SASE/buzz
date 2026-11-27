@@ -1,4 +1,5 @@
 import { db, users } from "@buzz/db";
+import { logLoadError } from "~/lib/log-error";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -14,13 +15,7 @@ export async function GET() {
   try {
     await db.select({ id: users.id }).from(users).limit(1);
   } catch (error) {
-    console.error(
-      JSON.stringify({
-        level: "error",
-        event: "health.database",
-        message: error instanceof Error ? error.message : String(error),
-      }),
-    );
+    logLoadError("health.database", error);
 
     return Response.json(
       { status: "degraded", database: "unreachable", ...build },

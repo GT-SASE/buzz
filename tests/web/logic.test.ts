@@ -202,7 +202,7 @@ describe("codeFromScan", () => {
 
   /**
    * The generator's alphabet is `23456789ABCDEFGHJKMNPQRSTVWXYZ`
-   * (packages/api/src/routers/event.ts) — Crockford-style, with no I, L, O, U,
+   * (packages/api/src/check-in-code.ts) — Crockford-style, with no I, L, O, U,
    * 0 or 1, because members read these off a projector. A code containing one
    * of those glyphs cannot have been issued, so accepting it is exactly the
    * misread this function exists to stop.

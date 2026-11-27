@@ -315,11 +315,6 @@ const ELECTION_COPY: Partial<
   }),
 };
 
-/** Whether entering `phase` is announced. Closing the polls is not. */
-export function announcesElectionPhase(phase: ElectionPhase) {
-  return phase in ELECTION_COPY;
-}
-
 /**
  * An election opening nominations, opening voting or publishing results, to
  * the members who can take part. `loadRecipients` is the router's own

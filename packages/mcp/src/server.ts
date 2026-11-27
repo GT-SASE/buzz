@@ -152,7 +152,7 @@ export function createServer(serverVersion = "0.0.0"): McpServer {
       },
     },
     async ({ tasks, force }) => {
-      const r = await runChecks(tasks, force ?? false);
+      const r = await runChecks(tasks, force);
       return text(`${r.ok ? "PASS" : "FAIL"}\n${r.output}`, !r.ok);
     },
   );

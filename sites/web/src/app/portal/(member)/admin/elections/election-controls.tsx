@@ -27,10 +27,10 @@ import { api, type RouterOutputs } from "~/trpc/react";
 
 type Election = RouterOutputs["election"]["list"][number];
 
-const text = (value: FormDataEntryValue | null) =>
+export const text = (value: FormDataEntryValue | null) =>
   typeof value === "string" ? value : "";
 
-function useRefresh() {
+export function useRefresh() {
   const utils = api.useUtils();
   return () =>
     Promise.all([

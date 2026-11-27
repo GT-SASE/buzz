@@ -118,11 +118,7 @@ for (const [id] of checks) {
   if (results[id].up) {
     bucket.up += 1;
     bucket.totalMs += results[id].ms;
-  }
-}
-
-for (const [id] of checks) {
-  if (!results[id].up) {
+  } else {
     history.incidents.push({ at, id, detail: results[id].detail });
   }
 }

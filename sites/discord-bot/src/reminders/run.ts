@@ -227,21 +227,6 @@ function targetOf(guild: GuildPlan, event: EventReminders): ThreadTarget {
   return { guildId: guild.guildId, eventId: event.eventId };
 }
 
-function groupByGuild(
-  rows: readonly ReminderCandidate[],
-): Map<string, ReminderCandidate[]> {
-  const guilds = new Map<string, ReminderCandidate[]>();
-  for (const row of rows) {
-    const list = guilds.get(row.guild_id);
-    if (list === undefined) {
-      guilds.set(row.guild_id, [row]);
-    } else {
-      list.push(row);
-    }
-  }
-  return guilds;
-}
-
 function lastCandidateDate(now: Date): DateOnly | null {
   return parseIsoDate(
     new Date(now.getTime() + CANDIDATE_DAYS_AHEAD * MS_PER_DAY)
@@ -528,7 +513,10 @@ class Run {
 
   #planGuilds(rows: readonly ReminderCandidate[], now: Date): GuildPlan[] {
     const plans: GuildPlan[] = [];
-    for (const [guildId, guildRows] of groupByGuild(rows)) {
+    for (const [guildId, guildRows] of Map.groupBy(
+      rows,
+      (row) => row.guild_id,
+    )) {
       if (!this.#allowedGuildIds.has(guildId)) {
         this.counts.add("guilds_not_allowed");
         continue;

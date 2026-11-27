@@ -27,20 +27,18 @@ const actionVariants = {
     "text-white border-b-2 border-white/35 hover:border-gold-bright hover:text-gold-bright rounded-none bg-transparent px-0 pb-1.5 -mb-1.5 hover:bg-transparent",
 } as const;
 
-export type ActionVariant = keyof typeof actionVariants;
+type ActionVariant = keyof typeof actionVariants;
 
 export function Button({
   href,
   children,
   variant = "primary",
-  arrow = variant === "primary",
   external = false,
   className,
 }: {
   href: string;
   children: React.ReactNode;
   variant?: ActionVariant;
-  arrow?: boolean;
   external?: boolean;
   className?: string;
 }) {
@@ -49,7 +47,7 @@ export function Button({
     <>
       {children}
       {external && <span className="sr-only"> (opens in a new tab)</span>}
-      {arrow && (
+      {variant === "primary" && (
         <ArrowRight className="size-4 shrink-0 transition-transform duration-300 group-hover:translate-x-1" />
       )}
     </>

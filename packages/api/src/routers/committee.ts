@@ -36,8 +36,6 @@ import {
   type db,
 } from "@buzz/db";
 
-const statusSchema = z.enum(COMMITTEE_STATUSES);
-
 const cycleInput = z
   .object({ cycle: z.string().regex(semesterPattern).optional() })
   .nullish();
@@ -82,23 +80,10 @@ async function defaultCycleId(database: Db, now: Date) {
   return latest?.id ?? semester(now);
 }
 
-async function openCurrentCycle(database: Db, now: Date) {
-  const cycle = await findCurrentCycle(database, now);
-  if (!cycle || !isCommitteeCycleOpen(cycle.closesAt, now)) cycleClosed();
-  return cycle;
-}
-
 /** Semesters an officer may open applications for at `now`. */
 function openableSemesters(now: Date) {
   const current = semester(now);
   return [current, nextSemester(current)];
-}
-
-function cycleClosed(): never {
-  throw new TRPCError({
-    code: "BAD_REQUEST",
-    message: "Committee applications are closed.",
-  });
 }
 
 function answersLocked(): never {
@@ -174,7 +159,14 @@ export const committeeRouter = createTRPCRouter({
         COMMITTEE_APPLY_LIMIT,
       );
 
-      const cycle = await openCurrentCycle(ctx.db, new Date());
+      const now = new Date();
+      const cycle = await findCurrentCycle(ctx.db, now);
+      if (!cycle || !isCommitteeCycleOpen(cycle.closesAt, now)) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Committee applications are closed.",
+        });
+      }
 
       const existing = await ctx.db.query.committeeApplications.findFirst({
         where: and(
@@ -336,7 +328,7 @@ export const committeeRouter = createTRPCRouter({
     .input(
       z.object({
         id: z.string().min(1),
-        status: statusSchema,
+        status: z.enum(COMMITTEE_STATUSES),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -415,15 +407,6 @@ export const committeeRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const [existing] = await ctx.db
-        .select({ id: committeeApplications.id })
-        .from(committeeApplications)
-        .where(eq(committeeApplications.id, input.id));
-
-      if (!existing) {
-        notFound("Application");
-      }
-
       const [updated] = await ctx.db
         .update(committeeApplications)
         .set({ officerNotes: input.officerNotes ?? null })
@@ -432,6 +415,7 @@ export const committeeRouter = createTRPCRouter({
           ...applicationSelect,
           officerNotes: committeeApplications.officerNotes,
         });
+      if (!updated) notFound("Application");
       return updated;
     }),
 

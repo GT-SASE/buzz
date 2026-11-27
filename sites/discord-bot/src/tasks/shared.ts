@@ -7,6 +7,7 @@
 import { createHash } from "node:crypto";
 import { ApplicationCommandOptionType } from "discord-api-types/v10";
 import { commandOptionValue } from "../discord/interactions.ts";
+import { isThreadChannelType } from "../discord/verify.ts";
 import type { AutocompleteChoice, MessageInput } from "../discord/outbound.ts";
 import {
   DISCORD_LIMITS,
@@ -18,7 +19,10 @@ import {
 import type { PlainText, SafeText } from "../discord/safe-text.ts";
 import { getEvent, searchEventsByIdPrefix } from "../db/events.ts";
 import type { DbResult } from "../db/errors.ts";
-import { searchOpenEventsByIdPrefix } from "../db/task-events.ts";
+import {
+  findEventByThread,
+  searchOpenEventsByIdPrefix,
+} from "../db/task-events.ts";
 import {
   getTask,
   searchLiveTasksByIdPrefix,
@@ -31,7 +35,10 @@ import type { DateOnly } from "../lib/dates.ts";
 import { escapedName, lines } from "../handlers/render.ts";
 import { valueOf, type FinishContext } from "../handlers/router.ts";
 import { authorize, isOfficer } from "../lib/permissions.ts";
-import type { TaskScopedAction } from "../lib/permissions.ts";
+import type {
+  EventScopedAction,
+  TaskScopedAction,
+} from "../lib/permissions.ts";
 
 /** A task's text in a reply or a post: the rest of the message must still fit. */
 const DESCRIPTION_SHOWN = 1500;
@@ -44,6 +51,9 @@ export const REFUSED_TEXT = safe`You can't do that, or it doesn't exist.`;
 
 /** For text that names no row. It matched nothing by ID, so it reveals nothing. */
 export const PICK_FROM_LIST = safe`Pick a choice from the list, or enter the whole short ID the bot shows.`;
+
+/** For a command that named no event and was not run in an event's post. */
+export const NO_EVENT = safe`Run this in an event's post, or choose the event in the event option.`;
 
 export const EVENT_CLOSED = safe`This task's event is closed or deleted, so the task can't be changed.`;
 
@@ -183,6 +193,59 @@ export async function chosenEventId(
     : onlyId(await searchOpenEventsByIdPrefix(ctx.db, { guildId, prefix }));
 }
 
+export type ChosenEvent =
+  | { readonly kind: "event"; readonly event: EventRow }
+  /** No event was named, and the command is not in an event's post. */
+  | { readonly kind: "none" }
+  /** A named event that this actor can't use. It gets the fixed refusal. */
+  | { readonly kind: "refused" }
+  /** Typed text that names no event by ID. */
+  | { readonly kind: "typed" };
+
+/**
+ * The event a command names in its `event` option, or else the post it was run in, if
+ * this actor may do `action` to it. A named value is never trusted. It is a row
+ * reference, loaded with the signed guild. Having named nothing, somewhere that is no
+ * event's post, is only a wrong place to ask.
+ */
+export async function chooseEvent(
+  ctx: FinishContext,
+  action: EventScopedAction,
+  { orClosed = false }: { readonly orClosed?: boolean } = {},
+): Promise<ChosenEvent> {
+  const guildId = ctx.actor.guildId;
+  const option = stringOption(ctx.payload, "event");
+  if (option === undefined && !isThreadChannelType(ctx.verified.channelType)) {
+    return { kind: "none" };
+  }
+  const named =
+    option === undefined
+      ? undefined
+      : await chosenEventId(ctx, option, { orClosed });
+  if (option !== undefined && named === undefined) {
+    return { kind: "typed" };
+  }
+  const read =
+    named !== undefined
+      ? await getEvent(ctx.db, { guildId, eventId: named })
+      : await findEventByThread(ctx.db, {
+          guildId,
+          threadId: ctx.verified.channelId,
+        });
+  if (!read.ok && read.error.category === "invalid_input") {
+    return { kind: "refused" };
+  }
+  const event = valueOf(read);
+  if (event === null) {
+    // A thread is just not an event's post, but a named event ought to exist.
+    return named === undefined ? { kind: "none" } : { kind: "refused" };
+  }
+  return authorize<EventScopedAction>(action, ctx.actor, ctx.config, event)
+    .allowed
+    ? { kind: "event", event }
+    : { kind: "refused" };
+}
+
 /**
  * The live task a value names, if this actor may do this to it. The value is read again
  * whoever offered it. Absent, deleted, another guild's, malformed and forbidden all
@@ -221,8 +284,8 @@ export async function openEventOf(
   return event?.status === "active" ? event : null;
 }
 
-function shortTaskId(taskId: string): string {
-  return taskId.slice(0, SHORT_ID_LENGTH);
+export function shortId(id: string): string {
+  return id.slice(0, SHORT_ID_LENGTH);
 }
 
 export function taskText(description: string): SafeText {
@@ -234,7 +297,7 @@ export function shownDate(date: DateOnly): SafeText {
 }
 
 export function shownId(taskId: string): SafeText {
-  return escapeUserText(shortTaskId(taskId));
+  return escapeUserText(shortId(taskId));
 }
 
 /**
@@ -263,7 +326,7 @@ export function taskChoice(task: {
   const state = task.status === "done" ? "done, " : "";
   return {
     name: pickerLabel(
-      `${shortTaskId(task.id)} ${state}due ${task.due_date}`,
+      `${shortId(task.id)} ${state}due ${task.due_date}`,
       task.description,
     ),
     value: task.id,
@@ -277,7 +340,7 @@ export function eventChoice(event: {
 }): AutocompleteChoice {
   return {
     name: pickerLabel(
-      `${shortTaskId(event.id)} on ${event.event_date}`,
+      `${shortId(event.id)} on ${event.event_date}`,
       event.name,
     ),
     value: event.id,

@@ -36,14 +36,14 @@ import {
   Schedule,
   ScheduleDialog,
   ScheduleFields,
+  text,
+  useRefresh,
 } from "./election-controls";
 import { BoardPhotos } from "./board-photos";
 import { revalidateBoard } from "./revalidate-board";
 
 type Election = RouterOutputs["election"]["list"][number];
 
-const text = (value: FormDataEntryValue | null) =>
-  typeof value === "string" ? value : "";
 type Phase = Election["phase"];
 
 const phaseLabel: Record<Phase, string> = {
@@ -80,15 +80,6 @@ const electionNotice = (done: string) => ({
   audience: "eligible members",
   followUp: "Post the news in Discord so nobody misses it.",
 });
-
-function useRefresh() {
-  const utils = api.useUtils();
-  return () =>
-    Promise.all([
-      utils.election.list.invalidate(),
-      utils.election.years.invalidate(),
-    ]);
-}
 
 function CreateElection() {
   const refresh = useRefresh();

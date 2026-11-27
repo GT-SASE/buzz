@@ -13,7 +13,7 @@ import { meeting } from "~/data/content";
 import { mentorshipTiers, tiers } from "~/data/portal";
 import { site } from "~/data/site";
 
-export type Faq = { id: string; q: string; a: string };
+type Faq = { id: string; q: string; a: string };
 
 const ranks = tiers.map((tier) => `${tier.name} (${tier.min})`).join(", ");
 const kinLevels = mentorshipTiers

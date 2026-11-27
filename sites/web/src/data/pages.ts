@@ -6,6 +6,7 @@ import { unstable_cache } from "next/cache";
 import { pageRedirectTarget } from "@buzz/api/page-redirect";
 import { ANNOUNCEMENT_SLUG, isValidPageSlug } from "@buzz/api/page-slug";
 import { db, pages } from "@buzz/db";
+import { logLoadError } from "~/lib/log-error";
 
 export const PAGES_TAG = "pages";
 
@@ -62,13 +63,7 @@ export async function getPublishedPageList() {
       updatedAt: new Date(row.updatedAt),
     }));
   } catch (error) {
-    console.error(
-      JSON.stringify({
-        level: "error",
-        event: "pages.list",
-        message: error instanceof Error ? error.message : String(error),
-      }),
-    );
+    logLoadError("pages.list", error);
     return [];
   }
 }
@@ -79,13 +74,7 @@ export async function getPublishedPage(slug: string) {
   try {
     return await loadPage(slug);
   } catch (error) {
-    console.error(
-      JSON.stringify({
-        level: "error",
-        event: "pages.load",
-        message: error instanceof Error ? error.message : String(error),
-      }),
-    );
+    logLoadError("pages.load", error);
     return null;
   }
 }
@@ -112,13 +101,7 @@ export async function getPageRedirect(slug: string) {
   try {
     return await loadRedirect(slug);
   } catch (error) {
-    console.error(
-      JSON.stringify({
-        level: "error",
-        event: "pages.redirect",
-        message: error instanceof Error ? error.message : String(error),
-      }),
-    );
+    logLoadError("pages.redirect", error);
     return null;
   }
 }

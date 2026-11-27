@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
 import { cache } from "react";
 
 import { orNotFound } from "~/app/portal/_lib/missing";
@@ -20,7 +19,6 @@ export async function generateMetadata({
   params: Promise<{ id: string }>;
 }): Promise<Metadata> {
   const { id } = await params;
-  if (!id) return { title: "Page" };
 
   try {
     const page = await pageForEditor(id);
@@ -36,7 +34,6 @@ export default async function EditPagePage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  if (!id) notFound();
   await requireOfficer(`/portal/admin/pages/${id}`);
   const page = await orNotFound(pageForEditor(id));
 

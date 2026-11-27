@@ -22,7 +22,7 @@ export function isSettled(event: { startsAt: Date }, now = new Date()) {
 }
 
 /** `"2026-11-24"`, a calendar day in the chapter's zone. */
-export type DateKey = string;
+type DateKey = string;
 /** `"2026-11"`, a calendar month in the chapter's zone. */
 export type MonthKey = string;
 

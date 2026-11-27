@@ -31,7 +31,6 @@ import {
   userMention,
 } from "../discord/safe-text.ts";
 import type { SafeText } from "../discord/safe-text.ts";
-import { isThreadChannelType } from "../discord/verify.ts";
 import { errorSummary, type DbResult } from "../db/errors.ts";
 import {
   assignEventStep,
@@ -48,7 +47,6 @@ import {
 } from "../db/event-steps.ts";
 import { getEvent } from "../db/events.ts";
 import { getManagedChannel } from "../db/managed-channels.ts";
-import { findEventByThread } from "../db/task-events.ts";
 import type {
   AssignableStepKind,
   CompletableStepKind,
@@ -82,9 +80,11 @@ import {
   type FinishContext,
   type Route,
 } from "../handlers/router.ts";
-import { lines } from "../handlers/render.ts";
 import {
-  chosenEventId,
+  chooseEvent,
+  message,
+  messageWithNotes,
+  NO_EVENT,
   PICK_FROM_LIST,
   REFUSED_TEXT,
   stringOption,
@@ -107,20 +107,7 @@ import {
 } from "./steps.ts";
 
 const EVENT_CLOSED = safe`That event is closed, so its steps can't change.`;
-const NO_EVENT = safe`Run this in an event's post, or choose the event in the event option.`;
 const OVERVIEW_BEHIND = safe`The change is saved, but I couldn't update the event's overview, so it's out of date until the next change.`;
-
-function message(content: SafeText): MessageInput {
-  return { content, mentionUserIds: [] };
-}
-
-function withNotes(
-  reply: SafeText,
-  ...notes: readonly (SafeText | undefined)[]
-): MessageInput {
-  const present = notes.filter((note) => note !== undefined);
-  return message(lines([reply, ...present]) ?? reply);
-}
 
 function logFailure(what: string, detail: string): void {
   console.error(`Event workflow ${what} failed: ${detail}`);
@@ -171,65 +158,28 @@ async function redraw(
     : OVERVIEW_BEHIND;
 }
 
-type Chosen =
-  | { readonly kind: "event"; readonly event: EventRow }
-  | { readonly kind: "problem"; readonly problem: SafeText };
-
 /**
- * The event a command names, or else the post it runs in, if this officer may change
- * it. A typed value that is no ID, and a row that is absent, deleted, another guild's
- * or forbidden all get a fixed reply that says nothing about which.
+ * A typed value that is no ID, and a row that is absent, deleted, another guild's or
+ * forbidden all get a fixed reply that says nothing about which.
  */
-async function chooseEvent(
-  ctx: FinishContext,
-  action: EventScopedAction,
-): Promise<Chosen> {
-  const guildId = ctx.actor.guildId;
-  const option = stringOption(ctx.payload, "event");
-  if (option === undefined && !isThreadChannelType(ctx.verified.channelType)) {
-    return { kind: "problem", problem: NO_EVENT };
-  }
-  const named =
-    option === undefined ? undefined : await chosenEventId(ctx, option);
-  if (option !== undefined && named === undefined) {
-    return { kind: "problem", problem: PICK_FROM_LIST };
-  }
-  const read =
-    named !== undefined
-      ? await getEvent(ctx.db, { guildId, eventId: named })
-      : await findEventByThread(ctx.db, {
-          guildId,
-          threadId: ctx.verified.channelId,
-        });
-  if (!read.ok && read.error.category === "invalid_input") {
-    return { kind: "problem", problem: REFUSED_TEXT };
-  }
-  const event = valueOf(read);
-  if (event === null) {
-    return {
-      kind: "problem",
-      problem: named === undefined ? NO_EVENT : REFUSED_TEXT,
-    };
-  }
-  if (
-    !authorize<EventScopedAction>(action, ctx.actor, ctx.config, event).allowed
-  ) {
-    return { kind: "problem", problem: REFUSED_TEXT };
-  }
-  return event.status === "active"
-    ? { kind: "event", event }
-    : { kind: "problem", problem: EVENT_CLOSED };
-}
-
 function onEvent(
   action: EventScopedAction,
   step: (ctx: FinishContext, event: EventRow) => Promise<MessageInput>,
 ): (ctx: FinishContext) => Promise<MessageInput> {
   return async (ctx) => {
     const chosen = await chooseEvent(ctx, action);
-    return chosen.kind === "event"
-      ? step(ctx, chosen.event)
-      : message(chosen.problem);
+    switch (chosen.kind) {
+      case "none":
+        return message(NO_EVENT);
+      case "typed":
+        return message(PICK_FROM_LIST);
+      case "refused":
+        return message(REFUSED_TEXT);
+      case "event":
+        return chosen.event.status === "active"
+          ? step(ctx, chosen.event)
+          : message(EVENT_CLOSED);
+    }
   };
 }
 
@@ -288,7 +238,7 @@ async function assign(
   const hint =
     kind === "food_pickup" ? await pickupHint(ctx, event) : undefined;
   const reach = await reachWarning(ctx, event, person.id, "step");
-  return withNotes(reply, told, hint, reach, await redraw(ctx, event));
+  return messageWithNotes(reply, told, hint, reach, await redraw(ctx, event));
 }
 
 /** The line in the event's post when No slides needed is undone, which pings nobody. */
@@ -357,7 +307,7 @@ async function unassign(
       safe`${userMention(person.id)} isn't on ${stepName(kind)} for **${title}**, so nothing was changed.`,
     );
   }
-  return withNotes(
+  return messageWithNotes(
     safe`Took ${userMention(person.id)} off ${stepName(kind)} for **${title}**.`,
     await redraw(ctx, event),
   );
@@ -386,7 +336,7 @@ async function pickup(
     }
   }
   const done = valueOf(written);
-  return withNotes(
+  return messageWithNotes(
     safe`Food pickup for **${eventTitle(event)}** is at ${pickupTimeText(event.event_date, parsed.time, ctx.config?.timezone ?? null)} on ${dateText(event.event_date)}.`,
     done
       ? undefined
@@ -765,7 +715,7 @@ async function markStep(
       : kind === "engage_picture"
         ? safe`Marked the Engage picture added for **${title}**.`
         : safe`Marked ${stepName(kind)} done for **${title}**.`;
-  return withNotes(reply, told, await redraw(ctx, event));
+  return messageWithNotes(reply, told, await redraw(ctx, event));
 }
 
 /** The event a button's custom_id names, in the signed guild, or null. */
@@ -841,7 +791,7 @@ async function markSlidesNotNeeded(
   const reply = valueOf(written)
     ? safe`Marked Slides not needed for **${title}**.`
     : safe`Slides for **${title}** is already done or not needed, so nothing was changed.`;
-  return withNotes(reply, await redraw(ctx, event));
+  return messageWithNotes(reply, await redraw(ctx, event));
 }
 
 /** Whether Engage picture added is done, which undoing Engage post reopens too. */
@@ -920,7 +870,7 @@ async function undo(
     return message(notDone);
   }
   const posted = await postInEvent(ctx, event, message(done.line));
-  return withNotes(
+  return messageWithNotes(
     done.reply,
     posted === "posted"
       ? undefined

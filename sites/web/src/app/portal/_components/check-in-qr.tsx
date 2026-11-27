@@ -26,11 +26,9 @@ export const CHECK_IN_QR_RENDER = {
 export function CheckInQr({
   code,
   className,
-  label = "Check-in QR code",
 }: {
   code: string;
   className?: string;
-  label?: string;
 }) {
   const url = checkInQrUrl(site.url, code);
   const [qr, setQr] = useState<string | null>(null);
@@ -61,7 +59,7 @@ export function CheckInQr({
     // eslint-disable-next-line @next/next/no-img-element
     <img
       src={qr}
-      alt={label}
+      alt="Check-in QR code"
       className={cn("bg-white object-contain", className)}
     />
   );

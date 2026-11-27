@@ -14,24 +14,16 @@ async function importBot<T>(file: string): Promise<T> {
 }
 
 /** The bot's Vercel functions and crons, from scripts/deployment.ts. */
-async function botDeployment(): Promise<{
-  functions: BotFunction[];
-  crons: BotCron[];
-}> {
-  const d = await importBot<{
+export async function formatBotRoutes(): Promise<string> {
+  const { FUNCTIONS, CRONS } = await importBot<{
     FUNCTIONS: BotFunction[];
     CRONS: BotCron[];
   }>("scripts/deployment.ts");
-  return { functions: d.FUNCTIONS, crons: d.CRONS };
-}
-
-export async function formatBotRoutes(): Promise<string> {
-  const { functions, crons } = await botDeployment();
   return [
-    ...functions.map(
+    ...FUNCTIONS.map(
       (f) => `/${f.route}  [bot function]  ${BOT_DIR}/${f.source}`,
     ),
-    ...crons.map(
+    ...CRONS.map(
       (c) => `/${c.path.replace(/^\//, "")}  [bot cron]  ${c.schedule}`,
     ),
   ].join("\n");

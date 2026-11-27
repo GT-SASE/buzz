@@ -244,13 +244,7 @@ async function main() {
     if (existing) {
       await db
         .update(schema.events)
-        .set({
-          description: event.description,
-          location: event.location,
-          startsAt: event.startsAt,
-          pointsValue: event.pointsValue,
-          checkInEnabled: event.checkInEnabled,
-        })
+        .set(event)
         .where(eq(schema.events.id, existing.id));
       console.log(`updated: ${event.title}`);
       continue;
@@ -259,12 +253,7 @@ async function main() {
     for (let attempt = 0; attempt < 5; attempt++) {
       try {
         await db.insert(schema.events).values({
-          title: event.title,
-          description: event.description,
-          location: event.location,
-          startsAt: event.startsAt,
-          pointsValue: event.pointsValue,
-          checkInEnabled: event.checkInEnabled,
+          ...event,
           checkInCode: newCheckInCode(),
           createdById: officer.id,
         });

@@ -44,8 +44,7 @@ const SEARCH_MAX = 100;
 const columnHeading =
   "text-eyebrow tracking-caps text-ink-muted h-auto py-3 font-semibold uppercase";
 
-const selectClass = cn(inputClass, "bg-paper/80 h-11 w-full px-3");
-const dateClass = cn(inputClass, "bg-paper/80 h-11 w-full px-3");
+const controlClass = cn(inputClass, "bg-paper/80 h-11 w-full px-3");
 
 function who(name: string | null, email: string | null, fallback: string) {
   return name ?? email ?? fallback;
@@ -186,7 +185,7 @@ function DateFilters({
           value={from}
           max={to || undefined}
           onChange={(event) => onFrom(event.target.value)}
-          className={dateClass}
+          className={controlClass}
         />
       </Field>
       <Field label="To" htmlFor={`${idPrefix}-to`}>
@@ -196,7 +195,7 @@ function DateFilters({
           value={to}
           min={from || undefined}
           onChange={(event) => onTo(event.target.value)}
-          className={dateClass}
+          className={controlClass}
         />
       </Field>
     </>
@@ -269,7 +268,7 @@ function AuditLogPanel() {
             id="audit-actor"
             value={actorId}
             onChange={(event) => change(setActorId)(event.target.value)}
-            className={selectClass}
+            className={controlClass}
           >
             <option value="">Everyone</option>
             {(actors.data ?? []).map((actor) => (
@@ -286,7 +285,7 @@ function AuditLogPanel() {
             onChange={(event) =>
               change(setAction)(event.target.value as AuditAction | "")
             }
-            className={selectClass}
+            className={controlClass}
           >
             <option value="">Every action</option>
             {actionNames.map((name) => (
@@ -538,7 +537,7 @@ function LedgerPanel() {
             onChange={(event) =>
               change(setSource)(event.target.value as PointsSource | "")
             }
-            className={selectClass}
+            className={controlClass}
           >
             <option value="">Every source</option>
             {sourceNames.map((name) => (

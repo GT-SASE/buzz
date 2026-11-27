@@ -12,12 +12,6 @@ import {
   type UserRole,
 } from "@buzz/db";
 
-/**
- * Module augmentation for `next-auth` types. Allows us to add custom properties to the `session`
- * object and keep type safety.
- *
- * @see https://next-auth.js.org/getting-started/typescript#module-augmentation
- */
 declare module "next-auth" {
   interface Session extends DefaultSession {
     user: {
@@ -42,8 +36,6 @@ declare module "@auth/core/adapters" {
   }
 }
 
-const SESSION_MAX_AGE_SEC = 30 * 24 * 60 * 60;
-
 async function storeEmailLowercase(user: {
   id?: string;
   email?: string | null;
@@ -55,11 +47,6 @@ async function storeEmailLowercase(user: {
   }
 }
 
-/**
- * Options for NextAuth.js used to configure adapters, providers, callbacks, etc.
- *
- * @see https://next-auth.js.org/configuration/options
- */
 export const authConfig = {
   // Vercel (and any reverse proxy) sets the host header; Auth.js needs to
   // trust it or every callback URL is built against localhost.
@@ -80,7 +67,7 @@ export const authConfig = {
   }),
   session: {
     strategy: "database",
-    maxAge: SESSION_MAX_AGE_SEC,
+    maxAge: 30 * 24 * 60 * 60,
     updateAge: 24 * 60 * 60,
   },
   cookies: {
@@ -104,12 +91,8 @@ export const authConfig = {
      * happen in the roster, and only a super admin can make them. Never from
      * an env allowlist on sign-in.
      */
-    createUser: async ({ user }) => {
-      await storeEmailLowercase(user);
-    },
-    signIn: async ({ user }) => {
-      await storeEmailLowercase(user);
-    },
+    createUser: ({ user }) => storeEmailLowercase(user),
+    signIn: ({ user }) => storeEmailLowercase(user),
   },
   callbacks: {
     // Database sessions, so `user` is the freshly-read row: carrying the role

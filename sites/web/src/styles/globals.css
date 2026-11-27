@@ -22,7 +22,6 @@
 
   /* Surface tints taken from the dino. Grounds for mascot moments only, never
      text, buttons or links. */
-  --dino: #b1d0ff;
   --dino-pale: #e8f0ff;
 
   --paper: #ffffff;
@@ -58,21 +57,6 @@
   --border: var(--hairline);
   --input: rgb(15 31 48 / 0.22);
   --ring: var(--navy);
-
-  --chart-1: #003057;
-  --chart-2: #eaaa00;
-  --chart-3: #6b5a24;
-  --chart-4: #7a8fa6;
-  --chart-5: #b3a369;
-
-  --sidebar: var(--cream);
-  --sidebar-foreground: var(--ink);
-  --sidebar-primary: var(--navy);
-  --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: var(--sand);
-  --sidebar-accent-foreground: var(--navy);
-  --sidebar-border: var(--hairline);
-  --sidebar-ring: var(--navy);
 }
 
 @theme inline {
@@ -84,7 +68,6 @@
   --color-navy-deep: var(--navy-deep);
   --color-gold: var(--gold);
   --color-gold-bright: var(--gold-bright);
-  --color-dino: var(--dino);
   --color-dino-pale: var(--dino-pale);
   --color-paper: var(--paper);
   --color-cream: var(--cream);
@@ -114,19 +97,6 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
-  --color-chart-1: var(--chart-1);
-  --color-chart-2: var(--chart-2);
-  --color-chart-3: var(--chart-3);
-  --color-chart-4: var(--chart-4);
-  --color-chart-5: var(--chart-5);
-  --color-sidebar: var(--sidebar);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-ring: var(--sidebar-ring);
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -148,8 +118,6 @@
   --text-h1--line-height: 1;
   --text-hero: clamp(2.5rem, 7.2vw, 6.75rem);
   --text-hero--line-height: 0.98;
-  --text-stat: clamp(2.75rem, 4vw, 4.5rem);
-  --text-stat--line-height: 0.95;
   --text-numeral: clamp(0.75rem, 0.3vw + 0.6rem, 0.8125rem);
   --text-numeral--line-height: 1;
 
@@ -159,7 +127,6 @@
   --container-measure: 40rem;
   --container-narrow: 46rem;
   --container-content: 72rem;
-  --container-wide: 88rem;
 }
 
 @keyframes marquee {
@@ -290,22 +257,6 @@
     border-radius: 1rem;
   }
 
-  .hang {
-    position: relative;
-  }
-
-  /* 1400px, not 1024px: max-w-content only gains 4.5rem of margin to hang into
-     once the viewport clears ~1344px, and left overflow does not scroll. */
-  @media (min-width: 1400px) {
-    .hang > .hang-number {
-      position: absolute;
-      left: -4.5rem;
-      top: 0.35em;
-      width: 3rem;
-      text-align: right;
-    }
-  }
-
   .marquee-track {
     display: flex;
     width: max-content;
@@ -316,19 +267,12 @@
     animation-play-state: paused;
   }
 
-  /* Scroll-triggered entrance with no JavaScript and no hydration cost. The
-     markup is visible by default; the animation layers on only where
-     scroll-driven timelines exist. */
   @media (prefers-reduced-motion: no-preference) {
     @supports (animation-timeline: view()) {
       .marquee-track {
         animation: marquee 38s linear infinite;
       }
     }
-  }
-
-  .text-balance {
-    text-wrap: balance;
   }
 
   /* A native <details> panel slides open and shut where the browser can

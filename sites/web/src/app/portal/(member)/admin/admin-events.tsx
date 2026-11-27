@@ -53,9 +53,6 @@ import {
 } from "./visible-events";
 
 type AdminEvent = RouterOutputs["event"]["listAll"]["events"][number];
-type Filter = AdminEventFilter;
-const filters = adminEventFilters;
-
 type Scope = "one" | "future";
 type Cadence = "weekly" | "biweekly";
 
@@ -798,7 +795,7 @@ function EventCard({ event }: { event: AdminEvent }) {
 }
 
 export function AdminEvents() {
-  const [filter, setFilter] = useState<Filter>("Open");
+  const [filter, setFilter] = useState<AdminEventFilter>("Open");
   // Cap matches the procedure max so the filter still sees the chapter.
   const listing = api.event.listAll.useQuery({ limit: 200, offset: 0 });
 
@@ -827,7 +824,7 @@ export function AdminEvents() {
           aria-label="Filter events"
           className="ring-hairline bg-cream grid max-w-full grid-cols-4 gap-1 rounded-xl p-1 ring-1 sm:flex"
         >
-          {filters.map((option) => (
+          {adminEventFilters.map((option) => (
             <Button
               key={option}
               size="sm"

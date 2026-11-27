@@ -80,87 +80,22 @@ export async function pruneRateLimits(db: LimiterDb, now = Date.now()) {
     .where(lt(rateLimits.windowStart, new Date(now - PRUNE_AFTER_MS)));
 }
 
-export const CHECK_IN_LIMIT = {
-  limit: 10,
-  intervalMs: 60_000,
-} as const;
+const perMinute = (limit: number) => ({ limit, intervalMs: 60_000 });
 
-export const MANUAL_CHECK_IN_LIMIT = {
-  limit: 30,
-  intervalMs: 60_000,
-} as const;
-
-export const REGENERATE_CODE_LIMIT = {
-  limit: 10,
-  intervalMs: 60_000,
-} as const;
-
-export const EXPORT_ROSTER_LIMIT = {
-  limit: 5,
-  intervalMs: 60_000,
-} as const;
-
-export const EXPORT_ATTENDANCE_LIMIT = {
-  limit: 5,
-  intervalMs: 60_000,
-} as const;
-
-export const MENTORSHIP_ENROLL_LIMIT = {
-  limit: 10,
-  intervalMs: 60_000,
-} as const;
-
-export const MENTORSHIP_AWARD_LIMIT = {
-  limit: 30,
-  intervalMs: 60_000,
-} as const;
-
-export const COMMITTEE_APPLY_LIMIT = {
-  limit: 10,
-  intervalMs: 60_000,
-} as const;
-
-export const EXPORT_COMMITTEE_LIMIT = {
-  limit: 5,
-  intervalMs: 60_000,
-} as const;
-
-export const RESUME_UPLOAD_LIMIT = {
-  limit: 8,
-  intervalMs: 60_000,
-} as const;
-
-export const ELECTION_ACTION_LIMIT = {
-  limit: 20,
-  intervalMs: 60_000,
-} as const;
-
-export const RSVP_LIMIT = {
-  limit: 20,
-  intervalMs: 60_000,
-} as const;
-
-export const LEADERBOARD_PREF_LIMIT = {
-  limit: 20,
-  intervalMs: 60_000,
-} as const;
-
-export const PROFILE_LIMIT = {
-  limit: 20,
-  intervalMs: 60_000,
-} as const;
-
-export const NOTIFICATION_PREFS_LIMIT = {
-  limit: 20,
-  intervalMs: 60_000,
-} as const;
-
-export const HEADSHOT_UPLOAD_LIMIT = {
-  limit: 6,
-  intervalMs: 60_000,
-} as const;
-
-export const PAGE_IMAGE_UPLOAD_LIMIT = {
-  limit: 12,
-  intervalMs: 60_000,
-} as const;
+export const CHECK_IN_LIMIT = perMinute(10);
+export const MANUAL_CHECK_IN_LIMIT = perMinute(30);
+export const REGENERATE_CODE_LIMIT = perMinute(10);
+export const EXPORT_ROSTER_LIMIT = perMinute(5);
+export const EXPORT_ATTENDANCE_LIMIT = perMinute(5);
+export const MENTORSHIP_ENROLL_LIMIT = perMinute(10);
+export const MENTORSHIP_AWARD_LIMIT = perMinute(30);
+export const COMMITTEE_APPLY_LIMIT = perMinute(10);
+export const EXPORT_COMMITTEE_LIMIT = perMinute(5);
+export const RESUME_UPLOAD_LIMIT = perMinute(8);
+export const ELECTION_ACTION_LIMIT = perMinute(20);
+export const RSVP_LIMIT = perMinute(20);
+export const LEADERBOARD_PREF_LIMIT = perMinute(20);
+export const PROFILE_LIMIT = perMinute(20);
+export const NOTIFICATION_PREFS_LIMIT = perMinute(20);
+export const HEADSHOT_UPLOAD_LIMIT = perMinute(6);
+export const PAGE_IMAGE_UPLOAD_LIMIT = perMinute(12);

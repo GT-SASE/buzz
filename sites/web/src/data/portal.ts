@@ -20,12 +20,14 @@ export const tiers = [
 export const tierFloors = tiers.map((tier) => tier.min);
 
 /** The highest tier a total clears, plus how far the next one is. */
-export function tierFor(points: number) {
-  type Band = (typeof tiers)[number];
-  let current: Band = tiers[0];
-  let next: Band | undefined;
+function bandFor<T extends { name: string; min: number }>(
+  list: readonly T[],
+  points: number,
+) {
+  let current = list[0]!;
+  let next: T | undefined;
 
-  for (const tier of tiers) {
+  for (const tier of list) {
     if (points >= tier.min) {
       current = tier;
     } else {
@@ -43,12 +45,10 @@ export function tierFor(points: number) {
   const progress =
     next && band > 0 ? (points - current.min) / band : next ? 0 : 1;
 
-  const level = tiers.findIndex((tier) => tier.name === current.name) + 1;
-
   return {
     name: current.name,
     /** 1-based place in the table, for "Rank 3 · Regular" on the card. */
-    level,
+    level: list.indexOf(current) + 1,
     next: next?.name,
     pointsToNext: next ? next.min - points : null,
     /** 0-1 through the current band; 1 once the top tier is reached. */
@@ -58,14 +58,8 @@ export function tierFor(points: number) {
   };
 }
 
-/**
- * Two entries, not three.
- *
- * "My events" used to be its own page showing the same card and the same list
- * the dashboard already had. A member has one screen worth of things — their
- * card, what is open, where they have been — and splitting that across tabs
- * made the portal feel bigger than it is without adding anything.
- */
+export const tierFor = (points: number) => bandFor(tiers, points);
+
 export const portalNav = [
   { href: "/portal", label: "My card" },
   { href: "/portal/check-in", label: "Check in" },
@@ -94,24 +88,5 @@ export const mentorshipTiers = [
   { name: "Kin", min: 30 },
 ] as const;
 
-export function mentorshipTierFor(points: number) {
-  let current: (typeof mentorshipTiers)[number] = mentorshipTiers[0];
-  let next: (typeof mentorshipTiers)[number] | undefined;
-  for (const tier of mentorshipTiers) {
-    if (points >= tier.min) current = tier;
-    else {
-      next ??= tier;
-    }
-  }
-  const band = next ? next.min - current.min : 0;
-  const progress =
-    next && band > 0 ? (points - current.min) / band : next ? 0 : 1;
-  return {
-    name: current.name,
-    next: next?.name,
-    pointsToNext: next ? next.min - points : null,
-    progress: Number.isFinite(progress)
-      ? Math.max(0, Math.min(1, progress))
-      : 0,
-  };
-}
+export const mentorshipTierFor = (points: number) =>
+  bandFor(mentorshipTiers, points);

@@ -16,26 +16,17 @@ function tagFor(url: string): string {
   return "marketing";
 }
 
-function walk(dir: string, out: string[]) {
-  for (const e of readdirSync(dir, { withFileTypes: true })) {
-    const full = path.join(dir, e.name);
-    if (e.isDirectory()) walk(full, out);
-    else if (e.name === "page.tsx" || e.name === "route.ts") out.push(full);
-  }
-}
-
 /** Next app routes: route groups `(x)` and parallel slots `@x` leave the URL. */
 export function listRoutes(): Route[] {
-  const files: string[] = [];
-  walk(appDir, files);
-  return files
-    .map((file) => {
+  return readdirSync(appDir, { recursive: true, encoding: "utf8" })
+    .filter((f) => ["page.tsx", "route.ts"].includes(path.basename(f)))
+    .map((f) => {
       const segs = path
-        .relative(appDir, path.dirname(file))
+        .dirname(f)
         .split(path.sep)
-        .filter((s) => s && !/^\(.*\)$/.test(s) && !s.startsWith("@"));
+        .filter((s) => s !== "." && !/^\(.*\)$/.test(s) && !s.startsWith("@"));
       const url = `/${segs.join("/")}`;
-      return { url, tag: tagFor(url), file: rel(file) };
+      return { url, tag: tagFor(url), file: rel(path.join(appDir, f)) };
     })
     .sort((a, b) => a.url.localeCompare(b.url));
 }

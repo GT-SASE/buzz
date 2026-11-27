@@ -6,6 +6,7 @@ import { unstable_cache } from "next/cache";
 import { ANNOUNCEMENT_SLUG } from "@buzz/api/page-slug";
 import { db, pages } from "@buzz/db";
 import { announcementFromRow } from "~/lib/announcement";
+import { logLoadError } from "~/lib/log-error";
 
 export const ANNOUNCEMENT_TAG = "announcement";
 
@@ -42,13 +43,7 @@ export async function getAnnouncement() {
   try {
     return await loadAnnouncement();
   } catch (error) {
-    console.error(
-      JSON.stringify({
-        level: "error",
-        event: "announcement.load",
-        message: error instanceof Error ? error.message : String(error),
-      }),
-    );
+    logLoadError("announcement.load", error);
     return null;
   }
 }

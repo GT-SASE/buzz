@@ -37,15 +37,6 @@ import {
   type CandidateStatus,
 } from "@buzz/db";
 
-async function loadElection(db: Database, electionId: string) {
-  const [election] = await db
-    .select()
-    .from(elections)
-    .where(eq(elections.id, electionId));
-  if (!election) notFound("Election");
-  return election;
-}
-
 async function positionWithElection(db: Database, positionId: string) {
   const [row] = await db
     .select({
@@ -672,12 +663,8 @@ export const electionRouter = createTRPCRouter({
         input.electionId,
         "Positions are locked once voting opens.",
         async (tx, election) => {
-          const [{ top } = { top: null }] = await tx
-            .select({ top: max(electionPositions.sortOrder) })
-            .from(electionPositions)
-            .where(eq(electionPositions.electionId, input.electionId));
-          const [{ n } = { n: 0 }] = await tx
-            .select({ n: count() })
+          const [{ top, n } = { top: null, n: 0 }] = await tx
+            .select({ top: max(electionPositions.sortOrder), n: count() })
             .from(electionPositions)
             .where(eq(electionPositions.electionId, input.electionId));
           if (n >= 20) badRequest("An election has at most 20 positions.");
@@ -866,7 +853,11 @@ export const electionRouter = createTRPCRouter({
   delete: adminProcedure
     .input(z.object({ electionId: z.string().min(1) }))
     .mutation(async ({ ctx, input }) => {
-      const election = await loadElection(ctx.db, input.electionId);
+      const [election] = await ctx.db
+        .select()
+        .from(elections)
+        .where(eq(elections.id, input.electionId));
+      if (!election) notFound("Election");
       if (election.phase !== "nominating") {
         badRequest("Only an election still taking nominations can be deleted.");
       }

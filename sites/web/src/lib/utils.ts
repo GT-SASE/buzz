@@ -17,7 +17,6 @@ const twMerge = extendTailwindMerge({
             "h2",
             "h3",
             "hero",
-            "stat",
             "numeral",
           ],
         },

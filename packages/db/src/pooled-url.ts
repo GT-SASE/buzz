@@ -5,12 +5,8 @@
  * for the request-path client.
  */
 export function pooledConnectionString(url: string) {
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    return url;
-  }
+  if (!URL.canParse(url)) return url;
+  const parsed = new URL(url);
 
   if (!parsed.hostname.endsWith(".neon.tech")) return url;
   if (parsed.hostname.includes("-pooler")) return url;
