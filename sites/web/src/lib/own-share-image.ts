@@ -6,7 +6,7 @@ import type { Metadata } from "next";
  * over the file next to it (measured on Next 16.4.6: `about.html` kept the
  * chapter-wide card), so the page has to leave the tags out for the file's
  * image, with its content hash in the URL, to reach the document.
- * tests/share-images.test.ts holds every route with a file to this.
+ * tests/web/share-images.test.ts holds every route with a file to this.
  */
 export function withOwnShareImage(metadata: Metadata): Metadata {
   const openGraph = metadata.openGraph && { ...metadata.openGraph };

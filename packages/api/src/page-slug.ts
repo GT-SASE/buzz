@@ -13,7 +13,7 @@ const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 /**
  * Every name a top-level URL already answers to. A published page at one of
  * these would be shadowed by the static route, or worse, shadow a metadata
- * file. tests/page-slug.test.ts fails when a route folder is added without
+ * file. tests/api/page-slug.test.ts fails when a route folder is added without
  * being listed here.
  */
 export const RESERVED_PAGE_SLUGS: ReadonlySet<string> = new Set([

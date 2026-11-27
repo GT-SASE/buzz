@@ -12,7 +12,7 @@ const REFRESH_HOURS = 1;
 const feedHost = new URL(site.url).hostname;
 
 /** The feed's one URL, the canonical origin and not whichever host fetched it. */
-export const feedPath = "/events.ics";
+const feedPath = "/events.ics";
 export const feedUrl = `${site.url}${feedPath}`;
 /** The same feed for calendar apps that register the `webcal` scheme. */
 export const webcalUrl = feedUrl.replace(/^https:/, "webcal:");

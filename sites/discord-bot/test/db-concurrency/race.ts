@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { once } from "node:events";
 import pg from "pg";
 import { afterAll, afterEach, beforeAll, beforeEach } from "bun:test";
 import { createDbClient, type DbClient } from "../../src/db/client.ts";
@@ -135,7 +136,20 @@ export function raceDatabase(): RaceDatabase {
     cleanups.unshift(() => client.end());
     const pool = new pg.Pool({ connectionString: botUrl });
     bot = createDbClient(pgOrm(pool));
-    cleanups.unshift(() => pool.end());
+    // pool.end() resolves once it has told its clients to end, not once their sockets
+    // have closed. The DROP DATABASE ... WITH (FORCE) after it would then signal
+    // backends that have not yet read the client's Terminate. They answer with a FATAL
+    // "terminating connection due to administrator command", which reaches the pool as
+    // an 'error' event nobody handles, and bun fails the run between tests.
+    const open = new Set<pg.PoolClient>();
+    pool.on("connect", (client) => open.add(client));
+    pool.on("remove", (client) => open.delete(client));
+    cleanups.unshift(async () => {
+      await pool.end();
+      while (open.size > 0) {
+        await once(pool, "remove");
+      }
+    });
   }, HOOK_TIMEOUT_MS);
 
   afterAll(async () => {

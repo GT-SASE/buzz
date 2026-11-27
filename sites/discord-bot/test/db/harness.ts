@@ -110,7 +110,7 @@ async function migrateAsOwner(
 export const migrateWithDrizzle = migrateAsOwner;
 
 /** What stands in for the trigger that made a new event's steps, for rows put in by hand. */
-export const SEED_STEPS = `
+const SEED_STEPS = `
   CREATE FUNCTION discord_bot.test_seed_steps() RETURNS trigger LANGUAGE plpgsql AS $$
   BEGIN
     INSERT INTO discord_bot.event_steps (event_id, guild_id, kind)

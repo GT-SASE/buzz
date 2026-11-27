@@ -28,7 +28,7 @@ import {
  * A signed-out visitor never sees anything change.
  *
  * Plain markup and plain `fetch`, no `cn`, ui kit, icon library or tRPC client:
- * this file is client JS on every /events page. tests/public-bundle.test.ts
+ * this file is client JS on every /events page. tests/web/public-bundle.test.ts
  * keeps those imports out.
  */
 

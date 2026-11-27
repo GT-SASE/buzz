@@ -1,4 +1,4 @@
-/** How every driver reads the column types where the defaults do not suit. */
+/** How the schema's custom column types read Postgres's text. */
 
 const TIMESTAMP_TEXT =
   /^([0-9]{4}-[0-9]{2}-[0-9]{2}) ([0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,6})?)([+-][0-9]{2})(?::?([0-9]{2}))?$/;
@@ -16,17 +16,3 @@ export function isoTimestamp(value: string): string {
   const [, day, clock, hours, minutes = "00"] = match;
   return `${String(day)}T${String(clock)}${String(hours)}:${minutes}`;
 }
-
-const asText = (value: string): string => value;
-
-/**
- * By type OID: bigint as a number, dates and times as their text, and timestamptz as
- * ISO text. JSON and the rest use each driver's own parser.
- */
-export const TYPE_PARSERS: ReadonlyMap<number, (value: string) => unknown> =
-  new Map<number, (value: string) => unknown>([
-    [20, Number],
-    [1082, asText],
-    [1083, asText],
-    [1184, isoTimestamp],
-  ]);

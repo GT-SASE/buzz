@@ -25,7 +25,7 @@ while read -r _local_ref local_sha _remote_ref remote_sha; do
   else
     range="${remote_sha}..${local_sha}"
   fi
-  "${gitleaks}" git "${repo_root}" --config "${project_root}/.gitleaks.toml" \
+  "${gitleaks}" git "${repo_root}" --config "${project_root}/config/gitleaks/gitleaks.toml" \
     --redact --ignore-gitleaks-allow --no-banner \
     --log-opts="${range} -m --text --no-color" </dev/null || exit 1
 done

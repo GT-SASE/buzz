@@ -184,7 +184,7 @@ No system is unhackable, and this one makes no such claim. The aim is to keep th
 **Secrets and supply chain**
 
 - Nothing logs a request body or interaction token. Logs hold fixed text, IDs and error codes.
-- Gitleaks scans every commit in CI and the pushed commits in a pre-push hook, with the default rules plus three project rules in `.gitleaks.toml`. `bun.lock` (the repository's) is committed and CI installs with `bun install --frozen-lockfile`. The bot's own dependencies are pinned to exact versions, Actions are pinned by SHA, and Dependabot has a 7-day cooldown with no auto-merge.
+- Gitleaks scans every commit in CI and the pushed commits in a pre-push hook, with the default rules plus three project rules in `config/gitleaks/gitleaks.toml`. `bun.lock` (the repository's) is committed and CI installs with `bun install --frozen-lockfile`. The bot's own dependencies are pinned to exact versions, Actions are pinned by SHA, and Dependabot has a 7-day cooldown with no auto-merge.
 
 **Backups**
 
@@ -253,7 +253,7 @@ Gitleaks scans every commit on every ref, as CI does. You need a full clone.
 
 ```sh
 test ! -e .gitleaksignore
-.tools/gitleaks git . --config .gitleaks.toml --redact --ignore-gitleaks-allow --no-banner --log-opts="--all -m --text --no-color"
+.tools/gitleaks git . --config config/gitleaks/gitleaks.toml --redact --ignore-gitleaks-allow --no-banner --log-opts="--all -m --text --no-color"
 ```
 
 The repository's [CI](../../.github/workflows/ci.yml) lints, type checks and formats the bot with the rest of buzz, runs its unit and PGlite tests, builds its functions and loads them from outside the repository, and scans every commit with gitleaks. [Discord bot database](../../.github/workflows/discord-bot-db.yml) runs the concurrency tests on Postgres 17, only when `sites/discord-bot/**` or `bun.lock` changes.

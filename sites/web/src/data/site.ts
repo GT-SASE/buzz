@@ -113,7 +113,7 @@ export const footerLinks = [{ label: "FAQ", href: "/faq" }] as const;
 /**
  * Membership is a portal account, so joining is signing in. Every join button
  * and nav link goes here. `/join` is the explainer page, reached only by text
- * links that say they explain (tests/join-links.test.ts holds the line).
+ * links that say they explain (tests/web/join-links.test.ts holds the line).
  */
 export const joinHref = signInPath("/portal/start");
 
