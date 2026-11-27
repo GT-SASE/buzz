@@ -8,18 +8,18 @@ An officer assigns a task, and the bot pings the assignee with its authority beh
 
 ## Decision
 
-**Quotas.** Triggers enforce both limits when a task is inserted or a reassignment recorded, taking advisory locks so that two writes at once cannot pass a count together. The triggers refuse any isolation level above Read Committed, where a count could miss what the lock made it wait for. The reply gives no number.
+**Quotas.** The bot enforces both limits (`src/db/rules.ts`) when a task is inserted or a reassignment recorded, taking advisory locks so that two writes at once cannot pass a count together. It refuses any isolation level above Read Committed, where a count could miss what the lock made it wait for. The reply gives no number.
 
 | Limit                 | Value | Counts                                                                                                                                   |
 | --------------------- | ----- | ---------------------------------------------------------------------------------------------------------------------------------------- |
 | Tasks on one event    | 100   | Live tasks, done ones included. This matches the most that a read of an event's tasks returns.                                           |
 | Pings from one person | 50    | New tasks and reassignments by one officer in one guild in any 24 hours, deleted tasks included, so that deleting does not free up room. |
 
-A busy event has a few dozen tasks and a busy officer sets up a few at a time, so neither limit should be felt in normal use. To change one, change it in the triggers, with a new migration. The numbers live only there.
+A busy event has a few dozen tasks and a busy officer sets up a few at a time, so neither limit should be felt in normal use. To change one, change it in `src/db/rules.ts`. The numbers live only there.
 
 **Links.** A plain URL is allowed, because tasks often need one, and is rendered as inert text that nothing can click. A server invite or a masked link is refused: those are the forms that disguise where they go, or bring people somewhere new on the bot's authority. Escaping leaves them inert too, and `SUPPRESS_EMBEDS` stops previews, so the refusal is a second layer.
 
-**Closed events are frozen.** A task on a closed or deleted event cannot be assigned, edited, deleted or marked done, and it leaves `/mytasks` and the pickers. A trigger enforces this for every change of work, reading the event `FOR SHARE` so that a close and a change cannot pass each other. Soft deletes are not caught by it. Nothing is lost, as the rows stay as they were.
+**Closed events are frozen.** A task on a closed or deleted event cannot be assigned, edited, deleted or marked done, and it leaves `/mytasks` and the pickers. The bot enforces this for every change of work, reading the event `FOR SHARE` so that a close and a change cannot pass each other. Soft deletes are not caught by it. Nothing is lost, as the rows stay as they were.
 
 **Editing.** All three fields are written at once and the write names the `updated_at` the gate read, so an edit lands whole or is refused. A changed due date restarts the task's reminders because the log is keyed by date, and the reply says so.
 

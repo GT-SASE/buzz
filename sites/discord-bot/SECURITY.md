@@ -18,14 +18,14 @@ No system is unhackable, and this one makes no such claim. The aim is to keep th
 
 The tests stand in for Discord, Vercel and Neon, so the controls below are proved against the real services only by the smoke checks in [docs/STAGING_CHECKLIST.md](docs/STAGING_CHECKLIST.md). [README.md](README.md) gives the current status.
 
-| Area              | Control                                                                                                  |
-| ----------------- | -------------------------------------------------------------------------------------------------------- |
-| Incoming requests | Signature checked on the raw body, old timestamps refused, allowlisted servers only                      |
-| Cron endpoint     | Protected by a shared secret, on the assumption that the URL is public                                   |
-| Authorization     | Deny by default, with each action checked against the stored row rather than client-supplied values      |
-| Database          | One narrow login role, column-level grants, no `DELETE` or `TRUNCATE` for the bot, triggers, row history |
-| Outgoing messages | One send helper, text escaped when rendered, mentions limited to named users, managed channels only      |
-| Recovery          | Soft deletes, row history, Neon's point-in-time restore and occasional private exports                   |
+| Area              | Control                                                                                             |
+| ----------------- | --------------------------------------------------------------------------------------------------- |
+| Incoming requests | Signature checked on the raw body, old timestamps refused, allowlisted servers only                 |
+| Cron endpoint     | Protected by a shared secret, on the assumption that the URL is public                              |
+| Authorization     | Deny by default, with each action checked against the stored row rather than client-supplied values |
+| Database          | One narrow login role, column-level grants, no `DELETE` or `TRUNCATE` for the bot, row history      |
+| Outgoing messages | One send helper, text escaped when rendered, mentions limited to named users, managed channels only |
+| Recovery          | Soft deletes, row history, Neon's point-in-time restore and occasional private exports              |
 
 The bot shares a database with buzz. `bot_app` has no grant on buzz's tables, but a function created in `public` is executable by every role through Postgres's default PUBLIC grant, so any such function must `REVOKE EXECUTE ... FROM PUBLIC`. buzz has none today.
 
@@ -33,9 +33,9 @@ The bot shares a database with buzz. `bot_app` has no grant on buzz's tables, bu
 
 The bot writes its tables itself, in TypeScript (`src/db`), inside transactions that lock the rows they change, check the version or claim token they read, and write the audit row. It used to call roughly thirty `SECURITY DEFINER` database functions instead, and the login had no write access to most tables. It also does, in the same transactions, what the database's triggers did around a write: keeps the old version of the row in `discord_bot.row_versions`, moves `updated_at`, refuses to undelete a row or reopen a closed event, refuses a task or event under a closed, deleted or removed parent, gives a new event its steps, checks a guild's time zone, and counts the task and reassignment quotas under locks taken in a fixed order.
 
-Until the migration that drops them runs, the triggers and the old functions are still in the database, so the code deployed before and after the switch both work. While both write, a change leaves one history row: a unique index over the transaction, the table, the row and the old version makes the second writer's insert a no-op. After the drop, these are enforced by the bot's code only, and a hostile `bot_app` login could skip them:
+The database has no triggers or functions of its own. A hostile `bot_app` login could skip these, which only the bot's code enforces:
 
-- the history of a change (it can also add rows to `row_versions`, which it cannot read, change or remove);
+- the history of a change (it can add rows to `row_versions`, which it cannot change or remove, and until a later migration revokes it, read in four columns);
 - the task and reassignment quotas, and the checks on a deleted row, a closed event and a removed channel;
 - the config version check, the audit row of a config change, the hand-off and reminder claim tokens, the assignee limit of a step, and the order in which steps may be done.
 

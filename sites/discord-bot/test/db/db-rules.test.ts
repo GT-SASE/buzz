@@ -11,13 +11,10 @@ import {
   claimInteraction,
 } from "../../src/db/interaction-claims.ts";
 import { todayInZone, type DateOnly } from "../../src/lib/dates.ts";
-import { softDeleteEvent } from "../../src/db/events.ts";
 import {
   assignEventStep,
   claimEventReminder,
-  claimStepHandoff,
   closeStaleEventClaim,
-  completeEventStep,
   setEventPickupTime,
 } from "../../src/db/event-steps.ts";
 import {
@@ -28,7 +25,6 @@ import {
   reclaimReminder,
 } from "../../src/db/reminders.ts";
 import { saveSetupDraft } from "../../src/db/guild-config.ts";
-import { editTask } from "../../src/db/tasks.ts";
 import type { EventReminderKind } from "../../src/db/types.ts";
 import { pgliteOrm } from "../support/sql-client.ts";
 import { evaluate } from "../../src/db/internal.ts";
@@ -47,7 +43,6 @@ import {
   HOOK_TIMEOUT_MS,
   INSUFFICIENT_PRIVILEGE,
   MIGRATION_OWNER,
-  NO_TRIGGERS,
   OTHER_ROLE,
   createMigratedDb,
   errorCodeOf,
@@ -59,7 +54,6 @@ import {
 const CHECK_VIOLATION = "23514";
 const FOREIGN_KEY_VIOLATION = "23503";
 const UNIQUE_VIOLATION = "23505";
-const PARENT_UNAVAILABLE = "CF410";
 
 /** The tables bot_app reads. */
 const ALL_TABLES = [
@@ -260,8 +254,6 @@ describe("grants", () => {
   it.each([
     "ALTER TABLE discord_bot.tasks ADD COLUMN forged text",
     "ALTER TABLE discord_bot.tasks DISABLE TRIGGER ALL",
-    "SELECT discord_bot.require_open_parent()",
-    "ALTER FUNCTION discord_bot.record_row_version() SECURITY INVOKER",
     "CREATE TABLE discord_bot.forged (id int)",
     "ALTER ROLE bot_app CREATEROLE",
   ])("bot_app cannot run %s", async (sql) => {
@@ -303,53 +295,7 @@ describe("grants", () => {
   });
 });
 
-describe.skipIf(NO_TRIGGERS)("row history", () => {
-  const versionsOf = async (rowId: string) => {
-    const { rows } = await db.query<{
-      source_table: string;
-      operation: string;
-      old_row: Record<string, unknown>;
-    }>(
-      `SELECT source_table, operation, old_row FROM discord_bot.row_versions WHERE row_id = $1 ORDER BY id`,
-      [rowId],
-    );
-    return rows;
-  };
-
-  it("keeps the old row of each update and soft delete, in order, and not the insert", async () => {
-    const eventId = await insertEvent(db, guild);
-    await asBot(
-      `UPDATE discord_bot.events SET name = 'Renamed' WHERE id = $1`,
-      [eventId],
-    );
-    expect(await versionsOf(eventId)).toMatchObject([
-      {
-        source_table: "events",
-        operation: "UPDATE",
-        old_row: { name: "General meeting" },
-      },
-    ]);
-
-    const taskId = await newTask();
-    await asOwner(
-      `UPDATE discord_bot.tasks SET description = 'Second' WHERE id = $1`,
-      [taskId],
-    );
-    await asBot(
-      `UPDATE discord_bot.tasks SET deleted_at = now() WHERE id = $1`,
-      [taskId],
-    );
-    expect(
-      (await versionsOf(taskId)).map(({ old_row }) => [
-        old_row.description,
-        old_row.deleted_at,
-      ]),
-    ).toEqual([
-      ["Book the room", null],
-      ["Second", null],
-    ]);
-  });
-
+describe("row history", () => {
   it.each([BOT_APP, OTHER_ROLE])(
     "%s cannot read, change or remove the row history, and only the bot adds to it",
     async (role) => {
@@ -357,22 +303,25 @@ describe.skipIf(NO_TRIGGERS)("row history", () => {
         `SELECT
            has_table_privilege($1, 'discord_bot.row_versions', 'SELECT') AS table_select,
            has_table_privilege($1, 'discord_bot.row_versions', 'INSERT') AS table_insert,
-           has_function_privilege($1, 'discord_bot.record_row_version()', 'EXECUTE') AS fn_execute`,
+           has_column_privilege($1, 'discord_bot.row_versions', 'old_row', 'SELECT') AS column_select`,
         [role],
       );
       expect(rows).toEqual([
         {
           table_select: false,
           table_insert: role === BOT_APP,
-          fn_execute: false,
+          // The bot reads four columns until a later migration takes that back.
+          column_select: role === BOT_APP,
         },
       ]);
       for (const sql of [
         `SELECT * FROM discord_bot.row_versions`,
+        ...(role === BOT_APP
+          ? [`SELECT id FROM discord_bot.row_versions`]
+          : [`SELECT old_row FROM discord_bot.row_versions`]),
         `UPDATE discord_bot.row_versions SET old_row = '{}'`,
         `DELETE FROM discord_bot.row_versions`,
         `TRUNCATE discord_bot.row_versions`,
-        `DROP TRIGGER tasks_record_update ON discord_bot.tasks`,
         ...(role === BOT_APP
           ? []
           : [
@@ -383,179 +332,6 @@ describe.skipIf(NO_TRIGGERS)("row history", () => {
       }
     },
   );
-});
-
-describe.skipIf(NO_TRIGGERS)("deleted and closed rows", () => {
-  const column = async (table: string, name: string, id: string) => {
-    const { rows } = await db.query<Record<string, unknown>>(
-      `SELECT ${name} FROM discord_bot.${table} WHERE id = $1`,
-      [id],
-    );
-    return rows[0]?.[name];
-  };
-
-  it.each([
-    ["undeleted", "NULL"],
-    ["given another deletion time", "now() - interval '1 day'"],
-  ])(
-    "a deleted task cannot be %s by the bot, only by the owner",
-    async (_label, value) => {
-      const taskId = await newTask();
-      const sql = `UPDATE discord_bot.tasks SET deleted_at = ${value} WHERE id = $1`;
-      await asBot(
-        "UPDATE discord_bot.tasks SET deleted_at = now() WHERE id = $1",
-        [taskId],
-      );
-      await refused(BOT_APP, sql, [taskId]);
-      await asOwner(sql, [taskId]);
-    },
-  );
-
-  it("a deleted event cannot be undeleted by the bot", async () => {
-    const eventId = await insertEvent(db, guild);
-    must(await softDeleteEvent(bot(), { eventId, guildId: guild.guildId }));
-    await refused(
-      BOT_APP,
-      "UPDATE discord_bot.events SET deleted_at = NULL WHERE id = $1",
-      [eventId],
-    );
-  });
-
-  it("a closed event cannot be reopened by the bot, only by the owner", async () => {
-    const eventId = await insertEvent(db, guild);
-    const reopen =
-      "UPDATE discord_bot.events SET status = 'active' WHERE id = $1";
-    await asBot(
-      "UPDATE discord_bot.events SET status = 'closed' WHERE id = $1",
-      [eventId],
-    );
-    await refused(BOT_APP, reopen, [eventId]);
-
-    // Other columns, and a repeated close, are still allowed.
-    await asBot(
-      "UPDATE discord_bot.events SET status = 'closed', name = 'Renamed' WHERE id = $1",
-      [eventId],
-    );
-    await asOwner(reopen, [eventId]);
-    expect(await column("events", "status", eventId)).toBe("active");
-  });
-
-  it("lets a new event adopt a deleted event's thread, and then refuses the undelete", async () => {
-    const threadId = fakeId();
-    const link = (eventId: string) =>
-      asBot(
-        `UPDATE discord_bot.events SET thread_id = $2, thread_status = 'active' WHERE id = $1`,
-        [eventId, threadId],
-      );
-    const oldEvent = await insertEvent(db, guild);
-    await link(oldEvent);
-    must(
-      await softDeleteEvent(bot(), {
-        eventId: oldEvent,
-        guildId: guild.guildId,
-      }),
-    );
-    expect(
-      await errorCodeOf(link(await insertEvent(db, guild))),
-    ).toBeUndefined();
-    expect(
-      await errorCodeOf(
-        asOwner(
-          `UPDATE discord_bot.events SET deleted_at = NULL WHERE id = $1`,
-          [oldEvent],
-        ),
-      ),
-    ).toBe(UNIQUE_VIOLATION);
-  });
-
-  it.each([
-    ["deleted", "soft delete"],
-    ["closed", `UPDATE discord_bot.events SET status = 'closed' WHERE id = $1`],
-  ])("rejects a new task on a %s event", async (name, sql) => {
-    const eventId = await insertEvent(db, guild);
-    if (name === "deleted") {
-      must(await softDeleteEvent(bot(), { eventId, guildId: guild.guildId }));
-    } else {
-      await asBot(sql, [eventId]);
-    }
-    expect(await errorCodeOf(insertTask(db, guild, eventId))).toBe(
-      PARENT_UNAVAILABLE,
-    );
-  });
-
-  it("rejects an event on a removed channel but allows an unavailable one", async () => {
-    const eventOn = async (status: string) => {
-      const channelId = fakeId();
-      await asOwner(
-        `INSERT INTO discord_bot.managed_channels (guild_id, channel_id, status) VALUES ($1, $2, $3)`,
-        [guild.guildId, channelId, status],
-      );
-      return errorCodeOf(
-        asBot(
-          `INSERT INTO discord_bot.events (guild_id, channel_id, name, event_date, created_by)
-           VALUES ($1, $2, 'Social', '2030-02-01', $3)`,
-          [guild.guildId, channelId, fakeId()],
-        ),
-      );
-    };
-    expect(await eventOn("removed")).toBe(PARENT_UNAVAILABLE);
-    expect(await eventOn("unavailable")).toBeUndefined();
-  });
-
-  it("refuses a step's hand-off on a closed event", async () => {
-    const eventId = await insertEvent(db, guild);
-    must(
-      await completeEventStep(bot(), {
-        eventId,
-        guildId: guild.guildId,
-        kind: "budget_sheet",
-        actorId: fakeId(),
-      }),
-    );
-    await asBot(
-      "UPDATE discord_bot.events SET status = 'closed' WHERE id = $1",
-      [eventId],
-    );
-    const handoff = await claimStepHandoff(bot(), {
-      eventId,
-      guildId: guild.guildId,
-      kind: "budget_sheet",
-    });
-    expect(handoff).toEqual({
-      ok: false,
-      error: { category: "parent_unavailable", code: PARENT_UNAVAILABLE },
-    });
-  });
-
-  it("counts a task edit against the officer's limit only when the person changes", async () => {
-    const taskId = await newTask();
-    const actor = fakeId();
-    const edit = async (assignee?: string) => {
-      const { rows } = await db.query<{ assignee_id: string; v: string }>(
-        "SELECT assignee_id, updated_at::text AS v FROM discord_bot.tasks WHERE id = $1",
-        [taskId],
-      );
-      must(
-        await editTask(bot(), {
-          taskId,
-          guildId: guild.guildId,
-          expectedUpdatedAt: rows[0]?.v ?? "",
-          description: "Book the room",
-          dueDate: "2030-01-10" as DateOnly,
-          assigneeId: assignee ?? rows[0]?.assignee_id ?? "",
-          actorId: actor,
-        }),
-      );
-      const counted = await db.query<{ n: number }>(
-        "SELECT count(*)::int AS n FROM discord_bot.task_reassignments WHERE actor_id = $1",
-        [actor],
-      );
-      return counted.rows[0]?.n;
-    };
-
-    expect(await edit()).toBe(0);
-    expect(await edit(fakeId())).toBe(1);
-  });
 });
 
 describe("schema constraints", () => {

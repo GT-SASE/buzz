@@ -14,7 +14,6 @@ import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import {
   HOOK_TIMEOUT_MS,
   MIGRATIONS_DIR,
-  NO_TRIGGERS,
   createMigratedDb,
   migrateWithDrizzle,
   newServer,
@@ -77,24 +76,30 @@ const SNAPSHOT = `
 const snapshot = async (db: PGlite): Promise<unknown[]> =>
   (await db.query(SNAPSHOT)).rows;
 
-/** Two journal entries, 0000 and 0001: what production held before this change. */
-function olderMigrations(): string {
+/** The first `count` journal entries: what production held before the later ones. */
+function olderMigrations(count = 2): string {
   const folder = mkdtempSync(join(tmpdir(), "bot-migrations-"));
   cpSync(MIGRATIONS_DIR, folder, { recursive: true });
   const journalPath = join(folder, "meta", "_journal.json");
   const journal = JSON.parse(readFileSync(journalPath, "utf8")) as {
     entries: unknown[];
   };
-  journal.entries = journal.entries.slice(0, 2);
+  journal.entries = journal.entries.slice(0, count);
   writeFileSync(journalPath, JSON.stringify(journal));
   return folder;
 }
 
 let fresh: PGlite;
 let stepped: PGlite;
+let released: PGlite;
 
 beforeAll(async () => {
   fresh = await createMigratedDb();
+  // The test support's stand-in for the steps a trigger used to make is not part of the schema.
+  await fresh.exec(`
+    DROP TRIGGER test_seed_steps ON discord_bot.events;
+    DROP FUNCTION discord_bot.test_seed_steps();
+  `);
   stepped = await newServer();
   await migrateWithDrizzle(stepped, olderMigrations());
   // History from before 0002, as the trigger wrote it: a row that went back to an
@@ -108,11 +113,26 @@ beforeAll(async () => {
       ('tasks', 'UPDATE', 'a', '{"state": 1}', '2030-04-01')
   `);
   await migrateWithDrizzle(stepped);
+
+  // What the bot ran on before the triggers were dropped: all four migrations, and a
+  // function left over from a database that was built before the baseline.
+  released = await newServer();
+  await migrateWithDrizzle(released, olderMigrations(4));
+  await released.exec(`
+    SET ROLE migration_owner;
+    CREATE FUNCTION discord_bot.claim_interaction(text) RETURNS boolean
+      LANGUAGE sql AS 'SELECT true';
+    RESET ROLE;
+    INSERT INTO discord_bot.row_versions (source_table, operation, row_id, old_row)
+    VALUES ('tasks', 'UPDATE', 'kept', '{"state": 1}');
+  `);
+  await migrateWithDrizzle(released);
 }, HOOK_TIMEOUT_MS);
 
 afterAll(async () => {
   await fresh.close();
   await stepped.close();
+  await released.close();
 });
 
 describe("0002 on a database that holds history", () => {
@@ -153,7 +173,7 @@ describe("0002 on a database that holds history", () => {
   });
 });
 
-describe.skipIf(NO_TRIGGERS)("a database migrated in two steps", () => {
+describe("a database migrated in two steps", () => {
   it("is the database a fresh server gets: columns, keys, indexes, triggers, grants and policies", async () => {
     const left = await snapshot(stepped);
     expect(left.length).toBeGreaterThan(300);
@@ -172,5 +192,30 @@ describe.skipIf(NO_TRIGGERS)("a database migrated in two steps", () => {
     const before = await snapshot(stepped);
     await migrateWithDrizzle(stepped);
     expect(await snapshot(stepped)).toEqual(before);
+  });
+});
+
+describe("0004 on a database that still has the triggers", () => {
+  const one = async (sql: string) =>
+    (await released.query<{ n: number }>(sql)).rows[0]?.n;
+
+  it("drops every trigger and every function of the bot, the old ones too", async () => {
+    expect(
+      await one(`SELECT count(*)::int AS n FROM pg_trigger g
+        JOIN pg_class c ON c.oid = g.tgrelid
+        WHERE c.relnamespace = 'discord_bot'::regnamespace AND NOT g.tgisinternal`),
+    ).toBe(0);
+    expect(
+      await one(`SELECT count(*)::int AS n FROM pg_proc
+        WHERE pronamespace = 'discord_bot'::regnamespace`),
+    ).toBe(0);
+  });
+
+  it("keeps the history it holds", async () => {
+    expect(
+      await one(
+        "SELECT count(*)::int AS n FROM discord_bot.row_versions WHERE row_id = 'kept'",
+      ),
+    ).toBe(1);
   });
 });
