@@ -679,8 +679,8 @@ export const eventRouter = createTRPCRouter({
       }),
     )
     .query(async ({ ctx, input }) => {
-      // All four reads key off `input.id`, so they share one round trip. A
-      // missing event just means the other three come back empty and unused.
+      // All six reads key off `input.id`, so they share one round trip. A
+      // missing event just means the other five come back empty and unused.
       const [event, roster, [rosterCount], rsvps, waitlist, series] =
         await Promise.all([
           ctx.db.query.events.findFirst({
