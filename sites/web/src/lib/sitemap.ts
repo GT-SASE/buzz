@@ -30,10 +30,10 @@ const routes = [
   { path: "/status", priority: 0.3, changeFrequency: "daily" },
 ] as const;
 
-export type PublishedPageEntry = { slug: string; updatedAt: Date };
+type PublishedPageEntry = { slug: string; updatedAt: Date };
 
 /** A public event page. `upcoming` ranks it above the archive. */
-export type EventPageEntry = {
+type EventPageEntry = {
   id: string;
   modifiedAt: Date;
   upcoming: boolean;

@@ -4,7 +4,7 @@ import { SaseDino } from "~/components/site/hive";
 import { cn } from "~/lib/utils";
 
 /** The strap a badge hangs from: navy and gold, cut to a taper. */
-export function Strap({ className }: { className?: string }) {
+function Strap({ className }: { className?: string }) {
   return (
     <div
       aria-hidden="true"

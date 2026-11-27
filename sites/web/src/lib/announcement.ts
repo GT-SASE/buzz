@@ -15,7 +15,7 @@ export type Announcement = {
  * The columns the banner is stored in, see `routers/announcement.ts`:
  * title is the message, description the link label, body the link target.
  */
-export type AnnouncementRow = {
+type AnnouncementRow = {
   title: string;
   description: string;
   body: string;

@@ -90,7 +90,7 @@ export type CalendarEvent = {
   allDay?: { start: string; end: string };
 };
 
-export type CalendarOptions = {
+type CalendarOptions = {
   /** `PRODID`: who made the calendar. */
   productId: string;
   name: string;

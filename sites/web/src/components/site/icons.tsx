@@ -11,7 +11,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-export const iconMap = {
+const iconMap = {
   briefcase: Briefcase,
   compass: Compass,
   terminal: Terminal,
@@ -23,7 +23,7 @@ export const iconMap = {
   handshake: Handshake,
 } satisfies Record<string, LucideIcon>;
 
-export type IconName = keyof typeof iconMap;
+type IconName = keyof typeof iconMap;
 
 export function Icon({
   name,

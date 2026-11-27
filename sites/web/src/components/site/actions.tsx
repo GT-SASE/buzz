@@ -27,7 +27,7 @@ const actionVariants = {
     "text-white border-b-2 border-white/35 hover:border-gold-bright hover:text-gold-bright rounded-none bg-transparent px-0 pb-1.5 -mb-1.5 hover:bg-transparent",
 } as const;
 
-export type ActionVariant = keyof typeof actionVariants;
+type ActionVariant = keyof typeof actionVariants;
 
 export function Button({
   href,

@@ -1,6 +1,6 @@
 import { committees, type PublicCommitteeId } from "./committees";
 
-export type InterviewQuestion = {
+type InterviewQuestion = {
   id: string;
   prompt: string;
 };
