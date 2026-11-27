@@ -27,6 +27,7 @@
         "tsrs": "0.20.1-ts7.1.0-beta",
         "turbo": "^2.11.11",
         "typescript": "6.0.3",
+        "typescript-7": "npm:typescript@^7.0.0",
         "typescript-eslint": "^8.73.0",
       },
     },

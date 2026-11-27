@@ -66,10 +66,14 @@ runtime.
 
 ## TypeScript
 
-Everything type-checks under **TypeScript 7**. The workspace root additionally
-pins `typescript` to 6.x, because `typescript-eslint` reads the compiler API
-directly and its peer range stops at `<6.1.0`; `typescript-7` is the alias that
-`tsc` actually runs. `postcss.config.js` is the one file still in JavaScript —
+Everything type-checks under **TypeScript 7**, targeting **ES2025**, root
+included. `typescript` 6.x stays installed only as a parser library:
+`typescript-eslint` reads its compiler API, and its peer range stops at `<6.1.0`;
+the MCP server parses router files with it. TypeScript 7 has no stable JS API
+yet (only `typescript/unstable/*`), so neither can move until it does. Where both
+are installed the `tsc` bin resolves to 6.x, so those `typecheck:tsc` scripts
+call `node_modules/typescript-7/bin/tsc` by path.
+`postcss.config.js` is the one file still in JavaScript —
 Next 16.3 only resolves `postcss.config.{js,mjs,json}`.
 
 `bun run typecheck` runs [tsrs](https://github.com/oxc-project/tsrs), the Rust port

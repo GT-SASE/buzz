@@ -16,7 +16,7 @@
   "scripts": {
     "start": "bun src/index.ts",
     "typecheck": "tsrs --noEmit --fast",
-    "typecheck:tsc": "tsc --noEmit"
+    "typecheck:tsc": "bun node_modules/typescript-7/bin/tsc --noEmit"
   },
   "dependencies": {
     "@buzz/db": "workspace:*",
