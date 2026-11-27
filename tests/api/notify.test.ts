@@ -40,7 +40,6 @@ mock.module("nodemailer", () => ({
 }));
 
 const {
-  announcesElectionPhase,
   noNotice,
   notifyApplicationDecision,
   notifyElectionPhase,
@@ -426,7 +425,6 @@ describe("notifyElectionPhase", () => {
     );
 
     expect(notice).toEqual(noNotice);
-    expect(announcesElectionPhase("closed")).toBe(false);
     expect(loadRecipients).not.toHaveBeenCalled();
     expect(sent).toHaveLength(0);
     expect(posts).toHaveLength(0);

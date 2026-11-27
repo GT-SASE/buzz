@@ -38,7 +38,6 @@ const webAndTooling = tseslint.config(
     files: ["**/*.ts", "**/*.tsx"],
     plugins: { drizzle },
     extends: [
-      ...tseslint.configs.recommended,
       ...tseslint.configs.recommendedTypeChecked,
       ...tseslint.configs.stylisticTypeChecked,
     ],

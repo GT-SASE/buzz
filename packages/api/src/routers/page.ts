@@ -263,7 +263,7 @@ export const pageRouter = createTRPCRouter({
   /** A page starts as a draft: it is not on the public site until `publish`. */
   create: adminProcedure.input(draftInput).mutation(async ({ ctx, input }) => {
     try {
-      const created = await needsVersions(() =>
+      return await needsVersions(() =>
         ctx.db.transaction(async (tx) => {
           const [page] = await tx
             .insert(pages)
@@ -290,7 +290,6 @@ export const pageRouter = createTRPCRouter({
           return page!;
         }),
       );
-      return created;
     } catch (error) {
       if (isUniqueViolation(error)) slugTaken();
       throw error;

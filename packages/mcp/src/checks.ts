@@ -129,10 +129,7 @@ export async function runChecks(
   return { ok: true, output };
 }
 
-function runBun(
-  args: string[],
-  env: NodeJS.ProcessEnv,
-): Promise<{ ok: boolean; output: string }> {
+function runBun(args: string[], env: NodeJS.ProcessEnv): Promise<CheckResult> {
   return new Promise((resolve) => {
     const child = spawn("bun", args, { cwd: repoRoot, env });
     let out = "";

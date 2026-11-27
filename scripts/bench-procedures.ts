@@ -34,12 +34,7 @@ const { schoolYear, semester } = await import("../packages/api/src/terms");
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
 const url = process.env.DATABASE_URL ?? "";
-let host = "";
-try {
-  host = new URL(url).hostname;
-} catch {
-  // falls through to the refusal below
-}
+const host = URL.canParse(url) ? new URL(url).hostname : "";
 if (!LOCAL_HOSTS.has(host)) {
   throw new Error(
     "Refusing to run: DATABASE_URL must point at localhost / 127.0.0.1 (a disposable database).",
@@ -94,8 +89,6 @@ async function seed() {
   await db.execute(sql`delete from buzz_user where id like 'bench-%'`);
   const year = schoolYear(new Date());
   const term = semester(new Date());
-  const [term0, yr0] = term.split("-");
-  const kinYear = year;
 
   await db.execute(sql`
     insert into buzz_user (id, name, email, role)
@@ -130,10 +123,10 @@ async function seed() {
   // Kin: 12 groups this semester, every member enrolled, ~300 seated.
   await db.execute(sql`
     insert into buzz_kin_group (id, year, semester, name, capacity, "isOpen", "createdAt")
-    select 'bench-g' || i, ${kinYear}, ${term}, 'Kin ' || i, 40, true, now() from generate_series(0, 11) i`);
+    select 'bench-g' || i, ${year}, ${term}, 'Kin ' || i, 40, true, now() from generate_series(0, 11) i`);
   await db.execute(sql`
     insert into buzz_mentorship_enrollment ("userId", year, role, status, points, "createdAt")
-    select 'bench-u' || i, ${kinYear}, case when i % 4 = 0 then 'mentor' else 'mentee' end,
+    select 'bench-u' || i, ${year}, case when i % 4 = 0 then 'mentor' else 'mentee' end,
            'enrolled', i % 30, now() from generate_series(0, 399) i`);
   await db.execute(sql`
     insert into buzz_kin_membership ("userId", semester, "groupId", points, "joinedAt")
@@ -175,8 +168,6 @@ async function seed() {
     )
     .catch(() => undefined);
   await db.execute(sql`analyze`);
-  void term0;
-  void yr0;
 }
 
 // -------------------------------------------------------------------- cases
@@ -193,7 +184,6 @@ const member = createCaller(ctxFor("bench-u1", "MEMBER"));
 const admin = createCaller(ctxFor("bench-u0", "ADMIN"));
 
 type Case = { name: string; run: () => Promise<unknown> };
-const swallow = <T>(p: Promise<T>) => p.catch(() => null);
 
 const cases: Case[] = [
   { name: "event.home", run: () => member.event.home() },
@@ -207,7 +197,7 @@ const cases: Case[] = [
   { name: "mentorship.groups", run: () => member.mentorship.groups() },
   { name: "committee.mine", run: () => member.committee.mine() },
   { name: "election.current", run: () => member.election.current() },
-  { name: "resume.mine", run: () => swallow(member.resume.mine()) },
+  { name: "resume.mine", run: () => member.resume.mine().catch(() => null) },
   { name: "chapter.overview", run: () => admin.chapter.overview() },
   {
     name: "chapter.attendance",
@@ -285,13 +275,11 @@ const pct = (sorted: number[], p: number) =>
 async function measure(c: Case, conc: number) {
   const times: number[] = [];
   queryCount = 0;
-  let calls = 0;
   const worker = async (count: number) => {
     for (let i = 0; i < count; i += 1) {
       const t = performance.now();
       await c.run();
       times.push(performance.now() - t);
-      calls += 1;
     }
   };
   await Promise.all(
@@ -302,7 +290,7 @@ async function measure(c: Case, conc: number) {
     p50: pct(times, 50),
     p95: pct(times, 95),
     p99: pct(times, 99),
-    qpc: queryCount / calls,
+    qpc: queryCount / times.length,
   };
 }
 

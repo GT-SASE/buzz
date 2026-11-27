@@ -86,10 +86,6 @@ export function addLocalDays(date: Date, days: number): Date {
   });
 }
 
-function cadenceDays(cadence: EventCadence) {
-  return cadence === "weekly" ? 7 : 14;
-}
-
 /**
  * The start times of a series. `count` occurrences, or as many as fit up to
  * and including `until`, never more than MAX_OCCURRENCES and always at least
@@ -100,7 +96,7 @@ export function occurrenceStarts(
   cadence: EventCadence,
   limit: { count: number } | { until: Date },
 ): Date[] {
-  const step = cadenceDays(cadence);
+  const step = cadence === "weekly" ? 7 : 14;
   const starts: Date[] = [];
   for (let i = 0; i < MAX_OCCURRENCES; i++) {
     const start = i === 0 ? first : addLocalDays(first, i * step);

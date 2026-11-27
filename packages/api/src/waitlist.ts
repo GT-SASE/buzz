@@ -23,7 +23,7 @@ import {
  * is "limited" to 40 takes 40 RSVPs and then a waitlist.
  */
 
-type Transaction = Parameters<Parameters<typeof Db.transaction>[0]>[0];
+export type Transaction = Parameters<Parameters<typeof Db.transaction>[0]>[0];
 type Reader = Pick<typeof Db, "select">;
 
 /**
@@ -64,12 +64,30 @@ export function lockEvent(tx: Transaction, eventId: string) {
     .for("update");
 }
 
-async function rsvpCount(tx: Transaction, eventId: string) {
+export async function rsvpCount(tx: Transaction, eventId: string) {
   const [row] = await tx
     .select({ total: count() })
     .from(eventRsvps)
     .where(eq(eventRsvps.eventId, eventId));
   return Number(row?.total ?? 0);
+}
+
+/** 1 is next in line: how many joined at or before `joinedAt`. */
+export async function waitlistPlace(
+  db: Reader,
+  eventId: string,
+  joinedAt: Date,
+) {
+  const [ahead] = await db
+    .select({ total: count() })
+    .from(eventWaitlist)
+    .where(
+      and(
+        eq(eventWaitlist.eventId, eventId),
+        lte(eventWaitlist.createdAt, joinedAt),
+      ),
+    );
+  return Math.max(Number(ahead?.total ?? 1), 1);
 }
 
 /**
@@ -91,21 +109,15 @@ export async function promoteWaitlist(
 ): Promise<Promoted[]> {
   if (event.archivedAt !== null || event.startsAt.getTime() <= now) return [];
 
-  let free: number;
-  if (event.maxCheckIns === null) {
-    // The cap was lifted: everyone waiting gets in.
-    free = Number.MAX_SAFE_INTEGER;
-  } else {
-    free = event.maxCheckIns - (await rsvpCount(tx, event.id));
-  }
+  // No cap: it was lifted, so everyone waiting gets in.
+  const free =
+    event.maxCheckIns === null
+      ? Number.MAX_SAFE_INTEGER
+      : event.maxCheckIns - (await rsvpCount(tx, event.id));
   if (free <= 0) return [];
 
   const next = await tx
-    .select({
-      id: eventWaitlist.userId,
-      email: users.email,
-      joinedAt: eventWaitlist.createdAt,
-    })
+    .select({ id: eventWaitlist.userId, email: users.email })
     .from(eventWaitlist)
     .innerJoin(users, eq(users.id, eventWaitlist.userId))
     .where(eq(eventWaitlist.eventId, event.id))
@@ -126,7 +138,7 @@ export async function promoteWaitlist(
     .insert(eventRsvps)
     .values(ids.map((userId) => ({ eventId: event.id, userId })))
     .onConflictDoNothing();
-  return next.map(({ id, email }) => ({ id, email }));
+  return next;
 }
 
 /**
@@ -189,18 +201,9 @@ export async function seatStates(
       );
     await Promise.all(
       mine.map(async (row) => {
-        const [ahead] = await db
-          .select({ total: count() })
-          .from(eventWaitlist)
-          .where(
-            and(
-              eq(eventWaitlist.eventId, row.eventId),
-              lte(eventWaitlist.createdAt, row.joinedAt),
-            ),
-          );
+        const place = await waitlistPlace(db, row.eventId, row.joinedAt);
         const state = states.get(row.eventId);
-        if (state)
-          state.waitlistPosition = Math.max(Number(ahead?.total ?? 1), 1);
+        if (state) state.waitlistPosition = place;
       }),
     );
   } catch (error) {

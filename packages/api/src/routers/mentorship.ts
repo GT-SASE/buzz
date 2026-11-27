@@ -34,9 +34,6 @@ import {
   users,
 } from "@buzz/db";
 
-const roleSchema = z.enum(["mentor", "mentee"]);
-const statusSchema = z.enum(["interested", "enrolled", "withdrawn"]);
-
 /** Omitted means the current semester. Past semesters are read-only history. */
 const semesterInput = z
   .object({ semester: z.string().regex(semesterPattern).optional() })
@@ -107,7 +104,7 @@ export const mentorshipRouter = createTRPCRouter({
   expressInterest: protectedProcedure
     .input(
       z.object({
-        role: roleSchema,
+        role: z.enum(["mentor", "mentee"]),
         note: z.string().trim().max(400).optional(),
       }),
     )
@@ -235,7 +232,7 @@ export const mentorshipRouter = createTRPCRouter({
     .input(
       z.object({
         userId: z.string().min(1),
-        status: statusSchema,
+        status: z.enum(["interested", "enrolled", "withdrawn"]),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -251,11 +248,10 @@ export const mentorshipRouter = createTRPCRouter({
         }
         const [updated] = await tx
           .update(mentorshipEnrollments)
-          .set(
-            input.status === "enrolled"
-              ? { status: input.status, enrolledAt: new Date() }
-              : { status: input.status, enrolledAt: null },
-          )
+          .set({
+            status: input.status,
+            enrolledAt: input.status === "enrolled" ? new Date() : null,
+          })
           .where(signupOf(input.userId))
           .returning();
         return updated;
@@ -596,27 +592,23 @@ export const mentorshipRouter = createTRPCRouter({
               .onConflictDoNothing()
               .returning({ id: kinGroups.id });
 
+      const result = {
+        from,
+        to,
+        created: created.length,
+        skipped: source.length - created.length,
+      };
       if (created.length > 0) {
         await recordAudit(tx, {
           actorId: ctx.session.user.id,
           action: "kin_group.carry_forward",
           targetType: "kin_group",
           targetLabel: to,
-          after: {
-            from,
-            to,
-            created: created.length,
-            skipped: source.length - created.length,
-          },
+          after: result,
         });
       }
 
-      return {
-        from,
-        to,
-        created: created.length,
-        skipped: source.length - created.length,
-      };
+      return result;
     });
   }),
 
