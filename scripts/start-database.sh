@@ -45,16 +45,14 @@ fi
 
 DB_CONTAINER_NAME="$DB_NAME-postgres"
 
-if ! [ -x "$(command -v docker)" ] && ! [ -x "$(command -v podman)" ]; then
-  echo -e "Docker or Podman is not installed. Please install docker or podman and try again.\nDocker install guide: https://docs.docker.com/engine/install/\nPodman install guide: https://podman.io/getting-started/installation"
-  exit 1
-fi
-
 # determine which docker command to use
 if [ -x "$(command -v docker)" ]; then
   DOCKER_CMD="docker"
 elif [ -x "$(command -v podman)" ]; then
   DOCKER_CMD="podman"
+else
+  echo -e "Docker or Podman is not installed. Please install docker or podman and try again.\nDocker install guide: https://docs.docker.com/engine/install/\nPodman install guide: https://podman.io/getting-started/installation"
+  exit 1
 fi
 
 if ! $DOCKER_CMD info > /dev/null 2>&1; then
