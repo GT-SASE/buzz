@@ -86,7 +86,7 @@ export function EventCard({
           Campus reminder
         </Badge>
       )}
-      <h3 className="font-display text-navy text-h3 mt-5 font-bold">
+      <h3 className="font-display text-navy text-h3 mt-4 font-bold">
         {event.title}
       </h3>
       {event.location && (
@@ -98,7 +98,11 @@ export function EventCard({
         <p className="text-ink-muted text-body-sm mt-4">{event.description}</p>
       )}
       {children && (
-        <div className="mt-auto flex flex-wrap gap-x-6 pt-4">{children}</div>
+        <div className="mt-auto pt-5">
+          <div className="border-hairline flex flex-wrap gap-x-6 border-t pt-1">
+            {children}
+          </div>
+        </div>
       )}
     </Card>
   );
@@ -111,15 +115,15 @@ export function PillarGrid({
   pillars: readonly { title: string; body: string }[];
 }) {
   return (
-    <div className="grid gap-x-10 gap-y-12 md:grid-cols-3">
+    <div className="grid gap-x-10 gap-y-10 md:grid-cols-3">
       {pillars.map((pillar) => (
         <div key={pillar.title}>
           <p aria-hidden="true" className="hex-face bg-gold-bright size-3" />
-          <span className="bg-gold/40 mt-5 block h-px w-full" />
-          <h3 className="font-display text-navy text-h3 mt-6 font-bold">
+          <span className="bg-gold/40 mt-4 block h-px w-full" />
+          <h3 className="font-display text-navy text-h3 mt-5 font-bold">
             {pillar.title}
           </h3>
-          <p className="text-ink-muted text-body mt-3">{pillar.body}</p>
+          <p className="text-ink-muted text-body mt-2">{pillar.body}</p>
         </div>
       ))}
     </div>

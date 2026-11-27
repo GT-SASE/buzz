@@ -34,6 +34,7 @@ import {
 } from "~/data/content";
 import { galleryPhotos, homePhotos } from "~/data/photos-home";
 import { discord, joinHref, site } from "~/data/site";
+import { cn } from "~/lib/utils";
 import { pageMetadata } from "~/lib/seo";
 import { schoolYear } from "@buzz/api/terms";
 
@@ -75,7 +76,7 @@ export default async function Home() {
       />
 
       <section className="px-5 sm:px-6">
-        <div className="max-w-content dino-hop-host mx-auto grid items-start gap-x-16 gap-y-12 pt-10 pb-16 lg:grid-cols-[1.15fr_0.85fr] lg:pt-20 lg:pb-24">
+        <div className="max-w-content dino-hop-host mx-auto grid items-start gap-x-16 gap-y-12 pt-8 pb-12 lg:grid-cols-[1.15fr_0.85fr] lg:pt-14 lg:pb-16">
           <div>
             <h1 className="font-display text-navy text-hero font-bold text-balance">
               Find your people in STEM.
@@ -150,30 +151,29 @@ export default async function Home() {
         lead="SASE's national mission, run at chapter scale on the Flats."
       >
         <PillarGrid pillars={missionPillars} />
-        <div className="mt-12">
+        <div className="mt-8">
           <TextLink href="/about">More about the chapter</TextLink>
         </div>
       </Section>
 
       <Section title="What membership actually gets you.">
-        <ul
-          role="list"
-          className="grid gap-x-8 gap-y-8 sm:grid-cols-2 lg:grid-cols-3"
-        >
+        <ul role="list" className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
           {programs.map((program) => (
             <li key={program.slug} className="h-full">
-              <UiCard className="border-hairline hover:border-gold hover:bg-cream h-full gap-0 rounded-xl bg-transparent py-8 shadow-none transition duration-200">
+              <UiCard className="border-hairline hover:border-gold hover:bg-cream h-full gap-0 rounded-xl bg-transparent py-7 shadow-none transition duration-200">
                 <CardHeader className="gap-0">
-                  <Icon
-                    name={program.icon}
-                    className="text-gold-ink h-8 w-8 shrink-0"
-                  />
-                  <h3 className="font-display text-navy text-h3 mt-6 font-bold">
+                  <span className="bg-cream flex size-12 items-center justify-center rounded-lg">
+                    <Icon
+                      name={program.icon}
+                      className="text-gold-ink size-6 shrink-0"
+                    />
+                  </span>
+                  <h3 className="font-display text-navy text-h3 mt-5 font-bold">
                     {program.title}
                   </h3>
                 </CardHeader>
                 <CardContent>
-                  <CardDescription className="text-ink-muted text-body-sm mt-3">
+                  <CardDescription className="text-ink-muted text-body mt-3">
                     {program.body}
                   </CardDescription>
                 </CardContent>
@@ -181,7 +181,7 @@ export default async function Home() {
             </li>
           ))}
         </ul>
-        <div className="mt-12">
+        <div className="mt-8">
           <TextLink href="/programs">Read about each program</TextLink>
         </div>
       </Section>
@@ -246,7 +246,7 @@ export default async function Home() {
             <BoardRow key={member.name ?? member.role} member={member} />
           ))}
         </ul>
-        <div className="mt-10">
+        <div className="mt-6">
           <TextLink href="/board">See the full board</TextLink>
         </div>
       </Section>
@@ -254,14 +254,20 @@ export default async function Home() {
       <Section title="What's coming up.">
         {calendar.length > 0 ? (
           <>
-            <ul role="list" className="grid gap-x-10 gap-y-12 md:grid-cols-3">
+            <ul
+              role="list"
+              className={cn(
+                "grid gap-x-10 gap-y-10 md:grid-cols-2",
+                calendar.length > 2 && "lg:grid-cols-3",
+              )}
+            >
               {calendar.map((event) => (
                 <li key={event.id}>
                   <EventCard event={event} />
                 </li>
               ))}
             </ul>
-            <div className="mt-12">
+            <div className="mt-8">
               <TextLink href="/events">Every event, past and upcoming</TextLink>
             </div>
           </>
