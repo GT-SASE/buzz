@@ -15,10 +15,6 @@ export const site = {
   name: "SASE at Georgia Tech",
   shortName: "SASE GT",
   tagline: "Society of Asian Scientists and Engineers",
-  /**
-   * The chapter theme. Rendered as a lockup in the hero, the footer, and the
-   * share card — not as the site title, which stays searchable.
-   */
   /** The member portal's name. */
   portalName: "Buzz",
   description:
