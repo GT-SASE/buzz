@@ -290,22 +290,6 @@
     border-radius: 1rem;
   }
 
-  .hang {
-    position: relative;
-  }
-
-  /* 1400px, not 1024px: max-w-content only gains 4.5rem of margin to hang into
-     once the viewport clears ~1344px, and left overflow does not scroll. */
-  @media (min-width: 1400px) {
-    .hang > .hang-number {
-      position: absolute;
-      left: -4.5rem;
-      top: 0.35em;
-      width: 3rem;
-      text-align: right;
-    }
-  }
-
   .marquee-track {
     display: flex;
     width: max-content;

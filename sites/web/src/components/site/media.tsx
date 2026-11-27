@@ -17,19 +17,16 @@ export function PhotoFrame({
   sizes,
   className,
   priority = false,
-  rounded,
 }: {
   photo: Photo;
   sizes: string;
   className?: string;
   priority?: boolean;
-  rounded?: string;
 }) {
   return (
     <div
       className={cn(
         "bg-sand group hex-cut relative overflow-hidden",
-        rounded,
         className,
       )}
     >

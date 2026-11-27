@@ -33,14 +33,12 @@ export function Button({
   href,
   children,
   variant = "primary",
-  arrow = variant === "primary",
   external = false,
   className,
 }: {
   href: string;
   children: React.ReactNode;
   variant?: ActionVariant;
-  arrow?: boolean;
   external?: boolean;
   className?: string;
 }) {
@@ -49,7 +47,7 @@ export function Button({
     <>
       {children}
       {external && <span className="sr-only"> (opens in a new tab)</span>}
-      {arrow && (
+      {variant === "primary" && (
         <ArrowRight className="size-4 shrink-0 transition-transform duration-300 group-hover:translate-x-1" />
       )}
     </>

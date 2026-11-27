@@ -74,7 +74,6 @@ export function PageHeader({ title, body }: { title: string; body?: string }) {
 const sectionPadding = {
   sm: "py-8 sm:py-12 lg:py-14",
   md: "py-10 sm:py-14 lg:py-20",
-  lg: "py-14 sm:py-20 lg:py-28",
 } as const;
 
 const sectionTones = {
@@ -86,13 +85,12 @@ const sectionTones = {
 
 /**
  * A page division, set the way print sets one: a heavy rule across the measure,
- * the section number hanging in the left margin, the title flush beneath it.
+ * the title flush beneath it.
  */
 export function Section({
   eyebrow,
   title,
   lead,
-  number,
   children,
   className,
   id,
@@ -103,8 +101,6 @@ export function Section({
   eyebrow?: string;
   title?: string;
   lead?: string;
-  /** "01", "02" — hangs in the margin beside the title on wide screens. */
-  number?: string;
   children: React.ReactNode;
   className?: string;
   id?: string;
@@ -117,15 +113,7 @@ export function Section({
   const hasHeader = [eyebrow, title, lead].some(Boolean);
 
   const header = hasHeader ? (
-    <div className="hang mb-8 sm:mb-10">
-      {number && (
-        <span
-          aria-hidden="true"
-          className="hang-number text-numeral tracking-caps text-gold-ink block pb-3 font-semibold xl:pb-0"
-        >
-          {number}
-        </span>
-      )}
+    <div className="mb-8 sm:mb-10">
       <div
         className={
           split
