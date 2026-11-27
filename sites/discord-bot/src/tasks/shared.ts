@@ -221,8 +221,8 @@ export async function openEventOf(
   return event?.status === "active" ? event : null;
 }
 
-function shortTaskId(taskId: string): string {
-  return taskId.slice(0, SHORT_ID_LENGTH);
+export function shortId(id: string): string {
+  return id.slice(0, SHORT_ID_LENGTH);
 }
 
 export function taskText(description: string): SafeText {
@@ -234,7 +234,7 @@ export function shownDate(date: DateOnly): SafeText {
 }
 
 export function shownId(taskId: string): SafeText {
-  return escapeUserText(shortTaskId(taskId));
+  return escapeUserText(shortId(taskId));
 }
 
 /**
@@ -263,7 +263,7 @@ export function taskChoice(task: {
   const state = task.status === "done" ? "done, " : "";
   return {
     name: pickerLabel(
-      `${shortTaskId(task.id)} ${state}due ${task.due_date}`,
+      `${shortId(task.id)} ${state}due ${task.due_date}`,
       task.description,
     ),
     value: task.id,
@@ -277,7 +277,7 @@ export function eventChoice(event: {
 }): AutocompleteChoice {
   return {
     name: pickerLabel(
-      `${shortTaskId(event.id)} on ${event.event_date}`,
+      `${shortId(event.id)} on ${event.event_date}`,
       event.name,
     ),
     value: event.id,

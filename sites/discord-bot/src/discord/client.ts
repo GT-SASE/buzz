@@ -19,6 +19,7 @@
 import { setTimeout as delay } from "node:timers/promises";
 import { parsePermissions } from "../lib/actor.ts";
 import { getDiscordAppId, getDiscordBotToken } from "../lib/env.ts";
+import { field } from "../lib/field.ts";
 import { isSnowflake } from "../lib/snowflake.ts";
 import { isEphemeralInitialResponse } from "./outbound.ts";
 import type { OutboundBody } from "./outbound.ts";
@@ -395,12 +396,6 @@ async function readJson(response: Response): Promise<unknown> {
   }
 }
 
-function field(value: unknown, name: string): unknown {
-  return typeof value === "object" && value !== null
-    ? (value as Record<string, unknown>)[name]
-    : undefined;
-}
-
 function secondsToMs(value: unknown): number | undefined {
   if (value === null || value === undefined || value === "") {
     return undefined;
@@ -498,10 +493,6 @@ function parseChannel(value: unknown): GuildChannel | undefined {
 }
 
 function optionalSnowflake(value: unknown): string | undefined {
-  return isSnowflake(value) ? value : undefined;
-}
-
-function parseRoleId(value: unknown): string | undefined {
   return isSnowflake(value) ? value : undefined;
 }
 
@@ -1099,7 +1090,7 @@ export function createDiscordClient(
       return readGuild(
         [guildId, userId],
         `/guilds/${guildId}/members/${userId}`,
-        (body) => parseAll(field(body, "roles"), parseRoleId),
+        (body) => parseAll(field(body, "roles"), optionalSnowflake),
       );
     },
   };

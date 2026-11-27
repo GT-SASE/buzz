@@ -65,6 +65,7 @@ import { countOpenTasksInChannel } from "../db/tasks.ts";
 import type { ConfigChange, GuildConfig, ManagedChannel } from "../db/types.ts";
 import { refreshOverview } from "../events/overview.ts";
 import { retryHandoffs } from "../events/workflow.ts";
+import { field } from "../lib/field.ts";
 import { isSnowflake } from "../lib/snowflake.ts";
 import { dayRunStart } from "../reminders/plan.ts";
 import {
@@ -195,23 +196,9 @@ function changedForums(ids: readonly string[]): SafeText | undefined {
     : shown;
 }
 
-function remindersValue(values: unknown): unknown {
-  return typeof values === "object" && values !== null
-    ? (values as { reminders_enabled?: unknown }).reminders_enabled
-    : undefined;
-}
-
-function roleValue(values: unknown, column: string): unknown {
-  return typeof values === "object" && values !== null
-    ? (values as Record<string, unknown>)[column]
-    : undefined;
-}
-
 /** Whether a row's admin role is its E-board role, so E-board's label covers it. */
 function adminIsEboard(values: unknown): boolean {
-  return (
-    roleValue(values, "admin_role_id") === roleValue(values, EBOARD_ROLE.column)
-  );
+  return field(values, "admin_role_id") === field(values, EBOARD_ROLE.column);
 }
 
 /**
@@ -224,10 +211,8 @@ function rolesSummary(change: ConfigChange): SafeText {
     return safe`chose the roles`;
   }
   const differs = (column: string) => {
-    const after = roleValue(change.new_values, column);
-    return (
-      after !== undefined && after !== roleValue(change.old_values, column)
-    );
+    const after = field(change.new_values, column);
+    return after !== undefined && after !== field(change.old_values, column);
   };
   const adminApart =
     !adminIsEboard(change.old_values) || !adminIsEboard(change.new_values);
@@ -270,8 +255,8 @@ function changeSummary(change: ConfigChange): SafeText {
   if (removedForums !== undefined) {
     parts.push(safe`removed ${removedForums}`);
   }
-  const reminders = remindersValue(change.new_values);
-  if (reminders !== remindersValue(change.old_values)) {
+  const reminders = field(change.new_values, "reminders_enabled");
+  if (reminders !== field(change.old_values, "reminders_enabled")) {
     parts.push(
       reminders === true
         ? safe`turned reminders on`

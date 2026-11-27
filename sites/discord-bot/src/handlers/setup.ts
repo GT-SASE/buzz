@@ -29,7 +29,6 @@ import type { GuildRole } from "../discord/client.ts";
 import { commandOptionValue, resolvedRole } from "../discord/interactions.ts";
 import type { ResolvedRole } from "../discord/interactions.ts";
 import { actionRow, button } from "../discord/outbound.ts";
-import type { MessageInput } from "../discord/outbound.ts";
 import { plain, safe } from "../discord/safe-text.ts";
 import type { SafeText } from "../discord/safe-text.ts";
 import {
@@ -40,6 +39,7 @@ import {
   type SetupRoles,
 } from "../db/guild-config.ts";
 import { chosenLabel, CLUB_ROLES, type ClubRole } from "./club-roles.ts";
+import { message } from "../tasks/shared.ts";
 import { commaList, escapedName, lines } from "./render.ts";
 import {
   commandRoute,
@@ -62,10 +62,6 @@ interface BindableRole {
   readonly id: string;
   readonly name: string;
   readonly managed: boolean;
-}
-
-function message(content: SafeText): MessageInput {
-  return { content, mentionUserIds: [] };
 }
 
 function notFound(label: SafeText): SafeText {

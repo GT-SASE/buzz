@@ -87,6 +87,7 @@ import { listEventTasks } from "../db/tasks.ts";
 import {
   chosenEventId,
   REFUSED_TEXT,
+  shortId,
   versionFingerprint,
 } from "../tasks/shared.ts";
 import type { EventChoice, EventRow, ManagedChannel } from "../db/types.ts";
@@ -139,8 +140,6 @@ import {
 } from "./router.ts";
 
 const NO_TASKS = { rows: [], truncated: false };
-// Enough to tell events apart at a glance. The full ID is what a picker submits.
-const SHORT_ID_LENGTH = 8;
 
 const BAD_NAME = safe`That name can't be used. Give it some letters or numbers, up to 100 characters.`;
 const NO_FORUMS = safe`No forums are managed yet. An admin can add one with /config.`;
@@ -1021,10 +1020,6 @@ function onChosenEvent(
         return step(ctx, chosen.event);
     }
   };
-}
-
-function shortId(id: string): string {
-  return id.slice(0, SHORT_ID_LENGTH);
 }
 
 /** Names can look alike, so each choice also shows what tells two events apart. */

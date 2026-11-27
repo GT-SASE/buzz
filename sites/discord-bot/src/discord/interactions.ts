@@ -17,6 +17,7 @@ import {
 } from "discord-api-types/v10";
 import { z } from "zod";
 import { parsePermissions } from "../lib/actor.ts";
+import { field } from "../lib/field.ts";
 import { isSnowflake } from "../lib/snowflake.ts";
 import { DISCORD_LIMITS } from "./safe-text.ts";
 
@@ -162,12 +163,7 @@ export function parseInteractionBody(body: Uint8Array): unknown {
 }
 
 export function isPingInteraction(value: unknown): boolean {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "type" in value &&
-    value.type === InteractionType.Ping
-  );
+  return field(value, "type") === InteractionType.Ping;
 }
 
 /**

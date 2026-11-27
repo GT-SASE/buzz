@@ -11,6 +11,7 @@
 
 import { createPublicKey, verify } from "node:crypto";
 import { ChannelType } from "discord-api-types/v10";
+import { field } from "../lib/field.ts";
 import { isSnowflake } from "../lib/snowflake.ts";
 import { parseInteractionBody } from "./interactions.ts";
 
@@ -184,12 +185,6 @@ export function interactionToken(
   interaction: VerifiedInteraction,
 ): string | undefined {
   return VerifiedInteraction.tokenOf(interaction);
-}
-
-function field(value: unknown, name: string): unknown {
-  return typeof value === "object" && value !== null
-    ? (value as Record<string, unknown>)[name]
-    : undefined;
 }
 
 /**
