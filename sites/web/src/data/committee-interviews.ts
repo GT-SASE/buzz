@@ -9,7 +9,7 @@ export type InterviewQuestion = {
  * Prompts from the chapter interview sheet. Shared openers run once;
  * committee-specific questions follow the role they applied for.
  */
-export const sharedInterviewQuestions: readonly InterviewQuestion[] = [
+const sharedInterviewQuestions: readonly InterviewQuestion[] = [
   {
     id: "intro",
     prompt: "Introduction: tell me about yourself.",
@@ -20,7 +20,7 @@ export const sharedInterviewQuestions: readonly InterviewQuestion[] = [
   },
 ];
 
-export const committeeInterviewQuestions: Record<
+const committeeInterviewQuestions: Record<
   PublicCommitteeId,
   readonly InterviewQuestion[]
 > = {

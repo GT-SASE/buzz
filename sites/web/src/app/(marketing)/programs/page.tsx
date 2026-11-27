@@ -1,7 +1,14 @@
-import { Button, Icon, PageHeader, Section } from "~/components/site";
+import {
+  Button,
+  Icon,
+  PageHeader,
+  PhotoMosaic,
+  Section,
+} from "~/components/site";
 import { Disclosure } from "~/components/site/disclosure";
 import { JsonLd } from "~/components/site/json-ld";
 import { programs } from "~/data/content";
+import { seattlePhotos } from "~/data/photos-seattle";
 import { joinHref } from "~/data/site";
 import { breadcrumbSchema, pageMetadata } from "~/lib/seo";
 import { withOwnShareImage } from "~/lib/own-share-image";
@@ -74,6 +81,13 @@ export default function ProgramsPage() {
             </Disclosure>
           ))}
         </div>
+      </Section>
+
+      <Section
+        title="Seattle, October 2026."
+        lead="What a conference trip looks like: the career fair floor, the convention center, and the city in between sessions."
+      >
+        <PhotoMosaic photos={seattlePhotos} />
       </Section>
 
       <Section

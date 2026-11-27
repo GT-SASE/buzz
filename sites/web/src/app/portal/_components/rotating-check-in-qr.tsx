@@ -11,7 +11,7 @@ import { api } from "~/trpc/react";
 const REFETCH_SLACK_MS = 400;
 
 /** "ABCD2345EFGH6789" as "ABCD 2345 EFGH 6789", for reading aloud and typing. */
-export function groupCode(code: string) {
+function groupCode(code: string) {
   return code.replace(/(.{4})(?=.)/g, "$1 ");
 }
 

@@ -117,7 +117,7 @@ export const migrateWithDrizzle = migrateAsOwner;
 export const NO_TRIGGERS = process.env.BOT_TEST_NO_TRIGGERS === "1";
 
 /** What stands in for the trigger that made a new event's steps, for rows put in by hand. */
-export const SEED_STEPS = `
+const SEED_STEPS = `
   CREATE FUNCTION discord_bot.test_seed_steps() RETURNS trigger LANGUAGE plpgsql AS $$
   BEGIN
     INSERT INTO discord_bot.event_steps (event_id, guild_id, kind)

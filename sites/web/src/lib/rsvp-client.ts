@@ -9,7 +9,7 @@
  * most of the portal's data layer into every public page. The wire format is
  * tRPC's with the superjson transformer, `{ json: value }` both ways, and every
  * value here is a plain string, boolean or array of strings, so there is no
- * `meta` to carry. tests/public-bundle.test.ts keeps this file's imports empty.
+ * `meta` to carry. tests/web/public-bundle.test.ts keeps this file's imports empty.
  */
 
 const TRPC = "/api/trpc";
