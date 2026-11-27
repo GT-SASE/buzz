@@ -14,6 +14,7 @@ import {
   ApplicationIntegrationType,
   InteractionContextType,
   InteractionType,
+  MessageFlags,
 } from "discord-api-types/v10";
 import { z } from "zod";
 import { parsePermissions } from "../lib/actor.ts";
@@ -54,8 +55,6 @@ export interface ResolvedPerson {
   readonly isMember: boolean;
   readonly isBot: boolean;
 }
-
-const EPHEMERAL_FLAG = 64;
 
 const Snowflake = z.string().refine(isSnowflake);
 /** Any JSON object. Arrays and null are refused. */
@@ -366,5 +365,5 @@ export function isComponentType(payload: unknown, type: number): boolean {
  */
 export function isOnEphemeralMessage(payload: unknown): boolean {
   const flags = EphemeralFlags.safeParse(payload).data?.message.flags;
-  return flags !== undefined && (flags & EPHEMERAL_FLAG) === EPHEMERAL_FLAG;
+  return flags !== undefined && (flags & MessageFlags.Ephemeral) !== 0;
 }

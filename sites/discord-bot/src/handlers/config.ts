@@ -179,10 +179,7 @@ function channelIds(
   values: unknown,
   key: string,
 ): readonly string[] | undefined {
-  if (typeof values !== "object" || values === null) {
-    return undefined;
-  }
-  const ids = (values as Record<string, unknown>)[key];
+  const ids = field(values, key);
   return Array.isArray(ids) ? ids.filter(isSnowflake) : undefined;
 }
 

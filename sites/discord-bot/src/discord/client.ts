@@ -17,6 +17,7 @@
  */
 
 import { setTimeout as delay } from "node:timers/promises";
+import { MessageFlags } from "discord-api-types/v10";
 import { parsePermissions } from "../lib/actor.ts";
 import { getDiscordAppId, getDiscordBotToken } from "../lib/env.ts";
 import { field } from "../lib/field.ts";
@@ -40,7 +41,6 @@ const DEFAULT_RETRY_WAIT_MS = 1_000;
 // Discord drops an interaction that is not answered within 3 seconds.
 const DEFAULT_CALLBACK_BUDGET_MS = 2_500;
 const DEFAULT_OPERATION_BUDGET_MS = 8_000;
-const EPHEMERAL_FLAG = 64;
 // A deferred reply can take a moment to exist after the acknowledgement, and Discord's
 // webhook routes can fail for a moment. The total stays inside the operation budget.
 const ORIGINAL_RETRY_WAITS_MS = [250, 500, 1000];
@@ -1038,7 +1038,7 @@ export function createDiscordClient(
       const remaining = startBudget(operationBudgetMs);
       const original = await readOriginal(operation, path, remaining);
       const flags = field(await readJson(original), "flags");
-      if (typeof flags !== "number" || (flags & EPHEMERAL_FLAG) === 0) {
+      if (typeof flags !== "number" || (flags & MessageFlags.Ephemeral) === 0) {
         throw new DiscordClientError(operation, { kind: "not_ephemeral" });
       }
       return patchOriginal(operation, path, json, remaining);
