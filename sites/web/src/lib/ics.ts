@@ -72,7 +72,7 @@ export function icsDateTime(date: Date) {
 }
 
 /** `"2026-11-24"` to `"20261124"` (§3.3.4). */
-const icsDate = (key: string) => key.replaceAll("-", "");
+export const icsDate = (key: string) => key.replaceAll("-", "");
 
 export type CalendarEvent = {
   /** Globally unique and stable for the life of the event. */
