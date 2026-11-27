@@ -223,10 +223,3 @@ export async function renderShareCard({
     { ...size, fonts },
   );
 }
-
-/** Cuts text to `length` characters, ending in an ellipsis, so it fits the card. */
-export function clipCardText(text: string, length: number) {
-  return text.length > length
-    ? `${text.slice(0, length - 1).trimEnd()}…`
-    : text;
-}

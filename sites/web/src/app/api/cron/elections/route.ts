@@ -4,6 +4,7 @@ import {
   runScheduledFlips,
 } from "@buzz/api";
 import { db } from "@buzz/db";
+import { logLoadError } from "~/lib/log-error";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -35,13 +36,7 @@ export async function GET(request: Request) {
       { headers: NO_STORE },
     );
   } catch (error) {
-    console.error(
-      JSON.stringify({
-        level: "error",
-        event: "cron.elections",
-        message: error instanceof Error ? error.message : String(error),
-      }),
-    );
+    logLoadError("cron.elections", error);
     return new Response("internal error", { status: 500, headers: NO_STORE });
   }
 }

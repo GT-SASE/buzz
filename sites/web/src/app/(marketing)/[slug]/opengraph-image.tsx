@@ -2,7 +2,8 @@ import { notFound } from "next/navigation";
 
 import { getPublishedPage } from "~/data/pages";
 import { site } from "~/data/site";
-import { clipCardText, renderShareCard } from "~/lib/share-card";
+import { clipText } from "~/lib/seo";
+import { renderShareCard } from "~/lib/share-card";
 
 export const alt = site.name;
 export const size = { width: 1200, height: 630 };
@@ -20,7 +21,7 @@ export default async function OpengraphImage({
 
   return renderShareCard({
     label: "SASE GT",
-    title: clipCardText(page.title, 70),
-    subtitle: clipCardText(page.description || site.description, 120),
+    title: clipText(page.title, 70),
+    subtitle: clipText(page.description || site.description, 120),
   });
 }
