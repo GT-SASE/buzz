@@ -12,14 +12,9 @@ import { ApplicationCommandOptionType } from "discord-api-types/v10";
 import { commandOptionValue } from "../discord/interactions.ts";
 import type { MessageInput } from "../discord/outbound.ts";
 import { safe, userMention } from "../discord/safe-text.ts";
-import { isThreadChannelType } from "../discord/verify.ts";
-import { getEvent } from "../db/events.ts";
 import { MAX_DATE_INPUT_LENGTH } from "../events/input.ts";
-import { findEventByThread } from "../db/task-events.ts";
 import { createTask } from "../db/tasks.ts";
-import type { EventRow } from "../db/types.ts";
 import { MAX_TASK_DESCRIPTION_LENGTH } from "../db/validate.ts";
-import { authorize } from "../lib/permissions.ts";
 import {
   autocompleteRoute,
   commandRoute,
@@ -34,9 +29,10 @@ import { checkDescription, checkDueDate, checkPerson } from "./checks.ts";
 import { noticeSummary, postNotice, reachWarning } from "./notify.ts";
 import { eventChoices } from "./pickers.ts";
 import {
-  chosenEventId,
+  chooseEvent,
   message,
   messageWithNotes,
+  NO_EVENT,
   PICK_FROM_LIST,
   REFUSED_TEXT,
   refreshAfterChange,
@@ -48,53 +44,11 @@ import {
 
 const EVENT_IS_CLOSED = safe`That event is closed or deleted, so it can't take new tasks.`;
 
-type ChosenEvent =
-  | { readonly kind: "event"; readonly event: EventRow }
-  /** No event was named, and the command is not in an event's post. */
-  | { readonly kind: "none" }
-  /** A named event that this officer can't use. It gets the fixed refusal. */
-  | { readonly kind: "refused" }
-  /** Typed text that names no event by ID. */
-  | { readonly kind: "typed" };
-
-/** The option wins, then the post the command runs in. */
-async function chooseEvent(ctx: FinishContext): Promise<ChosenEvent> {
-  const guildId = ctx.actor.guildId;
-  const option = stringOption(ctx.payload, "event");
-  if (option === undefined && !isThreadChannelType(ctx.verified.channelType)) {
-    return { kind: "none" };
-  }
-  const named =
-    option === undefined ? undefined : await chosenEventId(ctx, option);
-  if (option !== undefined && named === undefined) {
-    return { kind: "typed" };
-  }
-  const read =
-    named !== undefined
-      ? await getEvent(ctx.db, { guildId, eventId: named })
-      : await findEventByThread(ctx.db, {
-          guildId,
-          threadId: ctx.verified.channelId,
-        });
-  if (!read.ok && read.error.category === "invalid_input") {
-    return { kind: "refused" };
-  }
-  const event = valueOf(read);
-  if (event === null) {
-    // A thread is just not an event's post, but a named event ought to exist.
-    return named === undefined ? { kind: "none" } : { kind: "refused" };
-  }
-  return authorize<"task.assign">("task.assign", ctx.actor, ctx.config, event)
-    .allowed
-    ? { kind: "event", event }
-    : { kind: "refused" };
-}
-
 async function assign(
   ctx: FinishContext,
   dependencies: TaskDependencies,
 ): Promise<MessageInput> {
-  const chosen = await chooseEvent(ctx);
+  const chosen = await chooseEvent(ctx, "task.assign");
   if (chosen.kind === "refused") {
     return message(REFUSED_TEXT);
   }
@@ -102,9 +56,7 @@ async function assign(
     return message(PICK_FROM_LIST);
   }
   if (chosen.kind === "none") {
-    return message(
-      safe`Run this in an event's post, or choose the event in the event option.`,
-    );
+    return message(NO_EVENT);
   }
   const { event } = chosen;
   if (event.status !== "active") {

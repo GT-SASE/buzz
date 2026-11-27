@@ -341,16 +341,6 @@ export function discordTimestamp(
   return new SafeText(MINT, `<t:${String(seconds)}:${style}>`);
 }
 
-const JUMP_LINK = /^https:\/\/discord\.com\/channels\/[0-9]+\/[0-9]+\/[0-9]+$/;
-
-/** Accepts only a link to a message, as made by `messageUrl` in the client. */
-export function jumpLink(url: string): SafeText {
-  if (!JUMP_LINK.test(url)) {
-    throw new SafeTextError("Not a link to a Discord message");
-  }
-  return new SafeText(MINT, url);
-}
-
 const NOT_ALLOWED_IN_LABEL =
   /(?!\u{200D}|\u{FE0F}|[\u{1F3FB}-\u{1F3FF}])[^\p{L}\p{M}\p{N}\p{Extended_Pictographic} \-',&!?()]/gu;
 const LABEL_NEEDS = /[\p{L}\p{N}\p{Extended_Pictographic}]/u;

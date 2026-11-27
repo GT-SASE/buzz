@@ -193,12 +193,8 @@ export class EventReminderStep {
     rows: readonly EventReminderCandidate[],
     now: Date,
   ): GuildEvents[] {
-    const byGuild = new Map<string, EventReminderCandidate[]>();
-    for (const row of rows) {
-      byGuild.set(row.guild_id, [...(byGuild.get(row.guild_id) ?? []), row]);
-    }
     const guilds: GuildEvents[] = [];
-    for (const [guildId, events] of byGuild) {
+    for (const [guildId, events] of Map.groupBy(rows, (row) => row.guild_id)) {
       if (!this.#allowedGuildIds.has(guildId)) {
         this.#host.count("event_guilds_not_allowed");
         continue;

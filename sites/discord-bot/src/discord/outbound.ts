@@ -11,6 +11,11 @@
  * REST client, which checks the channel is managed first.
  */
 
+import {
+  ComponentType,
+  InteractionResponseType,
+  MessageFlags,
+} from "discord-api-types/v10";
 import { isSnowflake } from "../lib/snowflake.ts";
 import {
   DISCORD_LIMITS,
@@ -19,28 +24,6 @@ import {
   safeTextValue,
 } from "./safe-text.ts";
 import type { PlainText, SafeText } from "./safe-text.ts";
-
-const SUPPRESS_EMBEDS_FLAG = 4;
-const EPHEMERAL_FLAG = 64;
-
-const ResponseType = {
-  Pong: 1,
-  ChannelMessage: 4,
-  DeferredChannelMessage: 5,
-  DeferredUpdate: 6,
-  UpdateMessage: 7,
-  AutocompleteResult: 8,
-  Modal: 9,
-} as const;
-
-const ComponentType = {
-  ActionRow: 1,
-  Button: 2,
-  StringSelect: 3,
-  TextInput: 4,
-  RoleSelect: 6,
-  ChannelSelect: 8,
-} as const;
 
 const ButtonStyle = {
   primary: 1,
@@ -76,10 +59,10 @@ function isEphemeralFirstPayload(payload: unknown): boolean {
   };
   const flags = data?.flags;
   return (
-    (type === ResponseType.ChannelMessage ||
-      type === ResponseType.DeferredChannelMessage) &&
+    (type === InteractionResponseType.ChannelMessageWithSource ||
+      type === InteractionResponseType.DeferredChannelMessageWithSource) &&
     typeof flags === "number" &&
-    (flags & EPHEMERAL_FLAG) === EPHEMERAL_FLAG
+    (flags & MessageFlags.Ephemeral) !== 0
   );
 }
 
@@ -87,10 +70,10 @@ function isEphemeralFirstPayload(payload: unknown): boolean {
 function isDirectPayload(payload: unknown): boolean {
   const { type } = payload as { type?: unknown };
   return (
-    type === ResponseType.Pong ||
-    type === ResponseType.DeferredUpdate ||
-    type === ResponseType.AutocompleteResult ||
-    type === ResponseType.Modal ||
+    type === InteractionResponseType.Pong ||
+    type === InteractionResponseType.DeferredMessageUpdate ||
+    type === InteractionResponseType.ApplicationCommandAutocompleteResult ||
+    type === InteractionResponseType.Modal ||
     isEphemeralFirstPayload(payload)
   );
 }
@@ -394,7 +377,7 @@ function messageFields(
     content: text,
     allowed_mentions:
       roles.length === 0 ? { parse: [], users } : { parse: [], users, roles },
-    flags: SUPPRESS_EMBEDS_FLAG | extraFlags,
+    flags: MessageFlags.SuppressEmbeds | extraFlags,
     ...(components === undefined ? {} : { components: rows(components) }),
   };
 }
@@ -439,14 +422,17 @@ function checked(
 
 /** Answers Discord's endpoint check. */
 export function pong(): OutboundBody<"direct-response"> {
-  return direct(ResponseType.Pong);
+  return direct(InteractionResponseType.Pong);
 }
 
 /** A reply everyone in the channel can see. */
 export function interactionReply(
   input: MessageInput,
 ): OutboundBody<"checked-response"> {
-  return checked(ResponseType.ChannelMessage, messageFields(input));
+  return checked(
+    InteractionResponseType.ChannelMessageWithSource,
+    messageFields(input),
+  );
 }
 
 /** A reply only the invoking user can see. */
@@ -454,33 +440,33 @@ export function ephemeralReply(
   input: MessageInput,
 ): OutboundBody<"direct-response"> {
   return direct(
-    ResponseType.ChannelMessage,
-    messageFields(input, EPHEMERAL_FLAG),
+    InteractionResponseType.ChannelMessageWithSource,
+    messageFields(input, MessageFlags.Ephemeral),
   );
 }
 
 /** Acknowledges now. The reply that follows is public. */
 export function deferredReply(): OutboundBody<"checked-response"> {
-  return checked(ResponseType.DeferredChannelMessage);
+  return checked(InteractionResponseType.DeferredChannelMessageWithSource);
 }
 
 /** Acknowledges now. The reply that follows is seen by the invoking user alone. */
 export function deferredEphemeralReply(): OutboundBody<"direct-response"> {
-  return direct(ResponseType.DeferredChannelMessage, {
-    flags: EPHEMERAL_FLAG,
+  return direct(InteractionResponseType.DeferredChannelMessageWithSource, {
+    flags: MessageFlags.Ephemeral,
   });
 }
 
 /** Acknowledges a component and changes nothing. Any later edit is checked. */
 export function deferredUpdate(): OutboundBody<"direct-response"> {
-  return direct(ResponseType.DeferredUpdate);
+  return direct(InteractionResponseType.DeferredMessageUpdate);
 }
 
 /** Replaces the message a component is attached to, which others may see. */
 export function updateMessage(
   input: MessageInput,
 ): OutboundBody<"checked-response"> {
-  return checked(ResponseType.UpdateMessage, messageFields(input));
+  return checked(InteractionResponseType.UpdateMessage, messageFields(input));
 }
 
 export interface AutocompleteChoice {
@@ -496,7 +482,7 @@ export function autocompleteResult(
       `Autocomplete allows at most ${String(DISCORD_LIMITS.autocompleteChoices)} choices`,
     );
   }
-  return direct(ResponseType.AutocompleteResult, {
+  return direct(InteractionResponseType.ApplicationCommandAutocompleteResult, {
     choices: choices.map((choice) => ({
       name: label(
         choice.name,
@@ -516,7 +502,7 @@ export function modal(input: {
   if (input.rows.length === 0) {
     throw new OutboundBodyError("A modal needs at least one text input");
   }
-  return direct(ResponseType.Modal, {
+  return direct(InteractionResponseType.Modal, {
     custom_id: componentId(input.customId, DISCORD_LIMITS.customId),
     title: label(input.title, DISCORD_LIMITS.modalTitle, "A modal title"),
     components: rows(input.rows),
@@ -529,6 +515,6 @@ export function followUp(
 ): OutboundBody<"follow-up"> {
   return body(
     "follow-up",
-    messageFields(input, input.ephemeral === true ? EPHEMERAL_FLAG : 0),
+    messageFields(input, input.ephemeral === true ? MessageFlags.Ephemeral : 0),
   );
 }

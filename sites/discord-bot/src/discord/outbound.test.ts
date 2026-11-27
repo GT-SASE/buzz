@@ -28,7 +28,6 @@ import {
   containsInviteOrMaskedLink,
   discordTimestamp,
   escapeUserText,
-  jumpLink,
   plain,
   plainLabel,
   plainTextValue,
@@ -247,19 +246,10 @@ describe("the safe tag and mentions", () => {
     expect(JSON.stringify(text)).toBe("{}");
   });
 
-  it("renders a mention or a jump link only from a valid ID", () => {
-    const url = `https://discord.com/channels/${ID}/${ID}/${ID}`;
-
+  it("renders a mention only from a valid ID", () => {
     expect(safeTextValue(roleMention(ID))).toBe(`<@&${ID}>`);
     expect(() => roleMention("everyone")).toThrow(SafeTextError);
     expect(() => userMention(`${ID}><@&1`)).toThrow(SafeTextError);
-    expect(safeTextValue(jumpLink(url))).toBe(url);
-    expect(() =>
-      jumpLink("https://discord.com.evil.example/channels/1/2/3"),
-    ).toThrow(SafeTextError);
-    expect(() => jumpLink("https://discord.com/invite/abc")).toThrow(
-      SafeTextError,
-    );
   });
 });
 
