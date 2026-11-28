@@ -139,6 +139,9 @@ jobs:
           bun run --cwd sites/web start -p 3000 > next-start.log 2>&1 &
           tries=0; until curl -sf -o /dev/null http://localhost:3000/; do tries=$((tries + 1)); [ $tries -ge 60 ] && { cat next-start.log; exit 1; }; sleep 1; done
           bun scripts/axe-marketing.mjs
+          # The bot's routes refuse an unsigned interaction and a cron call without the secret.
+          test "$(curl -s -o /dev/null -w '%{http_code}' -X POST http://localhost:3000/api/discord/interactions)" = 401
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3000/api/cron/discord-reminders)" = 401
 
   secret-history:
     runs-on: ubuntu-latest
