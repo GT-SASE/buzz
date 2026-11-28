@@ -55,7 +55,8 @@ jobs:
           restore-keys: turbo-${{ github.job }}-
       # tsrs is a beta Rust port of TypeScript 7.1: an early look that never
       # gates a merge. Its false positives have forced code workarounds before.
-      - run: bun x turbo run typecheck //#typecheck:self
+      # The Go service is checked by the go job, which sets up Go.
+      - run: bun x turbo run typecheck //#typecheck:self --filter='!@buzz/backend'
         continue-on-error: true
       # tsc is the deciding check until tsrs has a stable release.
       - run: bun x turbo run //#format:check typecheck:tsc //#typecheck:tsc:self
@@ -108,6 +109,29 @@ jobs:
           restore-keys: turbo-${{ github.job }}-
       # The filter keeps the root package's //#test out: turbo adds it to any `test` run.
       - run: bun x turbo run test test:db --filter=@buzz/discord-bot
+
+  # The Go service in sites/backend. setup-go reads the toolchain line of its
+  # go.mod. golangci-lint and govulncheck build from the module pinned in
+  # tools/go.mod; its go.sum keys the module and build caches.
+  go:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: sites/backend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: sites/backend/go.mod
+          cache-dependency-path: sites/backend/tools/go.sum
+      - run: go vet ./...
+      - run: go build ./...
+      - run: go test -race -short ./...
+      - run: go tool -modfile=tools/go.mod golangci-lint run
+      - run: go tool -modfile=tools/go.mod govulncheck ./...
 
   build:
     runs-on: ubuntu-latest

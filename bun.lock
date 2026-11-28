@@ -102,6 +102,10 @@
         "typescript-7": "npm:typescript@^7.0.0",
       },
     },
+    "sites/backend": {
+      "name": "@buzz/backend",
+      "version": "3.0.0",
+    },
     "sites/discord-bot": {
       "name": "@buzz/discord-bot",
       "version": "3.0.0",
@@ -256,6 +260,8 @@
     "@buzz/api": ["@buzz/api@workspace:packages/api"],
 
     "@buzz/auth": ["@buzz/auth@workspace:packages/auth"],
+
+    "@buzz/backend": ["@buzz/backend@workspace:sites/backend"],
 
     "@buzz/db": ["@buzz/db@workspace:packages/db"],
 

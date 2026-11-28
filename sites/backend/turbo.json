@@ -1,0 +1,19 @@
+{
+  "$schema": "https://turborepo.dev/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    "typecheck": { "inputs": ["**/*.go", "go.mod", "go.sum"] },
+    "test": { "inputs": ["**/*.go", "go.mod", "go.sum"] },
+    "lint": {
+      "inputs": [
+        "**/*.go",
+        "go.mod",
+        "go.sum",
+        ".golangci.yml",
+        "tools/go.mod",
+        "tools/go.sum"
+      ],
+      "tags": ["ci"]
+    }
+  }
+}

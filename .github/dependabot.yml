@@ -50,6 +50,19 @@ updates:
       - dependency-name: "@vercel/functions"
         update-types: ["version-update:semver-major"]
 
+  - package-ecosystem: gomod
+    directories:
+      - /sites/backend
+      - /sites/backend/tools
+    # The tools module lists golangci-lint and govulncheck as indirect requires.
+    allow:
+      - dependency-type: all
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+
   - package-ecosystem: github-actions
     directory: /
     schedule:
