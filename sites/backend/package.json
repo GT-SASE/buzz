@@ -1,0 +1,11 @@
+{
+  "name": "@buzz/backend",
+  "version": "3.0.0",
+  "private": true,
+  "scripts": {
+    "typecheck": "go vet ./... && go build ./...",
+    "lint": "go tool -modfile=tools/go.mod golangci-lint run",
+    "test": "go test -short ./...",
+    "dev": "go run ./cmd/server"
+  }
+}

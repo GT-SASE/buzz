@@ -1,0 +1,15 @@
+version: "2"
+
+linters:
+  # errcheck, govet, ineffassign, staticcheck, unused
+  default: standard
+  enable:
+    - bodyclose
+    - errorlint
+    - gosec
+    - noctx
+    - sqlclosecheck
+
+formatters:
+  enable:
+    - gofmt

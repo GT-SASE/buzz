@@ -1,0 +1,3 @@
+# `go build ./...` writes the binary here while cmd/server is the only package.
+/server
+/server.exe
