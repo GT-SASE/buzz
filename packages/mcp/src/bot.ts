@@ -5,28 +5,9 @@ import { repoPath } from "./repo";
 const BOT_DIR = "sites/discord-bot";
 export const BOT_MIGRATIONS_DIR = `${BOT_DIR}/db/drizzle`;
 
-export type BotFunction = { route: string; source: string };
-export type BotCron = { path: string; schedule: string };
-
 /** Loads a bot module by file URL so the MCP typecheck does not follow it. */
 async function importBot<T>(file: string): Promise<T> {
   return (await import(pathToFileURL(repoPath(BOT_DIR, file)).href)) as T;
-}
-
-/** The bot's Vercel functions and crons, from scripts/deployment.ts. */
-export async function formatBotRoutes(): Promise<string> {
-  const { FUNCTIONS, CRONS } = await importBot<{
-    FUNCTIONS: BotFunction[];
-    CRONS: BotCron[];
-  }>("scripts/deployment.ts");
-  return [
-    ...FUNCTIONS.map(
-      (f) => `/${f.route}  [bot function]  ${BOT_DIR}/${f.source}`,
-    ),
-    ...CRONS.map(
-      (c) => `/${c.path.replace(/^\//, "")}  [bot cron]  ${c.schedule}`,
-    ),
-  ].join("\n");
 }
 
 type Choice = { name: string; value: string | number };

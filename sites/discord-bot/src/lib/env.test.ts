@@ -19,7 +19,7 @@ describe("required settings", () => {
     ["DISCORD_BOT_TOKEN", getDiscordBotToken],
     ["DISCORD_PUBLIC_KEY", getDiscordPublicKey],
     ["ALLOWED_GUILD_IDS", getAllowedGuildIds],
-    ["DATABASE_URL", getDatabaseUrl],
+    ["DISCORD_BOT_DATABASE_URL", getDatabaseUrl],
   ])("refuses a missing or blank %s", (name, read) => {
     stubEnv(name, undefined);
     expect(read).toThrow(ConfigError);
@@ -44,7 +44,7 @@ describe("required settings", () => {
 describe("accepted values", () => {
   it("trims the bot token and the database URL", () => {
     stubEnv("DISCORD_BOT_TOKEN", "abc.DEF-123_~\n");
-    stubEnv("DATABASE_URL", " postgresql://example.test/bot\n");
+    stubEnv("DISCORD_BOT_DATABASE_URL", " postgresql://example.test/bot\n");
 
     expect(getDiscordBotToken()).toBe("abc.DEF-123_~");
     expect(getDatabaseUrl()).toBe("postgresql://example.test/bot");

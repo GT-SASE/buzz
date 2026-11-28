@@ -3,7 +3,11 @@
   "buildCommand": "cd ../.. && bun run vercel-build",
   "bunVersion": "1.4.x",
   "regions": ["cle1"],
-  "crons": [{ "path": "/api/cron/elections", "schedule": "0 9 * * *" }],
+  "crons": [
+    { "path": "/api/cron/elections", "schedule": "0 9 * * *" },
+    { "path": "/api/cron/discord-reminders", "schedule": "0 15 * * *" },
+    { "path": "/api/cron/discord-reminders", "schedule": "0 17 * * *" }
+  ],
   "env": {
     "AUTH_REDIRECT_PROXY_URL": "https://buzzsase.vercel.app/api/auth"
   }

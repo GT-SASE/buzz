@@ -117,6 +117,7 @@ export async function runChecks(
   // Production credentials must never reach a child. Tests get their database
   // from TEST_DATABASE_URL (tests/setup/env.ts copies it over).
   delete env.DATABASE_URL;
+  delete env.DISCORD_BOT_DATABASE_URL;
   env.SKIP_ENV_VALIDATION = "1";
   env.MSYS_NO_PATHCONV = "1";
 

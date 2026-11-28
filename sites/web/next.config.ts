@@ -11,7 +11,12 @@ const isProd = process.env.NODE_ENV === "production";
 const build = appBuild();
 
 const config: NextConfig = {
-  transpilePackages: ["@buzz/api", "@buzz/auth", "@buzz/db"],
+  transpilePackages: [
+    "@buzz/api",
+    "@buzz/auth",
+    "@buzz/db",
+    "@buzz/discord-bot",
+  ],
   poweredByHeader: false,
   env: {
     NEXT_PUBLIC_APP_VERSION: build.version,

@@ -1,7 +1,6 @@
 import { readdirSync } from "node:fs";
 import path from "node:path";
 
-import { formatBotRoutes } from "./bot";
 import { rel, repoPath } from "./repo";
 
 export type Route = { url: string; tag: string; file: string };
@@ -31,9 +30,8 @@ export function listRoutes(): Route[] {
     .sort((a, b) => a.url.localeCompare(b.url));
 }
 
-export async function formatRoutes(): Promise<string> {
-  const next = listRoutes()
+export function formatRoutes(): string {
+  return listRoutes()
     .map((r) => `${r.url}  [${r.tag}]  ${r.file}`)
     .join("\n");
-  return `${next}\n\n${await formatBotRoutes()}`;
 }

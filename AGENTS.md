@@ -36,11 +36,11 @@ packages/db/drizzle/            generated SQL migrations + meta; commit them
 packages/db/scripts/            seeds
 packages/auth/src/              NextAuth config and auth()
 packages/mcp/src/               this MCP server
-sites/discord-bot/              the events Discord bot: api/ (Vercel functions), src/, db/drizzle (drizzle-kit; `src/db/schema.ts` is the schema, writes are TypeScript in `src/db`), its own README and docs/
+sites/discord-bot/              the events Discord bot: src/ (its endpoints are `src/http/`, served by the web routes `api/discord/interactions` and `api/cron/discord-reminders`), db/drizzle (drizzle-kit; `src/db/schema.ts` is the schema, writes are TypeScript in `src/db`), its own README and docs/
 sites/web/src/app/(marketing)/  public pages, prerendered; [slug] serves CMS pages
 sites/web/src/app/portal/(member)/        member portal pages (needs a session)
 sites/web/src/app/portal/(member)/admin/  officer pages; adminNav lives in sites/web/src/data/portal.ts
-sites/web/src/app/api/          route handlers (trpc, auth, health, resume, cron/elections: the scheduled election flips, `Authorization: Bearer $CRON_SECRET`, schedule in sites/web/vercel.json)
+sites/web/src/app/api/          route handlers (trpc, auth, health, resume, cron/elections: the scheduled election flips, `Authorization: Bearer $CRON_SECRET`, schedule in sites/web/vercel.json; discord/interactions and cron/discord-reminders: the Discord bot's endpoints, thin re-exports of `@buzz/discord-bot`, which reads its own `DISCORD_*` variables and `CRON_SECRET` per request, never through `src/env.ts`)
 sites/web/src/components/ui/    vendored Watermelon UI (do not hand-fix; `bun run ui:add`)
 sites/web/src/components/site/  editorial components built on ui
 sites/web/src/data/             content constants and cached loaders (chapter-events.ts, pages.ts)
@@ -62,7 +62,7 @@ Use `bun`, `bun run`, `bun x`. Never npm, pnpm, npx, bunx. Spell out `bun run te
 - `bun run format:write`, `bun run lint:fix`
 - `bun run db:generate | db:migrate | db:push | db:seed | db:seed:calendar | db:studio`
 - `bun run smoke` = `bun scripts/smoke.mjs` against the live site
-- Discord bot (`sites/discord-bot`, `bun run --cwd sites/discord-bot <script>`): `build` (Vercel Build Output in `.vercel/output`), `smoke` (loads the built functions from a temp folder, expects 401s), `test`, `test:db`, `test:db:concurrency` (needs `CONCURRENCY_DATABASE_URL` and `BOT_APP_PASSWORD`, see its README), `db:migrate` (drizzle-kit migrator into the `discord_bot` schema, which must exist first; `DATABASE_URL` of a disposable DB only), `commands:register <guild-id>...` (replaces those servers' slash commands; needs the Discord env vars, never run it in a test)
+- Discord bot (`sites/discord-bot`, `bun run --cwd sites/discord-bot <script>`): `test`, `test:db`, `test:db:concurrency` (needs `CONCURRENCY_DATABASE_URL` and `BOT_APP_PASSWORD`, see its README), `db:migrate` (drizzle-kit migrator into the `discord_bot` schema, which must exist first; `DATABASE_URL` of a disposable DB only), `commands:register <guild-id>...` (replaces those servers' slash commands; needs the Discord env vars, never run it in a test)
 - `bun run hooks:install` and `bun run gitleaks:install`: pre-push secret scan, rules in `config/gitleaks/gitleaks.toml`
 
 ## Tests

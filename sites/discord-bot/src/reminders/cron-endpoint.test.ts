@@ -1,13 +1,9 @@
-// Lives outside api/ because Vercel turns every file in that directory into a
-// function.
-
 import { beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
-import * as endpoint from "../../api/cron/reminders.ts";
-import {
-  CRONS,
-  FUNCTIONS,
-  MAX_DURATION_SECONDS,
-} from "../../scripts/deployment.ts";
+import { readFileSync } from "node:fs";
+import * as cronRoute from "../../../web/src/app/api/cron/discord-reminders/route.ts";
+import * as interactionsRoute from "../../../web/src/app/api/discord/interactions/route.ts";
+import * as endpoint from "../http/cron.ts";
+import { POST } from "../http/interactions.ts";
 import { fakeId } from "../../test/support/ids.ts";
 import { testDatabaseUrl } from "../../test/support/sql-client.ts";
 import { asFetch, stubEnv } from "../../test/support/stubs.ts";
@@ -18,7 +14,8 @@ import {
 } from "./plan.ts";
 
 const SECRET = "c".repeat(40);
-const URL_BASE = "https://bot.example.test/api/cron/reminders";
+const URL_BASE = "https://bot.example.test/api/cron/discord-reminders";
+const CRON_PATH = "/api/cron/discord-reminders";
 
 function get(
   headers: Record<string, string> = {},
@@ -38,7 +35,7 @@ async function expectRefused(response: Response) {
 beforeEach(() => {
   fetchMock.mockClear();
   spyOn(globalThis, "fetch").mockImplementation(asFetch(fetchMock));
-  stubEnv("DATABASE_URL", testDatabaseUrl());
+  stubEnv("DISCORD_BOT_DATABASE_URL", testDatabaseUrl());
   stubEnv("CRON_SECRET", SECRET);
   stubEnv("DISCORD_BOT_TOKEN", "unit-test-token");
   stubEnv("DISCORD_APP_ID", fakeId(0));
@@ -93,24 +90,26 @@ describe("deployment settings", () => {
   const HOUR_MS = 3_600_000;
 
   it("schedules a morning run and a recovery run of this endpoint", () => {
-    expect(CRONS).toEqual([
-      {
-        path: "/api/cron/reminders",
-        schedule: `0 ${String(SLOT_START_HOUR_UTC)} * * *`,
-      },
-      {
-        path: "/api/cron/reminders",
-        schedule: `0 ${String(RECOVERY_HOUR_UTC)} * * *`,
-      },
+    const { crons } = JSON.parse(
+      readFileSync(
+        new URL("../../../web/vercel.json", import.meta.url),
+        "utf8",
+      ),
+    ) as { crons: { path: string; schedule: string }[] };
+
+    expect(crons.filter(({ path }) => path === CRON_PATH)).toEqual([
+      { path: CRON_PATH, schedule: `0 ${String(SLOT_START_HOUR_UTC)} * * *` },
+      { path: CRON_PATH, schedule: `0 ${String(RECOVERY_HOUR_UTC)} * * *` },
     ]);
   });
 
-  it("gives the functions the time limit the code is built for", () => {
-    expect(FUNCTIONS.map(({ route }) => route).sort()).toEqual([
-      "api/cron/reminders",
-      "api/interactions",
-    ]);
-    expect(MAX_DURATION_SECONDS * 1000).toBe(FUNCTION_MAX_MS);
+  it("serves the handlers from the web app, with the time limit the code is built for", () => {
+    expect(cronRoute.GET).toBe(endpoint.GET);
+    expect(interactionsRoute.POST).toBe(POST);
+    for (const route of [cronRoute, interactionsRoute]) {
+      expect(route.runtime).toBe("nodejs");
+      expect(route.maxDuration * 1000).toBe(FUNCTION_MAX_MS);
+    }
   });
 
   it("leaves time for a morning run's claims to go stale before the recovery run", () => {

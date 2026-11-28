@@ -14,7 +14,7 @@ packages/auth   @buzz/auth   NextAuth config and the auth() helper
 packages/api    @buzz/api    tRPC context, procedures, routers
 packages/mcp    @buzz/mcp    the MCP server for coding agents (see Agent tooling)
 sites/web       @buzz/web    the Next.js app
-sites/discord-bot  @buzz/discord-bot  the events team Discord bot (Vercel functions, its own `discord_bot` schema in the same Postgres)
+sites/discord-bot  @buzz/discord-bot  the events team Discord bot (served by `sites/web` routes, its own `discord_bot` schema in the same Postgres)
 ```
 
 Outside the workspaces:
@@ -57,7 +57,7 @@ and CI, enable the Vercel Remote Cache: `bun x turbo login` then `bun x turbo li
 (team `sasegt`); CI uses the `TURBO_TOKEN` secret and `TURBO_TEAM` variable. Schema changes go through Drizzle Kit (`bun run db:generate` →
 commit SQL → `bun run db:migrate`).
 
-`sites/discord-bot` is a separate Vercel project and has its own README. It bundles its functions with `bun build` into Vercel Build Output, so it deploys with no `node_modules` tracing even though the repo installs with the isolated linker. Its tests run through `bun run check`; `bun run hooks:install` and `bun run gitleaks:install` set up the pre-push secret scan (`.githooks`, `config/gitleaks/gitleaks.toml`) for the whole repo.
+`sites/discord-bot` has its own README. It is not a separate Vercel project: `sites/web` serves its Discord endpoints at `/api/discord/interactions` and `/api/cron/discord-reminders`, with the crons in `sites/web/vercel.json`. Its tests run through `bun run check`; `bun run hooks:install` and `bun run gitleaks:install` set up the pre-push secret scan (`.githooks`, `config/gitleaks/gitleaks.toml`) for the whole repo.
 
 Deploying the site on Vercel: set **Root Directory** to `sites/web`. Vercel installs from
 the repo root, so the workspace packages resolve normally. `sites/web/vercel.json`
@@ -202,6 +202,11 @@ AUTH_GOOGLE_ID
 AUTH_GOOGLE_SECRET
 AUTH_REDIRECT_PROXY_URL  https://buzzsase.vercel.app/api/auth  (also set in vercel.json)
 ```
+
+The Discord bot runs in this project too. In Production only, it also reads
+`DISCORD_APP_ID`, `DISCORD_PUBLIC_KEY`, `DISCORD_BOT_TOKEN`, `ALLOWED_GUILD_IDS`,
+`DISCORD_BOT_DATABASE_URL` (its own `bot_app` role, not `DATABASE_URL`) and
+`CRON_SECRET`. [SETUP.md](sites/discord-bot/docs/SETUP.md) step 5 has them.
 
 Set `AUTH_REDIRECT_PROXY_URL=https://buzzsase.vercel.app/api/auth` locally and
 on Vercel (Production, Preview, and Development). Google only has the

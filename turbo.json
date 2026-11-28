@@ -12,6 +12,13 @@
       "tags": ["ci"]
     },
     "test": {
+      // The bot's cron-endpoint test reads the web app's vercel.json and the two
+      // Discord routes it serves the bot from.
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/sites/web/vercel.json",
+        "$TURBO_ROOT$/sites/web/src/app/api/**/route.ts"
+      ],
       "tags": ["ci"]
     },
     "test:db": {
@@ -62,7 +69,7 @@
     // The bot's files, for the root tasks that read them (eslint and prettier).
     "//#bot-sources": {
       "inputs": [
-        "$TURBO_ROOT$/sites/discord-bot/{api,src,scripts,test}/**",
+        "$TURBO_ROOT$/sites/discord-bot/{src,scripts,test}/**",
         "$TURBO_ROOT$/sites/discord-bot/*.{ts,js,json}",
         "!**/*.tsbuildinfo"
       ]

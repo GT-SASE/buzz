@@ -67,10 +67,10 @@ Vercel's project transfer needs the sender to own the source team and be a membe
 The steps:
 
 1. On the old project, use Settings > Cron Jobs > Disable Cron Jobs. Otherwise both projects will run the daily job.
-2. The incoming maintainer creates a new project from the transferred repo, as in step 5 of [SETUP.md](SETUP.md), including Standard Protection, and adds the firewall rules from step 9.
+2. The bot runs in the buzz web app, so this is the web app's project. The incoming maintainer creates it from the transferred repo with Root Directory `sites/web`, as the root README says, adds the bot's settings from step 5 of [SETUP.md](SETUP.md) beside the web app's, keeps Standard Protection, and adds the firewall rules from step 9.
 3. The incoming maintainer generates the first three secrets in the Step 4 table now, and adds them to the new project with the other settings. Do not copy old values. A new `bot_app` password cuts off the old project's database access at once, and so does resetting the bot token, so its posts and reminders fail from then on. Do this together, and go straight on to steps 4 and 5.
 4. Push a commit authored by the incoming maintainer, so that Vercel accepts the deployment.
-5. Change the Interactions Endpoint URL in Discord to the new domain, and test `/ping`.
+5. Change the Interactions Endpoint URL in Discord to `/api/discord/interactions` on the new domain, and test `/ping`.
 6. Delete the old project. This removes its deployments and their stored settings.
 
 A project's name decides its URL. The old name stays taken until the old project is deleted, so expect a new URL.
@@ -86,7 +86,7 @@ The first three rows were generated for the new Vercel project in Step 3. Finish
 | Secret                                | Where                                                                                     | Then                                                                                              |
 | ------------------------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
 | `DISCORD_BOT_TOKEN`                   | Developer Portal > Bot > Reset Token                                                      | Set in Vercel and redeploy. Reset cuts off the old one at once.                                   |
-| `DATABASE_URL` (`bot_app`'s password) | `openssl rand -hex 32`, then as the owner `ALTER ROLE bot_app PASSWORD '<new password>';` | Put the new password in `DATABASE_URL` in Vercel and redeploy. The old one stops working at once. |
+| `DISCORD_BOT_DATABASE_URL` (`bot_app`'s password) | `openssl rand -hex 32`, then as the owner `ALTER ROLE bot_app PASSWORD '<new password>';` | Put the new password in `DISCORD_BOT_DATABASE_URL` in Vercel and redeploy. The old one stops working at once. |
 | `CRON_SECRET`                         | `openssl rand -hex 32 \| tr -d '\n'`                                                      | Set in Vercel and redeploy.                                                                       |
 | The owner role's password             | Neon console, on the project's roles                                                      | Store it in the password manager only.                                                            |
 | Personal tokens                       | GitHub, Vercel and Neon account settings                                                  | The outgoing maintainer deletes any made for this bot.                                            |
@@ -107,8 +107,8 @@ The outgoing maintainer also deletes any local `.env`, clones holding real data,
 2. Run these against the new domain and confirm 401 for the first and `ok` for the second, after setting `URL` and `CRON` in your terminal:
 
    ```sh
-   curl -i "$URL/api/cron/reminders"
-   curl -i -H "Authorization: Bearer $CRON" "$URL/api/cron/reminders"
+   curl -i "$URL/api/cron/discord-reminders"
+   curl -i -H "Authorization: Bearer $CRON" "$URL/api/cron/discord-reminders"
    ```
 
 3. Confirm that the old values fail: logging in with the old `bot_app` password is refused, and the old cron secret gets a 401 from the new project.

@@ -222,7 +222,7 @@ export function names(call: SqlCall, name: string | RegExp): boolean {
 }
 
 /**
- * A well-formed DATABASE_URL for settings checks. Nothing listens there. The password
+ * A well-formed DISCORD_BOT_DATABASE_URL for settings checks. Nothing listens there. The password
  * is set on a parsed URL, so no connection string with a password is tracked.
  */
 export function testDatabaseUrl(): string {

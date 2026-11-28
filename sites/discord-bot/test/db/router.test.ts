@@ -12,7 +12,7 @@ import {
   spyOn,
 } from "bun:test";
 import { bindRoles } from "./bot-writes.ts";
-import { POST } from "../../api/interactions.ts";
+import { POST } from "../../src/http/interactions.ts";
 import { withDeadline } from "../../src/db/client.ts";
 import { discordServer } from "../support/discord-server.ts";
 import {
@@ -819,7 +819,7 @@ describe("the client built by liveDependencies", () => {
     stubEnv("DISCORD_APP_ID", APP_ID);
     stubEnv("ALLOWED_GUILD_IDS", GUILD_ID);
     stubEnv("DISCORD_BOT_TOKEN", "test-bot-token");
-    stubEnv("DATABASE_URL", testDatabaseUrl());
+    stubEnv("DISCORD_BOT_DATABASE_URL", testDatabaseUrl());
     // Only Discord is reached over HTTP. The database is the mocked runner above.
     spyOn(globalThis, "fetch").mockImplementation(asFetch(discord.fetch));
   });

@@ -6,7 +6,7 @@ Behaviour stated here was read from the code or run in tests with Discord mocked
 
 ## When it runs
 
-- The daily job runs from two Vercel Cron schedules in `scripts/deployment.ts`: the morning run at 15:00 UTC, which is 10 AM Eastern in winter and 11 AM in summer, and the recovery run at 17:00 UTC. Each can fire any time in its hour. The recovery run does nothing after a good morning run, and carries on after a failed one.
+- The daily job runs from two Vercel Cron schedules in `sites/web/vercel.json`: the morning run at 15:00 UTC, which is 10 AM Eastern in winter and 11 AM in summer, and the recovery run at 17:00 UTC. Each can fire any time in its hour. The recovery run does nothing after a good morning run, and carries on after a failed one.
 - A Discord failure that is not about one event's post, such as an outage, a rate limit or a refused token, stops the run, and the recovery run carries on. If both runs of a day stop, that day's remaining reminders are skipped, and the next day's go out as usual.
 - A locked or inaccessible post makes the reminder run fail until someone fixes the post or closes the event. Logs say `Thread refused the bot for event <id>`, and the other events' reminders still go out.
 
@@ -82,7 +82,7 @@ Check the size on the project's usage page in the Neon console. `discord_bot.row
 
 ## Deploy order
 
-**Migrations go first, then code.** A merge to `main` deploys by itself, because `vercel.json` turns on deployments for `main` only, and only when a commit touches `sites/discord-bot` or `bun.lock`. No workflow applies migrations, so nothing keeps the two in step except doing them in this order.
+**Migrations go first, then code.** A merge to `main` deploys by itself, because the bot runs in the buzz web app and the buzz project deploys every merge. No workflow applies migrations, so nothing keeps the two in step except doing them in this order.
 
 **Dropping what the live code uses is two releases.** Ship the code that no longer needs a column, table or grant, migrate and deploy it, and drop the object in a later migration, run only after that code is live. One `bun run db:migrate` runs every pending file, so a migration that adds a grant and one that drops an object do not go in the same release. Take a grant back the same way: the release after the code stops using it.
 
@@ -165,7 +165,7 @@ SELECT count(*) FROM discord_bot.tasks;
 SELECT count(*) FROM discord_bot.row_versions;
 ```
 
-Then point `DATABASE_URL` in Vercel at the new `bot_app` string, redeploy, turn reminders back on, and watch the next `reminders` row in `job_runs`. Keep the old project, read-only in practice, for a term before deleting it. Delete `bot-data.sql` and `bot-data-new.sql` when done: they hold member IDs and task text.
+Then point `DISCORD_BOT_DATABASE_URL` in Vercel at the new `bot_app` string, redeploy, turn reminders back on, and watch the next `reminders` row in `job_runs`. Keep the old project, read-only in practice, for a term before deleting it. Delete `bot-data.sql` and `bot-data-new.sql` when done: they hold member IDs and task text.
 
 ## Member data retention
 

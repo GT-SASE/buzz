@@ -8,6 +8,8 @@
       "~/*": ["./src/*"]
     },
     "rootDir": ".",
+    // The bot package imports its own files with their .ts extension.
+    "allowImportingTsExtensions": true,
     // Explicit, because TypeScript 7 no longer sweeps every @types package it
     // can reach into the global scope. These are the four this app installs.
     "types": ["node", "react", "react-dom", "qrcode"]
