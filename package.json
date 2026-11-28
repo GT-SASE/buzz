@@ -12,7 +12,7 @@
     "smoke": "bun scripts/smoke.mjs",
     "hooks:install": "git config core.hooksPath .githooks",
     "gitleaks:install": "bash scripts/install-gitleaks.sh",
-    "check": "turbo run //#lint typecheck //#typecheck:self //#format:check //#test test test:db",
+    "check": "turbo run //#lint lint typecheck //#typecheck:self //#format:check //#test test test:db",
     "test": "bun run test:node && bun run test:dom",
     "test:node": "bun test --isolate --path-ignore-patterns \"**/*.tsx\" --path-ignore-patterns \"sites/discord-bot/**\"",
     "test:dom": "bun test --isolate --preload ./tests/setup/dom.ts .test.tsx",
