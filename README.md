@@ -14,6 +14,7 @@ packages/auth   @buzz/auth   NextAuth config and the auth() helper
 packages/api    @buzz/api    tRPC context, procedures, routers
 packages/mcp    @buzz/mcp    the MCP server for coding agents (see Agent tooling)
 sites/web       @buzz/web    the Next.js app
+sites/backend   @buzz/backend   the Go service that will replace the TypeScript backend (not deployed yet, see docs/go-backend.md)
 sites/discord-bot  @buzz/discord-bot  the events team Discord bot (served by `sites/web` routes, its own `discord_bot` schema in the same Postgres)
 ```
 

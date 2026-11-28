@@ -36,6 +36,7 @@ packages/db/drizzle/            generated SQL migrations + meta; commit them
 packages/db/scripts/            seeds
 packages/auth/src/              NextAuth config and auth()
 packages/mcp/src/               this MCP server
+sites/backend/                  Go service (stdlib net/http), its own Go module: `cmd/server`, `tools/go.mod` pins golangci-lint and govulncheck; not deployed yet, see `docs/go-backend.md`
 sites/discord-bot/              the events Discord bot: src/ (its endpoints are `src/http/`, served by the web routes `api/discord/interactions` and `api/cron/discord-reminders`), db/drizzle (drizzle-kit; `src/db/schema.ts` is the schema, writes are TypeScript in `src/db`), its own README and docs/
 sites/web/src/app/(marketing)/  public pages, prerendered; [slug] serves CMS pages
 sites/web/src/app/portal/(member)/        member portal pages (needs a session)
@@ -51,12 +52,12 @@ config/gitleaks/                gitleaks.toml (secret-scan rules) and version (t
 .github/                        CI workflows, Dependabot, CODEOWNERS, SECURITY.md (reporting policy)
 ```
 
-## Commands (run from repo root, Bun only)
+## Commands (run from repo root; Bun for JS, Go only via the toolchain line)
 
-Use `bun`, `bun run`, `bun x`. Never npm, pnpm, npx, bunx. Spell out `bun run test`: bare `bun test` skips the DOM setup.
+Use `bun`, `bun run`, `bun x`. Never npm, pnpm, npx, bunx. Go comes only from the `toolchain` line in `sites/backend/go.mod`. Spell out `bun run test`: bare `bun test` skips the DOM setup.
 
 - `bun run dev`, `bun run build`, `bun run vercel-build` (migrates when `DATABASE_URL` is set, then builds)
-- `bun run check` = turbo `//#lint typecheck //#typecheck:self //#format:check //#test test test:db` (the last two are the Discord bot's unit and PGlite tests)
+- `bun run check` = turbo `//#lint lint typecheck //#typecheck:self //#format:check //#test test test:db` (the last two are the Discord bot's unit and PGlite tests; `lint`, `typecheck` and `test` also run `golangci-lint`, `go vet` plus `go build`, and `go test` in `sites/backend`)
 - `bun run test` = `test:node` (`--isolate`, ignores `*.tsx`) then `test:dom` (`.test.tsx`, happy-dom preload in `tests/setup/dom.ts`)
 - `bun run typecheck` (tsrs, fast) and `bun run typecheck:tsc` (tsc, the deciding check)
 - `bun run format:write`, `bun run lint:fix`
